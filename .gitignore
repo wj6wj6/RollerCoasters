@@ -1,0 +1,25 @@
+# CMake build output
+/build/
+/build-*/
+/out/
+/CMakeFiles/
+/CMakeCache.txt
+/cmake_install.cmake
+/CTestTestfile.cmake
+
+# Visual Studio local state and generated binaries
+.vs/
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+*.obj
+*.pdb
+*.ilk
+*.exe
+*.idb
+*.tlog/
+
+# OS metadata
+.DS_Store
+Thumbs.db
