@@ -90,6 +90,12 @@ class TrainWindow : public Fl_Double_Window {
 		Fl_Value_Slider*	speed;
 		Fl_Button*			arcLength;		// do we use arc length for speed?
 
+		// shadow-mapped lighting (see AdvancedLighting.h)
+		Fl_Button*			lightingButton;	// per-pixel lighting + shadow maps
+		Fl_Button*			shadowButton;	// draw shadows at all
+		Fl_Button*			headlightButton;	// spotlight on the train's nose
+		Fl_Value_Slider*	timeOfDay;		// moves the sun, 0 to 24 hours
+
 		// we have other widgets as part of the sample solution
 		// this is not for 559 students to know about
 #ifdef EXAMPLE_SOLUTION

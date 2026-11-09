@@ -219,11 +219,24 @@ void TrainView::draw()
 	else
 		throw std::runtime_error("Could not initialize GLAD!");
 
+	// The shader and shadow map belong to the GL context; forget them if
+	// FLTK had to create a new one.
+	if (!context_valid())
+		lighting.invalidate();
+	const bool advancedLighting = tw->lightingButton->value() && lighting.init();
+	const bool shadowsOn = tw->shadowButton->value() != 0;
+
 	// Set up the view port
 	glViewport(0,0,w(),h());
 
 	// clear the window, be sure to clear the Z-Buffer too
-	glClearColor(0,0,.3f,0);		// background should be blue
+	if (advancedLighting) {
+		float sky[3];
+		AdvancedLighting::skyColor(static_cast<float>(tw->timeOfDay->value()), sky);
+		glClearColor(sky[0], sky[1], sky[2], 0);
+	}
+	else
+		glClearColor(0,0,.3f,0);		// background should be blue
 
 	// we need to clear out the stencil buffer since we'll use
 	// it for shadows
@@ -290,6 +303,19 @@ void TrainView::draw()
 	// set to opengl fixed pipeline(use opengl 1.x draw function)
 	glUseProgram(0);
 
+	// Shadow-mapped lighting: render the casters from the sun first, then
+	// draw the whole scene through the per-pixel lighting shader.
+	LightingFrame lightingFrame;
+	if (advancedLighting) {
+		fillLightingFrame(lightingFrame);
+		if (lightingFrame.shadows) {
+			lighting.beginShadowPass(lightingFrame);
+			drawStuff(true);
+			lighting.endShadowPass();
+		}
+		lighting.begin(lightingFrame);
+	}
+
 	setupFloor();
 	glDisable(GL_LIGHTING);
 	drawFloor(200,10);
@@ -304,8 +330,14 @@ void TrainView::draw()
 
 	drawStuff();
 
+	if (advancedLighting) {
+		lighting.end();
+		glDisable(GL_STENCIL_TEST);
+		return;
+	}
+
 	// this time drawing is for shadows (except for top view)
-	if (!tw->topCam->value()) {
+	if (shadowsOn && !tw->topCam->value()) {
 		setupShadows();
 		drawStuff(true);
 		unsetupShadows();
@@ -521,6 +553,7 @@ void TrainView::drawStuff(bool doingShadows)
 
 		glPushAttrib(GL_ENABLE_BIT | GL_LINE_BIT | GL_CURRENT_BIT);
 		glDisable(GL_LIGHTING);
+		lighting.setUnlit(true);	// lines have no useful normal
 
 		// Wooden sleepers cross beneath the two rails at regular samples.
 		glColor3ub(105, 72, 42);
@@ -556,6 +589,7 @@ void TrainView::drawStuff(bool doingShadows)
 			}
 			glEnd();
 		}
+		lighting.setUnlit(false);
 		glPopAttrib();
 	}
 
@@ -611,6 +645,55 @@ void TrainView::drawStuff(bool doingShadows)
 
 		glPopMatrix();
 		glPopAttrib();
+	}
+}
+
+//************************************************************************
+//
+// * Gather what the shadow-mapped lighting needs for this frame
+//========================================================================
+void TrainView::fillLightingFrame(LightingFrame& frame)
+{
+	frame.timeOfDay = static_cast<float>(tw->timeOfDay->value());
+	frame.shadows = tw->shadowButton->value() != 0;
+	frame.headlight = tw->headlightButton->value() != 0;
+	frame.orthographic = tw->topCam->value() != 0;
+
+	// The trees stand near the edge of the ground; start with a box that
+	// holds them and grow it to include every control point and the train.
+	float lo[3] = { -92.0f, 0.0f, -92.0f };
+	float hi[3] = { 92.0f, 24.0f, 92.0f };
+	for (size_t i = 0; i < m_pTrack->points.size(); ++i) {
+		const Pnt3f& p = m_pTrack->points[i].pos;
+		const float c[3] = { p.x, p.y, p.z };
+		for (int k = 0; k < 3; ++k) {
+			lo[k] = fminf(lo[k], c[k] - 6.0f);
+			hi[k] = fmaxf(hi[k], c[k] + 6.0f);
+		}
+	}
+	for (int k = 0; k < 3; ++k) {
+		frame.casterMin[k] = lo[k];
+		frame.casterMax[k] = hi[k];
+	}
+
+	frame.hasTrain = m_pTrack->points.size() >= 4;
+	if (frame.hasTrain) {
+		const TrackSplineType splineType =
+			static_cast<TrackSplineType>(tw->splineBrowser->value());
+		const Pnt3f position = m_pTrack->evaluatePosition(m_pTrack->trainU, splineType);
+		Pnt3f forward = m_pTrack->evaluateTangent(m_pTrack->trainU, splineType);
+		Pnt3f side, up;
+		makeTrackFrame(forward, side, up);
+		forward.normalize();
+		frame.trainPosition[0] = position.x;
+		frame.trainPosition[1] = position.y;
+		frame.trainPosition[2] = position.z;
+		frame.trainForward[0] = forward.x;
+		frame.trainForward[1] = forward.y;
+		frame.trainForward[2] = forward.z;
+		frame.trainUp[0] = up.x;
+		frame.trainUp[1] = up.y;
+		frame.trainUp[2] = up.z;
 	}
 }
 

@@ -50,6 +50,7 @@ class CTrack;
 
 // this uses the old ArcBall Code
 #include "Utilities/ArcBallCam.H"
+#include "AdvancedLighting.h"
 
 class TrainView : public Fl_Gl_Window
 {
@@ -77,10 +78,16 @@ class TrainView : public Fl_Gl_Window
 		// pick a point (for when the mouse goes down)
 		void doPick();
 
+		// collect the train frame, time of day and caster bounds for the
+		// shadow-mapped lighting
+		void fillLightingFrame(LightingFrame& frame);
+
 	public:
 		ArcBallCam		arcball;			// keep an ArcBall for the UI
 		int				selectedCube;  // simple - just remember which cube is selected
 
 		TrainWindow*	tw;				// The parent of this display window
 		CTrack*			m_pTrack;		// The track of the entire scene
+
+		AdvancedLighting	lighting;		// shadow maps, per-pixel light, headlight
 };

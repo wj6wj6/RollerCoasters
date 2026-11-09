@@ -13,6 +13,8 @@ add_Definitions("-D_XKEYCHECK_H")
 add_definitions(-DPROJECT_DIR="${PROJECT_SOURCE_DIR}")
 
 add_executable(RollerCoasters
+    ${SRC_DIR}AdvancedLighting.h
+    ${SRC_DIR}AdvancedLighting.cpp
     ${SRC_DIR}CallBacks.h
     ${SRC_DIR}CallBacks.cpp
     ${SRC_DIR}ControlPoint.h

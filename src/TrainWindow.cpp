@@ -147,6 +147,31 @@ TrainWindow(const int x, const int y)
 
 		pty+=30;
 
+		// Lighting: shader lighting with shadow maps, shadows, headlight, time of day
+		lightingButton = new Fl_Button(605,pty,60,20,"Light+");
+		togglify(lightingButton,1);
+		lightingButton->tooltip("Per-pixel lighting with shadow mapping and fog.\n"
+			"Turn off to get the original fixed-function lighting.");
+		shadowButton = new Fl_Button(670,pty,60,20,"Shadows");
+		togglify(shadowButton,1);
+		headlightButton = new Fl_Button(735,pty,60,20,"Headlight");
+		togglify(headlightButton,1);
+		headlightButton->labelsize(12);
+		headlightButton->tooltip("Spotlight on the front of the train (needs Light+).\n"
+			"Slide Time towards night to see it best.");
+
+		pty+=25;
+		timeOfDay = new Fl_Value_Slider(655,pty,140,20,"Time");
+		timeOfDay->range(0,24);
+		timeOfDay->step(0.25);
+		timeOfDay->value(15);
+		timeOfDay->align(FL_ALIGN_LEFT);
+		timeOfDay->type(FL_HORIZONTAL);
+		timeOfDay->callback((Fl_Callback*)damageCB,this);
+		timeOfDay->tooltip("Hour of the day: moves the sun and its shadows (needs Light+)");
+
+		pty+=30;
+
 		// TODO: add widgets for all of your fancier features here
 #ifdef EXAMPLE_SOLUTION
 		makeExampleWidgets(this,pty);
