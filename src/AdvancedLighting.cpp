@@ -16,6 +16,7 @@
 
 #include "AdvancedLighting.h"
 #include "MatrixMath.h"
+#include "UnderwaterOptics.h"
 
 namespace
 {
@@ -33,6 +34,7 @@ uniform int uWind;
 varying vec3 vWorldPos;
 varying vec3 vWorldNormal;
 varying vec4 vColor;
+varying vec4 vExtra; // emissive, sway, block light, sky light (see OceanWorld)
 
 void main()
 {
@@ -42,6 +44,9 @@ void main()
     vWorldNormal = invViewRot * (gl_NormalMatrix * gl_Normal);
     vColor = gl_Color;
     gl_TexCoord[0] = gl_MultiTexCoord0;
+    // Texture unit 1's coordinate carries extra per-vertex data. Code that
+    // never sets it gets (0, 0, 0, 1): no glow, no sway, full sky light.
+    vExtra = gl_MultiTexCoord1;
 
     // Leaves sway in the wind: green vertices above the trunk height move,
     // more the higher they are, with a phase that depends on position.
@@ -54,13 +59,22 @@ void main()
         eyePos = uView * world;
     }
 
+    // Kelp and sea grass sway in the current, the tips the most.
+    float sway = gl_MultiTexCoord1.y;
+    if (sway > 0.0) {
+        float phase = uTime * 0.9 + world.x * 0.05 + world.z * 0.04;
+        world.x += sin(phase) * 1.4 * sway;
+        world.z += cos(phase * 0.8 + 1.3) * 1.0 * sway;
+        eyePos = uView * world;
+    }
+
     vWorldPos = world.xyz;
     gl_Position = gl_ProjectionMatrix * eyePos;
 }
 )GLSL";
 
+// Pasted after "#version 120" and the underwater optics (UnderwaterOptics.h).
 const char *kFragmentShader = R"GLSL(
-#version 120
 uniform mat4 uInvView;
 uniform mat4 uLightMatrix;     // world -> shadow map texture coordinates
 uniform sampler2DShadow uShadowMap;
@@ -85,10 +99,14 @@ uniform int uUnlit;
 uniform int uHdr;              // 1: linear HDR out for the post effects
 uniform float uClipY;          // reflections: nothing below the water
 uniform sampler2D uTexture;    // unit 0; plain white when nothing is bound
+uniform float uTime;
+uniform float uWaterLevel;     // very low when there is no water
+uniform vec3 uBlockLightColor; // glow cast by crystals
 
 varying vec3 vWorldPos;
 varying vec3 vWorldNormal;
 varying vec4 vColor;
+varying vec4 vExtra;
 
 // Percentage closer filtering over a 12 tap spiral. Each tap is itself a
 // hardware 2x2 comparison, so the edge comes out soft.
@@ -123,24 +141,44 @@ void main()
         discard;
     vec3 n = normalize(vWorldNormal);
     vec3 cameraPos = uInvView[3].xyz;
-    vec4 base = vColor * texture2D(uTexture, gl_TexCoord[0].st);
+    vec4 texel = texture2D(uTexture, gl_TexCoord[0].st);
+    if (texel.a < 0.5)
+        discard; // cut-out plants
+    vec4 base = vColor * texel;
     vec3 albedo = pow(base.rgb, vec3(2.2));
 
     float shadow = 1.0;
     if (uShadowsOn != 0)
         shadow = shadowAt(vWorldPos, n);
 
+    vec3 l = normalize(uLightDir);
+    vec3 sun = uLightColor * shadow;
+    vec3 skyAmbient = uSkyAmbient * vExtra.w;
+    vec3 groundAmbient = uGroundAmbient * vExtra.w;
+    if (vWorldPos.y < uWaterLevel) {
+        // Under water the sunlight dims and turns blue with depth and is
+        // focused into caustics; the ambient light is scattered blue too.
+        float depth = uWaterLevel - vWorldPos.y;
+        sun *= sunThroughWater(depth, l) * caustics(vWorldPos, l, uWaterLevel, uTime);
+        vec3 tint = exp(-kWaterAbsorb * depth * 0.8) * vec3(0.55, 0.9, 1.15);
+        skyAmbient *= tint;
+        groundAmbient = skyAmbient * 0.6;
+    }
+
     vec3 v = normalize(cameraPos - vWorldPos);
     vec3 color;
     if (uUnlit != 0) {
         // No usable normal: light it as if it faced the sky, so it still
         // follows the time of day and picks up shadows.
-        color = albedo * (uSkyAmbient + uLightColor * (0.7 * shadow));
+        color = albedo * (skyAmbient + sun * 0.7);
     } else {
-        vec3 ambient = mix(uGroundAmbient, uSkyAmbient, n.y * 0.5 + 0.5);
+        vec3 ambient = mix(groundAmbient, skyAmbient, n.y * 0.5 + 0.5);
         color = albedo * ambient;
-        color += blinnPhong(albedo, n, normalize(uLightDir), v) * uLightColor * shadow;
+        color += blinnPhong(albedo, n, l, v) * sun;
     }
+    // Light from nearby crystals, and the crystals' own glow.
+    color += albedo * uBlockLightColor * vExtra.z;
+    color += albedo * vExtra.x * 3.0;
 
     if (uHeadlightOn != 0) {
         vec3 toLamp = uHeadPos - vWorldPos;
@@ -260,10 +298,10 @@ void sunDirection(float timeOfDay, float dir[3])
     normalize3(dir);
 }
 
-GLuint compileShader(GLenum type, const char *source)
+GLuint compileShader(GLenum type, const char *const *parts, int count)
 {
     GLuint shader = glCreateShader(type);
-    glShaderSource(shader, 1, &source, nullptr);
+    glShaderSource(shader, count, parts, nullptr);
     glCompileShader(shader);
     GLint ok = GL_FALSE;
     glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
@@ -327,8 +365,10 @@ bool AdvancedLighting::init()
         return false;
     }
 
-    GLuint vs = compileShader(GL_VERTEX_SHADER, kVertexShader);
-    GLuint fs = compileShader(GL_FRAGMENT_SHADER, kFragmentShader);
+    const char *vertexParts[1] = {kVertexShader};
+    const char *fragmentParts[3] = {"#version 120\n", kUnderwaterOpticsGlsl, kFragmentShader};
+    GLuint vs = compileShader(GL_VERTEX_SHADER, vertexParts, 1);
+    GLuint fs = compileShader(GL_FRAGMENT_SHADER, fragmentParts, 3);
     if (!vs || !fs)
     {
         if (vs)
@@ -380,6 +420,8 @@ bool AdvancedLighting::init()
     m_locWind = glGetUniformLocation(m_program, "uWind");
     m_locView = glGetUniformLocation(m_program, "uView");
     m_locTexture = glGetUniformLocation(m_program, "uTexture");
+    m_locWaterLevel = glGetUniformLocation(m_program, "uWaterLevel");
+    m_locBlockLightColor = glGetUniformLocation(m_program, "uBlockLightColor");
 
     // Textured drawing code (glBindTexture on unit 0) keeps working through the
     // shader. Untextured code leaves the default texture object 0 bound, so
@@ -624,7 +666,11 @@ void AdvancedLighting::begin(const LightingFrame &frame)
     glUniform3fv(m_locSkyAmbient, 1, m_skyAmbient);
     glUniform3fv(m_locGroundAmbient, 1, m_groundAmbient);
     glUniform3fv(m_locFogColor, 1, m_fogColor);
-    glUniform1f(m_locFogDensity, frame.orthographic ? 0.0f : 0.002f);
+    // Under water the fog is drawn by the post pass instead.
+    glUniform1f(m_locFogDensity, (frame.orthographic || frame.cameraUnderwater) ? 0.0f : 0.002f);
+    glUniform1f(m_locWaterLevel, frame.waterLevel);
+    const float crystalLight[3] = {0.12f, 0.55f, 0.75f};
+    glUniform3fv(m_locBlockLightColor, 1, crystalLight);
     glUniform1i(m_locUnlit, 0);
 
     const bool headlight = frame.headlight && frame.hasTrain;

@@ -14,6 +14,13 @@
                     dim moon at night.
                   * A spotlight headlight attached to the front of the
                     train.
+                  * Below the water level: sunlight absorbed with depth
+                    (red first) and focused into moving caustics.
+                  * Optional per-vertex data in texture unit 1's
+                    coordinate: glow, sway, crystal light and sky light
+                    (OceanWorld bakes these; other code leaves the
+                    default, which changes nothing). Texels with alpha
+                    below 0.5 are cut out.
 
                   The geometry is still drawn with the fixed function
                   (glBegin/glEnd) calls used everywhere else. The GLSL
@@ -37,6 +44,10 @@ struct LightingFrame
     float clipBelowY = -1e9f;  // discard anything below this height (reflections)
     float time = 0.0f;         // seconds, drives the wind
     bool wind = true;          // sway the tree tops
+
+    // Below this height things are under water: caustics, blue light.
+    float waterLevel = -1e9f;
+    bool cameraUnderwater = false; // fog is then drawn by PostEffects
 
     // Train frame used for the headlight.
     bool hasTrain = false;
@@ -155,6 +166,8 @@ class AdvancedLighting
     int m_locWind;
     int m_locView;
     int m_locTexture;
+    int m_locWaterLevel;
+    int m_locBlockLightColor;
 
     // Results of prepare(), kept between the shadow and the main passes.
     SkyState m_sky;

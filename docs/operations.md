@@ -32,6 +32,7 @@ pwsh -File scripts/check.ps1 -Stage all -Config Release
 - 用測試軌道複本執行 Load／Save，再載入新檔，點數、位置與方向一致。
 - `Light+` 開關切換時畫面正常；`Time` 從 0 拖到 24，太陽、陰影、天空與夜晚星空連續變化。
 - `Shadows`、`Headlight`、`Water`、`Bloom`、`SSAO` 逐一開關，三種相機下都沒有黑畫面或閃爍；開啟後仍能點選與拖曳控制點。
+- 按 `Ocean Ride` 後用 `Train` 相機跑完一圈：入水與出水時畫面切換正常，水下有藍霧、光束、微粒與氣泡，隧道內變暗只剩水晶與頭燈，列車不會穿過方塊；三種 spline 都試一次。
 - 關閉視窗可結束程序；記錄 Windows、GPU／驅動與輸入裝置。
 
 ## 軌道備份與還原

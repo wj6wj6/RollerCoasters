@@ -13,6 +13,10 @@
                     second time, mirrored), refraction of the sea bed,
                     depth-based colour absorption, Fresnel, sun glints,
                     shadows and shore foam.
+                  * Under water (camera below the surface): blue distance
+                    fog, light shafts traced through the shadow map and
+                    the caustics, drifting specks and rising bubbles, and
+                    the surface seen from below with Snell's window.
                   * SSAO: screen space ambient occlusion from the depth
                     buffer darkens creases and contact areas.
                   * Bloom: bright pixels glow.
@@ -26,6 +30,8 @@
 
 *************************************************************************/
 #pragma once
+
+#include <vector>
 
 #include "AdvancedLighting.h"
 
@@ -47,6 +53,11 @@ class SceneCallbacks
     virtual void drawGround() = 0;
     // Everything on the ground. shadowPass: draw without setting colours.
     virtual void drawObjects(bool shadowPass) = 0;
+    // The sea floor and what lies on it; only called while the water is on.
+    virtual void drawUnderwater(bool shadowPass)
+    {
+        (void)shadowPass;
+    }
 };
 
 class PostEffects
@@ -57,9 +68,10 @@ class PostEffects
     void invalidate();
     bool init();
 
-    // Height of the sea and half the width of the square island.
+    // Height of the sea.
     float waterLevel;
-    float islandHalfSize;
+    // Points bubbles rise from (x, y, z for each), seen under water.
+    std::vector<float> bubbleSources;
 
     // --- steps used by renderAdvancedFrame(), in order ---
     void beginFrame(int width, int height);
@@ -67,10 +79,13 @@ class PostEffects
     void endReflection();
     void beginScene();
     void drawSky(const SkyState &sky, float time);
-    void drawSeabed();
+    void setUnderwaterCamera(const float cameraPos[3], const SkyState &sky);
     void applySSAO();
-    void drawWater(const AdvancedLighting &lighting, float time, bool orthographic);
-    void finish(const SkyState &sky, bool bloom);
+    void drawParticles(const SkyState &sky, float time);
+    void drawWater(const AdvancedLighting &lighting, float time, bool orthographic,
+                   bool underwater);
+    void applyUnderwater(const AdvancedLighting &lighting, float time);
+    void finish(const SkyState &sky, bool bloom, bool underwater);
 
   private:
     struct Target
@@ -102,7 +117,7 @@ class PostEffects
     Target m_reflection; // mirrored view, half size
     Target m_halfA;      // AO, then bloom
     Target m_halfB;      // blur temporary
-    Target m_rays;       // god rays
+    Target m_rays;       // god rays, or the light shafts under water
 
     unsigned int m_skyProgram;
     unsigned int m_waterProgram;
@@ -112,6 +127,13 @@ class PostEffects
     unsigned int m_blurProgram;
     unsigned int m_raysProgram;
     unsigned int m_compositeProgram;
+    unsigned int m_underwaterProgram;
+    unsigned int m_shaftsProgram;
+    unsigned int m_particleProgram;
+
+    float m_camera[3];    // camera position, set by setUnderwaterCamera()
+    float m_deepColor[3]; // colour of the water around the camera
+    std::vector<float> m_specks;
 
     // Camera of the main view, captured in beginScene().
     float m_view[16];

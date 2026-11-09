@@ -47,6 +47,9 @@ void runButtonCB(TrainWindow *tw);
 void loadCB(Fl_Widget *, TrainWindow *tw);
 void saveCB(Fl_Widget *, TrainWindow *tw);
 
+// Load the underwater demo ride (see OceanWorld)
+void oceanRideCB(Fl_Widget *, TrainWindow *tw);
+
 // roll the control points
 // Rotate the selected control point  about x axis by one more degree
 void rpxCB(Fl_Widget *, TrainWindow *tw);

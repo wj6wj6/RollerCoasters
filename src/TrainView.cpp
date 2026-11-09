@@ -223,6 +223,7 @@ void TrainView::draw()
     {
         m_trackRenderer.releaseTextures();
         m_ground.releaseTextures();
+        m_ocean.releaseResources();
         lighting.invalidate();
         effects.invalidate();
     }

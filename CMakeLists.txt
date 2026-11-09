@@ -51,8 +51,11 @@ add_executable(RollerCoasters
     src/AdvancedLighting.h src/AdvancedLighting.cpp
     src/GrassGround.h src/GrassGround.cpp
     src/MatrixMath.h
+    src/OceanWorld.h src/OceanWorld.cpp
+    src/PixelArt.h src/PixelArt.cpp
     src/PostEffects.h src/PostEffects.cpp
     src/TrainViewEffects.cpp
+    src/UnderwaterOptics.h
     src/CallBacks.H src/CallBacks.cpp
     src/ControlPoint.H src/ControlPoint.cpp
     src/main.cpp src/Object.H

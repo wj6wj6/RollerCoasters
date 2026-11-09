@@ -16,6 +16,7 @@
 
 #include "PostEffects.h"
 #include "MatrixMath.h"
+#include "UnderwaterOptics.h"
 
 namespace
 {
@@ -155,6 +156,8 @@ uniform vec3 uLightColor;
 uniform vec3 uZenith;
 uniform vec3 uHorizon;
 uniform float uFogDensity;
+uniform int uUnder;        // the camera is below the surface
+uniform vec3 uDeepColor;   // colour of the water around the camera
 
 vec3 viewPos(vec2 uv, float depth)
 {
@@ -195,6 +198,19 @@ void main()
     N = normalize(mix(N, vec3(0.0, 1.0, 0.0), clamp(dist / 500.0, 0.0, 0.85)));
 
     vec2 suv = gl_FragCoord.xy / uScreen;
+    if (uUnder != 0) {
+        // Seen from below, light from above only gets through inside Snell's
+        // window, a cone of about 48 degrees around straight up. Outside it
+        // the surface mirrors the dark water.
+        float cosView = abs(dot(V, N));
+        float window = smoothstep(0.62, 0.70, cosView);
+        vec3 above = texture2D(uRefraction, suv + N.xz * 0.06).rgb;
+        vec3 col = mix(uDeepColor * 1.5, above, window);
+        float rim = smoothstep(0.54, 0.65, cosView) - smoothstep(0.65, 0.74, cosView);
+        col += (uDeepColor * 6.0 + uLightColor * 0.15) * rim;
+        gl_FragColor = vec4(col, 1.0);
+        return;
+    }
     vec3 waterView = viewPos(suv, gl_FragCoord.z);
     vec2 distort = N.xz * 0.03;
 
@@ -226,7 +242,7 @@ void main()
     // turquoise, deep water dark blue.
     float sunUp = clamp(uLightDir.y * 2.0, 0.0, 1.0);
     vec3 scatter = vec3(0.005, 0.045, 0.09) * (uLightColor * sunUp * mix(0.6, 1.0, shadow) + uZenith * 2.0);
-    vec3 absorb = exp(-thickness * vec3(0.35, 0.09, 0.06));
+    vec3 absorb = exp(-thickness * vec3(0.20, 0.055, 0.04));
     vec3 body = refr * absorb + scatter * (1.0 - absorb);
 
     vec3 refl = texture2D(uReflection, suv + distort).rgb;
@@ -253,6 +269,165 @@ void main()
     float f = dist * uFogDensity;
     col = mix(uHorizon, col, exp(-f * f));
     gl_FragColor = vec4(col, 1.0);
+}
+)GLSL";
+
+// Under water, part 1 (half size): light shafts. Each view ray is marched,
+// asking the shadow map whether the sun reaches each step and modulating it by
+// the caustic pattern at the surface above, so the shafts stream down in
+// moving bands.
+const char *kShaftsFragment = R"GLSL(
+varying vec2 vUv;
+uniform sampler2D uDepth;
+uniform sampler2DShadow uShadowMap;
+uniform mat4 uLightMatrix;
+uniform int uShadowsOn;
+uniform mat4 uInvViewProj;
+uniform vec3 uCamPos;
+uniform vec3 uLightDir;
+uniform vec3 uLightColor;
+uniform float uWaterLevel;
+uniform float uTime;
+
+const vec3 kFogExtinction = vec3(0.050, 0.030, 0.024);
+
+float sunAt(vec3 p)
+{
+    if (uShadowsOn == 0)
+        return 1.0;
+    vec4 sc = uLightMatrix * vec4(p, 1.0);
+    vec3 c = sc.xyz / sc.w;
+    if (c.z >= 1.0)
+        return 1.0;
+    return shadow2D(uShadowMap, vec3(c.xy, c.z - 0.002)).r;
+}
+
+void main()
+{
+    float d = texture2D(uDepth, vUv).r;
+    vec4 hit = uInvViewProj * vec4(vUv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+    vec3 ray = hit.xyz / hit.w - uCamPos;
+    float dist = d >= 1.0 ? 2000.0 : length(ray);
+    vec3 V = normalize(ray);
+    float wdist = dist;
+    if (V.y > 0.0001)
+        wdist = min(dist, (uWaterLevel - uCamPos.y) / V.y);
+
+    vec3 L = normalize(uLightDir);
+    const int steps = 32;
+    float dt = min(wdist, 90.0) / float(steps);
+    // Interleaved gradient noise: a fixed, even dither that hides banding.
+    float jitter = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+    vec3 shafts = vec3(0.0);
+    for (int i = 0; i < steps; ++i) {
+        float t = (float(i) + jitter) * dt;
+        vec3 p = uCamPos + V * t;
+        float depth = uWaterLevel - p.y;
+        if (depth < 0.0)
+            break;
+        float c = caustics(p, L, uWaterLevel, uTime);
+        shafts += sunAt(p) * c * c * sunThroughWater(depth, L) * exp(-kFogExtinction * t) * dt;
+    }
+    // Scattering is strongest looking towards the sun.
+    float phase = 0.3 + 0.7 * pow(max(dot(V, L), 0.0), 3.0);
+    shafts *= uLightColor * phase * 0.008;
+    gl_FragColor = vec4(shafts, 1.0);
+}
+)GLSL";
+
+// Under water, part 2: distance fog that swallows red first, plus the shafts.
+const char *kUnderwaterFragment = R"GLSL(
+#version 120
+varying vec2 vUv;
+uniform sampler2D uScene;
+uniform sampler2D uDepth;
+uniform sampler2D uShafts;
+uniform mat4 uInvViewProj;
+uniform vec3 uCamPos;
+uniform vec3 uFogColor;
+uniform float uWaterLevel;
+
+const vec3 kFogExtinction = vec3(0.050, 0.030, 0.024);
+
+void main()
+{
+    vec3 col = texture2D(uScene, vUv).rgb;
+    float d = texture2D(uDepth, vUv).r;
+    vec4 hit = uInvViewProj * vec4(vUv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+    vec3 ray = hit.xyz / hit.w - uCamPos;
+    float dist = d >= 1.0 ? 2000.0 : length(ray);
+    vec3 V = normalize(ray);
+
+    // Only the stretch of the ray that is in the water fogs.
+    float wdist = dist;
+    if (V.y > 0.0001)
+        wdist = min(dist, (uWaterLevel - uCamPos.y) / V.y);
+    vec3 T = exp(-kFogExtinction * wdist);
+    gl_FragColor = vec4(col * T + uFogColor * (1.0 - T) + texture2D(uShafts, vUv).rgb, 1.0);
+}
+)GLSL";
+
+// Drifting specks of sea snow around the camera (mode 0) and bubbles rising
+// from fixed sources to the surface (mode 1), drawn as point sprites.
+const char *kParticleVertex = R"GLSL(
+#version 120
+uniform vec3 uCamPos;
+uniform float uTime;
+uniform float uBox;
+uniform float uPointScale;
+uniform float uWaterLevel;
+uniform int uMode;
+varying float vFade;
+void main()
+{
+    vec3 p;
+    float size;
+    if (uMode == 0) {
+        // gl_Vertex holds a random seed; the specks wrap around the camera.
+        vec3 seed = gl_Vertex.xyz;
+        vec3 drift = vec3(sin(uTime * 0.11 + seed.y * 6.3) * 1.2,
+                          -uTime * (0.15 + 0.25 * seed.z),
+                          cos(uTime * 0.13 + seed.x * 6.3) * 1.2);
+        p = uCamPos + mod(seed * uBox + drift - uCamPos + 0.5 * uBox, uBox) - 0.5 * uBox;
+        size = 0.05 + 0.07 * seed.x;
+        vFade = 1.0 - smoothstep(0.3 * uBox, 0.5 * uBox, length(p - uCamPos));
+    } else {
+        // gl_Vertex.xyz is the source, w a random seed.
+        float seed = gl_Vertex.w;
+        float height = max(uWaterLevel - gl_Vertex.y, 1.0);
+        float rise = mod(uTime * (2.5 + 2.0 * fract(seed * 7.3)) + seed * height, height);
+        p = gl_Vertex.xyz + vec3(sin(uTime * 3.0 + seed * 40.0) * 0.3 + (fract(seed * 13.7) - 0.5) * 1.5,
+                                 rise,
+                                 cos(uTime * 2.6 + seed * 31.0) * 0.3 + (fract(seed * 5.1) - 0.5) * 1.5);
+        size = 0.12 + 0.16 * fract(seed * 3.7) + rise * 0.004;
+        vFade = 1.0 - smoothstep(height - 1.5, height, rise);
+    }
+    if (p.y > uWaterLevel)
+        vFade = 0.0;
+    vec4 eye = gl_ModelViewMatrix * vec4(p, 1.0);
+    gl_Position = gl_ProjectionMatrix * eye;
+    gl_PointSize = clamp(uPointScale * size / max(-eye.z, 0.1), 1.0, 24.0);
+}
+)GLSL";
+
+const char *kParticleFragment = R"GLSL(
+#version 120
+uniform int uMode;
+uniform vec3 uColor;
+varying float vFade;
+void main()
+{
+    vec2 c = gl_PointCoord * 2.0 - 1.0;
+    float r2 = dot(c, c);
+    if (r2 > 1.0)
+        discard;
+    float a = 1.0 - r2;
+    if (uMode != 0) {
+        // A thin bright rim and a highlight: a bubble.
+        vec2 h = c + vec2(0.35, -0.35);
+        a = smoothstep(0.45, 0.9, r2) * 0.9 + 0.8 * smoothstep(0.1, 0.0, dot(h, h));
+    }
+    gl_FragColor = vec4(uColor * a * vFade, 1.0);
 }
 )GLSL";
 
@@ -458,13 +633,19 @@ GLuint compile(GLenum type, const char *const *parts, int count, const char *nam
 }
 
 // Builds a program. useNoise puts "#version 120" and the noise helpers in
-// front of the fragment source.
-GLuint makeProgram(const char *vertex, const char *fragment, bool useNoise, const char *name)
+// front of the fragment source; useOptics adds the underwater optics too.
+GLuint makeProgram(const char *vertex, const char *fragment, bool useNoise, const char *name,
+                   bool useOptics = false)
 {
     const char *vparts[1] = {vertex};
     GLuint vs = compile(GL_VERTEX_SHADER, vparts, 1, name);
     GLuint fs = 0;
-    if (useNoise)
+    if (useOptics)
+    {
+        const char *fparts[4] = {"#version 120\n", kNoise, kUnderwaterOpticsGlsl, fragment};
+        fs = compile(GL_FRAGMENT_SHADER, fparts, 4, name);
+    }
+    else if (useNoise)
     {
         const char *fparts[3] = {"#version 120\n", kNoise, fragment};
         fs = compile(GL_FRAGMENT_SHADER, fparts, 3, name);
@@ -530,7 +711,7 @@ float smooth01(float e0, float e1, float x)
 
 } // namespace
 
-PostEffects::PostEffects() : waterLevel(-1.0f), islandHalfSize(100.0f)
+PostEffects::PostEffects() : waterLevel(-1.0f)
 {
     invalidate();
 }
@@ -552,6 +733,9 @@ void PostEffects::invalidate()
     m_rays = Target();
     m_skyProgram = m_waterProgram = m_ssaoProgram = m_aoApplyProgram = 0;
     m_brightProgram = m_blurProgram = m_raysProgram = m_compositeProgram = 0;
+    m_underwaterProgram = m_shaftsProgram = m_particleProgram = 0;
+    for (int i = 0; i < 3; ++i)
+        m_camera[i] = m_deepColor[i] = 0.0f;
     identity(m_view);
     identity(m_proj);
     identity(m_invProj);
@@ -577,9 +761,13 @@ bool PostEffects::init()
     m_blurProgram = makeProgram(kQuadVertex, kBlurFragment, false, "blur");
     m_raysProgram = makeProgram(kQuadVertex, kRaysFragment, false, "god rays");
     m_compositeProgram = makeProgram(kQuadVertex, kCompositeFragment, false, "composite");
+    m_shaftsProgram = makeProgram(kQuadVertex, kShaftsFragment, true, "light shafts", true);
+    m_underwaterProgram = makeProgram(kQuadVertex, kUnderwaterFragment, false, "underwater");
+    m_particleProgram = makeProgram(kParticleVertex, kParticleFragment, false, "particles");
 
     m_ok = m_skyProgram && m_waterProgram && m_ssaoProgram && m_aoApplyProgram && m_brightProgram &&
-           m_blurProgram && m_raysProgram && m_compositeProgram;
+           m_blurProgram && m_raysProgram && m_compositeProgram && m_underwaterProgram &&
+           m_shaftsProgram && m_particleProgram;
     return m_ok;
 }
 
@@ -761,68 +949,6 @@ void PostEffects::drawSky(const SkyState &sky, float time)
     glUseProgram(0);
 }
 
-void PostEffects::drawSeabed()
-{
-    // Grid lines spaced tightly near the island and loosely far out. The bed
-    // drops from a shallow beach to deep water.
-    const float steps[] = {0.0f,  3.0f,   8.0f,   15.0f,  25.0f,  40.0f,  60.0f,
-                           85.0f, 120.0f, 170.0f, 250.0f, 400.0f, 700.0f, 1200.0f};
-    const int stepCount = static_cast<int>(sizeof(steps) / sizeof(steps[0]));
-    float coords[2 * 14];
-    int n = 0;
-    for (int i = stepCount - 1; i >= 0; --i)
-        coords[n++] = -islandHalfSize - steps[i];
-    for (int i = 0; i < stepCount; ++i)
-        coords[n++] = islandHalfSize + steps[i];
-
-    const float half = islandHalfSize;
-    const float beach = waterLevel - 1.2f;
-    struct Bed
-    {
-        static float height(float x, float z, float half, float beach)
-        {
-            const float dx = fabsf(x) - half;
-            const float dz = fabsf(z) - half;
-            const float d = (dx > dz ? dx : dz) < 0.0f ? 0.0f : (dx > dz ? dx : dz);
-            return beach - 12.0f * smooth01(0.0f, 160.0f, d);
-        }
-    };
-
-    glBegin(GL_QUADS);
-    for (int i = 0; i + 1 < n; ++i)
-    {
-        for (int j = 0; j + 1 < n; ++j)
-        {
-            const float x0 = coords[i], x1 = coords[i + 1];
-            const float z0 = coords[j], z1 = coords[j + 1];
-            const float y00 = Bed::height(x0, z0, half, beach);
-            const float y10 = Bed::height(x1, z0, half, beach);
-            const float y01 = Bed::height(x0, z1, half, beach);
-            const float y11 = Bed::height(x1, z1, half, beach);
-            // Normal of the quad from its diagonals.
-            const float ax = x1 - x0, ay = y11 - y00, az = z1 - z0;
-            const float bx = x1 - x0, by = y10 - y01, bz = z0 - z1;
-            float nx = ay * bz - az * by;
-            float ny = az * bx - ax * bz;
-            float nz = ax * by - ay * bx;
-            if (ny < 0.0f)
-            {
-                nx = -nx;
-                ny = -ny;
-                nz = -nz;
-            }
-            glNormal3f(nx, ny, nz);
-            glColor3ub(194, 178, 128);
-            glVertex3f(x0, y00, z0);
-            glVertex3f(x0, y01, z1);
-            glVertex3f(x1, y11, z1);
-            glVertex3f(x1, y10, z0);
-        }
-    }
-
-    glEnd();
-}
-
 void PostEffects::applySSAO()
 {
     bindTarget(m_halfA);
@@ -853,7 +979,8 @@ void PostEffects::applySSAO()
     glUseProgram(0);
 }
 
-void PostEffects::drawWater(const AdvancedLighting &lighting, float time, bool orthographic)
+void PostEffects::drawWater(const AdvancedLighting &lighting, float time, bool orthographic,
+                            bool underwater)
 {
     // The water needs to see what is under it: copy colour and depth first,
     // because a texture cannot be read while it is being drawn into.
@@ -891,6 +1018,8 @@ void PostEffects::drawWater(const AdvancedLighting &lighting, float time, bool o
     glUniform3fv(loc(p, "uZenith"), 1, sky.zenith);
     glUniform3fv(loc(p, "uHorizon"), 1, sky.horizon);
     glUniform1f(loc(p, "uFogDensity"), orthographic ? 0.0f : 0.002f);
+    glUniform1i(loc(p, "uUnder"), underwater ? 1 : 0);
+    glUniform3fv(loc(p, "uDeepColor"), 1, m_deepColor);
 
     glPushAttrib(GL_ENABLE_BIT | GL_DEPTH_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);
@@ -911,6 +1040,132 @@ void PostEffects::drawWater(const AdvancedLighting &lighting, float time, bool o
     glUseProgram(0);
 }
 
+void PostEffects::setUnderwaterCamera(const float cameraPos[3], const SkyState &sky)
+{
+    // The water around the camera: blue-green by day, darker the deeper
+    // the camera is, nearly black at night.
+    const float depth = fmaxf(waterLevel - cameraPos[1], 0.0f);
+    const float base[3] = {0.006f, 0.034f, 0.085f};
+    const float absorb[3] = {0.050f, 0.024f, 0.018f};
+    const float light = 0.08f + 0.92f * sky.day;
+    for (int i = 0; i < 3; ++i)
+    {
+        m_camera[i] = cameraPos[i];
+        m_deepColor[i] = base[i] * light * expf(-absorb[i] * depth * 0.6f);
+    }
+}
+
+void PostEffects::drawParticles(const SkyState &sky, float time)
+{
+    if (m_specks.empty())
+    {
+        for (int i = 0; i < 1400; ++i)
+            for (int k = 0; k < 3; ++k)
+            {
+                unsigned int h = static_cast<unsigned int>(i * 3 + k) * 2654435761u;
+                h ^= h >> 15;
+                h *= 2246822519u;
+                h ^= h >> 13;
+                m_specks.push_back(static_cast<float>(h % 10000u) / 10000.0f);
+            }
+    }
+
+    const GLuint p = m_particleProgram;
+    glUseProgram(p);
+    glUniform3fv(loc(p, "uCamPos"), 1, m_camera);
+    glUniform1f(loc(p, "uTime"), time);
+    glUniform1f(loc(p, "uBox"), 36.0f);
+    glUniform1f(loc(p, "uPointScale"), m_proj[5] * 0.5f * static_cast<float>(m_height));
+    glUniform1f(loc(p, "uWaterLevel"), waterLevel);
+
+    glPushAttrib(GL_ENABLE_BIT | GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ONE);
+    glEnable(GL_PROGRAM_POINT_SIZE);
+    glEnable(GL_POINT_SPRITE);
+
+    const float light = 0.1f + 0.9f * sky.day;
+    glUniform1i(loc(p, "uMode"), 0);
+    glUniform3f(loc(p, "uColor"), 0.05f * light, 0.09f * light, 0.10f * light);
+    glBegin(GL_POINTS);
+    for (size_t i = 0; i + 2 < m_specks.size(); i += 3)
+        glVertex3f(m_specks[i], m_specks[i + 1], m_specks[i + 2]);
+    glEnd();
+
+    glUniform1i(loc(p, "uMode"), 1);
+    glUniform3f(loc(p, "uColor"), 0.25f * light + 0.03f, 0.42f * light + 0.05f,
+                0.5f * light + 0.06f);
+    glBegin(GL_POINTS);
+    for (size_t s = 0; s + 2 < bubbleSources.size(); s += 3)
+        for (int i = 0; i < 16; ++i)
+        {
+            const float seed = static_cast<float>((s / 3) * 16 + static_cast<size_t>(i)) * 0.137f;
+            glVertex4f(bubbleSources[s], bubbleSources[s + 1], bubbleSources[s + 2],
+                       seed - floorf(seed));
+        }
+    glEnd();
+
+    glPopAttrib();
+    glUseProgram(0);
+}
+
+void PostEffects::applyUnderwater(const AdvancedLighting &lighting, float time)
+{
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, m_scene.fbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_copy.fbo);
+    glBlitFramebuffer(0, 0, m_width, m_height, 0, 0, m_width, m_height,
+                      GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT,
+                      GL_NEAREST);
+
+    float viewProj[16];
+    float invViewProj[16];
+    multiply(m_proj, m_view, viewProj);
+    if (!invert(viewProj, invViewProj))
+        identity(invViewProj);
+    const SkyState &sky = lighting.sky();
+
+    // Light shafts at half size (the expensive part), blurred a little to
+    // hide the dither.
+    bindTarget(m_rays);
+    GLuint p = m_shaftsProgram;
+    glUseProgram(p);
+    bindTexture(0, m_copy.depth);
+    bindTexture(1, lighting.shadowTexture());
+    glUniform1i(loc(p, "uDepth"), 0);
+    glUniform1i(loc(p, "uShadowMap"), 1);
+    glUniformMatrix4fv(loc(p, "uLightMatrix"), 1, GL_FALSE, lighting.lightMatrix());
+    glUniform1i(loc(p, "uShadowsOn"), lighting.shadowMapValid() ? 1 : 0);
+    glUniformMatrix4fv(loc(p, "uInvViewProj"), 1, GL_FALSE, invViewProj);
+    glUniform3fv(loc(p, "uCamPos"), 1, m_camera);
+    glUniform3fv(loc(p, "uLightDir"), 1, sky.lightDir);
+    glUniform3fv(loc(p, "uLightColor"), 1, sky.lightColor);
+    glUniform1f(loc(p, "uWaterLevel"), waterLevel);
+    glUniform1f(loc(p, "uTime"), time);
+    fullscreenQuad();
+    unbindTextures(2);
+    blur(m_rays, m_halfB, 1.0f);
+
+    // Fog the scene and add the shafts.
+    bindTarget(m_scene);
+    p = m_underwaterProgram;
+    glUseProgram(p);
+    bindTexture(0, m_copy.color);
+    bindTexture(1, m_copy.depth);
+    bindTexture(2, m_rays.color);
+    glUniform1i(loc(p, "uScene"), 0);
+    glUniform1i(loc(p, "uDepth"), 1);
+    glUniform1i(loc(p, "uShafts"), 2);
+    glUniformMatrix4fv(loc(p, "uInvViewProj"), 1, GL_FALSE, invViewProj);
+    glUniform3fv(loc(p, "uCamPos"), 1, m_camera);
+    glUniform3fv(loc(p, "uFogColor"), 1, m_deepColor);
+    glUniform1f(loc(p, "uWaterLevel"), waterLevel);
+    fullscreenQuad();
+    unbindTextures(3);
+    glUseProgram(0);
+}
+
 void PostEffects::blur(Target &src, Target &tmp, float radius)
 {
     glUseProgram(m_blurProgram);
@@ -927,7 +1182,7 @@ void PostEffects::blur(Target &src, Target &tmp, float radius)
     fullscreenQuad();
 }
 
-void PostEffects::finish(const SkyState &sky, bool bloom)
+void PostEffects::finish(const SkyState &sky, bool bloom, bool underwater)
 {
     float rayColor[3] = {0.0f, 0.0f, 0.0f};
 
@@ -952,7 +1207,7 @@ void PostEffects::finish(const SkyState &sky, bool bloom)
         for (int r = 0; r < 4; ++r)
             clip[r] = viewProj[r] * d[0] + viewProj[4 + r] * d[1] + viewProj[8 + r] * d[2] +
                       viewProj[12 + r] * d[3];
-        if (clip[3] > 0.0f && sky.sunDir[1] > 0.0f)
+        if (clip[3] > 0.0f && sky.sunDir[1] > 0.0f && !underwater)
         {
             const float u = clip[0] / clip[3] * 0.5f + 0.5f;
             const float v = clip[1] / clip[3] * 0.5f + 0.5f;
@@ -989,7 +1244,7 @@ void PostEffects::finish(const SkyState &sky, bool bloom)
     glUniform1i(loc(p, "uRays"), 2);
     glUniform1i(loc(p, "uBloomOn"), bloom ? 1 : 0);
     glUniform3fv(loc(p, "uRayColor"), 1, rayColor);
-    glUniform1f(loc(p, "uExposure"), 1.0f);
+    glUniform1f(loc(p, "uExposure"), underwater ? 1.3f : 1.0f);
     fullscreenQuad();
     unbindTextures(3);
     glUseProgram(0);
@@ -998,11 +1253,25 @@ void PostEffects::finish(const SkyState &sky, bool bloom)
 void renderAdvancedFrame(AdvancedLighting &lighting, PostEffects &effects, LightingFrame frame,
                          const EffectToggles &toggles, int width, int height, SceneCallbacks &scene)
 {
+    // Where the camera is, to know whether it is under water.
+    float view[16];
+    float invView[16];
+    glGetFloatv(GL_MODELVIEW_MATRIX, view);
+    if (!invert(view, invView))
+        identity(invView);
+    const float camera[3] = {invView[12], invView[13], invView[14]};
+    const bool underwater = toggles.water && !frame.orthographic && camera[1] < effects.waterLevel;
+    if (toggles.water)
+        frame.waterLevel = effects.waterLevel;
+    frame.cameraUnderwater = underwater;
+
     lighting.prepare(frame);
     if (frame.shadows)
     {
         lighting.beginShadowPass();
         scene.drawObjects(true);
+        if (toggles.water)
+            scene.drawUnderwater(true);
         lighting.endShadowPass();
     }
 
@@ -1010,6 +1279,8 @@ void renderAdvancedFrame(AdvancedLighting &lighting, PostEffects &effects, Light
     if (!post)
     {
         frame.hdr = false;
+        frame.waterLevel = -1e9f;
+        frame.cameraUnderwater = false;
         lighting.begin(frame);
         scene.drawGround();
         scene.drawObjects(false);
@@ -1021,8 +1292,10 @@ void renderAdvancedFrame(AdvancedLighting &lighting, PostEffects &effects, Light
     frame.hdr = true;
     effects.beginFrame(width, height);
     const SkyState &sky = lighting.sky();
+    if (underwater)
+        effects.setUnderwaterCamera(camera, sky);
 
-    if (toggles.water)
+    if (toggles.water && !underwater)
     {
         // Mirror the camera in the water plane: y -> 2h - y.
         effects.beginReflection();
@@ -1038,6 +1311,7 @@ void renderAdvancedFrame(AdvancedLighting &lighting, PostEffects &effects, Light
         reflected.clipBelowY = effects.waterLevel;
         lighting.begin(reflected);
         scene.drawGround();
+        scene.drawUnderwater(false); // the islet sticks out of the water
         scene.drawObjects(false);
         lighting.end();
         glDisable(GL_STENCIL_TEST);
@@ -1050,14 +1324,18 @@ void renderAdvancedFrame(AdvancedLighting &lighting, PostEffects &effects, Light
     lighting.begin(frame);
     scene.drawGround();
     if (toggles.water)
-        effects.drawSeabed();
+        scene.drawUnderwater(false);
     scene.drawObjects(false);
     lighting.end();
     glDisable(GL_STENCIL_TEST);
 
     if (toggles.ssao)
         effects.applySSAO();
+    if (underwater)
+        effects.drawParticles(sky, frame.time);
     if (toggles.water)
-        effects.drawWater(lighting, frame.time, frame.orthographic);
-    effects.finish(sky, toggles.bloom);
+        effects.drawWater(lighting, frame.time, frame.orthographic, underwater);
+    if (underwater)
+        effects.applyUnderwater(lighting, frame.time);
+    effects.finish(sky, toggles.bloom, underwater);
 }

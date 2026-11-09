@@ -51,6 +51,7 @@ class CTrack;
 #include "AdvancedLighting.h"
 #include "PostEffects.h"
 #include "GrassGround.h"
+#include "OceanWorld.h"
 #include "TrackRenderer.H"
 
 class TrainView : public Fl_Gl_Window
@@ -84,8 +85,10 @@ class TrainView : public Fl_Gl_Window
     void drawAdvanced();
     void fillLightingFrame(LightingFrame &frame);
 
-    // the grass island everything stands on (TrainViewEffects.cpp)
+    // the grass island everything stands on, and the sea floor around it
+    // (TrainViewEffects.cpp)
     void drawGround();
+    void drawUnderwater(bool shadowPass);
 
   public:
     ArcBallCam arcball; // keep an ArcBall for the UI
@@ -98,4 +101,5 @@ class TrainView : public Fl_Gl_Window
     AdvancedLighting lighting; // shadow maps, per-pixel light, headlight
     PostEffects effects;       // sky, water, SSAO, bloom, god rays
     GrassGround m_ground;      // grass blocks with dirt sides
+    OceanWorld m_ocean;        // blocky sea floor, reef, ruins, wreck and tunnel
 };

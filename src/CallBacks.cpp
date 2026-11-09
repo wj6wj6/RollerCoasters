@@ -25,6 +25,7 @@
 #include "TrainWindow.H"
 #include "TrainView.H"
 #include "CallBacks.H"
+#include "OceanWorld.h"
 
 #pragma warning(push)
 #pragma warning(disable : 4312)
@@ -169,6 +170,25 @@ void loadCB(Fl_Widget *, TrainWindow *tw)
         tw->damageMe();
     }
 }
+//***************************************************************************
+//
+// * Replace the track with the underwater demo ride and show it with the
+//   shader effects
+//===========================================================================
+void oceanRideCB(Fl_Widget *, TrainWindow *tw)
+//===========================================================================
+{
+    const std::vector<float> xyz = OceanWorld::demoTrack();
+    tw->m_Track.points.clear();
+    for (size_t i = 0; i + 2 < xyz.size(); i += 3)
+        tw->m_Track.points.push_back(ControlPoint(Pnt3f(xyz[i], xyz[i + 1], xyz[i + 2])));
+    tw->m_Track.trainU = 0;
+    tw->trainView->selectedCube = -1;
+    tw->lightingButton->value(1);
+    tw->waterButton->value(1);
+    tw->damageMe();
+}
+
 //***************************************************************************
 //
 // * Save the control points

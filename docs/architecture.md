@@ -19,8 +19,12 @@ flowchart LR
     Effects --> Frame[renderAdvancedFrame]
     Frame --> Lighting[AdvancedLighting / shadow map、逐像素光照、頭燈]
     Frame --> Post[PostEffects / 天空、水面、SSAO、Bloom、god rays、ACES]
-    Frame -->|drawGround / drawObjects| View
+    Frame -->|drawGround / drawUnderwater / drawObjects| View
     View --> Ground[GrassGround / 草方塊地面]
+    View --> Ocean[OceanWorld / 方塊海床、珊瑚、遺跡、沉船、水晶隧道]
+    Ground --> Pixel[PixelArt / 16×16 程序貼圖]
+    Ocean --> Pixel
+    Callbacks -->|Ocean Ride| Ocean
 ```
 
 `TrainWindow` 持有場景狀態與 widget；`TrainView` 讀取場景與 UI 選項並繪圖。
@@ -34,6 +38,15 @@ flowchart LR
 接著把場景畫進 16-bit 浮點 frame buffer，依序做 SSAO、水面（折射、反射、泡沫）、Bloom 與 god rays，最後 ACES 色調映射到視窗。
 光照 shader 是 GLSL 1.20，直接讀固定管線的 `gl_Vertex`、`gl_Normal`、`gl_Color` 與 texture unit 0，所以既有 `glBegin` 繪圖程式不需修改；
 未綁貼圖時 unit 0 的預設 texture 0 是一個白色 texel。shader 或 frame buffer 建立失敗時自動退回原本畫法。
+
+`Water` 開啟時另外畫 `OceanWorld`：海床是 128×14×128 的方塊格，建好後編成 display list。
+建置時先算 Minecraft 式的光照：天光沿開放的柱子直灌而下、每往旁邊一格少一級，水晶自己發光，
+角落再加 ambient occlusion，結果放進 texture unit 1 的座標（x 發光、y 擺動、z 水晶光、w 天光），所以隧道深處自然變暗。
+隧道和遺跡的門是沿著 `Ocean Ride` 的三種 spline 挖出來的，列車不會穿過方塊。
+光照 shader 對水面以下的像素依深度吸收陽光（紅光最先消失）並乘上 caustics；
+鏡頭在水下時改走水下流程：不畫反射，水面改從下方畫（Snell 窗），加上漂浮微粒與氣泡，
+再以半解析度沿視線 ray march shadow map 算出光束，最後全解析度套上水霧。
+caustics 與吸收係數放在 `UnderwaterOptics.h`，三個 shader 共用。
 
 軌道格式首行為控制點數，其後每行是位置 `x y z` 與可選方向 `x y z`。
 載入後 `trainU` 歸零。個人資料與來源程式分開保存；應以複本驗證讀取與還原。

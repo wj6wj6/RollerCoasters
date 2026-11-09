@@ -40,6 +40,12 @@ class TrainViewScene : public SceneCallbacks
             setupObjects();
         m_view->drawStuff(shadowPass);
     }
+    void drawUnderwater(bool shadowPass) override
+    {
+        if (!shadowPass)
+            setupFloor();
+        m_view->drawUnderwater(shadowPass);
+    }
 
   private:
     TrainView *m_view;
@@ -74,11 +80,20 @@ void trainUpVector(const Pnt3f &forward, Pnt3f &up)
 
 //************************************************************************
 //
-// * The 200 x 200 grass island (5 x 5 blocks) with dirt sides
+// * The 200 x 200 grass island (5 x 5 blocks), one block deep
 //========================================================================
 void TrainView::drawGround()
 {
-    m_ground.draw(200.0f, 40, -4.0f);
+    m_ground.draw(200.0f, 40, -5.0f);
+}
+
+//************************************************************************
+//
+// * The sea floor around the island, with the fish moving
+//========================================================================
+void TrainView::drawUnderwater(bool shadowPass)
+{
+    m_ocean.draw(shadowPass, secondsSinceStart());
 }
 
 //************************************************************************
@@ -104,6 +119,10 @@ void TrainView::drawAdvanced()
     toggles.bloom = tw->bloomButton->value() != 0;
     toggles.ssao = tw->ssaoButton->value() != 0;
 
+    if (effects.bubbleSources.empty())
+        effects.bubbleSources = OceanWorld::bubbleSources();
+    effects.waterLevel = OceanWorld::waterLevel();
+
     TrainViewScene scene(this);
     renderAdvancedFrame(lighting, effects, frame, toggles, w(), h(), scene);
 }
@@ -125,6 +144,8 @@ void TrainView::fillLightingFrame(LightingFrame &frame)
     // holds them and grow it to include every control point.
     float lo[3] = {-92.0f, 0.0f, -92.0f};
     float hi[3] = {92.0f, 24.0f, 92.0f};
+    if (tw->waterButton->value())
+        OceanWorld::shadowBounds(lo, hi); // the islet, ruins and wreck too
     for (size_t i = 0; i < m_pTrack->points.size(); ++i)
     {
         const Pnt3f &p = m_pTrack->points[i].pos;

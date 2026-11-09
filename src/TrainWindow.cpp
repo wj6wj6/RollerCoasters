@@ -178,6 +178,12 @@ TrainWindow::TrainWindow(const int x, const int y)
         timeOfDay->callback((Fl_Callback *)damageCB, this);
         timeOfDay->tooltip("Hour of the day: moves the sun and its shadows (needs Light+)");
 
+        pty += 25;
+        Fl_Button *ocean = new Fl_Button(605, pty, 190, 20, "Ocean Ride");
+        ocean->callback((Fl_Callback *)oceanRideCB, this);
+        ocean->tooltip("Load a ride that dives under the sea: reef, kelp, ruins, a wreck\n"
+                       "and a crystal tunnel. Watch it from the Train view.");
+
         pty += 30;
 
         // TODO: add widgets for all of your fancier features here
