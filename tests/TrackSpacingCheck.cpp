@@ -22,8 +22,8 @@ static float arcLengthBetween(const CTrack &track, TrackSplineType type, float u
     Pnt3f previous = track.evaluatePosition(u0, type);
     for (int i = 1; i <= steps; ++i)
     {
-        const Pnt3f current =
-            track.evaluatePosition(u0 + (u1 - u0) * static_cast<float>(i) / static_cast<float>(steps), type);
+        const Pnt3f current = track.evaluatePosition(
+            u0 + (u1 - u0) * static_cast<float>(i) / static_cast<float>(steps), type);
         length += distanceBetween(previous, current);
         previous = current;
     }

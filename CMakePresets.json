@@ -1,0 +1,34 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "windows",
+      "displayName": "Windows x64 / Visual Studio 2022",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/out/build/windows",
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Debug;Release",
+        "ROLLERCOASTERS_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "clang",
+      "displayName": "Windows x64 / clang-cl / Ninja Multi-Config",
+      "generator": "Ninja Multi-Config",
+      "binaryDir": "${sourceDir}/out/build/clang",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang-cl.exe",
+        "CMAKE_CXX_COMPILER": "clang-cl.exe",
+        "CMAKE_CONFIGURATION_TYPES": "Debug;Release",
+        "ROLLERCOASTERS_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "analyze",
+      "inherits": "windows",
+      "binaryDir": "${sourceDir}/out/build/analyze",
+      "cacheVariables": {"ROLLERCOASTERS_ANALYZE": "ON"}
+    }
+  ]
+}

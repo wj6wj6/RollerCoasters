@@ -13,6 +13,7 @@
 #include <glad/glad.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <math.h>
 
 #include "TrackRenderer.H"
@@ -64,7 +65,7 @@ unsigned char clampByte(int value)
 
 void setTexel(std::vector<unsigned char> &pixels, int x, int y, int r, int g, int b, int noise)
 {
-    const int index = (y * kTextureSize + x) * 4;
+    const size_t index = (static_cast<size_t>(y) * kTextureSize + static_cast<size_t>(x)) * 4;
     pixels[index + 0] = clampByte(r + noise);
     pixels[index + 1] = clampByte(g + noise);
     pixels[index + 2] = clampByte(b + noise);
@@ -75,7 +76,7 @@ void setTexel(std::vector<unsigned char> &pixels, int x, int y, int r, int g, in
 // each sleeper shows a different band, starting with its darker seam row.
 std::vector<unsigned char> makeWoodPixels()
 {
-    std::vector<unsigned char> pixels(kTextureSize * kTextureSize * 4);
+    std::vector<unsigned char> pixels(static_cast<size_t>(kTextureSize) * kTextureSize * 4);
     for (int y = 0; y < kTextureSize; ++y)
     {
         const int rowInBand = y % 4;
@@ -116,7 +117,7 @@ std::vector<unsigned char> makeWoodPixels()
 // with a darker joint every 16 texels and a few speckles.
 std::vector<unsigned char> makeIronPixels()
 {
-    std::vector<unsigned char> pixels(kTextureSize * kTextureSize * 4);
+    std::vector<unsigned char> pixels(static_cast<size_t>(kTextureSize) * kTextureSize * 4);
     for (int y = 0; y < kTextureSize; ++y)
     {
         const int band = y < 5 ? 0 : (y < 11 ? 1 : 2);
@@ -173,16 +174,18 @@ unsigned int uploadPixelTexture(std::vector<unsigned char> pixels)
         if (size == 1)
             break;
         const int half = size / 2;
-        std::vector<unsigned char> smaller(half * half * 4);
-        for (int y = 0; y < half; ++y)
-            for (int x = 0; x < half; ++x)
-                for (int c = 0; c < 4; ++c)
+        const size_t source = static_cast<size_t>(size);
+        const size_t target = static_cast<size_t>(half);
+        std::vector<unsigned char> smaller(target * target * 4);
+        for (size_t y = 0; y < target; ++y)
+            for (size_t x = 0; x < target; ++x)
+                for (size_t c = 0; c < 4; ++c)
                 {
-                    const int sum = pixels[((2 * y) * size + 2 * x) * 4 + c] +
-                                    pixels[((2 * y) * size + 2 * x + 1) * 4 + c] +
-                                    pixels[((2 * y + 1) * size + 2 * x) * 4 + c] +
-                                    pixels[((2 * y + 1) * size + 2 * x + 1) * 4 + c];
-                    smaller[(y * half + x) * 4 + c] = static_cast<unsigned char>(sum / 4);
+                    const int sum = pixels[((2 * y) * source + 2 * x) * 4 + c] +
+                                    pixels[((2 * y) * source + 2 * x + 1) * 4 + c] +
+                                    pixels[((2 * y + 1) * source + 2 * x) * 4 + c] +
+                                    pixels[((2 * y + 1) * source + 2 * x + 1) * 4 + c];
+                    smaller[(y * target + x) * 4 + c] = static_cast<unsigned char>(sum / 4);
                 }
         pixels.swap(smaller);
         size = half;
