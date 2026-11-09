@@ -21,6 +21,8 @@ add_executable(RollerCoasters
     ${SRC_DIR}Object.h
     ${SRC_DIR}Track.h
     ${SRC_DIR}Track.cpp
+    ${SRC_DIR}TrackRenderer.H
+    ${SRC_DIR}TrackRenderer.cpp
     ${SRC_DIR}TrainView.h
     ${SRC_DIR}TrainView.cpp
     ${SRC_DIR}TrainWindow.h
@@ -60,5 +62,14 @@ if(ROLLERCOASTERS_BUILD_TESTS)
         debug ${LIB_DIR}Debug/fltkd.lib optimized ${LIB_DIR}Release/fltk.lib
         ${LIB_DIR}OpenGL32.lib ${LIB_DIR}glu32.lib)
     add_test(NAME GestureMotionCheck COMMAND GestureMotionCheck)
+
+    add_executable(TrackSpacingCheck tests/TrackSpacingCheck.cpp
+        ${SRC_DIR}Track.cpp ${SRC_DIR}ControlPoint.cpp ${SRC_DIR}TrackRenderer.cpp
+        ${INCLUDE_DIR}glad4.6/src/glad.c)
+    target_include_directories(TrackSpacingCheck PRIVATE ${SRC_DIR})
+    target_link_libraries(TrackSpacingCheck Utilities
+        debug ${LIB_DIR}Debug/fltkd.lib optimized ${LIB_DIR}Release/fltk.lib
+        ${LIB_DIR}OpenGL32.lib ${LIB_DIR}glu32.lib)
+    add_test(NAME TrackSpacingCheck COMMAND TrackSpacingCheck)
 endif()
     
