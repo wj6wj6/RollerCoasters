@@ -22,7 +22,7 @@ namespace
 
 const int kShadowMapSize = 2048;
 
-const char* kVertexShader = R"GLSL(
+const char *kVertexShader = R"GLSL(
 #version 120
 // World space is recovered from the fixed function modelview matrix, so the
 // existing glBegin/glEnd drawing code works unchanged.
@@ -41,6 +41,7 @@ void main()
     mat3 invViewRot = mat3(uInvView[0].xyz, uInvView[1].xyz, uInvView[2].xyz);
     vWorldNormal = invViewRot * (gl_NormalMatrix * gl_Normal);
     vColor = gl_Color;
+    gl_TexCoord[0] = gl_MultiTexCoord0;
 
     // Leaves sway in the wind: green vertices above the trunk height move,
     // more the higher they are, with a phase that depends on position.
@@ -58,7 +59,7 @@ void main()
 }
 )GLSL";
 
-const char* kFragmentShader = R"GLSL(
+const char *kFragmentShader = R"GLSL(
 #version 120
 uniform mat4 uInvView;
 uniform mat4 uLightMatrix;     // world -> shadow map texture coordinates
@@ -83,6 +84,7 @@ uniform vec3 uHeadColor;
 uniform int uUnlit;
 uniform int uHdr;              // 1: linear HDR out for the post effects
 uniform float uClipY;          // reflections: nothing below the water
+uniform sampler2D uTexture;    // unit 0; plain white when nothing is bound
 
 varying vec3 vWorldPos;
 varying vec3 vWorldNormal;
@@ -121,7 +123,8 @@ void main()
         discard;
     vec3 n = normalize(vWorldNormal);
     vec3 cameraPos = uInvView[3].xyz;
-    vec3 albedo = pow(vColor.rgb, vec3(2.2));
+    vec4 base = vColor * texture2D(uTexture, gl_TexCoord[0].st);
+    vec3 albedo = pow(base.rgb, vec3(2.2));
 
     float shadow = 1.0;
     if (uShadowsOn != 0)
@@ -153,7 +156,7 @@ void main()
     if (uHdr != 0) {
         // Tone mapping happens in the final post pass.
         color = mix(uFogColor, color, exp(-dist * dist));
-        gl_FragColor = vec4(color, vColor.a);
+        gl_FragColor = vec4(color, base.a);
         return;
     }
 
@@ -161,7 +164,7 @@ void main()
     color = color / (1.0 + color * 0.25) * 1.25;
     color = mix(uFogColor, color, exp(-dist * dist));
 
-    gl_FragColor = vec4(pow(clamp(color, 0.0, 1.0), vec3(1.0 / 2.2)), vColor.a);
+    gl_FragColor = vec4(pow(clamp(color, 0.0, 1.0), vec3(1.0 / 2.2)), base.a);
 }
 )GLSL";
 
@@ -171,7 +174,8 @@ void main()
 void normalize3(float v[3])
 {
     const float len = sqrtf(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
-    if (len > 1e-6f) {
+    if (len > 1e-6f)
+    {
         v[0] /= len;
         v[1] /= len;
         v[2] /= len;
@@ -256,14 +260,15 @@ void sunDirection(float timeOfDay, float dir[3])
     normalize3(dir);
 }
 
-GLuint compileShader(GLenum type, const char* source)
+GLuint compileShader(GLenum type, const char *source)
 {
     GLuint shader = glCreateShader(type);
     glShaderSource(shader, 1, &source, nullptr);
     glCompileShader(shader);
     GLint ok = GL_FALSE;
     glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
-    if (ok != GL_TRUE) {
+    if (ok != GL_TRUE)
+    {
         char log[2048];
         glGetShaderInfoLog(shader, static_cast<GLsizei>(sizeof(log)), nullptr, log);
         fprintf(stderr, "AdvancedLighting: shader compile failed:\n%s\n", log);
@@ -316,14 +321,16 @@ bool AdvancedLighting::init()
     m_triedInit = true;
 
     // Shaders and framebuffer objects need OpenGL 2.0 and 3.0 (or the extensions).
-    if (!glCreateShader || !glGenFramebuffers || !glFramebufferTexture2D) {
+    if (!glCreateShader || !glGenFramebuffers || !glFramebufferTexture2D)
+    {
         fprintf(stderr, "AdvancedLighting: OpenGL 3.0 is not available, using basic lighting\n");
         return false;
     }
 
     GLuint vs = compileShader(GL_VERTEX_SHADER, kVertexShader);
     GLuint fs = compileShader(GL_FRAGMENT_SHADER, kFragmentShader);
-    if (!vs || !fs) {
+    if (!vs || !fs)
+    {
         if (vs)
             glDeleteShader(vs);
         if (fs)
@@ -339,7 +346,8 @@ bool AdvancedLighting::init()
     glDeleteShader(fs);
     GLint linked = GL_FALSE;
     glGetProgramiv(m_program, GL_LINK_STATUS, &linked);
-    if (linked != GL_TRUE) {
+    if (linked != GL_TRUE)
+    {
         char log[2048];
         glGetProgramInfoLog(m_program, static_cast<GLsizei>(sizeof(log)), nullptr, log);
         fprintf(stderr, "AdvancedLighting: shader link failed:\n%s\n", log);
@@ -371,6 +379,19 @@ bool AdvancedLighting::init()
     m_locTime = glGetUniformLocation(m_program, "uTime");
     m_locWind = glGetUniformLocation(m_program, "uWind");
     m_locView = glGetUniformLocation(m_program, "uView");
+    m_locTexture = glGetUniformLocation(m_program, "uTexture");
+
+    // Textured drawing code (glBindTexture on unit 0) keeps working through the
+    // shader. Untextured code leaves the default texture object 0 bound, so
+    // give that one a single white texel: multiplying by it changes nothing.
+    {
+        const GLubyte white[4] = {255, 255, 255, 255};
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, white);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    }
 
     // Depth texture with hardware comparison, so shadow2D() returns 0 or 1
     // (bilinearly filtered between the four nearest texels).
@@ -392,13 +413,13 @@ bool AdvancedLighting::init()
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previous);
     glGenFramebuffers(1, &m_shadowFbo);
     glBindFramebuffer(GL_FRAMEBUFFER, m_shadowFbo);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_shadowTexture,
-                           0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_shadowTexture, 0);
     glDrawBuffer(GL_NONE);
     glReadBuffer(GL_NONE);
     const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previous));
-    if (status != GL_FRAMEBUFFER_COMPLETE) {
+    if (status != GL_FRAMEBUFFER_COMPLETE)
+    {
         fprintf(stderr, "AdvancedLighting: shadow framebuffer incomplete (0x%x)\n", status);
         releaseFramebuffer();
         glDeleteProgram(m_program);
@@ -425,7 +446,7 @@ void AdvancedLighting::skyColor(float timeOfDay, float rgb[3])
     mix3(base, sunset, dusk * 0.7f, rgb);
 }
 
-void AdvancedLighting::prepare(const LightingFrame& frame)
+void AdvancedLighting::prepare(const LightingFrame &frame)
 {
     m_shadowMapValid = false;
     if (!m_ok)
@@ -433,8 +454,8 @@ void AdvancedLighting::prepare(const LightingFrame& frame)
 
     float sun[3];
     sunDirection(frame.timeOfDay, sun);
-    float* lightDir = m_sky.lightDir;
-    float* lightColor = m_sky.lightColor;
+    float *lightDir = m_sky.lightDir;
+    float *lightColor = m_sky.lightColor;
     for (int i = 0; i < 3; ++i)
         m_sky.sunDir[i] = sun[i];
     m_sky.moonDir[0] = -sun[0];
@@ -445,15 +466,19 @@ void AdvancedLighting::prepare(const LightingFrame& frame)
 
     // The sun lights the scene by day and the moon (opposite side, dim and
     // blue) by night. Shadows always come from whichever one is up.
-    if (sun[1] > 0.0f) {
+    if (sun[1] > 0.0f)
+    {
         const float white[3] = {1.0f, 0.95f, 0.86f};
         const float orange[3] = {1.0f, 0.55f, 0.28f};
         mix3(white, orange, dusk, lightColor);
-        for (int i = 0; i < 3; ++i) {
+        for (int i = 0; i < 3; ++i)
+        {
             lightColor[i] *= 1.3f * day;
             lightDir[i] = sun[i];
         }
-    } else {
+    }
+    else
+    {
         const float moon[3] = {0.025f, 0.035f, 0.07f};
         for (int i = 0; i < 3; ++i)
             lightColor[i] = moon[i] * (1.0f - day);
@@ -462,7 +487,8 @@ void AdvancedLighting::prepare(const LightingFrame& frame)
         lightDir[2] = sun[2];
     }
     // Keep the light a little above the horizon so shadows stay finite.
-    if (lightDir[1] < 0.12f) {
+    if (lightDir[1] < 0.12f)
+    {
         lightDir[1] = 0.12f;
         normalize3(lightDir);
     }
@@ -491,7 +517,8 @@ void AdvancedLighting::prepare(const LightingFrame& frame)
     // Orthographic light camera that encloses every shadow caster.
     float center[3];
     float radius = 0.0f;
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 3; ++i)
+    {
         center[i] = 0.5f * (frame.casterMin[i] + frame.casterMax[i]);
         const float half = 0.5f * (frame.casterMax[i] - frame.casterMin[i]);
         radius += half * half;
@@ -567,7 +594,7 @@ void AdvancedLighting::endShadowPass()
     m_shadowMapValid = true;
 }
 
-void AdvancedLighting::begin(const LightingFrame& frame)
+void AdvancedLighting::begin(const LightingFrame &frame)
 {
     if (!m_ok)
         return;
@@ -593,6 +620,7 @@ void AdvancedLighting::begin(const LightingFrame& frame)
     glUniform1f(m_locClipY, frame.clipBelowY);
     glUniform1f(m_locTime, frame.time);
     glUniform1i(m_locWind, frame.wind ? 1 : 0);
+    glUniform1i(m_locTexture, 0);
     glUniform3fv(m_locSkyAmbient, 1, m_skyAmbient);
     glUniform3fv(m_locGroundAmbient, 1, m_groundAmbient);
     glUniform3fv(m_locFogColor, 1, m_fogColor);
@@ -601,13 +629,15 @@ void AdvancedLighting::begin(const LightingFrame& frame)
 
     const bool headlight = frame.headlight && frame.hasTrain;
     glUniform1i(m_locHeadlightOn, headlight ? 1 : 0);
-    if (headlight) {
+    if (headlight)
+    {
         // The lamp sits on the orange nose of the train and tilts slightly down.
         float pos[3];
         float dir[3];
-        for (int i = 0; i < 3; ++i) {
-            pos[i] = frame.trainPosition[i] + frame.trainUp[i] * 1.4f +
-                     frame.trainForward[i] * 3.0f;
+        for (int i = 0; i < 3; ++i)
+        {
+            pos[i] =
+                frame.trainPosition[i] + frame.trainUp[i] * 1.4f + frame.trainForward[i] * 3.0f;
             dir[i] = frame.trainForward[i] - frame.trainUp[i] * 0.3f;
         }
         normalize3(dir);
@@ -620,6 +650,7 @@ void AdvancedLighting::begin(const LightingFrame& frame)
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, m_shadowTexture);
     glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, 0); // the white default texture
     m_active = true;
 }
 

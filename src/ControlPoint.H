@@ -27,22 +27,23 @@
 
 #include "Utilities/Pnt3f.H"
 
-class ControlPoint {
-	public:
-		// constructors
-		// need a default constructor for making arrays
-		ControlPoint();					
-		
-		// create in a position
-		ControlPoint(const Pnt3f& pos);	
+class ControlPoint
+{
+  public:
+    // constructors
+    // need a default constructor for making arrays
+    ControlPoint();
 
-		// Create in a position and orientation
-		ControlPoint(const Pnt3f& pos, const Pnt3f& orient);
+    // create in a position
+    ControlPoint(const Pnt3f &pos);
 
-		// draw the control point - assumes the color is correct
-		void draw();
+    // Create in a position and orientation
+    ControlPoint(const Pnt3f &pos, const Pnt3f &orient);
 
-	public:
-		Pnt3f pos;         // Position of this control point
-		Pnt3f orient;		 // Orientation of this control point
+    // draw the control point - assumes the color is correct
+    void draw();
+
+  public:
+    Pnt3f pos;    // Position of this control point
+    Pnt3f orient; // Orientation of this control point
 };

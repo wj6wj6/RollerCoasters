@@ -66,11 +66,11 @@ class PostEffects
     void beginReflection();
     void endReflection();
     void beginScene();
-    void drawSky(const SkyState& sky, float time);
+    void drawSky(const SkyState &sky, float time);
     void drawSeabed();
     void applySSAO();
-    void drawWater(const AdvancedLighting& lighting, float time, bool orthographic);
-    void finish(const SkyState& sky, bool bloom);
+    void drawWater(const AdvancedLighting &lighting, float time, bool orthographic);
+    void finish(const SkyState &sky, bool bloom);
 
   private:
     struct Target
@@ -83,12 +83,12 @@ class PostEffects
         int height = 0;
     };
 
-    void createTarget(Target& t, int width, int height, bool withDepth, bool depthRenderbuffer);
-    void releaseTarget(Target& t);
+    void createTarget(Target &t, int width, int height, bool withDepth, bool depthRenderbuffer);
+    void releaseTarget(Target &t);
     void releaseTargets();
-    void bindTarget(const Target& t);
+    void bindTarget(const Target &t);
     void fullscreenQuad();
-    void blur(Target& src, Target& tmp, float radius);
+    void blur(Target &src, Target &tmp, float radius);
 
     bool m_triedInit;
     bool m_ok;
@@ -123,6 +123,6 @@ class PostEffects
 // Expects the camera projection on GL_PROJECTION and the view on GL_MODELVIEW.
 // When the post effects are all off (or unavailable) it draws straight to the
 // window like before.
-void renderAdvancedFrame(AdvancedLighting& lighting, PostEffects& effects, LightingFrame frame,
-                         const EffectToggles& toggles, int width, int height,
-                         SceneCallbacks& scene);
+void renderAdvancedFrame(AdvancedLighting &lighting, PostEffects &effects, LightingFrame frame,
+                         const EffectToggles &toggles, int width, int height,
+                         SceneCallbacks &scene);

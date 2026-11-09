@@ -26,7 +26,7 @@ namespace
 // ---------------------------------------------------------------------
 
 // Full screen triangle pair: the quad is drawn in clip space.
-const char* kQuadVertex = R"GLSL(
+const char *kQuadVertex = R"GLSL(
 #version 120
 varying vec2 vUv;
 void main()
@@ -37,7 +37,7 @@ void main()
 )GLSL";
 
 // Shared noise helpers, pasted in front of the shaders that use them.
-const char* kNoise = R"GLSL(
+const char *kNoise = R"GLSL(
 float hash2(vec2 p)
 {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -67,7 +67,7 @@ float fbm(vec2 p)
 }
 )GLSL";
 
-const char* kSkyFragment = R"GLSL(
+const char *kSkyFragment = R"GLSL(
 varying vec2 vUv;
 uniform mat4 uInvViewProj;
 uniform vec3 uSunDir;
@@ -126,7 +126,7 @@ void main()
 }
 )GLSL";
 
-const char* kWaterVertex = R"GLSL(
+const char *kWaterVertex = R"GLSL(
 #version 120
 varying vec3 vWorld;
 void main()
@@ -137,7 +137,7 @@ void main()
 }
 )GLSL";
 
-const char* kWaterFragment = R"GLSL(
+const char *kWaterFragment = R"GLSL(
 varying vec3 vWorld;
 uniform sampler2D uReflection;
 uniform sampler2D uRefraction;
@@ -256,7 +256,7 @@ void main()
 }
 )GLSL";
 
-const char* kSsaoFragment = R"GLSL(
+const char *kSsaoFragment = R"GLSL(
 varying vec2 vUv;
 uniform sampler2D uDepth;
 uniform mat4 uProj;
@@ -327,7 +327,7 @@ void main()
 )GLSL";
 
 // Blurs the half size AO and outputs a multiplier (blended with DST * SRC).
-const char* kAoApplyFragment = R"GLSL(
+const char *kAoApplyFragment = R"GLSL(
 #version 120
 varying vec2 vUv;
 uniform sampler2D uAO;
@@ -344,7 +344,7 @@ void main()
 }
 )GLSL";
 
-const char* kBrightFragment = R"GLSL(
+const char *kBrightFragment = R"GLSL(
 #version 120
 varying vec2 vUv;
 uniform sampler2D uScene;
@@ -361,7 +361,7 @@ void main()
 }
 )GLSL";
 
-const char* kBlurFragment = R"GLSL(
+const char *kBlurFragment = R"GLSL(
 #version 120
 varying vec2 vUv;
 uniform sampler2D uSrc;
@@ -379,7 +379,7 @@ void main()
 
 // Marches from each pixel towards the sun and collects the open sky it
 // passes: anything in between (trees, the train) leaves a dark streak.
-const char* kRaysFragment = R"GLSL(
+const char *kRaysFragment = R"GLSL(
 #version 120
 varying vec2 vUv;
 uniform sampler2D uDepth;
@@ -408,7 +408,7 @@ void main()
 }
 )GLSL";
 
-const char* kCompositeFragment = R"GLSL(
+const char *kCompositeFragment = R"GLSL(
 #version 120
 varying vec2 vUv;
 uniform sampler2D uScene;
@@ -439,14 +439,15 @@ void main()
 }
 )GLSL";
 
-GLuint compile(GLenum type, const char* const* parts, int count, const char* name)
+GLuint compile(GLenum type, const char *const *parts, int count, const char *name)
 {
     GLuint shader = glCreateShader(type);
     glShaderSource(shader, count, parts, nullptr);
     glCompileShader(shader);
     GLint ok = GL_FALSE;
     glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
-    if (ok != GL_TRUE) {
+    if (ok != GL_TRUE)
+    {
         char log[2048];
         glGetShaderInfoLog(shader, static_cast<GLsizei>(sizeof(log)), nullptr, log);
         fprintf(stderr, "PostEffects: %s shader failed:\n%s\n", name, log);
@@ -458,19 +459,23 @@ GLuint compile(GLenum type, const char* const* parts, int count, const char* nam
 
 // Builds a program. useNoise puts "#version 120" and the noise helpers in
 // front of the fragment source.
-GLuint makeProgram(const char* vertex, const char* fragment, bool useNoise, const char* name)
+GLuint makeProgram(const char *vertex, const char *fragment, bool useNoise, const char *name)
 {
-    const char* vparts[1] = {vertex};
+    const char *vparts[1] = {vertex};
     GLuint vs = compile(GL_VERTEX_SHADER, vparts, 1, name);
     GLuint fs = 0;
-    if (useNoise) {
-        const char* fparts[3] = {"#version 120\n", kNoise, fragment};
+    if (useNoise)
+    {
+        const char *fparts[3] = {"#version 120\n", kNoise, fragment};
         fs = compile(GL_FRAGMENT_SHADER, fparts, 3, name);
-    } else {
-        const char* fparts[1] = {fragment};
+    }
+    else
+    {
+        const char *fparts[1] = {fragment};
         fs = compile(GL_FRAGMENT_SHADER, fparts, 1, name);
     }
-    if (!vs || !fs) {
+    if (!vs || !fs)
+    {
         if (vs)
             glDeleteShader(vs);
         if (fs)
@@ -485,7 +490,8 @@ GLuint makeProgram(const char* vertex, const char* fragment, bool useNoise, cons
     glDeleteShader(fs);
     GLint linked = GL_FALSE;
     glGetProgramiv(program, GL_LINK_STATUS, &linked);
-    if (linked != GL_TRUE) {
+    if (linked != GL_TRUE)
+    {
         char log[2048];
         glGetProgramInfoLog(program, static_cast<GLsizei>(sizeof(log)), nullptr, log);
         fprintf(stderr, "PostEffects: %s link failed:\n%s\n", name, log);
@@ -495,7 +501,7 @@ GLuint makeProgram(const char* vertex, const char* fragment, bool useNoise, cons
     return program;
 }
 
-GLint loc(GLuint program, const char* name)
+GLint loc(GLuint program, const char *name)
 {
     return glGetUniformLocation(program, name);
 }
@@ -508,7 +514,8 @@ void bindTexture(int unit, GLuint texture)
 
 void unbindTextures(int count)
 {
-    for (int i = count - 1; i >= 0; --i) {
+    for (int i = count - 1; i >= 0; --i)
+    {
         glActiveTexture(static_cast<GLenum>(GL_TEXTURE0 + i));
         glBindTexture(GL_TEXTURE_2D, 0);
     }
@@ -556,7 +563,8 @@ bool PostEffects::init()
         return m_ok;
     m_triedInit = true;
 
-    if (!glCreateShader || !glGenFramebuffers || !glBlitFramebuffer) {
+    if (!glCreateShader || !glGenFramebuffers || !glBlitFramebuffer)
+    {
         fprintf(stderr, "PostEffects: OpenGL 3.0 is not available\n");
         return false;
     }
@@ -570,12 +578,12 @@ bool PostEffects::init()
     m_raysProgram = makeProgram(kQuadVertex, kRaysFragment, false, "god rays");
     m_compositeProgram = makeProgram(kQuadVertex, kCompositeFragment, false, "composite");
 
-    m_ok = m_skyProgram && m_waterProgram && m_ssaoProgram && m_aoApplyProgram &&
-           m_brightProgram && m_blurProgram && m_raysProgram && m_compositeProgram;
+    m_ok = m_skyProgram && m_waterProgram && m_ssaoProgram && m_aoApplyProgram && m_brightProgram &&
+           m_blurProgram && m_raysProgram && m_compositeProgram;
     return m_ok;
 }
 
-void PostEffects::createTarget(Target& t, int width, int height, bool withDepth,
+void PostEffects::createTarget(Target &t, int width, int height, bool withDepth,
                                bool depthRenderbuffer)
 {
     t.width = width;
@@ -594,19 +602,23 @@ void PostEffects::createTarget(Target& t, int width, int height, bool withDepth,
     glBindFramebuffer(GL_FRAMEBUFFER, t.fbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, t.color, 0);
 
-    if (withDepth) {
-        if (depthRenderbuffer) {
+    if (withDepth)
+    {
+        if (depthRenderbuffer)
+        {
             glGenRenderbuffers(1, &t.depth);
             glBindRenderbuffer(GL_RENDERBUFFER, t.depth);
             glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, width, height);
             glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER,
                                       t.depth);
             glBindRenderbuffer(GL_RENDERBUFFER, 0);
-        } else {
+        }
+        else
+        {
             glGenTextures(1, &t.depth);
             glBindTexture(GL_TEXTURE_2D, t.depth);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, width, height, 0,
-                         GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, nullptr);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, width, height, 0, GL_DEPTH_STENCIL,
+                         GL_UNSIGNED_INT_24_8, nullptr);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -622,13 +634,14 @@ void PostEffects::createTarget(Target& t, int width, int height, bool withDepth,
         fprintf(stderr, "PostEffects: framebuffer incomplete (0x%x)\n", status);
 }
 
-void PostEffects::releaseTarget(Target& t)
+void PostEffects::releaseTarget(Target &t)
 {
     if (t.fbo)
         glDeleteFramebuffers(1, &t.fbo);
     if (t.color)
         glDeleteTextures(1, &t.color);
-    if (t.depth) {
+    if (t.depth)
+    {
         if (t.depthIsRenderbuffer)
             glDeleteRenderbuffers(1, &t.depth);
         else
@@ -647,7 +660,7 @@ void PostEffects::releaseTargets()
     releaseTarget(m_rays);
 }
 
-void PostEffects::bindTarget(const Target& t)
+void PostEffects::bindTarget(const Target &t)
 {
     glBindFramebuffer(GL_FRAMEBUFFER, t.fbo);
     glViewport(0, 0, t.width, t.height);
@@ -677,7 +690,8 @@ void PostEffects::beginFrame(int width, int height)
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &m_outputFbo);
     glGetIntegerv(GL_VIEWPORT, m_outputViewport);
 
-    if (width != m_width || height != m_height) {
+    if (width != m_width || height != m_height)
+    {
         releaseTargets();
         m_width = width;
         m_height = height;
@@ -716,7 +730,7 @@ void PostEffects::beginScene()
         identity(m_invProj);
 }
 
-void PostEffects::drawSky(const SkyState& sky, float time)
+void PostEffects::drawSky(const SkyState &sky, float time)
 {
     float view[16];
     float proj[16];
@@ -751,8 +765,8 @@ void PostEffects::drawSeabed()
 {
     // Grid lines spaced tightly near the island and loosely far out. The bed
     // drops from a shallow beach to deep water.
-    const float steps[] = {0.0f,   3.0f,   8.0f,   15.0f,  25.0f,  40.0f,  60.0f,
-                           85.0f,  120.0f, 170.0f, 250.0f, 400.0f, 700.0f, 1200.0f};
+    const float steps[] = {0.0f,  3.0f,   8.0f,   15.0f,  25.0f,  40.0f,  60.0f,
+                           85.0f, 120.0f, 170.0f, 250.0f, 400.0f, 700.0f, 1200.0f};
     const int stepCount = static_cast<int>(sizeof(steps) / sizeof(steps[0]));
     float coords[2 * 14];
     int n = 0;
@@ -775,8 +789,10 @@ void PostEffects::drawSeabed()
     };
 
     glBegin(GL_QUADS);
-    for (int i = 0; i + 1 < n; ++i) {
-        for (int j = 0; j + 1 < n; ++j) {
+    for (int i = 0; i + 1 < n; ++i)
+    {
+        for (int j = 0; j + 1 < n; ++j)
+        {
             const float x0 = coords[i], x1 = coords[i + 1];
             const float z0 = coords[j], z1 = coords[j + 1];
             const float y00 = Bed::height(x0, z0, half, beach);
@@ -789,7 +805,8 @@ void PostEffects::drawSeabed()
             float nx = ay * bz - az * by;
             float ny = az * bx - ax * bz;
             float nz = ax * by - ay * bx;
-            if (ny < 0.0f) {
+            if (ny < 0.0f)
+            {
                 nx = -nx;
                 ny = -ny;
                 nz = -nz;
@@ -858,7 +875,7 @@ void PostEffects::applySSAO()
     glUseProgram(0);
 }
 
-void PostEffects::drawWater(const AdvancedLighting& lighting, float time, bool orthographic)
+void PostEffects::drawWater(const AdvancedLighting &lighting, float time, bool orthographic)
 {
     // The water needs to see what is under it: copy colour and depth first,
     // because a texture cannot be read while it is being drawn into.
@@ -872,7 +889,7 @@ void PostEffects::drawWater(const AdvancedLighting& lighting, float time, bool o
     float invView[16];
     if (!invert(m_view, invView))
         identity(invView);
-    const SkyState& sky = lighting.sky();
+    const SkyState &sky = lighting.sky();
 
     const GLuint p = m_waterProgram;
     glUseProgram(p);
@@ -916,7 +933,7 @@ void PostEffects::drawWater(const AdvancedLighting& lighting, float time, bool o
     glUseProgram(0);
 }
 
-void PostEffects::blur(Target& src, Target& tmp, float radius)
+void PostEffects::blur(Target &src, Target &tmp, float radius)
 {
     glUseProgram(m_blurProgram);
     glUniform1i(loc(m_blurProgram, "uSrc"), 0);
@@ -932,11 +949,12 @@ void PostEffects::blur(Target& src, Target& tmp, float radius)
     fullscreenQuad();
 }
 
-void PostEffects::finish(const SkyState& sky, bool bloom)
+void PostEffects::finish(const SkyState &sky, bool bloom)
 {
     float rayColor[3] = {0.0f, 0.0f, 0.0f};
 
-    if (bloom) {
+    if (bloom)
+    {
         // Bloom: keep the bright part at half size and blur it twice.
         bindTarget(m_halfA);
         glUseProgram(m_brightProgram);
@@ -956,12 +974,14 @@ void PostEffects::finish(const SkyState& sky, bool bloom)
         for (int r = 0; r < 4; ++r)
             clip[r] = viewProj[r] * d[0] + viewProj[4 + r] * d[1] + viewProj[8 + r] * d[2] +
                       viewProj[12 + r] * d[3];
-        if (clip[3] > 0.0f && sky.sunDir[1] > 0.0f) {
+        if (clip[3] > 0.0f && sky.sunDir[1] > 0.0f)
+        {
             const float u = clip[0] / clip[3] * 0.5f + 0.5f;
             const float v = clip[1] / clip[3] * 0.5f + 0.5f;
             const float off = fmaxf(fabsf(u - 0.5f), fabsf(v - 0.5f));
             const float visible = 1.0f - smooth01(0.6f, 1.2f, off);
-            if (visible > 0.0f) {
+            if (visible > 0.0f)
+            {
                 bindTarget(m_rays);
                 glUseProgram(m_raysProgram);
                 bindTexture(0, m_scene.depth);
@@ -980,8 +1000,7 @@ void PostEffects::finish(const SkyState& sky, bool bloom)
     }
 
     glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(m_outputFbo));
-    glViewport(m_outputViewport[0], m_outputViewport[1], m_outputViewport[2],
-               m_outputViewport[3]);
+    glViewport(m_outputViewport[0], m_outputViewport[1], m_outputViewport[2], m_outputViewport[3]);
     const GLuint p = m_compositeProgram;
     glUseProgram(p);
     bindTexture(0, m_scene.color);
@@ -998,19 +1017,20 @@ void PostEffects::finish(const SkyState& sky, bool bloom)
     glUseProgram(0);
 }
 
-void renderAdvancedFrame(AdvancedLighting& lighting, PostEffects& effects, LightingFrame frame,
-                         const EffectToggles& toggles, int width, int height,
-                         SceneCallbacks& scene)
+void renderAdvancedFrame(AdvancedLighting &lighting, PostEffects &effects, LightingFrame frame,
+                         const EffectToggles &toggles, int width, int height, SceneCallbacks &scene)
 {
     lighting.prepare(frame);
-    if (frame.shadows) {
+    if (frame.shadows)
+    {
         lighting.beginShadowPass();
         scene.drawObjects(true);
         lighting.endShadowPass();
     }
 
     const bool post = (toggles.water || toggles.bloom || toggles.ssao) && effects.init();
-    if (!post) {
+    if (!post)
+    {
         frame.hdr = false;
         lighting.begin(frame);
         scene.drawGround();
@@ -1022,9 +1042,10 @@ void renderAdvancedFrame(AdvancedLighting& lighting, PostEffects& effects, Light
 
     frame.hdr = true;
     effects.beginFrame(width, height);
-    const SkyState& sky = lighting.sky();
+    const SkyState &sky = lighting.sky();
 
-    if (toggles.water) {
+    if (toggles.water)
+    {
         // Mirror the camera in the water plane: y -> 2h - y.
         effects.beginReflection();
         glMatrixMode(GL_MODELVIEW);

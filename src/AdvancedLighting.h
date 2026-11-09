@@ -78,9 +78,9 @@ class AdvancedLighting
     static void skyColor(float timeOfDay, float rgb[3]);
 
     // Works out the sun, sky and shadow camera for this frame. Call it first.
-    void prepare(const LightingFrame& frame);
+    void prepare(const LightingFrame &frame);
 
-    const SkyState& sky() const
+    const SkyState &sky() const
     {
         return m_sky;
     }
@@ -88,7 +88,7 @@ class AdvancedLighting
     {
         return m_shadowTexture;
     }
-    const float* lightMatrix() const
+    const float *lightMatrix() const
     {
         return m_lightMatrix;
     }
@@ -105,7 +105,7 @@ class AdvancedLighting
 
     // Main pass. Call begin() with the camera view matrix on GL_MODELVIEW (right
     // after setting up the projection), draw the scene, then call end().
-    void begin(const LightingFrame& frame);
+    void begin(const LightingFrame &frame);
     void end();
 
     // Lines and other pieces drawn with GL_LIGHTING off can ask to keep their
@@ -154,6 +154,7 @@ class AdvancedLighting
     int m_locTime;
     int m_locWind;
     int m_locView;
+    int m_locTexture;
 
     // Results of prepare(), kept between the shadow and the main passes.
     SkyState m_sky;

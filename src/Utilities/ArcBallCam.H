@@ -50,17 +50,17 @@
 *************************************************************************/
 #pragma once
 
-#include "3DUtils.H"
+#include "3DUtils.h"
 #include <chrono>
 
 //***************************************************************************
 //
 // * if you need to pass that to OpenGL, try...
 //===========================================================================
-inline float* asGlMatrix(HMatrix m) 
+inline float *asGlMatrix(HMatrix m)
 //===========================================================================
 {
-	return (float*) m; 
+    return (float *)m;
 };
 
 // the arcball must be aware of FlTk
@@ -75,152 +75,160 @@ class Fl_Gl_Window;
 //         simple arcball
 //
 //**************************************************************************
-class Quat {
-	public:
-		enum QuatPart {X=0, Y=1, Z=2, W=3, QuatLen};
+class Quat
+{
+  public:
+    enum QuatPart
+    {
+        X = 0,
+        Y = 1,
+        Z = 2,
+        W = 3,
+        QuatLen
+    };
 
-	public:
-		Quat();						/* gives the identity */
-		Quat(float x, float y, float z, float w);
-		Quat(const Quat&);			/* copy constructor */
+  public:
+    Quat(); /* gives the identity */
+    Quat(float x, float y, float z, float w);
+    Quat(const Quat &); /* copy constructor */
 
-	public:
-		// conversions
-		void toMatrix(HMatrix) const;
+  public:
+    // conversions
+    void toMatrix(HMatrix) const;
 
-		// operations
-		Quat conjugate() const;
-		// make multiply look like multiply
-		Quat operator* (const Quat&) const;
-		// Normalize the quaternion back to length 1
-		void renorm();
+    // operations
+    Quat conjugate() const;
+    // make multiply look like multiply
+    Quat operator*(const Quat &) const;
+    // Normalize the quaternion back to length 1
+    void renorm();
 
-	public:
-		// the data
-		float x, y, z, w;
+  public:
+    // the data
+    float x, y, z, w;
 };
-
 
 //**************************************************************************
 //
 // The arcball implementation
 //
 //**************************************************************************
-class ArcBallCam {
-	public:
-		// we now must connect the ArcBall to an FlTk Window
-		// note: this initializes things to a bad state (since the window might
-		// not be available when we instantiate this - be sure to use setup!
-		ArcBallCam();
-		~ArcBallCam();
+class ArcBallCam
+{
+  public:
+    // we now must connect the ArcBall to an FlTk Window
+    // note: this initializes things to a bad state (since the window might
+    // not be available when we instantiate this - be sure to use setup!
+    ArcBallCam();
+    ~ArcBallCam();
 
-	public:
-		// you must call setup before doing anything!
-		void setup(Fl_Gl_Window* wind,
-					float fieldOfView=40.0,						 // field of view, in degrees
-					float eyeZ = 20.0,							 // how far away camera is from the center of the world
-					float isx=0, float isy=0, float isz = 0 // initial rotation
-					);
+  public:
+    // you must call setup before doing anything!
+    void setup(Fl_Gl_Window *wind,
+               float fieldOfView = 40.0, // field of view, in degrees
+               float eyeZ = 20.0,        // how far away camera is from the center of the world
+               float isx = 0, float isy = 0, float isz = 0 // initial rotation
+    );
 
-		//*********************************************************************
-		//
-		//	all you really need is: handle and setProjection
-		//
-		//*********************************************************************
+    //*********************************************************************
+    //
+    //	all you really need is: handle and setProjection
+    //
+    //*********************************************************************
 
-		// handle mimics the FlTk widget handler - have your widget call this
-		// if the arcball takes the event, it will return 1, otherwise it will
-		// return 0 (and something else has to take the event)
-		int handle(int e);
+    // handle mimics the FlTk widget handler - have your widget call this
+    // if the arcball takes the event, it will return 1, otherwise it will
+    // return 0 (and something else has to take the event)
+    int handle(int e);
 
-		// Positive wheel steps zoom in; Windows pinch gestures use this too.
-		void zoomByWheel(float steps);
-		float cameraDistance() const { return eyeZ; }
+    // Positive wheel steps zoom in; Windows pinch gestures use this too.
+    void zoomByWheel(float steps);
+    float cameraDistance() const
+    {
+        return eyeZ;
+    }
 
-		// this sets the projection for viewing. it clears (and sets) the
-		// projection and modelview matrices
-		// note: we might not want to clear out the projection matrix
-		// (for example, if there is a pick matrix), so we give the option
-		// of not doing the load identity
-		void setProjection(bool doClear=true);
+    // this sets the projection for viewing. it clears (and sets) the
+    // projection and modelview matrices
+    // note: we might not want to clear out the projection matrix
+    // (for example, if there is a pick matrix), so we give the option
+    // of not doing the load identity
+    void setProjection(bool doClear = true);
 
-		// Reset to a basic configuration
-		void reset();
+    // Reset to a basic configuration
+    void reset();
 
-		//*********************************************************************
-		//
-		// Simplified user interface
-		//
-		//*********************************************************************
-		// multiply matrix ontop of stack
-		void multMatrix();	
+    //*********************************************************************
+    //
+    // Simplified user interface
+    //
+    //*********************************************************************
+    // multiply matrix ontop of stack
+    void multMatrix();
 
-		// call this when the mouse goes down
-		void down(const float x, const float y);
+    // call this when the mouse goes down
+    void down(const float x, const float y);
 
-		// this updates the cached positions - call it when the mouse is dragged
-		void computeNow(const float nowX, const float nowY);
+    // this updates the cached positions - call it when the mouse is dragged
+    void computeNow(const float nowX, const float nowY);
 
-		// this gets the global matrix (start and now)
-		void getMatrix(HMatrix) const;
+    // this gets the global matrix (start and now)
+    void getMatrix(HMatrix) const;
 
-		// Spin the ball by some vector - if you don't understand
-		// how an arcball works, you probably don't care about this
-		// but: basically you give it a vector to rotate the world around
-		// - the length of the vector is how much to rotate around that
-		//   axis
-		void spin(float x, float y, float z);
+    // Spin the ball by some vector - if you don't understand
+    // how an arcball works, you probably don't care about this
+    // but: basically you give it a vector to rotate the world around
+    // - the length of the vector is how much to rotate around that
+    //   axis
+    void spin(float x, float y, float z);
 
-		// Internal routine
-		// this gets the position of the mouse in "normalized device coordinates"
-		// that is X & Y go from -1 to 1 (with zero at the center)
-		// this really goes with the window, but its handy here, and we can't
-		// assume the window does it
-		void getMouseNDC(float& x, float& y);
+    // Internal routine
+    // this gets the position of the mouse in "normalized device coordinates"
+    // that is X & Y go from -1 to 1 (with zero at the center)
+    // this really goes with the window, but its handy here, and we can't
+    // assume the window does it
+    void getMouseNDC(float &x, float &y);
 
-	private:
-		static void animateGesture(void* data);
-		void stopGesture();
-		void startGesture();
-		void orbit(float yawDelta, float pitchDelta);
-		float pendingGestureX = 0;
-		float pendingGestureY = 0;
-		float pendingZoom = 0;
-		bool gestureActive = false;
-		std::chrono::steady_clock::time_point gestureTime;
+  private:
+    static void animateGesture(void *data);
+    void stopGesture();
+    void startGesture();
+    void orbit(float yawDelta, float pitchDelta);
+    float pendingGestureX = 0;
+    float pendingGestureY = 0;
+    float pendingZoom = 0;
+    bool gestureActive = false;
+    std::chrono::steady_clock::time_point gestureTime;
 
-		// This keeps track of the rotation - the current rotation is
-		// start*now
-		Quat				start;	// orientation at the start of drag
-		Quat				now;		// quaternion "now" (while dragging)
+    // This keeps track of the rotation - the current rotation is
+    // start*now
+    Quat start; // orientation at the start of drag
+    Quat now;   // quaternion "now" (while dragging)
 
-		float				downX;	// where the mouse went down
-		float				downY;	
+    float downX; // where the mouse went down
+    float downY;
 
-		// are we panning or rotating (or not tracking)
-		enum {
-			None, 
-			Rotate, 
-			Pan
-		} mode;	
+    // are we panning or rotating (or not tracking)
+    enum
+    {
+        None,
+        Rotate,
+        Pan
+    } mode;
 
-			
-		
-		float				panX;		// this keeps track of the panning - the current pan is 
-		float				panY;		
+    float panX; // this keeps track of the panning - the current pan is
+    float panY;
 
-		float				eyeX;		// in eyeX, eyeY, but this is the displacement for undoing the last
-		float				eyeY;		// addition
-		float				eyeZ;
+    float eyeX; // in eyeX, eyeY, but this is the displacement for undoing the last
+    float eyeY; // addition
+    float eyeZ;
 
-		float				initEyeZ;
-		float				fieldOfView; // View of field
+    float initEyeZ;
+    float fieldOfView; // View of field
 
+    float isx; // save a preferred rotation to return to
+    float isy;
+    float isz;
 
-		
-		float				isx;		// save a preferred rotation to return to
-		float				isy;
-		float				isz;
-
-		Fl_Gl_Window	*wind;	// Draw window
+    Fl_Gl_Window *wind; // Draw window
 };
