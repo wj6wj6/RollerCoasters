@@ -15,6 +15,7 @@
 #include <stdio.h>
 
 #include "AdvancedLighting.h"
+#include "MatrixMath.h"
 
 namespace
 {
@@ -26,6 +27,9 @@ const char* kVertexShader = R"GLSL(
 // World space is recovered from the fixed function modelview matrix, so the
 // existing glBegin/glEnd drawing code works unchanged.
 uniform mat4 uInvView;
+uniform mat4 uView;
+uniform float uTime;
+uniform int uWind;
 varying vec3 vWorldPos;
 varying vec3 vWorldNormal;
 varying vec4 vColor;
@@ -33,10 +37,23 @@ varying vec4 vColor;
 void main()
 {
     vec4 eyePos = gl_ModelViewMatrix * gl_Vertex;
-    vWorldPos = (uInvView * eyePos).xyz;
+    vec4 world = uInvView * eyePos;
     mat3 invViewRot = mat3(uInvView[0].xyz, uInvView[1].xyz, uInvView[2].xyz);
     vWorldNormal = invViewRot * (gl_NormalMatrix * gl_Normal);
     vColor = gl_Color;
+
+    // Leaves sway in the wind: green vertices above the trunk height move,
+    // more the higher they are, with a phase that depends on position.
+    vec3 c = gl_Color.rgb;
+    if (uWind != 0 && c.g > c.r * 1.2 && c.g > c.b * 1.1 && world.y > 3.0) {
+        float bend = min((world.y - 3.0) * 0.06, 1.0);
+        float phase = uTime * 1.7 + world.x * 0.11 + world.z * 0.07;
+        world.x += (sin(phase) * 0.35 + sin(phase * 2.3 + 1.0) * 0.12) * bend;
+        world.z += (cos(phase * 0.8) * 0.25) * bend;
+        eyePos = uView * world;
+    }
+
+    vWorldPos = world.xyz;
     gl_Position = gl_ProjectionMatrix * eyePos;
 }
 )GLSL";
@@ -64,6 +81,8 @@ uniform vec3 uHeadDir;
 uniform vec3 uHeadColor;
 
 uniform int uUnlit;
+uniform int uHdr;              // 1: linear HDR out for the post effects
+uniform float uClipY;          // reflections: nothing below the water
 
 varying vec3 vWorldPos;
 varying vec3 vWorldNormal;
@@ -98,6 +117,8 @@ vec3 blinnPhong(vec3 albedo, vec3 n, vec3 l, vec3 v)
 
 void main()
 {
+    if (vWorldPos.y < uClipY)
+        discard;
     vec3 n = normalize(vWorldNormal);
     vec3 cameraPos = uInvView[3].xyz;
     vec3 albedo = pow(vColor.rgb, vec3(2.2));
@@ -128,10 +149,16 @@ void main()
         color += lamp * uHeadColor * (cone * falloff);
     }
 
+    float dist = length(cameraPos - vWorldPos) * uFogDensity;
+    if (uHdr != 0) {
+        // Tone mapping happens in the final post pass.
+        color = mix(uFogColor, color, exp(-dist * dist));
+        gl_FragColor = vec4(color, vColor.a);
+        return;
+    }
+
     // Soft shoulder so bright highlights do not clip to flat white.
     color = color / (1.0 + color * 0.25) * 1.25;
-
-    float dist = length(cameraPos - vWorldPos) * uFogDensity;
     color = mix(uFogColor, color, exp(-dist * dist));
 
     gl_FragColor = vec4(pow(clamp(color, 0.0, 1.0), vec3(1.0 / 2.2)), vColor.a);
@@ -139,73 +166,8 @@ void main()
 )GLSL";
 
 // ---------------------------------------------------------------------
-// Small column-major 4x4 helpers (same layout as glLoadMatrixf).
+// Vector helpers.
 // ---------------------------------------------------------------------
-void identity(float m[16])
-{
-    for (int i = 0; i < 16; ++i)
-        m[i] = (i % 5 == 0) ? 1.0f : 0.0f;
-}
-
-void multiply(const float a[16], const float b[16], float out[16])
-{
-    float r[16];
-    for (int col = 0; col < 4; ++col)
-        for (int row = 0; row < 4; ++row) {
-            float sum = 0.0f;
-            for (int k = 0; k < 4; ++k)
-                sum += a[k * 4 + row] * b[col * 4 + k];
-            r[col * 4 + row] = sum;
-        }
-    for (int i = 0; i < 16; ++i)
-        out[i] = r[i];
-}
-
-bool invert(const float m[16], float out[16])
-{
-    float inv[16];
-    inv[0] = m[5] * m[10] * m[15] - m[5] * m[11] * m[14] - m[9] * m[6] * m[15] +
-             m[9] * m[7] * m[14] + m[13] * m[6] * m[11] - m[13] * m[7] * m[10];
-    inv[4] = -m[4] * m[10] * m[15] + m[4] * m[11] * m[14] + m[8] * m[6] * m[15] -
-             m[8] * m[7] * m[14] - m[12] * m[6] * m[11] + m[12] * m[7] * m[10];
-    inv[8] = m[4] * m[9] * m[15] - m[4] * m[11] * m[13] - m[8] * m[5] * m[15] +
-             m[8] * m[7] * m[13] + m[12] * m[5] * m[11] - m[12] * m[7] * m[9];
-    inv[12] = -m[4] * m[9] * m[14] + m[4] * m[10] * m[13] + m[8] * m[5] * m[14] -
-              m[8] * m[6] * m[13] - m[12] * m[5] * m[10] + m[12] * m[6] * m[9];
-    inv[1] = -m[1] * m[10] * m[15] + m[1] * m[11] * m[14] + m[9] * m[2] * m[15] -
-             m[9] * m[3] * m[14] - m[13] * m[2] * m[11] + m[13] * m[3] * m[10];
-    inv[5] = m[0] * m[10] * m[15] - m[0] * m[11] * m[14] - m[8] * m[2] * m[15] +
-             m[8] * m[3] * m[14] + m[12] * m[2] * m[11] - m[12] * m[3] * m[10];
-    inv[9] = -m[0] * m[9] * m[15] + m[0] * m[11] * m[13] + m[8] * m[1] * m[15] -
-             m[8] * m[3] * m[13] - m[12] * m[1] * m[11] + m[12] * m[3] * m[9];
-    inv[13] = m[0] * m[9] * m[14] - m[0] * m[10] * m[13] - m[8] * m[1] * m[14] +
-              m[8] * m[2] * m[13] + m[12] * m[1] * m[10] - m[12] * m[2] * m[9];
-    inv[2] = m[1] * m[6] * m[15] - m[1] * m[7] * m[14] - m[5] * m[2] * m[15] +
-             m[5] * m[3] * m[14] + m[13] * m[2] * m[7] - m[13] * m[3] * m[6];
-    inv[6] = -m[0] * m[6] * m[15] + m[0] * m[7] * m[14] + m[4] * m[2] * m[15] -
-             m[4] * m[3] * m[14] - m[12] * m[2] * m[7] + m[12] * m[3] * m[6];
-    inv[10] = m[0] * m[5] * m[15] - m[0] * m[7] * m[13] - m[4] * m[1] * m[15] +
-              m[4] * m[3] * m[13] + m[12] * m[1] * m[7] - m[12] * m[3] * m[5];
-    inv[14] = -m[0] * m[5] * m[14] + m[0] * m[6] * m[13] + m[4] * m[1] * m[14] -
-              m[4] * m[2] * m[13] - m[12] * m[1] * m[6] + m[12] * m[2] * m[5];
-    inv[3] = -m[1] * m[6] * m[11] + m[1] * m[7] * m[10] + m[5] * m[2] * m[11] -
-             m[5] * m[3] * m[10] - m[9] * m[2] * m[7] + m[9] * m[3] * m[6];
-    inv[7] = m[0] * m[6] * m[11] - m[0] * m[7] * m[10] - m[4] * m[2] * m[11] +
-             m[4] * m[3] * m[10] + m[8] * m[2] * m[7] - m[8] * m[3] * m[6];
-    inv[11] = -m[0] * m[5] * m[11] + m[0] * m[7] * m[9] + m[4] * m[1] * m[11] -
-              m[4] * m[3] * m[9] - m[8] * m[1] * m[7] + m[8] * m[3] * m[5];
-    inv[15] = m[0] * m[5] * m[10] - m[0] * m[6] * m[9] - m[4] * m[1] * m[10] +
-              m[4] * m[2] * m[9] + m[8] * m[1] * m[6] - m[8] * m[2] * m[5];
-
-    const float det = m[0] * inv[0] + m[1] * inv[4] + m[2] * inv[8] + m[3] * inv[12];
-    if (fabsf(det) < 1e-12f)
-        return false;
-    const float invDet = 1.0f / det;
-    for (int i = 0; i < 16; ++i)
-        out[i] = inv[i] * invDet;
-    return true;
-}
-
 void normalize3(float v[3])
 {
     const float len = sqrtf(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
@@ -331,6 +293,7 @@ void AdvancedLighting::invalidate()
     m_previousFbo = 0;
     m_normalOffset = 0.0f;
     m_depthBias = 0.0f;
+    m_sky = SkyState();
     identity(m_lightView);
     identity(m_lightProj);
     identity(m_lightMatrix);
@@ -403,6 +366,11 @@ bool AdvancedLighting::init()
     m_locHeadDir = glGetUniformLocation(m_program, "uHeadDir");
     m_locHeadColor = glGetUniformLocation(m_program, "uHeadColor");
     m_locUnlit = glGetUniformLocation(m_program, "uUnlit");
+    m_locHdr = glGetUniformLocation(m_program, "uHdr");
+    m_locClipY = glGetUniformLocation(m_program, "uClipY");
+    m_locTime = glGetUniformLocation(m_program, "uTime");
+    m_locWind = glGetUniformLocation(m_program, "uWind");
+    m_locView = glGetUniformLocation(m_program, "uView");
 
     // Depth texture with hardware comparison, so shadow2D() returns 0 or 1
     // (bilinearly filtered between the four nearest texels).
@@ -457,10 +425,21 @@ void AdvancedLighting::skyColor(float timeOfDay, float rgb[3])
     mix3(base, sunset, dusk * 0.7f, rgb);
 }
 
-void AdvancedLighting::computeLight(const LightingFrame& frame)
+void AdvancedLighting::prepare(const LightingFrame& frame)
 {
+    m_shadowMapValid = false;
+    if (!m_ok)
+        return;
+
     float sun[3];
     sunDirection(frame.timeOfDay, sun);
+    float* lightDir = m_sky.lightDir;
+    float* lightColor = m_sky.lightColor;
+    for (int i = 0; i < 3; ++i)
+        m_sky.sunDir[i] = sun[i];
+    m_sky.moonDir[0] = -sun[0];
+    m_sky.moonDir[1] = -sun[1];
+    m_sky.moonDir[2] = sun[2];
     const float day = smoothstep(-0.02f, 0.25f, sun[1]);
     const float dusk = 1.0f - smoothstep(0.05f, 0.5f, sun[1]);
 
@@ -469,23 +448,23 @@ void AdvancedLighting::computeLight(const LightingFrame& frame)
     if (sun[1] > 0.0f) {
         const float white[3] = {1.0f, 0.95f, 0.86f};
         const float orange[3] = {1.0f, 0.55f, 0.28f};
-        mix3(white, orange, dusk, m_lightColor);
+        mix3(white, orange, dusk, lightColor);
         for (int i = 0; i < 3; ++i) {
-            m_lightColor[i] *= 1.3f * day;
-            m_lightDir[i] = sun[i];
+            lightColor[i] *= 1.3f * day;
+            lightDir[i] = sun[i];
         }
     } else {
         const float moon[3] = {0.025f, 0.035f, 0.07f};
         for (int i = 0; i < 3; ++i)
-            m_lightColor[i] = moon[i] * (1.0f - day);
-        m_lightDir[0] = -sun[0];
-        m_lightDir[1] = -sun[1];
-        m_lightDir[2] = sun[2];
+            lightColor[i] = moon[i] * (1.0f - day);
+        lightDir[0] = -sun[0];
+        lightDir[1] = -sun[1];
+        lightDir[2] = sun[2];
     }
     // Keep the light a little above the horizon so shadows stay finite.
-    if (m_lightDir[1] < 0.12f) {
-        m_lightDir[1] = 0.12f;
-        normalize3(m_lightDir);
+    if (lightDir[1] < 0.12f) {
+        lightDir[1] = 0.12f;
+        normalize3(lightDir);
     }
 
     const float nightSky[3] = {0.010f, 0.012f, 0.025f};
@@ -501,6 +480,14 @@ void AdvancedLighting::computeLight(const LightingFrame& frame)
     for (int i = 0; i < 3; ++i)
         m_fogColor[i] = powf(sky[i], 2.2f);
 
+    const float nightZenith[3] = {0.002f, 0.003f, 0.010f};
+    const float dayZenith[3] = {0.09f, 0.22f, 0.62f};
+    mix3(nightZenith, dayZenith, day, m_sky.zenith);
+    for (int i = 0; i < 3; ++i)
+        m_sky.horizon[i] = m_fogColor[i];
+    m_sky.day = day;
+    m_sky.dusk = dusk * day;
+
     // Orthographic light camera that encloses every shadow caster.
     float center[3];
     float radius = 0.0f;
@@ -511,12 +498,12 @@ void AdvancedLighting::computeLight(const LightingFrame& frame)
     }
     radius = sqrtf(radius) + 2.0f;
 
-    const float eye[3] = {center[0] + m_lightDir[0] * radius * 2.0f,
-                          center[1] + m_lightDir[1] * radius * 2.0f,
-                          center[2] + m_lightDir[2] * radius * 2.0f};
+    const float eye[3] = {center[0] + lightDir[0] * radius * 2.0f,
+                          center[1] + lightDir[1] * radius * 2.0f,
+                          center[2] + lightDir[2] * radius * 2.0f};
     const float upY[3] = {0.0f, 1.0f, 0.0f};
     const float upZ[3] = {0.0f, 0.0f, 1.0f};
-    lookAt(eye, center, fabsf(m_lightDir[1]) > 0.99f ? upZ : upY, m_lightView);
+    lookAt(eye, center, fabsf(lightDir[1]) > 0.99f ? upZ : upY, m_lightView);
 
     // Receivers may lie far behind the casters (long evening shadows on the
     // ground), so the far plane is generous.
@@ -537,11 +524,10 @@ void AdvancedLighting::computeLight(const LightingFrame& frame)
     m_depthBias = 0.15f / (farPlane - nearPlane);
 }
 
-void AdvancedLighting::beginShadowPass(const LightingFrame& frame)
+void AdvancedLighting::beginShadowPass()
 {
     if (!m_ok)
         return;
-    computeLight(frame);
 
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &m_previousFbo);
     glPushAttrib(GL_VIEWPORT_BIT | GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_POLYGON_BIT |
@@ -585,8 +571,6 @@ void AdvancedLighting::begin(const LightingFrame& frame)
 {
     if (!m_ok)
         return;
-    if (!m_shadowMapValid)
-        computeLight(frame);
 
     float view[16];
     float invView[16];
@@ -602,8 +586,13 @@ void AdvancedLighting::begin(const LightingFrame& frame)
     glUniform1f(m_locShadowTexel, 1.0f / static_cast<float>(m_shadowSize));
     glUniform1f(m_locNormalOffset, m_normalOffset);
     glUniform1f(m_locDepthBias, m_depthBias);
-    glUniform3fv(m_locLightDir, 1, m_lightDir);
-    glUniform3fv(m_locLightColor, 1, m_lightColor);
+    glUniform3fv(m_locLightDir, 1, m_sky.lightDir);
+    glUniform3fv(m_locLightColor, 1, m_sky.lightColor);
+    glUniformMatrix4fv(m_locView, 1, GL_FALSE, view);
+    glUniform1i(m_locHdr, frame.hdr ? 1 : 0);
+    glUniform1f(m_locClipY, frame.clipBelowY);
+    glUniform1f(m_locTime, frame.time);
+    glUniform1i(m_locWind, frame.wind ? 1 : 0);
     glUniform3fv(m_locSkyAmbient, 1, m_skyAmbient);
     glUniform3fv(m_locGroundAmbient, 1, m_groundAmbient);
     glUniform3fv(m_locFogColor, 1, m_fogColor);
@@ -643,7 +632,6 @@ void AdvancedLighting::end()
     glActiveTexture(GL_TEXTURE0);
     glUseProgram(0);
     m_active = false;
-    m_shadowMapValid = false;
 }
 
 void AdvancedLighting::setUnlit(bool unlit)

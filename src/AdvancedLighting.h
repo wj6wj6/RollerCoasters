@@ -33,6 +33,10 @@ struct LightingFrame
     bool shadows = true;
     bool headlight = true;
     bool orthographic = false; // the top view: no fog
+    bool hdr = false;          // write linear HDR colour for the post effects
+    float clipBelowY = -1e9f;  // discard anything below this height (reflections)
+    float time = 0.0f;         // seconds, drives the wind
+    bool wind = true;          // sway the tree tops
 
     // Train frame used for the headlight.
     bool hasTrain = false;
@@ -43,6 +47,19 @@ struct LightingFrame
     // World space box around everything that casts a shadow.
     float casterMin[3] = {-100.0f, 0.0f, -100.0f};
     float casterMax[3] = {100.0f, 30.0f, 100.0f};
+};
+
+// Sun, moon and sky colours for one time of day (linear colour space).
+struct SkyState
+{
+    float sunDir[3];   // towards the sun, may be below the horizon
+    float moonDir[3];  // towards the moon
+    float lightDir[3]; // the one that casts shadows right now
+    float lightColor[3];
+    float zenith[3];
+    float horizon[3];
+    float day;  // 0 at night, 1 in daylight
+    float dusk; // 1 near sunrise and sunset
 };
 
 class AdvancedLighting
@@ -60,10 +77,30 @@ class AdvancedLighting
     // The sky colour for the given time of day, in display (gamma) space.
     static void skyColor(float timeOfDay, float rgb[3]);
 
+    // Works out the sun, sky and shadow camera for this frame. Call it first.
+    void prepare(const LightingFrame& frame);
+
+    const SkyState& sky() const
+    {
+        return m_sky;
+    }
+    unsigned int shadowTexture() const
+    {
+        return m_shadowTexture;
+    }
+    const float* lightMatrix() const
+    {
+        return m_lightMatrix;
+    }
+    bool shadowMapValid() const
+    {
+        return m_shadowMapValid;
+    }
+
     // Shadow pass. Between these two calls the caller draws every shadow caster
     // with colours off. Both matrix stacks, the viewport and the framebuffer are
     // restored by endShadowPass().
-    void beginShadowPass(const LightingFrame& frame);
+    void beginShadowPass();
     void endShadowPass();
 
     // Main pass. Call begin() with the camera view matrix on GL_MODELVIEW (right
@@ -81,7 +118,6 @@ class AdvancedLighting
     }
 
   private:
-    void computeLight(const LightingFrame& frame);
     void releaseFramebuffer();
 
     bool m_triedInit;
@@ -113,10 +149,14 @@ class AdvancedLighting
     int m_locHeadDir;
     int m_locHeadColor;
     int m_locUnlit;
+    int m_locHdr;
+    int m_locClipY;
+    int m_locTime;
+    int m_locWind;
+    int m_locView;
 
-    // Results of computeLight(), kept between the shadow and the main pass.
-    float m_lightDir[3];
-    float m_lightColor[3];
+    // Results of prepare(), kept between the shadow and the main passes.
+    SkyState m_sky;
     float m_skyAmbient[3];
     float m_groundAmbient[3];
     float m_fogColor[3];
