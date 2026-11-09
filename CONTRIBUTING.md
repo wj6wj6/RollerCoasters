@@ -9,7 +9,7 @@
 5. 提交使用 `fix: ...`、`feat: ...`、`docs: ...`、`ci: ...` 等 Conventional Commits 標題。
 6. 一個變更維持一個 PR，review 修正追加到同一分支。合併前確認 CI 全部通過。
 
-維護者應在 GitHub 的 `main` branch ruleset 設定要求 PR 與 `Windows quality` 的四個 `quality` matrix 檢查（MSVC／Clang × Debug／Release）。
+維護者應在 GitHub 的 `main` branch ruleset 設定要求 PR 與 `Windows quality` 的 `tools` 檢查及四個 `quality` matrix 檢查（MSVC／Clang × Debug／Release）。`tools` 失敗時 matrix 會被略過，因此 `tools` 也必須列為必要檢查。
 repository 內的 workflow 提供這些檢查；遠端保護規則需由維護者在 GitHub 設定。
 
 更新工具時，以獨立變更更新 `tools.json` 的版本、官方下載 URL 與 SHA256。更新內附函式庫時說明來源、版本與 MSVC ABI 相容性，重新產生 `vendor-lock.json` 並跑完整檢查。

@@ -1,6 +1,8 @@
 #Requires -Version 7.4
 param([switch] $WithClang)
 . "$PSScriptRoot/common.ps1"
+# The progress bar makes large downloads much slower in non-interactive runs.
+$ProgressPreference = 'SilentlyContinue'
 
 try {
     $names = @('cmake', 'clang-format')

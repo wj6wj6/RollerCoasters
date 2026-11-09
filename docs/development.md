@@ -13,7 +13,7 @@ pwsh -File scripts/setup-tools.ps1
 準備腳本先檢查現有原生工具的版本；缺少指定版本時，從官方 release 下載至 `out/`，驗證 SHA256 後解壓縮。只影響專案目錄，不修改系統 PATH，也不需要系統管理員權限。
 檢查腳本優先使用 `out/tools/`，其次使用 PATH 上版本相符的工具；版本不符即失敗。
 CMake 官方套件：[4.3.0 release](https://github.com/Kitware/CMake/releases/tag/v4.3.0)；clang-format 官方套件：[LLVM 22.1.8 release](https://github.com/llvm/llvm-project/releases/tag/llvmorg-22.1.8)。
-LLVM 官方封存檔約 822 MB，首次下載較久，僅解出 clang-format.exe；CI 快取解壓後的工具。
+LLVM 官方封存檔約 822 MB，首次下載較久，僅解出 clang-format.exe。CI 由單一 `tools` job 下載並快取解壓後的工具，同時檢查格式；四個 `quality` matrix job 只還原同一份快取。
 
 需要 Clang 時，使用 `pwsh -File scripts/setup-tools.ps1 -WithClang`，會額外準備 Ninja、Clang 編譯器、原生 DLL 與 builtin headers。
 [clang-cl](https://clang.llvm.org/docs/UsersManual.html#clang-cl) 使用 MSVC 相容的命令列與 ABI，仍需要 Visual Studio C++ 標頭、連結器、執行期與 Windows SDK。

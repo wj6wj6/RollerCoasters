@@ -11,7 +11,26 @@ permissions:
   contents: read
 
 jobs:
+  # Download and unpack the pinned toolchain once, then share it through the cache.
+  tools:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: out/tools
+          key: native-tools-windows-x64-${{ hashFiles('tools.json', 'scripts/setup-tools.ps1') }}
+      - name: Restore native tools
+        run: ./scripts/setup-tools.ps1 -WithClang
+      - name: Format
+        run: ./scripts/check.ps1 -Stage format
+
   quality:
+    needs: tools
     runs-on: windows-2022
     timeout-minutes: 30
     defaults:
@@ -24,14 +43,11 @@ jobs:
         compiler: [msvc, clang]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
         with:
           path: out/tools
           key: native-tools-windows-x64-${{ hashFiles('tools.json', 'scripts/setup-tools.ps1') }}
-      - name: Restore native tools
-        run: ./scripts/setup-tools.ps1 -WithClang
-      - name: Format
-        run: ./scripts/check.ps1 -Stage format
+          fail-on-cache-miss: true
       - name: Lint and static analysis
         run: ./scripts/check.ps1 -Stage lint -Compiler ${{ matrix.compiler }} -Config ${{ matrix.config }}
       - name: Compile and link

@@ -7,7 +7,7 @@
 3. 備份重要軌道檔並做一次還原驗證。
 4. 需要發布新版本時先修改 `CMakeLists.txt` 的 `project(... VERSION ...)`，合併後再建立對應 `v*` tag。
 
-PR、main push、`v*` tag 與手動觸發都執行同一個 Windows CI，tag 發布亦重新檢查。
+PR、main push、`v*` tag 與手動觸發都執行同一個 Windows CI，tag 發布亦重新檢查。`tools` job 先準備並快取 `tools.json` 指定的工具及檢查格式，四個 `quality` job 再共用快取執行其餘檢查。
 CI 會保存測試 JUnit／CTest 日誌，以及已執行 `--version` 的安裝目錄 artifact。
 這是桌面應用程式，以 executable 的版本 smoke test 取代服務 healthcheck；沒有 Docker 或伺服器部署。
 
