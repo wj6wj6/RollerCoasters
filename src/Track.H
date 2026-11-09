@@ -32,6 +32,13 @@ using std::vector; // avoid having to say std::vector all of the time
 // make use of other data structures from this project
 #include "ControlPoint.H"
 
+enum TrackSplineType
+{
+    TRACK_SPLINE_LINEAR = 1,
+    TRACK_SPLINE_CARDINAL = 2,
+    TRACK_SPLINE_BSPLINE = 3
+};
+
 class CTrack
 {
   public:
@@ -47,6 +54,11 @@ class CTrack
     // read and write to files
     void readPoints(const char *filename);
     void writePoints(const char *filename);
+
+    // Evaluate the selected closed spline at parameter u.
+    // One unit of u spans one control-point segment.
+    Pnt3f evaluatePosition(float u, TrackSplineType splineType = TRACK_SPLINE_BSPLINE) const;
+    Pnt3f evaluateTangent(float u, TrackSplineType splineType = TRACK_SPLINE_BSPLINE) const;
 
   public:
     // rather than have generic objects, we make a special case for these few

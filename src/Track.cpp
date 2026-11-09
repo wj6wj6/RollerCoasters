@@ -27,6 +27,7 @@
 #include "Track.H"
 
 #include <FL/fl_ask.H>
+#include <math.h>
 
 //****************************************************************************
 //
@@ -54,6 +55,78 @@ void CTrack::resetPoints()
 
     // we had better put the train back at the start of the track...
     trainU = 0.0;
+}
+
+//****************************************************************************
+//
+// * Evaluate one segment of the selected closed spline
+//============================================================================
+static float evaluateSplineComponent(float p0, float p1, float p2, float p3, float t,
+                                     TrackSplineType splineType)
+//============================================================================
+{
+    const float t2 = t * t;
+    const float t3 = t2 * t;
+
+    switch (splineType)
+    {
+    case TRACK_SPLINE_LINEAR:
+        return p1 + (p2 - p1) * t;
+    case TRACK_SPLINE_CARDINAL:
+        return 0.5f * (2.0f * p1 + (-p0 + p2) * t + (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) * t2 +
+                       (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * t3);
+    case TRACK_SPLINE_BSPLINE:
+    default:
+        return ((1.0f - 3.0f * t + 3.0f * t2 - t3) * p0 + (4.0f - 6.0f * t2 + 3.0f * t3) * p1 +
+                (1.0f + 3.0f * t + 3.0f * t2 - 3.0f * t3) * p2 + t3 * p3) /
+               6.0f;
+    }
+}
+
+Pnt3f CTrack::evaluatePosition(float u, TrackSplineType splineType) const
+//============================================================================
+{
+    const int pointCount = static_cast<int>(points.size());
+    if (pointCount < 4)
+        return Pnt3f();
+
+    // Wrap the parameter so negative and overflowing values stay on the loop.
+    float wrappedU = u - floorf(u / pointCount) * pointCount;
+    int segment = static_cast<int>(wrappedU);
+    float t = wrappedU - segment;
+    int indices[4];
+    for (int i = 0; i < 4; ++i)
+    {
+        indices[i] = (segment + i - 1) % pointCount;
+        if (indices[i] < 0)
+            indices[i] += pointCount;
+    }
+
+    const Pnt3f &p0 = points[indices[0]].pos;
+    const Pnt3f &p1 = points[indices[1]].pos;
+    const Pnt3f &p2 = points[indices[2]].pos;
+    const Pnt3f &p3 = points[indices[3]].pos;
+    Pnt3f result;
+    result.x = evaluateSplineComponent(p0.x, p1.x, p2.x, p3.x, t, splineType);
+    result.y = evaluateSplineComponent(p0.y, p1.y, p2.y, p3.y, t, splineType);
+    result.z = evaluateSplineComponent(p0.z, p1.z, p2.z, p3.z, t, splineType);
+
+    return result;
+}
+
+//****************************************************************************
+//
+// * Estimate the tangent with a centered finite difference
+//============================================================================
+Pnt3f CTrack::evaluateTangent(float u, TrackSplineType splineType) const
+//============================================================================
+{
+    const float sampleStep = 0.001f;
+    const Pnt3f before = evaluatePosition(u - sampleStep, splineType);
+    const Pnt3f after = evaluatePosition(u + sampleStep, splineType);
+    Pnt3f tangent(after.x - before.x, after.y - before.y, after.z - before.z);
+    tangent.normalize();
+    return tangent;
 }
 
 //****************************************************************************

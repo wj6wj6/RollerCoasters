@@ -65,22 +65,30 @@ void addPointCB(Fl_Widget *, TrainWindow *tw)
 {
     // get the number of points
     size_t npts = tw->m_Track.points.size();
-    // the number for the new point
-    size_t newidx = (tw->trainView->selectedCube >= 0) ? tw->trainView->selectedCube : 0;
+    if (npts < 4)
+        return;
+
+    // Insert after the selected point. Without a selection, insert at the end
+    // of the loop between the last and first control points.
+    int selected = tw->trainView->selectedCube;
+    size_t selectedIndex = (selected >= 0 && static_cast<size_t>(selected) < npts)
+                               ? static_cast<size_t>(selected)
+                               : npts - 1;
+    size_t nextIndex = (selectedIndex + 1) % npts;
+    size_t insertIndex = selectedIndex + 1;
 
     // pick a reasonable location
-    size_t previdx = (newidx + npts - 1) % npts;
-    Pnt3f npos = (tw->m_Track.points[previdx].pos + tw->m_Track.points[newidx].pos) * .5f;
+    Pnt3f npos = (tw->m_Track.points[selectedIndex].pos + tw->m_Track.points[nextIndex].pos) * .5f;
 
-    tw->m_Track.points.insert(tw->m_Track.points.begin() + newidx, npos);
+    tw->m_Track.points.insert(tw->m_Track.points.begin() + insertIndex, npos);
 
     // make it so that the train doesn't move - unless its affected by this control point
     // it should stay between the same points
-    if (ceil(tw->m_Track.trainU) > ((float)newidx))
+    if (tw->m_Track.trainU >= static_cast<float>(insertIndex))
     {
         tw->m_Track.trainU += 1;
-        if (tw->m_Track.trainU >= npts)
-            tw->m_Track.trainU -= npts;
+        if (tw->m_Track.trainU >= static_cast<float>(npts))
+            tw->m_Track.trainU -= static_cast<float>(npts);
     }
 
     tw->damageMe();

@@ -30,6 +30,7 @@
 
 // for using the real time clock
 #include <time.h>
+#include <math.h>
 
 #include "TrainWindow.H"
 #include "TrainView.H"
@@ -105,14 +106,13 @@ TrainWindow::TrainWindow(const int x, const int y)
         pty += 30;
 
         // browser to select spline types
-        // TODO: make sure these choices are the same as what the code supports
         splineBrowser = new Fl_Browser(605, pty, 120, 75, "Spline Type");
         splineBrowser->type(2); // select
         splineBrowser->callback((Fl_Callback *)damageCB, this);
         splineBrowser->add("Linear");
         splineBrowser->add("Cardinal Cubic");
         splineBrowser->add("Cubic B-Spline");
-        splineBrowser->select(2);
+        splineBrowser->select(3);
 
         pty += 110;
 
@@ -186,6 +186,52 @@ void TrainWindow::damageMe()
     trainView->damage(1);
 }
 
+static float wrapTrackParameter(float u, float period)
+{
+    return u - floorf(u / period) * period;
+}
+
+static float advanceByArcLength(const CTrack &track, float u, float distance,
+                                TrackSplineType splineType)
+{
+    const float period = static_cast<float>(track.points.size());
+    const float direction = distance < 0.0f ? -1.0f : 1.0f;
+    float remaining = fabsf(distance);
+    const float parameterStep = 0.005f;
+    u = wrapTrackParameter(u, period);
+
+    for (int i = 0; i < 20000 && remaining > 0.0001f; ++i)
+    {
+        const float nextU = wrapTrackParameter(u + direction * parameterStep, period);
+        const Pnt3f current = track.evaluatePosition(u, splineType);
+        const Pnt3f next = track.evaluatePosition(nextU, splineType);
+        const float dx = next.x - current.x;
+        const float dy = next.y - current.y;
+        const float dz = next.z - current.z;
+        const float segmentLength = sqrtf(dx * dx + dy * dy + dz * dz);
+
+        if (segmentLength <= 0.000001f)
+        {
+            u = nextU;
+            continue;
+        }
+
+        if (segmentLength >= remaining)
+        {
+            u = wrapTrackParameter(u + direction * parameterStep * (remaining / segmentLength),
+                                   period);
+            remaining = 0.0f;
+        }
+        else
+        {
+            remaining -= segmentLength;
+            u = nextU;
+        }
+    }
+
+    return u;
+}
+
 //************************************************************************
 //
 // * This will get called (approximately) 30 times per second
@@ -194,27 +240,15 @@ void TrainWindow::damageMe()
 void TrainWindow::advanceTrain(float dir)
 //========================================================================
 {
-    //#####################################################################
-    // TODO: make this work for your train
-    //#####################################################################
-#ifdef EXAMPLE_SOLUTION
-    // note - we give a little bit more example code here than normal,
-    // so you can see how this works
+    const int pointCount = static_cast<int>(m_Track.points.size());
+    if (pointCount < 4)
+        return;
 
+    const TrackSplineType splineType = static_cast<TrackSplineType>(splineBrowser->value());
+    const float step = dir * static_cast<float>(speed->value());
     if (arcLength->value())
-    {
-        float vel = ew.physics->value() ? physicsSpeed(this) : dir * (float)speed->value();
-        world.trainU += arclenVtoV(world.trainU, vel, this);
-    }
+        m_Track.trainU = advanceByArcLength(m_Track, m_Track.trainU, step, splineType);
     else
-    {
-        world.trainU += dir * ((float)speed->value() * .1f);
-    }
-
-    float nct = static_cast<float>(world.points.size());
-    if (world.trainU > nct)
-        world.trainU -= nct;
-    if (world.trainU < 0)
-        world.trainU += nct;
-#endif
+        m_Track.trainU =
+            wrapTrackParameter(m_Track.trainU + step * 0.01f, static_cast<float>(pointCount));
 }
