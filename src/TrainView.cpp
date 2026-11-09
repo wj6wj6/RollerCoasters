@@ -25,6 +25,7 @@
 *************************************************************************/
 
 #include <iostream>
+#include <math.h>
 #include <Fl/fl.h>
 
 // we will need OpenGL, and OpenGL needs windows.h
@@ -317,6 +318,33 @@ void TrainView::draw()
 //   HOWEVER: it doesn't clear the projection first (the caller handles
 //   that) - its important for picking
 //========================================================================
+static void makeTrackFrame(const Pnt3f& forwardInput, Pnt3f& side, Pnt3f& up)
+{
+	Pnt3f forward = forwardInput;
+	forward.normalize();
+
+	side.x = forward.z;
+	side.y = 0.0f;
+	side.z = -forward.x;
+	float sideLength = sqrtf(side.x * side.x + side.y * side.y + side.z * side.z);
+	if (sideLength < 0.0001f) {
+		side.x = -forward.y;
+		side.y = forward.x;
+		side.z = 0.0f;
+		sideLength = sqrtf(side.x * side.x + side.y * side.y + side.z * side.z);
+	}
+	if (sideLength > 0.0001f) {
+		side.x /= sideLength;
+		side.y /= sideLength;
+		side.z /= sideLength;
+	}
+
+	up.x = forward.y * side.z - forward.z * side.y;
+	up.y = forward.z * side.x - forward.x * side.z;
+	up.z = forward.x * side.y - forward.y * side.x;
+	up.normalize();
+}
+
 void TrainView::
 setProjection()
 //========================================================================
@@ -347,15 +375,30 @@ setProjection()
 		glLoadIdentity();
 		glRotatef(-90,1,0,0);
 	} 
-	// Or do the train view or other view here
-	//####################################################################
-	// TODO: 
-	// put code for train view projection here!	
-	//####################################################################
 	else {
-#ifdef EXAMPLE_SOLUTION
-		trainCamView(this,aspect);
-#endif
+		Pnt3f eye(0.0f, 2.0f, 0.0f);
+		Pnt3f forward(0.0f, 0.0f, 1.0f);
+		Pnt3f up(0.0f, 1.0f, 0.0f);
+
+		if (m_pTrack->points.size() >= 4) {
+			const TrackSplineType splineType =
+				static_cast<TrackSplineType>(tw->splineBrowser->value());
+			const Pnt3f position = m_pTrack->evaluatePosition(m_pTrack->trainU, splineType);
+			forward = m_pTrack->evaluateTangent(m_pTrack->trainU, splineType);
+			Pnt3f side;
+			makeTrackFrame(forward, side, up);
+			eye = position + up * 2.2f + forward * 3.0f;
+		}
+
+		glMatrixMode(GL_PROJECTION);
+		glLoadIdentity();
+		gluPerspective(60.0, aspect, 0.5, 1000.0);
+		glMatrixMode(GL_MODELVIEW);
+		glLoadIdentity();
+		const Pnt3f target = eye + forward * 15.0f;
+		gluLookAt(eye.x, eye.y, eye.z,
+			target.x, target.y, target.z,
+			up.x, up.y, up.z);
 	}
 }
 
@@ -370,6 +413,87 @@ setProjection()
 // TODO: 
 // if you have other objects in the world, make sure to draw them
 //########################################################################
+static void drawTrainBox(float halfX, float halfY, float halfZ)
+{
+	glBegin(GL_QUADS);
+	glNormal3f(0, 0, 1);
+	glVertex3f(-halfX, -halfY, halfZ); glVertex3f(halfX, -halfY, halfZ);
+	glVertex3f(halfX, halfY, halfZ); glVertex3f(-halfX, halfY, halfZ);
+	glNormal3f(0, 0, -1);
+	glVertex3f(halfX, -halfY, -halfZ); glVertex3f(-halfX, -halfY, -halfZ);
+	glVertex3f(-halfX, halfY, -halfZ); glVertex3f(halfX, halfY, -halfZ);
+	glNormal3f(0, 1, 0);
+	glVertex3f(-halfX, halfY, halfZ); glVertex3f(halfX, halfY, halfZ);
+	glVertex3f(halfX, halfY, -halfZ); glVertex3f(-halfX, halfY, -halfZ);
+	glNormal3f(0, -1, 0);
+	glVertex3f(-halfX, -halfY, -halfZ); glVertex3f(halfX, -halfY, -halfZ);
+	glVertex3f(halfX, -halfY, halfZ); glVertex3f(-halfX, -halfY, halfZ);
+	glNormal3f(1, 0, 0);
+	glVertex3f(halfX, -halfY, halfZ); glVertex3f(halfX, -halfY, -halfZ);
+	glVertex3f(halfX, halfY, -halfZ); glVertex3f(halfX, halfY, halfZ);
+	glNormal3f(-1, 0, 0);
+	glVertex3f(-halfX, -halfY, -halfZ); glVertex3f(-halfX, -halfY, halfZ);
+	glVertex3f(-halfX, halfY, halfZ); glVertex3f(-halfX, halfY, -halfZ);
+	glEnd();
+}
+
+static void drawTreeCone(float radius, float height)
+{
+	const int segments = 12;
+	glBegin(GL_TRIANGLES);
+	for (int i = 0; i < segments; ++i) {
+		const float a0 = 6.2831853f * i / segments;
+		const float a1 = 6.2831853f * (i + 1) / segments;
+		const float mid = (a0 + a1) * 0.5f;
+		const float nx = cosf(mid);
+		const float nz = sinf(mid);
+		const float normalLength = sqrtf(1.0f + (radius / height) * (radius / height));
+		glNormal3f(nx / normalLength, (radius / height) / normalLength, nz / normalLength);
+		glVertex3f(radius * cosf(a0), 0.0f, radius * sinf(a0));
+		glVertex3f(0.0f, height, 0.0f);
+		glVertex3f(radius * cosf(a1), 0.0f, radius * sinf(a1));
+	}
+	glEnd();
+}
+
+static void drawTree(float x, float z, bool doingShadows)
+{
+	const int trunkSegments = 10;
+	const float trunkRadius = 1.1f;
+	const float trunkHeight = 7.0f;
+	glPushAttrib(GL_CURRENT_BIT);
+	glPushMatrix();
+	glTranslatef(x, 0.0f, z);
+	if (!doingShadows)
+		glColor3ub(105, 65, 35);
+	glBegin(GL_QUADS);
+	for (int i = 0; i < trunkSegments; ++i) {
+		const float a0 = 6.2831853f * i / trunkSegments;
+		const float a1 = 6.2831853f * (i + 1) / trunkSegments;
+		const float nx = cosf((a0 + a1) * 0.5f);
+		const float nz = sinf((a0 + a1) * 0.5f);
+		glNormal3f(nx, 0.0f, nz);
+		glVertex3f(trunkRadius * cosf(a0), 0.0f, trunkRadius * sinf(a0));
+		glVertex3f(trunkRadius * cosf(a0), trunkHeight, trunkRadius * sinf(a0));
+		glVertex3f(trunkRadius * cosf(a1), trunkHeight, trunkRadius * sinf(a1));
+		glVertex3f(trunkRadius * cosf(a1), 0.0f, trunkRadius * sinf(a1));
+	}
+	glEnd();
+
+	if (!doingShadows)
+		glColor3ub(35, 125, 55);
+	glPushMatrix();
+	glTranslatef(0.0f, 4.0f, 0.0f);
+	drawTreeCone(5.0f, 11.0f);
+	glPopMatrix();
+	glPushMatrix();
+	glTranslatef(0.0f, 9.0f, 0.0f);
+	drawTreeCone(3.8f, 9.0f);
+	glPopMatrix();
+	glPopMatrix();
+	glPopAttrib();
+}
+
 //========================================================================
 void TrainView::drawStuff(bool doingShadows)
 {
@@ -388,25 +512,106 @@ void TrainView::drawStuff(bool doingShadows)
 		}
 	}
 	// draw the track
-	//####################################################################
-	// TODO: 
-	// call your own track drawing code
-	//####################################################################
+	if (!doingShadows && m_pTrack->points.size() >= 4) {
+		const int samplesPerSegment = 24;
+		const int pointCount = static_cast<int>(m_pTrack->points.size());
+		const int totalSamples = pointCount * samplesPerSegment;
+		const TrackSplineType splineType =
+			static_cast<TrackSplineType>(tw->splineBrowser->value());
+
+		glPushAttrib(GL_ENABLE_BIT | GL_LINE_BIT | GL_CURRENT_BIT);
+		glDisable(GL_LIGHTING);
+
+		// Wooden sleepers cross beneath the two rails at regular samples.
+		glColor3ub(105, 72, 42);
+		glLineWidth(7.0f);
+		glBegin(GL_LINES);
+		for (int i = 0; i < totalSamples; i += 2) {
+			const float u = static_cast<float>(i) / samplesPerSegment;
+			const Pnt3f position = m_pTrack->evaluatePosition(u, splineType);
+			Pnt3f forward = m_pTrack->evaluateTangent(u, splineType);
+			Pnt3f side, up;
+			makeTrackFrame(forward, side, up);
+			const Pnt3f sleeperCenter = position + up * 0.05f;
+			glVertex3f(sleeperCenter.x - side.x * 2.2f,
+				sleeperCenter.y - side.y * 2.2f, sleeperCenter.z - side.z * 2.2f);
+			glVertex3f(sleeperCenter.x + side.x * 2.2f,
+				sleeperCenter.y + side.y * 2.2f, sleeperCenter.z + side.z * 2.2f);
+		}
+		glEnd();
+
+		// Parallel steel rails follow the local side direction of the curve.
+		glColor3ub(145, 150, 160);
+		glLineWidth(4.0f);
+		for (int rail = -1; rail <= 1; rail += 2) {
+			glBegin(GL_LINE_STRIP);
+			for (int i = 0; i <= totalSamples; ++i) {
+				const float u = static_cast<float>(i) / samplesPerSegment;
+				const Pnt3f position = m_pTrack->evaluatePosition(u, splineType);
+				Pnt3f forward = m_pTrack->evaluateTangent(u, splineType);
+				Pnt3f side, up;
+				makeTrackFrame(forward, side, up);
+				const Pnt3f railPoint = position + side * (1.35f * rail) + up * 0.35f;
+				glVertex3f(railPoint.x, railPoint.y, railPoint.z);
+			}
+			glEnd();
+		}
+		glPopAttrib();
+	}
 
 #ifdef EXAMPLE_SOLUTION
 	drawTrack(this, doingShadows);
 #endif
 
+	// A small ring of trees gives the track a visible setting beyond the ground.
+	drawTree(-82.0f, -68.0f, doingShadows);
+	drawTree(-78.0f, 70.0f, doingShadows);
+	drawTree(82.0f, -70.0f, doingShadows);
+	drawTree(78.0f, 68.0f, doingShadows);
+	drawTree(0.0f, 88.0f, doingShadows);
+
 	// draw the train
-	//####################################################################
-	// TODO: 
-	//	call your own train drawing code
-	//####################################################################
-#ifdef EXAMPLE_SOLUTION
-	// don't draw the train if you're looking out the front window
-	if (!tw->trainCam->value())
-		drawTrain(this, doingShadows);
-#endif
+	if (!tw->trainCam->value() && m_pTrack->points.size() >= 4) {
+		const TrackSplineType splineType =
+			static_cast<TrackSplineType>(tw->splineBrowser->value());
+		const Pnt3f position = m_pTrack->evaluatePosition(m_pTrack->trainU, splineType);
+		Pnt3f forward = m_pTrack->evaluateTangent(m_pTrack->trainU, splineType);
+		Pnt3f side;
+		Pnt3f up;
+		makeTrackFrame(forward, side, up);
+
+		const GLfloat frame[16] = {
+			side.x, side.y, side.z, 0.0f,
+			up.x, up.y, up.z, 0.0f,
+			forward.x, forward.y, forward.z, 0.0f,
+			position.x, position.y, position.z, 1.0f
+		};
+
+		glPushAttrib(GL_CURRENT_BIT);
+		glPushMatrix();
+		glMultMatrixf(frame);
+		glTranslatef(0.0f, 1.1f, 0.0f);
+		if (!doingShadows)
+			glColor3ub(35, 110, 190);
+		drawTrainBox(1.5f, 0.65f, 2.4f);
+
+		glPushMatrix();
+		glTranslatef(0.0f, 0.85f, -0.25f);
+		if (!doingShadows)
+			glColor3ub(55, 155, 220);
+		drawTrainBox(0.95f, 0.55f, 1.1f);
+		glPopMatrix();
+
+		glPushMatrix();
+		glTranslatef(0.0f, -0.05f, 2.45f);
+		if (!doingShadows)
+			glColor3ub(230, 75, 35);
+		drawTrainBox(1.15f, 0.45f, 0.35f);
+		glPopMatrix();
+
+		glPopMatrix();
+		glPopAttrib();
+	}
 }
 
 // 
