@@ -48,6 +48,7 @@ class CTrack;
 
 // this uses the old ArcBall Code
 #include "Utilities/ArcBallCam.H"
+#include "TrackRenderer.H"
 
 class TrainView : public Fl_Gl_Window
 {
@@ -79,6 +80,7 @@ class TrainView : public Fl_Gl_Window
     ArcBallCam arcball; // keep an ArcBall for the UI
     int selectedCube;   // simple - just remember which cube is selected
 
-    TrainWindow *tw;  // The parent of this display window
-    CTrack *m_pTrack; // The track of the entire scene
+    TrainWindow *tw;               // The parent of this display window
+    CTrack *m_pTrack;              // The track of the entire scene
+    TrackRenderer m_trackRenderer; // Draws the rails and sleepers
 };

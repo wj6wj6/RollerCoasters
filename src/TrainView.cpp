@@ -38,6 +38,7 @@
 #include "TrainView.H"
 #include "TrainWindow.H"
 #include "Utilities/3DUtils.h"
+#include "TrackRenderer.H"
 #include <FL/x.H>
 
 // Preserve the Ctrl flag supplied by Windows pinch-to-zoom messages.
@@ -216,6 +217,10 @@ void TrainView::draw()
     else
         throw std::runtime_error("Could not initialize GLAD!");
 
+    // A new GL context starts without our textures; let the track rebuild them.
+    if (!context_valid())
+        m_trackRenderer.releaseTextures();
+
     // Set up the view port
     glViewport(0, 0, w(), h());
 
@@ -316,35 +321,6 @@ void TrainView::draw()
 //   HOWEVER: it doesn't clear the projection first (the caller handles
 //   that) - its important for picking
 //========================================================================
-static void makeTrackFrame(const Pnt3f &forwardInput, Pnt3f &side, Pnt3f &up)
-{
-    Pnt3f forward = forwardInput;
-    forward.normalize();
-
-    side.x = forward.z;
-    side.y = 0.0f;
-    side.z = -forward.x;
-    float sideLength = sqrtf(side.x * side.x + side.y * side.y + side.z * side.z);
-    if (sideLength < 0.0001f)
-    {
-        side.x = -forward.y;
-        side.y = forward.x;
-        side.z = 0.0f;
-        sideLength = sqrtf(side.x * side.x + side.y * side.y + side.z * side.z);
-    }
-    if (sideLength > 0.0001f)
-    {
-        side.x /= sideLength;
-        side.y /= sideLength;
-        side.z /= sideLength;
-    }
-
-    up.x = forward.y * side.z - forward.z * side.y;
-    up.y = forward.z * side.x - forward.x * side.z;
-    up.z = forward.x * side.y - forward.y * side.x;
-    up.normalize();
-}
-
 void TrainView::setProjection()
 //========================================================================
 {
@@ -530,55 +506,12 @@ void TrainView::drawStuff(bool doingShadows)
             m_pTrack->points[i].draw();
         }
     }
-    // draw the track
-    if (!doingShadows && m_pTrack->points.size() >= 4)
+    // draw the track: blocky pixel-art sleepers (evenly spaced by arc length)
+    // and square iron rails, see TrackRenderer
+    if (m_pTrack->points.size() >= 4)
     {
-        const int samplesPerSegment = 24;
-        const int pointCount = static_cast<int>(m_pTrack->points.size());
-        const int totalSamples = pointCount * samplesPerSegment;
         const TrackSplineType splineType = static_cast<TrackSplineType>(tw->splineBrowser->value());
-
-        glPushAttrib(GL_ENABLE_BIT | GL_LINE_BIT | GL_CURRENT_BIT);
-        glDisable(GL_LIGHTING);
-
-        // Wooden sleepers cross beneath the two rails at regular samples.
-        glColor3ub(105, 72, 42);
-        glLineWidth(7.0f);
-        glBegin(GL_LINES);
-        for (int i = 0; i < totalSamples; i += 2)
-        {
-            const float u = static_cast<float>(i) / samplesPerSegment;
-            const Pnt3f position = m_pTrack->evaluatePosition(u, splineType);
-            Pnt3f forward = m_pTrack->evaluateTangent(u, splineType);
-            Pnt3f side, up;
-            makeTrackFrame(forward, side, up);
-            const Pnt3f sleeperCenter = position + up * 0.05f;
-            glVertex3f(sleeperCenter.x - side.x * 2.2f, sleeperCenter.y - side.y * 2.2f,
-                       sleeperCenter.z - side.z * 2.2f);
-            glVertex3f(sleeperCenter.x + side.x * 2.2f, sleeperCenter.y + side.y * 2.2f,
-                       sleeperCenter.z + side.z * 2.2f);
-        }
-        glEnd();
-
-        // Parallel steel rails follow the local side direction of the curve.
-        glColor3ub(145, 150, 160);
-        glLineWidth(4.0f);
-        for (int rail = -1; rail <= 1; rail += 2)
-        {
-            glBegin(GL_LINE_STRIP);
-            for (int i = 0; i <= totalSamples; ++i)
-            {
-                const float u = static_cast<float>(i) / samplesPerSegment;
-                const Pnt3f position = m_pTrack->evaluatePosition(u, splineType);
-                Pnt3f forward = m_pTrack->evaluateTangent(u, splineType);
-                Pnt3f side, up;
-                makeTrackFrame(forward, side, up);
-                const Pnt3f railPoint = position + side * (1.35f * rail) + up * 0.35f;
-                glVertex3f(railPoint.x, railPoint.y, railPoint.z);
-            }
-            glEnd();
-        }
-        glPopAttrib();
+        m_trackRenderer.draw(*m_pTrack, splineType, doingShadows);
     }
 
 #ifdef EXAMPLE_SOLUTION

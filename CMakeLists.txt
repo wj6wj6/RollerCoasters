@@ -52,6 +52,7 @@ add_executable(RollerCoasters
     src/ControlPoint.H src/ControlPoint.cpp
     src/main.cpp src/Object.H
     src/Track.H src/Track.cpp
+    src/TrackRenderer.H src/TrackRenderer.cpp
     src/TrainView.H src/TrainView.cpp
     src/TrainWindow.H src/TrainWindow.cpp)
 target_include_directories(RollerCoasters SYSTEM PRIVATE
@@ -72,6 +73,13 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     target_link_libraries(TrackRoundTripCheck PRIVATE Utilities)
     add_test(NAME TrackRoundTripCheck COMMAND TrackRoundTripCheck)
     set_tests_properties(TrackRoundTripCheck PROPERTIES TIMEOUT 10 LABELS integration)
+
+    add_executable(TrackSpacingCheck tests/TrackSpacingCheck.cpp
+        src/Track.cpp src/ControlPoint.cpp src/TrackRenderer.cpp)
+    target_include_directories(TrackSpacingCheck PRIVATE src)
+    target_link_libraries(TrackSpacingCheck PRIVATE Utilities glad)
+    add_test(NAME TrackSpacingCheck COMMAND TrackSpacingCheck)
+    set_tests_properties(TrackSpacingCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
     add_test(NAME VersionCheck COMMAND RollerCoasters --version)
     set_tests_properties(VersionCheck PROPERTIES TIMEOUT 10

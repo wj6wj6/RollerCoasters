@@ -8,6 +8,8 @@ flowchart LR
     Window --> Callbacks[CallBacks / UI 動作]
     Callbacks --> Track
     View --> Track
+    View --> Rails[TrackRenderer / 鐵軌、枕木與弧長表]
+    Rails --> Track
     View --> Camera[ArcBallCam / 相機與手勢平滑]
     Camera --> Timer[FLTK event loop / timeout]
     Timer --> Camera
@@ -16,6 +18,7 @@ flowchart LR
 ```
 
 `TrainWindow` 持有場景狀態與 widget；`TrainView` 讀取場景與 UI 選項並繪圖。
+`TrackRenderer` 建立累積弧長表，依弧長等距擺放枕木，並以程式產生的像素材質畫方塊風鐵軌；`makeTrackFrame()` 也放在這裡，供列車與相機共用。
 `CallBacks` 處理按鈕、軌道載入儲存與列車更新。
 `ArcBallCam` 用 FLTK timeout 分攤旋轉與縮放，Windows 特定觸控處理位於 `TrainView.cpp`。
 `Utilities` 包含相機、幾何點與 OpenGL 輔助函式。
