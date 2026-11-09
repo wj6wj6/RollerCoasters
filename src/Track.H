@@ -32,43 +32,44 @@ using std::vector; // avoid having to say std::vector all of the time
 // make use of other data structures from this project
 #include "ControlPoint.H"
 
-enum TrackSplineType {
-	TRACK_SPLINE_LINEAR = 1,
-	TRACK_SPLINE_CARDINAL = 2,
-	TRACK_SPLINE_BSPLINE = 3
+enum TrackSplineType
+{
+    TRACK_SPLINE_LINEAR = 1,
+    TRACK_SPLINE_CARDINAL = 2,
+    TRACK_SPLINE_BSPLINE = 3
 };
 
-class CTrack {
-	public:		
-		// Constructor
-		CTrack();
+class CTrack
+{
+  public:
+    // Constructor
+    CTrack();
 
-	public:
-		// when we want to clear the control points, we really "reset" them 
-		// to have 4 default positions (since we should never have fewer
-		// than 4 points)
-		void resetPoints();
+  public:
+    // when we want to clear the control points, we really "reset" them
+    // to have 4 default positions (since we should never have fewer
+    // than 4 points)
+    void resetPoints();
 
+    // read and write to files
+    void readPoints(const char *filename);
+    void writePoints(const char *filename);
 
-		// read and write to files
-		void readPoints(const char* filename);
-		void writePoints(const char* filename);
+    // Evaluate the selected closed spline at parameter u.
+    // One unit of u spans one control-point segment.
+    Pnt3f evaluatePosition(float u, TrackSplineType splineType = TRACK_SPLINE_BSPLINE) const;
+    Pnt3f evaluateTangent(float u, TrackSplineType splineType = TRACK_SPLINE_BSPLINE) const;
 
-		// Evaluate the selected closed spline at parameter u.
-		// One unit of u spans one control-point segment.
-		Pnt3f evaluatePosition(float u, TrackSplineType splineType = TRACK_SPLINE_BSPLINE) const;
-		Pnt3f evaluateTangent(float u, TrackSplineType splineType = TRACK_SPLINE_BSPLINE) const;
+  public:
+    // rather than have generic objects, we make a special case for these few
+    // objects that we know that all implementations are going to need and that
+    // we're going to have to handle specially
+    vector<ControlPoint> points;
 
-	public:
-		// rather than have generic objects, we make a special case for these few
-		// objects that we know that all implementations are going to need and that
-		// we're going to have to handle specially
-		vector<ControlPoint> points;
-
-		//###################################################################
-		// TODO: you might want to do this differently
-		//###################################################################
-		// the state of the train - basically, all I need to remember is where
-		// it is in parameter space
-		float trainU;
+    //###################################################################
+    // TODO: you might want to do this differently
+    //###################################################################
+    // the state of the train - basically, all I need to remember is where
+    // it is in parameter space
+    float trainU;
 };
