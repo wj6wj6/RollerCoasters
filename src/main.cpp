@@ -23,21 +23,31 @@
 *************************************************************************/
 
 #include "stdio.h"
+#include <cstring>
 #include "TrainWindow.H"
 
 #pragma warning(push)
-#pragma warning(disable:4312)
-#pragma warning(disable:4311)
-#include <Fl/Fl.h>
+#pragma warning(disable : 4312)
+#pragma warning(disable : 4311)
+#include <FL/Fl.H>
 #pragma warning(pop)
 
-
-int main(int, char**)
+int main(int argc, char **argv)
 {
-	printf("CS559 Train Assignment\n");
+    if (argc == 2 && std::strcmp(argv[1], "--version") == 0)
+    {
+        printf("RollerCoasters %s\n", ROLLERCOASTERS_VERSION);
+        return 0;
+    }
+    if (argc != 1)
+    {
+        fprintf(stderr, "Usage: RollerCoasters [--version]\n");
+        return 2;
+    }
+    printf("CS559 Train Assignment\n");
 
-	TrainWindow tw;
-	tw.show();
+    TrainWindow tw;
+    tw.show();
 
-	Fl::run();
+    Fl::run();
 }
