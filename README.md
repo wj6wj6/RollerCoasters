@@ -39,6 +39,7 @@ pwsh -File scripts/check.ps1 -Stage all -Compiler clang -Config Release
 - 光影：`Light+` 開啟 shader 逐像素光照與 shadow map 陰影，關閉即回到原本固定管線畫面。
   `Shadows`、`Headlight`（火車頭燈）、`Water`（島外海面反射與折射）、`Bloom`（泛光與 god rays）、`SSAO` 可個別開關；
   `Time` 滑桿 0–24 時移動太陽與月亮，夜晚最容易看到頭燈。顯卡不支援時自動退回原本畫法。
+- 地面是 40×40 的草方塊島（16×16 程序生成像素貼圖，草頂與泥土側面），不需要圖檔。
 
 個人軌道請存 `data/`，備份存 `backups/`，兩者均不納入版控。
 

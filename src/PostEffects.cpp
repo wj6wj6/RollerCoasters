@@ -820,28 +820,6 @@ void PostEffects::drawSeabed()
         }
     }
 
-    // Earth sides of the island down to the beach.
-    glColor3ub(120, 86, 56);
-    glNormal3f(0.0f, 0.0f, -1.0f);
-    glVertex3f(-half, beach, -half);
-    glVertex3f(-half, 0.0f, -half);
-    glVertex3f(half, 0.0f, -half);
-    glVertex3f(half, beach, -half);
-    glNormal3f(0.0f, 0.0f, 1.0f);
-    glVertex3f(half, beach, half);
-    glVertex3f(half, 0.0f, half);
-    glVertex3f(-half, 0.0f, half);
-    glVertex3f(-half, beach, half);
-    glNormal3f(-1.0f, 0.0f, 0.0f);
-    glVertex3f(-half, beach, half);
-    glVertex3f(-half, 0.0f, half);
-    glVertex3f(-half, 0.0f, -half);
-    glVertex3f(-half, beach, -half);
-    glNormal3f(1.0f, 0.0f, 0.0f);
-    glVertex3f(half, beach, -half);
-    glVertex3f(half, 0.0f, -half);
-    glVertex3f(half, 0.0f, half);
-    glVertex3f(half, beach, half);
     glEnd();
 }
 

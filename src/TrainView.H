@@ -50,6 +50,8 @@ class CTrack;
 #include "Utilities/ArcBallCam.H"
 #include "AdvancedLighting.h"
 #include "PostEffects.h"
+#include "GrassGround.h"
+#include "TrackRenderer.H"
 
 class TrainView : public Fl_Gl_Window
 {
@@ -82,13 +84,18 @@ class TrainView : public Fl_Gl_Window
     void drawAdvanced();
     void fillLightingFrame(LightingFrame &frame);
 
+    // the grass island everything stands on (TrainViewEffects.cpp)
+    void drawGround();
+
   public:
     ArcBallCam arcball; // keep an ArcBall for the UI
     int selectedCube;   // simple - just remember which cube is selected
 
-    TrainWindow *tw;  // The parent of this display window
-    CTrack *m_pTrack; // The track of the entire scene
+    TrainWindow *tw;               // The parent of this display window
+    CTrack *m_pTrack;              // The track of the entire scene
+    TrackRenderer m_trackRenderer; // Draws the rails and sleepers
 
     AdvancedLighting lighting; // shadow maps, per-pixel light, headlight
     PostEffects effects;       // sky, water, SSAO, bloom, god rays
+    GrassGround m_ground;      // grass blocks with dirt sides
 };

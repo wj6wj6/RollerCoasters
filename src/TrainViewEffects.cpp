@@ -32,7 +32,7 @@ class TrainViewScene : public SceneCallbacks
     void drawGround() override
     {
         setupFloor();
-        drawFloor(200, 10);
+        m_view->drawGround();
     }
     void drawObjects(bool shadowPass) override
     {
@@ -71,6 +71,15 @@ void trainUpVector(const Pnt3f &forward, Pnt3f &up)
 }
 
 } // namespace
+
+//************************************************************************
+//
+// * The 200 x 200 grass island (5 x 5 blocks) with dirt sides
+//========================================================================
+void TrainView::drawGround()
+{
+    m_ground.draw(200.0f, 40, -4.0f);
+}
 
 //************************************************************************
 //
