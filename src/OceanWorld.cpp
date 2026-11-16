@@ -1104,7 +1104,6 @@ void buildClams(Grid &g)
     };
     const Spot spots[] = {{3.7f, -19.0f}, {4.8f, 19.0f},  {5.3f, -30.0f},
                           {6.2f, -20.0f}, {19.6f, 34.0f}, {20.1f, -19.0f}};
-    int n = 0;
     for (const Spot &s : spots)
     {
         float c[3], forward[3], left[3];
@@ -1116,7 +1115,6 @@ void buildClams(Grid &g)
         const int hx = alongX ? (left[0] * static_cast<float>(toRide) > 0.0f ? -1 : 1) : 0;
         const int hz = alongX ? 0 : (left[2] * static_cast<float>(toRide) > 0.0f ? -1 : 1);
         buildClam(g, blockOf(c[0] + left[0] * s.side), blockOf(c[2] + left[2] * s.side), hx, hz);
-        ++n;
     }
 }
 
