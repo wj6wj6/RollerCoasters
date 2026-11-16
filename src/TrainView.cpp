@@ -288,7 +288,11 @@ void TrainView::setInputMethodEnabled(bool enabled)
     if (!canvas)
         return;
     const DWORD flags = enabled ? IACE_DEFAULT : 0;
+    // A null context is documented for these flags (0 detaches the input
+    // method, IACE_DEFAULT restores it), but the SAL annotation says _In_.
+#pragma warning(suppress : 6387)
     (void)ImmAssociateContextEx(canvas, nullptr, flags);
+#pragma warning(suppress : 6387)
     (void)ImmAssociateContextEx(GetAncestor(canvas, GA_ROOT), nullptr, flags);
 }
 
