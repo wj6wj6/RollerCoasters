@@ -73,8 +73,8 @@
 // * Constructor
 //==========================================================================
 ArcBallCam::ArcBallCam()
-    : mode(None), panX(0), panY(0), eyeX(0), eyeY(0), eyeZ(20), initEyeZ(20), fieldOfView(40),
-      isx(0), isy(0), isz(0), wind(0)
+    : mode(None), eyeX(0), eyeY(0), eyeZ(20), initEyeZ(20), fieldOfView(40), isx(0), isy(0), isz(0),
+      wind(0)
 //==========================================================================
 {
 }
@@ -104,7 +104,8 @@ void ArcBallCam::startGesture()
 
 void ArcBallCam::zoomByWheel(float steps, bool precise)
 {
-    if (mode != None || steps == 0)
+    // Zoom only changes the distance, so it may run during a drag or an orbit.
+    if (steps == 0)
         return;
     if (precise)
     {
@@ -112,7 +113,6 @@ void ArcBallCam::zoomByWheel(float steps, bool precise)
         wind->damage(1);
         return;
     }
-    pendingGestureX = pendingGestureY = 0;
     pendingZoom += steps;
     startGesture();
 }
@@ -128,12 +128,14 @@ void ArcBallCam::applyZoom(float steps)
 
 void ArcBallCam::scroll(float dx, float dy, int state, bool precise)
 {
-    // Do not change the drag's coordinate frame mid-drag.
-    if (mode != None)
-        return;
     if (state & FL_CTRL)
     {
         zoomByWheel(-dy, precise);
+    }
+    else if (mode != None)
+    {
+        // Do not change the drag's coordinate frame mid-drag.
+        return;
     }
     else if (state & (FL_ALT | FL_SHIFT))
     {
@@ -148,7 +150,6 @@ void ArcBallCam::scroll(float dx, float dy, int state, bool precise)
     }
     else
     {
-        pendingZoom = 0;
         // Limit large scroll bursts to keep rotation controllable.
         if (dx > 10)
             dx = 10;
@@ -162,6 +163,29 @@ void ArcBallCam::scroll(float dx, float dy, int state, bool precise)
         pendingGestureY += dy;
         if (dx != 0 || dy != 0)
             startGesture();
+    }
+    wind->damage(1);
+}
+
+void ArcBallCam::touchpadGesture(float dx, float dy, float scale, bool pan)
+{
+    if (scale > 0 && scale != 1)
+        applyZoom((float)(log(scale) / log(1.1)));
+    // A mouse drag owns the view direction until it ends.
+    if (mode == None && (dx != 0 || dy != 0))
+    {
+        // Same feel as dragging: the scene follows the fingers.
+        const float ndcX = dx * 2.0f / (float)wind->w();
+        const float ndcY = -dy * 2.0f / (float)wind->h();
+        if (pan)
+        {
+            eyeX -= ndcX * eyeZ;
+            eyeY -= ndcY * eyeZ;
+        }
+        else
+        {
+            orbit(ndcX * 1.5f, -ndcY * 1.5f);
+        }
     }
     wind->damage(1);
 }
@@ -382,9 +406,6 @@ void ArcBallCam::down(const float x, const float y)
 
     downX = x;
     downY = y;
-
-    panX = 0;
-    panY = 0;
 }
 
 //**************************************************************************
@@ -469,13 +490,11 @@ void ArcBallCam::computeNow(const float nowX, const float nowY)
     }
     else if (mode == Pan)
     {
-        float dx = (nowX - downX) * eyeZ;
-        float dy = (nowY - downY) * eyeZ;
-
-        eyeX += panX - dx;
-        eyeY += panY - dy;
-        panX = dx;
-        panY = dy;
+        // Pan step by step so zooming mid-drag does not make the view jump.
+        eyeX -= (nowX - downX) * eyeZ;
+        eyeY -= (nowY - downY) * eyeZ;
+        downX = nowX;
+        downY = nowY;
     }
 }
 

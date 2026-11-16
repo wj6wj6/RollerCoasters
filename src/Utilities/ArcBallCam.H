@@ -153,6 +153,10 @@ class ArcBallCam
     // Start a camera drag for a button the caller already took, such as a left
     // drag on empty space. Later FL_DRAG/FL_RELEASE events go through handle().
     void beginDrag(bool pan);
+
+    // Apply one touchpad update where the fingers moved (dx, dy) window pixels
+    // and spread apart by scale, so orbit (or pan) and zoom happen together.
+    void touchpadGesture(float dx, float dy, float scale, bool pan);
     float cameraDistance() const
     {
         return eyeZ;
@@ -226,9 +230,6 @@ class ArcBallCam
         Rotate,
         Pan
     } mode;
-
-    float panX; // this keeps track of the panning - the current pan is
-    float panY;
 
     float eyeX; // in eyeX, eyeY, but this is the displacement for undoing the last
     float eyeY; // addition

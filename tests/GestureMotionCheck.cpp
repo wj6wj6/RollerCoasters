@@ -193,6 +193,56 @@ static bool checkEmptySpaceDrag()
     return rotate && released;
 }
 
+static bool checkOrbitAndZoomTogether()
+{
+    Fl_Gl_Window window(600, 600);
+    ArcBallCam camera;
+    camera.setup(&window, 40, 250, 0, 0, 0);
+    HMatrix initial, current;
+    camera.getMatrix(initial);
+    // One touchpad update: fingers move 60 px right while spreading 25%.
+    camera.touchpadGesture(60, 0, 1.25f, false);
+    camera.getMatrix(current);
+    const double expected = .3 * 180 / 3.141592653589793;
+    bool both = std::fabs(angle(initial, current) - expected) < .05 &&
+                std::fabs(camera.cameraDistance() - 200) < .01;
+    std::printf("%s: one touchpad gesture orbits %.3f deg and zooms 250 -> %.3f\n",
+                both ? "PASS" : "FAIL", angle(initial, current), camera.cameraDistance());
+
+    // Mouse wheel rotation and zoom queued together both finish.
+    camera.setup(&window, 40, 250, 0, 0, 0);
+    camera.getMatrix(initial);
+    Fl::e_dx = 1;
+    Fl::e_dy = 0;
+    Fl::e_state = 0;
+    camera.handle(FL_MOUSEWHEEL);
+    camera.zoomByWheel(1);
+    for (int frame = 0; frame < 40; ++frame)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        Fl::check();
+    }
+    camera.getMatrix(current);
+    bool queued =
+        angle(initial, current) > 1.9 && std::fabs(camera.cameraDistance() - 250 / 1.1) < .1;
+    std::printf("%s: wheel orbit and zoom do not cancel each other\n", queued ? "PASS" : "FAIL");
+
+    // Zoom while dragging, and a pan drag stays continuous after the zoom.
+    camera.setup(&window, 40, 250, 0, 0, 0);
+    Fl::e_x = 300;
+    Fl::e_y = 300;
+    Fl::e_state = FL_BUTTON1;
+    camera.beginDrag(true);
+    camera.zoomByWheel(1, true);
+    bool zoomDuringDrag = std::fabs(camera.cameraDistance() - 250 / 1.1) < .01;
+    Fl::e_x = 330;
+    camera.handle(FL_DRAG);
+    camera.handle(FL_RELEASE);
+    Fl::e_state = 0;
+    std::printf("%s: zoom works during a drag\n", zoomDuringDrag ? "PASS" : "FAIL");
+    return both && queued && zoomDuringDrag;
+}
+
 int main()
 {
     bool vertical = checkMotion(0, 1);
@@ -205,8 +255,9 @@ int main()
     bool pitchLimit = checkPitchLimit();
     bool precise = checkPreciseScroll();
     bool emptyDrag = checkEmptySpaceDrag();
+    bool together = checkOrbitAndZoomTogether();
     return vertical && horizontal && diagonal && level && zoomIn && zoomOut && fineZoom &&
-                   pitchLimit && precise && emptyDrag
+                   pitchLimit && precise && emptyDrag && together
                ? 0
                : 1;
 }

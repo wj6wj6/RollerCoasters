@@ -95,6 +95,22 @@ static int touchpadWheel(void *event, void *data)
     return 1;
 }
 
+static bool touchpadAccepts(void *data)
+{
+    TrainView *view = static_cast<TrainView *>(data);
+    return view->tw && view->tw->worldCam->value();
+}
+
+// Direct Manipulation reports finger movement and pinch together, so the
+// camera orbits (Alt or Shift pans) and zooms in the same gesture.
+static void touchpadMoves(void *data, float dx, float dy, float scale)
+{
+    if (!touchpadAccepts(data))
+        return;
+    const bool pan = GetKeyState(VK_MENU) < 0 || GetKeyState(VK_SHIFT) < 0;
+    static_cast<TrainView *>(data)->arcball.touchpadGesture(dx, dy, scale, pan);
+}
+
 #ifdef EXAMPLE_SOLUTION
 #include "TrainExample/TrainExample.H"
 #endif
@@ -251,6 +267,9 @@ void TrainView::draw()
     }
     else
         throw std::runtime_error("Could not initialize GLAD!");
+
+    // FLTK may recreate the canvas window, so (re)attach to the current one.
+    touchpad.attach(fl_xid(this), touchpadAccepts, touchpadMoves, this);
 
     // A new GL context starts without our textures; let the track rebuild them.
     if (!context_valid())
