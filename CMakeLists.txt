@@ -58,7 +58,8 @@ add_executable(RollerCoasters
     src/TrainWindow.H src/TrainWindow.cpp)
 target_include_directories(RollerCoasters SYSTEM PRIVATE
     "${PROJECT_SOURCE_DIR}/include/glm-0.9.8.5/glm")
-target_link_libraries(RollerCoasters PRIVATE Utilities glad)
+# hid: HidP_* parse the raw precision touchpad reports.
+target_link_libraries(RollerCoasters PRIVATE Utilities glad hid)
 
 if(ROLLERCOASTERS_BUILD_TESTS)
     enable_testing()

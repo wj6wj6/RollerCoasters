@@ -2,9 +2,14 @@
 
 #include <windows.h>
 #include <directmanipulation.h>
+#include <hidsdi.h>
 #include <FL/Fl.H>
+#include <algorithm>
+#include <chrono>
+#include <cmath>
 #include <cstdarg>
 #include <cstdio>
+#include <vector>
 
 namespace
 {
@@ -99,6 +104,103 @@ class ViewportHandler final : public IDirectManipulationViewportEventHandler
     ULONG references = 1;
 };
 
+struct RawTouchpad
+{
+    struct Contact
+    {
+        ULONG id;
+        float x, y; // physical units
+    };
+    // Report layout of the current device.
+    HANDLE device = nullptr;
+    bool layoutOk = false;
+    std::vector<BYTE> preparsed;
+    std::vector<USHORT> fingerLinks;
+    USHORT countLink = 0;
+    float unitX = 1, unitY = 1; // physical units per logical unit
+    float padWidth = 1;         // physical width of the pad
+    std::vector<BYTE> buffer;
+    // The frame being collected; hybrid touchpads split one over reports.
+    ULONG expected = 0;
+    ULONG received = 0;
+    bool button = false;
+    std::vector<Contact> contacts;
+    // The two-finger gesture in progress.
+    bool works = false; // a raw gesture has moved the camera
+    bool tracking = false;
+    ULONG idA = 0, idB = 0;
+    float centerX = 0, centerY = 0, spread = 0;
+    std::chrono::steady_clock::time_point lastFrame;
+    float velocityX = 0, velocityY = 0; // window pixels per second
+    int frames = 0;
+    float movedX = 0, movedY = 0, zoom = 1;
+};
+
+static float physicalPerLogical(const HIDP_VALUE_CAPS &value, float &physicalSize)
+{
+    float logical = (float)value.LogicalMax - (float)value.LogicalMin;
+    if (logical <= 0 && value.BitSize > 0 && value.BitSize < 32)
+        logical = (float)((1UL << value.BitSize) - 1);
+    const float physical = (float)value.PhysicalMax - (float)value.PhysicalMin;
+    if (logical <= 0)
+        logical = 1;
+    if (physical > 0)
+    {
+        physicalSize = physical;
+        return physical / logical;
+    }
+    physicalSize = logical;
+    return 1;
+}
+
+static bool loadLayout(RawTouchpad &raw, HANDLE device)
+{
+    raw.device = device;
+    raw.layoutOk = false;
+    raw.fingerLinks.clear();
+    raw.expected = raw.received = 0;
+    raw.contacts.clear();
+    UINT size = 0;
+    if (GetRawInputDeviceInfoW(device, RIDI_PREPARSEDDATA, nullptr, &size) != 0 || size == 0)
+        return false;
+    raw.preparsed.assign(size, 0);
+    if (GetRawInputDeviceInfoW(device, RIDI_PREPARSEDDATA, raw.preparsed.data(), &size) == (UINT)-1)
+        return false;
+    PHIDP_PREPARSED_DATA data = reinterpret_cast<PHIDP_PREPARSED_DATA>(raw.preparsed.data());
+    HIDP_CAPS caps = {};
+    if (HidP_GetCaps(data, &caps) != HIDP_STATUS_SUCCESS || caps.NumberInputValueCaps == 0)
+        return false;
+    USHORT count = caps.NumberInputValueCaps;
+    std::vector<HIDP_VALUE_CAPS> values(count);
+    if (HidP_GetValueCaps(HidP_Input, values.data(), &count, data) != HIDP_STATUS_SUCCESS)
+        return false;
+    bool hasCount = false;
+    for (USHORT i = 0; i < count && i < values.size(); ++i)
+    {
+        const HIDP_VALUE_CAPS &value = values[i];
+        const USAGE usage = value.IsRange ? value.Range.UsageMin : value.NotRange.Usage;
+        if (value.UsagePage == 0x0D && usage == 0x54) // contact count
+        {
+            raw.countLink = value.LinkCollection;
+            hasCount = true;
+        }
+        else if (value.UsagePage == 0x01 && usage == 0x30) // X of one finger
+        {
+            raw.fingerLinks.push_back(value.LinkCollection);
+            raw.unitX = physicalPerLogical(value, raw.padWidth);
+        }
+        else if (value.UsagePage == 0x01 && usage == 0x31) // Y of one finger
+        {
+            float height = 0;
+            raw.unitY = physicalPerLogical(value, height);
+        }
+    }
+    raw.layoutOk = hasCount && !raw.fingerLinks.empty() && raw.padWidth > 0;
+    touchpadLog("raw touchpad layout: %u finger slots, contact count %s, pad width %.0f",
+                (unsigned)raw.fingerLinks.size(), hasCount ? "found" : "missing", raw.padWidth);
+    return raw.layoutOk;
+}
+
 // Touchpad input starts with DM_POINTERHITTEST; claiming its pointer hands the
 // gesture to Direct Manipulation instead of the scroll/pinch wheel messages.
 static LRESULT CALLBACK touchpadWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
@@ -110,6 +212,9 @@ static LRESULT CALLBACK touchpadWindowProc(HWND window, UINT message, WPARAM wPa
         return DefWindowProcW(window, message, wParam, lParam);
     if (message == DM_POINTERHITTEST && gestures->hitTest(GET_POINTERID_WPARAM(wParam)))
         return 0;
+    // WM_INPUT must still reach DefWindowProc, which frees the input.
+    if (message == WM_INPUT)
+        gestures->rawInput(reinterpret_cast<void *>(lParam));
     if (message == WM_NCDESTROY)
     {
         const LRESULT result = CallWindowProcW(previous, window, message, wParam, lParam);
@@ -194,6 +299,19 @@ bool TouchpadGestures::attach(void *window, Accept acceptFn, Apply applyFn, void
     resetLater(this);
     failedWindow = nullptr;
     touchpadLog("Direct Manipulation ready; two-finger gestures should start with a hit test");
+
+    // Raw precision touchpad reports (digitizer page, touch pad usage).
+    RAWINPUTDEVICE device = {0x0D, 0x05, 0, target};
+    if (RegisterRawInputDevices(&device, 1, sizeof(device)))
+    {
+        raw = new RawTouchpad();
+        touchpadLog("raw touchpad input registered");
+    }
+    else
+    {
+        touchpadLog("raw touchpad input unavailable (error %lu); using Direct Manipulation only",
+                    (unsigned long)GetLastError());
+    }
     return true;
 }
 
@@ -201,6 +319,14 @@ void TouchpadGestures::detach()
 {
     stopTicking();
     Fl::remove_timeout(resetLater, this);
+    Fl::remove_timeout(coast, this);
+    if (raw)
+    {
+        RAWINPUTDEVICE device = {0x0D, 0x05, RIDEV_REMOVE, nullptr};
+        RegisterRawInputDevices(&device, 1, sizeof(device));
+        delete raw;
+        raw = nullptr;
+    }
     HWND target = static_cast<HWND>(hwnd);
     if (target)
     {
@@ -352,6 +478,10 @@ void TouchpadGestures::contentUpdated(IDirectManipulationContent *updated)
     lastScale = scale;
     lastX = x;
     lastY = y;
+    // Raw reports already move the camera; this gesture only keeps Windows
+    // from also sending wheel messages.
+    if (raw && raw->works)
+        return;
     ++gestureUpdates;
     gestureMoveX += dx;
     gestureMoveY += dy;
@@ -413,4 +543,193 @@ void TouchpadGestures::resetTransform()
     const float left = (kContentSize - (float)width) * .5f;
     const float top = (kContentSize - (float)height) * .5f;
     viewport->ZoomToRect(left, top, left + (float)width, top + (float)height, FALSE);
+}
+
+void TouchpadGestures::rawInput(void *rawInputHandle)
+{
+    if (!raw)
+        return;
+    HRAWINPUT handle = static_cast<HRAWINPUT>(rawInputHandle);
+    UINT size = 0;
+    if (GetRawInputData(handle, RID_INPUT, nullptr, &size, sizeof(RAWINPUTHEADER)) != 0 ||
+        size < sizeof(RAWINPUTHEADER))
+        return;
+    raw->buffer.assign(size, 0);
+    if (GetRawInputData(handle, RID_INPUT, raw->buffer.data(), &size, sizeof(RAWINPUTHEADER)) !=
+        size)
+        return;
+    const RAWINPUT *input = reinterpret_cast<const RAWINPUT *>(raw->buffer.data());
+    if (input->header.dwType != RIM_TYPEHID)
+        return;
+    if (input->header.hDevice != raw->device)
+        loadLayout(*raw, input->header.hDevice);
+    if (!raw->layoutOk)
+        return;
+    const RAWHID &hid = input->data.hid;
+    const size_t available = size - offsetof(RAWINPUT, data.hid.bRawData);
+    if ((size_t)hid.dwSizeHid * hid.dwCount > available)
+        return;
+    for (DWORD i = 0; i < hid.dwCount; ++i)
+        readReport(reinterpret_cast<char *>(raw->buffer.data() +
+                                            offsetof(RAWINPUT, data.hid.bRawData) +
+                                            (size_t)i * hid.dwSizeHid),
+                   hid.dwSizeHid);
+}
+
+void TouchpadGestures::readReport(char *report, unsigned long length)
+{
+    PHIDP_PREPARSED_DATA data = reinterpret_cast<PHIDP_PREPARSED_DATA>(raw->preparsed.data());
+    ULONG count = 0;
+    // A nonzero contact count starts a frame; hybrid touchpads send the rest
+    // of its fingers in following reports with a count of zero.
+    if (HidP_GetUsageValue(HidP_Input, 0x0D, raw->countLink, 0x54, &count, data, report, length) ==
+            HIDP_STATUS_SUCCESS &&
+        count > 0)
+    {
+        raw->expected = count;
+        raw->received = 0;
+        raw->contacts.clear();
+        USAGE buttons[8] = {};
+        ULONG pressed = 8;
+        raw->button = HidP_GetUsages(HidP_Input, 0x09, 0, buttons, &pressed, data, report,
+                                     length) == HIDP_STATUS_SUCCESS &&
+                      pressed > 0;
+    }
+    if (raw->expected == 0)
+        return;
+    for (USHORT link : raw->fingerLinks)
+    {
+        if (raw->received >= raw->expected)
+            break;
+        ULONG id = 0, x = 0, y = 0;
+        if (HidP_GetUsageValue(HidP_Input, 0x0D, link, 0x51, &id, data, report, length) !=
+                HIDP_STATUS_SUCCESS ||
+            HidP_GetUsageValue(HidP_Input, 0x01, link, 0x30, &x, data, report, length) !=
+                HIDP_STATUS_SUCCESS ||
+            HidP_GetUsageValue(HidP_Input, 0x01, link, 0x31, &y, data, report, length) !=
+                HIDP_STATUS_SUCCESS)
+            continue;
+        ++raw->received;
+        USAGE usages[16] = {};
+        ULONG active = 16;
+        bool touching = false;
+        if (HidP_GetUsages(HidP_Input, 0x0D, link, usages, &active, data, report, length) ==
+            HIDP_STATUS_SUCCESS)
+            for (ULONG i = 0; i < active && i < 16; ++i)
+                touching = touching || usages[i] == 0x42; // tip switch
+        if (touching)
+            raw->contacts.push_back({id, (float)x * raw->unitX, (float)y * raw->unitY});
+    }
+    if (raw->received >= raw->expected)
+    {
+        raw->expected = 0;
+        rawFrame();
+    }
+}
+
+bool TouchpadGestures::rawStartAllowed() const
+{
+    if (accept && !accept(user))
+        return false;
+    HWND target = static_cast<HWND>(hwnd);
+    POINT cursor = {0, 0};
+    RECT client = {0, 0, 0, 0};
+    return GetCursorPos(&cursor) && ScreenToClient(target, &cursor) &&
+           GetClientRect(target, &client) && PtInRect(&client, cursor);
+}
+
+void TouchpadGestures::rawFrame()
+{
+    // Exactly two resting fingers and no click: anything else is not ours.
+    if (raw->contacts.size() != 2 || raw->button)
+    {
+        if (raw->tracking)
+            endRawGesture();
+        return;
+    }
+    RawTouchpad::Contact a = raw->contacts[0];
+    RawTouchpad::Contact b = raw->contacts[1];
+    if (b.id < a.id)
+        std::swap(a, b);
+    const float centerX = (a.x + b.x) * .5f;
+    const float centerY = (a.y + b.y) * .5f;
+    const float spread = std::hypot(a.x - b.x, a.y - b.y);
+    const auto now = std::chrono::steady_clock::now();
+    if (!raw->tracking || a.id != raw->idA || b.id != raw->idB)
+    {
+        if (raw->tracking)
+            endRawGesture();
+        if (!rawStartAllowed())
+            return;
+        Fl::remove_timeout(coast, this);
+        raw->tracking = true;
+        raw->idA = a.id;
+        raw->idB = b.id;
+        raw->centerX = centerX;
+        raw->centerY = centerY;
+        raw->spread = spread;
+        raw->lastFrame = now;
+        raw->velocityX = raw->velocityY = 0;
+        raw->frames = 0;
+        raw->movedX = raw->movedY = 0;
+        raw->zoom = 1;
+        return;
+    }
+    // A full pad-width swipe turns like dragging across the whole canvas;
+    // both axes use the pad width so motion is the same in every direction.
+    RECT client = {0, 0, 0, 0};
+    GetClientRect(static_cast<HWND>(hwnd), &client);
+    const float dx = (centerX - raw->centerX) / raw->padWidth * (float)client.right;
+    const float dy = (centerY - raw->centerY) / raw->padWidth * (float)client.bottom;
+    const float ratio = (spread > 0 && raw->spread > 0) ? spread / raw->spread : 1;
+    raw->centerX = centerX;
+    raw->centerY = centerY;
+    raw->spread = spread;
+    const float seconds = std::chrono::duration<float>(now - raw->lastFrame).count();
+    raw->lastFrame = now;
+    if (seconds > .002f)
+    {
+        raw->velocityX = raw->velocityX * .6f + dx / seconds * .4f;
+        raw->velocityY = raw->velocityY * .6f + dy / seconds * .4f;
+    }
+    ++raw->frames;
+    raw->movedX += dx;
+    raw->movedY += dy;
+    raw->zoom *= ratio;
+    raw->works = true;
+    if (apply && (dx != 0 || dy != 0 || ratio != 1))
+        apply(user, dx, dy, ratio);
+}
+
+void TouchpadGestures::endRawGesture()
+{
+    raw->tracking = false;
+    touchpadLog("raw gesture: %d frames, moved %.0f, %.0f px, zoom x%.2f", raw->frames, raw->movedX,
+                raw->movedY, raw->zoom);
+    // Keep turning briefly after a flick, like the system's scroll inertia.
+    const float idle =
+        std::chrono::duration<float>(std::chrono::steady_clock::now() - raw->lastFrame).count();
+    if (idle < .05f && std::hypot(raw->velocityX, raw->velocityY) > 150)
+    {
+        raw->lastFrame = std::chrono::steady_clock::now();
+        Fl::add_timeout(kTickSeconds, coast, this);
+    }
+}
+
+void TouchpadGestures::coast(void *data)
+{
+    TouchpadGestures *gestures = static_cast<TouchpadGestures *>(data);
+    RawTouchpad *raw = gestures->raw;
+    if (!raw || raw->tracking)
+        return;
+    const auto now = std::chrono::steady_clock::now();
+    const float seconds = std::chrono::duration<float>(now - raw->lastFrame).count();
+    raw->lastFrame = now;
+    if (gestures->apply)
+        gestures->apply(gestures->user, raw->velocityX * seconds, raw->velocityY * seconds, 1);
+    const float decay = std::exp(-seconds / .25f);
+    raw->velocityX *= decay;
+    raw->velocityY *= decay;
+    if (std::hypot(raw->velocityX, raw->velocityY) > 20)
+        Fl::repeat_timeout(kTickSeconds, coast, data);
 }
