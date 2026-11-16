@@ -26,6 +26,24 @@ static void key(FlyCam &camera, int event, int code)
     camera.handle(event);
 }
 
+// Press a key, run the event loop, release it. Returns the time from just
+// before the press to just after the release: an upper bound on how long the
+// camera can have moved, since it measures time from the press and stops by the release.
+static double pump(double seconds);
+static double holdKey(FlyCam &camera, int code, double seconds)
+{
+    const auto start = std::chrono::steady_clock::now();
+    key(camera, FL_KEYDOWN, code);
+    pump(seconds);
+    key(camera, FL_KEYUP, code);
+    return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+}
+
+// Movement is applied on timer ticks, so the time after the last tick before
+// the release is not moved yet. Windows timers can be ~16 ms coarse and a busy
+// CI machine may skip a tick, so allow 0.1 s of missing motion.
+static const float lateSeconds = .1f;
+
 // Run the real FLTK event loop (and its timeouts) for a while.
 static double pump(double seconds)
 {
@@ -95,9 +113,7 @@ static bool checkHeldKey(int code, bool fast, float expectX, float expectY, floa
     camera.setSpeed(20);
     if (fast)
         key(camera, FL_KEYDOWN, FL_Shift_L);
-    key(camera, FL_KEYDOWN, code);
-    const double held = pump(.5);
-    key(camera, FL_KEYUP, code);
+    const double held = holdKey(camera, code, .5);
     if (fast)
         key(camera, FL_KEYUP, FL_Shift_L);
     float x, y, z;
@@ -105,16 +121,15 @@ static bool checkHeldKey(int code, bool fast, float expectX, float expectY, floa
     pump(.1);
     const bool stopped = !camera.moving() && distanceFrom(camera, x, y, z) < 1e-4f;
 
-    // Movement follows real time: the timer starts one frame late and the last
-    // partial frame is dropped, so allow two frames of slack.
     const float travelled = distanceFrom(camera, 0, 10, 0);
-    const float expected = 20 * (fast ? FlyCam::boost : 1.0f) * (float)held;
-    const float slack = 20 * (fast ? FlyCam::boost : 1.0f) * (2.0f / 60.0f + .02f);
+    const float speed = 20 * (fast ? FlyCam::boost : 1.0f);
+    const float expected = speed * (float)held;
+    const float slack = speed * lateSeconds;
     const float dot = ((x - 0) * expectX + (y - 10) * expectY + (z - 0) * expectZ) /
                       (travelled > 0 ? travelled : 1);
     const bool pass =
-        travelled <= expected + .01f && travelled >= expected - slack && dot > .999f && stopped;
-    std::printf("%s: holding %s for %.3f s moves %.2f (expected about %.2f) and stops on release\n",
+        travelled <= expected + 1e-3f && travelled >= expected - slack && dot > .999f && stopped;
+    std::printf("%s: holding %s for %.3f s moves %.2f (at most %.2f) and stops on release\n",
                 pass ? "PASS" : "FAIL", name, held, travelled, expected);
     return pass;
 }
@@ -125,16 +140,13 @@ static bool checkTurnKeysAndPitchLimit()
     FlyCam camera;
     camera.setup(&window);
     camera.setPose(0, 0, 0, 0, 0);
-    key(camera, FL_KEYDOWN, FL_Right);
-    const double held = pump(.3);
-    key(camera, FL_KEYUP, FL_Right);
+    const double held = holdKey(camera, FL_Right, .3);
     pump(.05);
     const float expected = FlyCam::turnDegreesPerSecond * (float)held;
-    const bool turn = camera.yaw() <= expected + .5f && camera.yaw() >= expected - 4.0f;
+    const bool turn = camera.yaw() <= expected + 1e-3f &&
+                      camera.yaw() >= expected - FlyCam::turnDegreesPerSecond * lateSeconds;
 
-    key(camera, FL_KEYDOWN, FL_Up);
-    pump(1.5);
-    key(camera, FL_KEYUP, FL_Up);
+    holdKey(camera, FL_Up, 1.5);
     pump(.05);
     float fx, fy, fz;
     camera.forward(fx, fy, fz);
