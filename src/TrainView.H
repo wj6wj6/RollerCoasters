@@ -85,6 +85,11 @@ class TrainView : public Fl_Gl_Window
     // Move the observer camera to where the world camera is looking from.
     void placeFlyCamAtWorldView();
 
+    // Spectator-style mouse look in the observer camera: the cursor is hidden
+    // and held at the view centre while captured. Esc or losing focus frees it.
+    void setMouseCaptured(bool captured);
+    void centerCursor();
+
     // Where the train is now (the track centre without a train).
     Pnt3f trainPosition() const;
 
@@ -97,6 +102,7 @@ class TrainView : public Fl_Gl_Window
     ArcBallCam arcball; // keep an ArcBall for the UI
     FlyCam flyCam;      // free-moving observer camera
     bool flyCamPlaced;  // has the observer camera been placed yet?
+    bool mouseCaptured; // does the mouse steer the observer camera?
     int selectedCube;   // simple - just remember which cube is selected
 
     TrainWindow *tw;               // The parent of this display window

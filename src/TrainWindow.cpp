@@ -106,13 +106,13 @@ TrainWindow::TrainWindow(const int x, const int y)
         flyCam->value(0);
         flyCam->selection_color((Fl_Color)3);
         flyCam->callback((Fl_Callback *)cameraCB, this);
-        flyCam->tooltip("Observer camera, starts at the World view\n"
-                        "Move: W/S forward/back (level), A/D sideways, E/Q up/down (Shift: 3x)\n"
-                        "Look: drag empty space or right drag; arrow keys; two fingers\n"
-                        "Fly: spread / pinch or Ctrl + scroll; mouse wheel flies forward/back\n"
-                        "Slide: Alt or Shift + two fingers\n"
-                        "Lost? F: face the train; R: back to the World view; map at top right\n"
-                        "Speed: +/- keys or the fly speed slider");
+        flyCam->tooltip("Observer camera (spectator style), starts at the World view\n"
+                        "Click the view: the mouse looks around; Esc frees the mouse\n"
+                        "Move: W/A/S/D (level), Space up, Shift down, hold Ctrl to go faster\n"
+                        "Speed: mouse wheel, +/- keys or the fly speed slider\n"
+                        "Also: right drag or arrow keys look; E/Q up/down\n"
+                        "Touchpad: two fingers look, spread / pinch fly, Alt + two fingers slide\n"
+                        "Lost? F: face the train; R: back to the World view; map at top right");
         camGroup->end();
 
         pty += 30;

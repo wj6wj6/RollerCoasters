@@ -232,9 +232,12 @@ int FlyCam::keyFor(int key)
         return Left;
     case 'd':
         return Right;
+    case ' ':
     case 'e':
     case FL_Page_Up:
         return Up;
+    case FL_Shift_L:
+    case FL_Shift_R:
     case 'q':
     case FL_Page_Down:
         return Down;
@@ -246,8 +249,8 @@ int FlyCam::keyFor(int key)
         return LookUp;
     case FL_Down:
         return LookDown;
-    case FL_Shift_L:
-    case FL_Shift_R:
+    case FL_Control_L:
+    case FL_Control_R:
         return Fast;
     }
     return -1;
@@ -312,12 +315,19 @@ void FlyCam::scroll(float dx, float dy, int state, bool precise)
     if (state & FL_CTRL)
         // Spreading two fingers (or Ctrl + wheel up) flies forward.
         move(-dy * wheelDistance, 0, 0);
-    else if (state & (FL_ALT | FL_SHIFT))
+    else if (state & FL_ALT)
         move(0, dx * wheelDistance, -dy * wheelDistance);
     else if (precise)
         look(dx * scrollDegrees, -dy * scrollDegrees);
     else
-        move(-dy * wheelDistance, dx * wheelDistance, 0);
+        // Like a spectator: wheel up flies faster, wheel down slower.
+        setSpeed(moveSpeed * powf(wheelSpeedStep, -dy));
+    redraw();
+}
+
+void FlyCam::mouseLook(float dx, float dy)
+{
+    look(dx * mouseDegreesPerPixel, -dy * mouseDegreesPerPixel);
     redraw();
 }
 

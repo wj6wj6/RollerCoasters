@@ -103,7 +103,11 @@ static int touchpadWheel(void *event, void *data)
     const float dx = message->message == WM_MOUSEWHEEL ? 0.0f : steps;
     const float dy = message->message == WM_MOUSEWHEEL ? -steps : 0.0f;
     if (fly)
+    {
         view->flyCam.scroll(dx, dy, state, precise);
+        // The mouse wheel changes the flying speed; keep the slider in step.
+        view->tw->flySpeed->value(view->flyCam.speed());
+    }
     else
         view->arcball.scroll(dx, dy, state, precise);
     return 1;
@@ -121,10 +125,12 @@ static void touchpadMoves(void *data, float dx, float dy, float scale)
 {
     if (!touchpadAccepts(data))
         return;
-    const bool pan = GetKeyState(VK_MENU) < 0 || GetKeyState(VK_SHIFT) < 0;
+    const bool alt = GetKeyState(VK_MENU) < 0;
+    const bool pan = alt || GetKeyState(VK_SHIFT) < 0;
     TrainView *view = static_cast<TrainView *>(data);
+    // In Fly mode Shift sinks the camera, so only Alt slides.
     if (view->tw->flyCam->value())
-        view->flyCam.touchpadGesture(dx, dy, scale, pan);
+        view->flyCam.touchpadGesture(dx, dy, scale, alt);
     else
         view->arcball.touchpadGesture(dx, dy, scale, pan);
 }
@@ -153,6 +159,7 @@ TrainView::TrainView(int x, int y, int w, int h, const char *l) : Fl_Gl_Window(x
     tw = 0;
     selectedCube = -1;
     flyCamPlaced = false;
+    mouseCaptured = false;
     mode(FL_RGB | FL_ALPHA | FL_DOUBLE | FL_STENCIL);
 
     resetArcball();
@@ -162,6 +169,8 @@ TrainView::TrainView(int x, int y, int w, int h, const char *l) : Fl_Gl_Window(x
 
 TrainView::~TrainView()
 {
+    if (mouseCaptured)
+        ClipCursor(nullptr);
     Fl::remove_system_handler(touchpadWheel);
 }
 
@@ -195,6 +204,41 @@ void TrainView::placeFlyCamAtWorldView()
 }
 
 //========================================================================
+void TrainView::centerCursor()
+//========================================================================
+{
+    POINT center = {w() / 2, h() / 2};
+    HWND canvas = fl_xid(this);
+    if (canvas && ClientToScreen(canvas, &center))
+        SetCursorPos(center.x, center.y);
+}
+
+//========================================================================
+void TrainView::setMouseCaptured(bool captured)
+//========================================================================
+{
+    if (captured == mouseCaptured)
+        return;
+    mouseCaptured = captured;
+    HWND canvas = fl_xid(this);
+    if (captured)
+    {
+        cursor(FL_CURSOR_NONE);
+        // Keep the hidden cursor over the view so no move is lost at an edge.
+        RECT bounds;
+        if (canvas && GetWindowRect(canvas, &bounds))
+            ClipCursor(&bounds);
+        centerCursor();
+    }
+    else
+    {
+        ClipCursor(nullptr);
+        cursor(FL_CURSOR_DEFAULT);
+    }
+    damage(1);
+}
+
+//========================================================================
 void TrainView::cameraChanged()
 //========================================================================
 {
@@ -202,6 +246,7 @@ void TrainView::cameraChanged()
     touchpad.inertia = !tw->flyCam->value();
     if (!tw->flyCam->value())
     {
+        setMouseCaptured(false);
         flyCam.stop();
         return;
     }
@@ -232,6 +277,38 @@ int TrainView::handle(int event)
     // The observer camera takes held keys, right drags and the wheel.
     if (tw->flyCam->value())
     {
+        if (mouseCaptured)
+        {
+            switch (event)
+            {
+            case FL_MOVE:
+            case FL_DRAG: {
+                // The cursor is hidden and kept at the centre; its offset is the turn.
+                const int dx = Fl::event_x() - w() / 2;
+                const int dy = Fl::event_y() - h() / 2;
+                if (dx != 0 || dy != 0)
+                {
+                    flyCam.mouseLook((float)dx, (float)dy);
+                    centerCursor();
+                }
+                return 1;
+            }
+            // Clicks do nothing while the mouse steers the view.
+            case FL_PUSH:
+            case FL_RELEASE:
+                return 1;
+            case FL_UNFOCUS:
+            case FL_HIDE:
+                setMouseCaptured(false);
+                break;
+            }
+        }
+        // Esc frees the mouse; it must not reach the window, which would close.
+        if (event == FL_KEYBOARD && Fl::event_key() == FL_Escape)
+        {
+            setMouseCaptured(false);
+            return 1;
+        }
         const float speedBefore = flyCam.speed();
         const int used = flyCam.handle(event);
         if (flyCam.speed() != speedBefore)
@@ -268,9 +345,10 @@ int TrainView::handle(int event)
             // Dragging empty space orbits (Alt pans), so one finger is enough on a touchpad.
             if (selectedCube < 0 && tw->worldCam->value())
                 arcball.beginDrag((Fl::event_state() & FL_ALT) != 0);
-            // In the observer camera the same drag looks around.
+            // In the observer camera a click on empty space captures the mouse
+            // for spectator-style mouse look (Esc frees it).
             else if (selectedCube < 0 && tw->flyCam->value())
-                flyCam.beginDrag();
+                setMouseCaptured(true);
             damage(1);
             return 1;
         };
@@ -310,9 +388,10 @@ int TrainView::handle(int event)
         return 1;
 
     // every time the mouse enters this window, aggressively take focus
+    // (returning 1 also asks FLTK for FL_MOVE events, used by mouse look)
     case FL_ENTER:
         focus(this);
-        break;
+        return 1;
 
     case FL_KEYBOARD:
         int k = Fl::event_key();
@@ -647,6 +726,34 @@ void TrainView::drawFlyOverlay()
     glVertex2f(eyeX + back * sinf(heading + 2.5f), -eyeZ + back * cosf(heading + 2.5f));
     glVertex2f(eyeX + back * sinf(heading - 2.5f), -eyeZ + back * cosf(heading - 2.5f));
     glEnd();
+
+    // Controls hint along the bottom of the view.
+    glViewport(0, 0, w(), h());
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(0, w(), 0, h(), -1, 1);
+    glMatrixMode(GL_MODELVIEW);
+    const char *lines[2] = {mouseCaptured ? "Mouse looks around  -  Esc frees the mouse"
+                                          : "Click the view to look with the mouse",
+                            "WASD move  Space/Shift up/down  Ctrl fast  Wheel speed  F train"};
+    // A dim band keeps the text readable over the light floor.
+    glColor4f(0, 0, 0, .45f);
+    glBegin(GL_QUADS);
+    glVertex2f(0, 0);
+    glVertex2f((float)w(), 0);
+    glVertex2f((float)w(), 40);
+    glVertex2f(0, 40);
+    glEnd();
+    gl_font(FL_HELVETICA, 12);
+    for (int i = 0; i < 2; ++i)
+    {
+        const float x = (w() - (float)gl_width(lines[i])) * .5f;
+        const float y = 10.0f + 16.0f * (1 - i);
+        glColor4f(0, 0, 0, .7f);
+        gl_draw(lines[i], x + 1, y - 1);
+        glColor4f(1, 1, 1, .9f);
+        gl_draw(lines[i], x, y);
+    }
 
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();

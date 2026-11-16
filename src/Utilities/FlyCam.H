@@ -3,21 +3,26 @@
 
      Comment:     A free-fly observer camera for FlTk OpenGL windows.
 
+                  Controls follow a block-game spectator camera.
+
                   Keyboard (hold to move, the view keeps a level horizon):
-                    W / S          fly forward / back, level with the ground
-                    A / D          strafe left / right
-                    E / Q          rise / sink (also Page Up / Page Down)
+                    W / A / S / D  fly forward / left / back / right, level
+                                   with the ground
+                    Space / Shift  rise / sink (also E / Q, Page Up / Down)
+                    Ctrl           fly faster
                     arrow keys     turn and look up / down
-                    Shift          move three times faster
                     + / -          change the flying speed
 
                   Mouse and touchpad:
+                    mouse look     the caller captures the mouse and passes
+                                   its movement to mouseLook()
                     drag           look around (the caller starts left drags
                                    with beginDrag; right drags are taken here)
-                    two-finger     precise touchpad scroll looks around
-                    pinch / Ctrl   fly forward / back
-                    Alt or Shift   scroll strafes and rises
-                    mouse wheel    fly forward / back
+                    mouse wheel    faster / slower
+                    two fingers    look around (precise touchpad scroll or
+                                   touchpadGesture); spread / pinch or
+                                   Ctrl + scroll fly forward / back;
+                                   with Alt they slide
 
                   The camera stays above the ground and within a box around
                   the scene, so it cannot get lost under the floor or in the
@@ -63,8 +68,11 @@ class FlyCam
     void beginDrag();
 
     // Wheel input in notches with FLTK signs (+dx right, +dy down). Precise
-    // touchpad scrolling looks around; mouse wheel notches fly forward.
+    // touchpad scrolling looks around; mouse wheel notches change the speed.
     void scroll(float dx, float dy, int state, bool precise);
+
+    // Captured-mouse movement in pixels since the last event (+x right, +y down).
+    void mouseLook(float dx, float dy);
 
     // One Direct Manipulation update: finger movement in window pixels and the
     // pinch ratio since the last update. The scene follows the fingers (looking
@@ -108,7 +116,9 @@ class FlyCam
 
     static constexpr float minSpeed = 1.0f;
     static constexpr float maxSpeed = 200.0f;
-    static constexpr float boost = 3.0f;                // Shift multiplier
+    static constexpr float boost = 2.5f;                // Ctrl multiplier
+    static constexpr float mouseDegreesPerPixel = .15f; // captured mouse look
+    static constexpr float wheelSpeedStep = 1.25f;      // speed ratio per wheel notch
     static constexpr float dragDegreesPerPixel = .25f;  // mouse look
     static constexpr float scrollDegrees = 3.0f;        // touchpad look per notch
     static constexpr float scrollSeconds = .15f;        // wheel travel per notch, in seconds

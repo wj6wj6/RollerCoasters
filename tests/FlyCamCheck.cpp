@@ -113,10 +113,10 @@ static bool checkHeldKey(int code, bool fast, float pitch, float expectX, float 
     camera.setPose(0, 30, 0, 0, pitch);
     camera.setSpeed(20);
     if (fast)
-        key(camera, FL_KEYDOWN, FL_Shift_L);
+        key(camera, FL_KEYDOWN, FL_Control_L);
     const double held = holdKey(camera, code, .5);
     if (fast)
-        key(camera, FL_KEYUP, FL_Shift_L);
+        key(camera, FL_KEYUP, FL_Control_L);
     float x, y, z;
     camera.position(x, y, z);
     pump(.1);
@@ -180,6 +180,23 @@ static bool checkDragLook()
     return pass;
 }
 
+static bool checkMouseLook()
+{
+    Fl_Gl_Window window(600, 600);
+    FlyCam camera;
+    camera.setup(&window);
+    camera.setPose(0, 50, 0, 0, 0);
+    // Captured mouse: moving right turns right, moving up looks up.
+    camera.mouseLook(40, -20);
+    camera.mouseLook(60, 0);
+    const bool pass = approx(camera.yaw(), 100 * FlyCam::mouseDegreesPerPixel, 1e-3f) &&
+                      approx(camera.pitch(), 20 * FlyCam::mouseDegreesPerPixel, 1e-3f) &&
+                      distanceFrom(camera, 0, 50, 0) < 1e-5f;
+    std::printf("%s: mouse look turns %.2f deg right and %.2f deg up\n", pass ? "PASS" : "FAIL",
+                camera.yaw(), camera.pitch());
+    return pass;
+}
+
 static bool checkScroll()
 {
     Fl_Gl_Window window(600, 600);
@@ -210,14 +227,25 @@ static bool checkScroll()
     const bool slide = approx(x, notch, 1e-4f) && approx(y, 50 + notch, 1e-4f) &&
                        approx(z, 0, 1e-5f) && camera.yaw() == 0;
 
-    // A mouse wheel notch up flies forward instead of tilting the view.
+    // Like a spectator, a mouse wheel notch up flies faster (and stays put).
     camera.setPose(0, 50, 0, 0, 0);
     Fl::e_dx = 0;
     Fl::e_dy = -1;
     Fl::e_state = 0;
     const bool taken = camera.handle(FL_MOUSEWHEEL) == 1;
-    camera.position(x, y, z);
-    const bool wheel = taken && approx(z, -notch, 1e-4f) && camera.pitch() == 0;
+    const bool faster = approx(camera.speed(), 20 * FlyCam::wheelSpeedStep, 1e-3f);
+    Fl::e_dy = 2;
+    camera.handle(FL_MOUSEWHEEL);
+    const bool slower = approx(camera.speed(), 20 / FlyCam::wheelSpeedStep, 1e-3f);
+    const bool wheel =
+        taken && faster && slower && distanceFrom(camera, 0, 50, 0) < 1e-5f && camera.pitch() == 0;
+    camera.setSpeed(20);
+
+    // Shift is the sink key, so Shift + touchpad scroll still looks around.
+    camera.setPose(0, 50, 0, 0, 0);
+    camera.scroll(1, 0, FL_SHIFT, true);
+    const bool shiftLooks = approx(camera.yaw(), FlyCam::scrollDegrees, 1e-3f) &&
+                            distanceFrom(camera, 0, 50, 0) < 1e-5f;
 
     // Direct Manipulation: fingers moving right drag the scene right (turn left)
     // while a 10% spread flies forward by one wheel notch in the same update.
@@ -235,9 +263,10 @@ static bool checkScroll()
     const bool gestureSlide = approx(x, -10 * perPixel, 1e-4f) &&
                               approx(y, 50 - 10 * perPixel, 1e-4f) && camera.yaw() == 0;
 
-    const bool pass = look && pinch && slide && wheel && gesture && gestureSlide;
-    std::printf("%s: touchpad scroll and gestures look, pinch and wheel fly, Alt slides\n",
-                pass ? "PASS" : "FAIL");
+    const bool pass = look && pinch && slide && wheel && shiftLooks && gesture && gestureSlide;
+    std::printf(
+        "%s: touchpad scroll and gestures look, pinch flies, wheel sets speed, Alt slides\n",
+        pass ? "PASS" : "FAIL");
     return pass;
 }
 
@@ -332,17 +361,20 @@ int main()
     bool forward = checkHeldKey('w', false, -30, 0, 0, -1, "W");
     bool back = checkHeldKey('s', false, -30, 0, 0, 1, "S");
     bool left = checkHeldKey('a', false, 0, -1, 0, 0, "A");
-    bool up = checkHeldKey('e', false, 0, 0, 1, 0, "E");
-    bool down = checkHeldKey('q', false, 0, 0, -1, 0, "Q");
-    bool fast = checkHeldKey('d', true, 0, 1, 0, 0, "Shift + D");
+    bool up = checkHeldKey(' ', false, 0, 0, 1, 0, "Space");
+    bool down = checkHeldKey(FL_Shift_L, false, 0, 0, -1, 0, "Shift");
+    bool upAlt = checkHeldKey('e', false, 0, 0, 1, 0, "E");
+    bool downAlt = checkHeldKey('q', false, 0, 0, -1, 0, "Q");
+    bool fast = checkHeldKey('d', true, 0, 1, 0, 0, "Ctrl + D");
     bool turn = checkTurnKeysAndPitchLimit();
     bool drag = checkDragLook();
     bool scroll = checkScroll();
+    bool mouse = checkMouseLook();
     bool speed = checkSpeedKeysAndUnfocus();
     bool bounds = checkBounds();
     bool lookAt = checkLookAt();
-    return view && forward && back && left && up && down && fast && turn && drag && scroll &&
-                   speed && bounds && lookAt
+    return view && forward && back && left && up && down && upAlt && downAlt && fast && turn &&
+                   drag && scroll && mouse && speed && bounds && lookAt
                ? 0
                : 1;
 }
