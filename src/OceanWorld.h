@@ -6,12 +6,17 @@
 
                   * terraced sand and stone sea bed that drops from a
                     shallow shelf by the island to deep water,
-                  * a coral reef, a kelp forest, sea grass and starfish,
-                  * the ruins of a sunken colonnade with two gates,
-                  * a wrecked wooden boat,
+                  * rocky outcrops, arches and spires,
+                  * coral reefs with branching coral trees and giant clams,
+                    a kelp forest, sea grass, anemones and starfish,
+                  * the ruins of a sunken colonnade with lamp-lit gates
+                    and a stepped temple,
+                  * a wrecked ship with gold in its hold,
                   * a rocky islet with a long tunnel through it, lit only
                     by glowing crystals,
-                  * small schools of fish.
+                  * ring gates where the ride dives and where it surfaces,
+                  * sea life: schools of fish, sharks, turtles, rays, a
+                    whale and glowing jellyfish.
 
                   The world is a grid of 5 x 5 x 5 blocks. It is built once
                   into display lists, with Minecraft-like smooth lighting
@@ -26,8 +31,9 @@
 
                   demoTrack() returns a ride that dives off the island,
                   passes the reef, the kelp, the ruins and the wreck, runs
-                  through the tunnel and climbs back out. The tunnel and
-                  the gates are carved around that ride.
+                  through the tunnel and climbs back out. Blocks are carved
+                  away around that ride and plants keep clear of it, for
+                  all three spline types (see rideObstructions()).
 
 *************************************************************************/
 #pragma once
@@ -58,9 +64,14 @@ class OceanWorld
     // Height of the water surface.
     static float waterLevel();
 
+    // For tests: how many of the given points (x, y, z for each, a path the
+    // train follows) have a block or a plant within the train's reach. The
+    // demo ride gives 0 for every spline type.
+    static int rideObstructions(const std::vector<float> &path);
+
   private:
     void build();
-    void drawFish(float time);
+    void drawSeaLife(float time);
 
     bool m_built;
     unsigned int m_solidList;

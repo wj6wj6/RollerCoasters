@@ -140,6 +140,16 @@ void TrainView::fillLightingFrame(LightingFrame &frame)
     frame.time = secondsSinceStart();
     frame.wind = true;
 
+    // Rain sets in within a couple of seconds; the ground takes longer to
+    // get wet and much longer to dry again.
+    const float elapsed = m_weatherTime < 0.0f ? 0.0f : fminf(frame.time - m_weatherTime, 0.5f);
+    m_weatherTime = frame.time;
+    const bool raining = tw->rainButton->value() != 0;
+    m_rain = fmaxf(0.0f, fminf(1.0f, m_rain + (raining ? elapsed : -elapsed) / 2.0f));
+    m_wetness = fmaxf(0.0f, fminf(1.0f, m_wetness + (raining ? elapsed / 6.0f : -elapsed / 25.0f)));
+    frame.rain = m_rain;
+    frame.wetness = m_wetness;
+
     // The trees stand near the edge of the ground; start with a box that
     // holds them and grow it to include every control point.
     float lo[3] = {-92.0f, 0.0f, -92.0f};

@@ -49,6 +49,9 @@ struct LightingFrame
     float waterLevel = -1e9f;
     bool cameraUnderwater = false; // fog is then drawn by PostEffects
 
+    float rain = 0.0f;    // 0 dry sky, 1 pouring: clouds close in, the sun dims
+    float wetness = 0.0f; // 0 dry, 1 soaked: surfaces darken and turn glossy
+
     // Train frame used for the headlight.
     bool hasTrain = false;
     float trainPosition[3] = {0.0f, 0.0f, 0.0f};
@@ -71,6 +74,7 @@ struct SkyState
     float horizon[3];
     float day;  // 0 at night, 1 in daylight
     float dusk; // 1 near sunrise and sunset
+    float overcast; // 0 clear, 1 rain clouds
 };
 
 class AdvancedLighting
@@ -106,6 +110,21 @@ class AdvancedLighting
     bool shadowMapValid() const
     {
         return m_shadowMapValid;
+    }
+
+    // The train headlight as set up by the last begin(): is it on, where
+    // it is and which way it points.
+    bool headlightOn() const
+    {
+        return m_headOn;
+    }
+    const float *headlightPosition() const
+    {
+        return m_headPos;
+    }
+    const float *headlightDirection() const
+    {
+        return m_headDir;
     }
 
     // Shadow pass. Between these two calls the caller draws every shadow caster
@@ -168,6 +187,7 @@ class AdvancedLighting
     int m_locTexture;
     int m_locWaterLevel;
     int m_locBlockLightColor;
+    int m_locWetness;
 
     // Results of prepare(), kept between the shadow and the main passes.
     SkyState m_sky;
@@ -179,4 +199,7 @@ class AdvancedLighting
     float m_lightMatrix[16];
     float m_normalOffset;
     float m_depthBias;
+    bool m_headOn;
+    float m_headPos[3];
+    float m_headDir[3];
 };

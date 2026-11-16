@@ -102,6 +102,7 @@ uniform sampler2D uTexture;    // unit 0; plain white when nothing is bound
 uniform float uTime;
 uniform float uWaterLevel;     // very low when there is no water
 uniform vec3 uBlockLightColor; // glow cast by crystals
+uniform float uWetness;        // 0 dry, 1 soaked by rain
 
 varying vec3 vWorldPos;
 varying vec3 vWorldNormal;
@@ -127,11 +128,13 @@ float shadowAt(vec3 p, vec3 n)
     return lit / 12.0;
 }
 
-vec3 blinnPhong(vec3 albedo, vec3 n, vec3 l, vec3 v)
+// wet: a film of water makes the surface smoother, so the highlight gets
+// both tighter and much brighter.
+vec3 blinnPhong(vec3 albedo, vec3 n, vec3 l, vec3 v, float wet)
 {
     float ndl = max(dot(n, l), 0.0);
     vec3 h = normalize(l + v);
-    float spec = ndl > 0.0 ? pow(max(dot(n, h), 0.0), 48.0) * 0.3 : 0.0;
+    float spec = ndl > 0.0 ? pow(max(dot(n, h), 0.0), mix(48.0, 260.0, wet)) * mix(0.3, 1.8, wet) : 0.0;
     return albedo * ndl + vec3(spec);
 }
 
@@ -147,6 +150,15 @@ void main()
     vec4 base = vColor * texel;
     vec3 albedo = pow(base.rgb, vec3(2.2));
 
+    // Wet surfaces are darker and glossy: everything the rain reaches (the
+    // tops most), and always the band just above the water line.
+    float wet = 0.0;
+    if (vWorldPos.y > uWaterLevel) {
+        float shore = 1.0 - smoothstep(0.2, 1.8, vWorldPos.y - uWaterLevel);
+        wet = max(uWetness * (0.45 + 0.55 * max(n.y, 0.0)), shore * 0.8);
+        albedo *= mix(1.0, 0.6, wet);
+    }
+
     float shadow = 1.0;
     if (uShadowsOn != 0)
         shadow = shadowAt(vWorldPos, n);
@@ -160,9 +172,9 @@ void main()
         // focused into caustics; the ambient light is scattered blue too.
         float depth = uWaterLevel - vWorldPos.y;
         sun *= sunThroughWater(depth, l) * caustics(vWorldPos, l, uWaterLevel, uTime);
-        vec3 tint = exp(-kWaterAbsorb * depth * 0.8) * vec3(0.55, 0.9, 1.15);
+        vec3 tint = exp(-kWaterAbsorb * depth * 0.8) * vec3(0.8, 1.3, 1.6);
         skyAmbient *= tint;
-        groundAmbient = skyAmbient * 0.6;
+        groundAmbient = skyAmbient * 0.75; // light bounced off the pale sand
     }
 
     vec3 v = normalize(cameraPos - vWorldPos);
@@ -174,7 +186,7 @@ void main()
     } else {
         vec3 ambient = mix(groundAmbient, skyAmbient, n.y * 0.5 + 0.5);
         color = albedo * ambient;
-        color += blinnPhong(albedo, n, l, v) * sun;
+        color += blinnPhong(albedo, n, l, v, wet) * sun;
     }
     // Light from nearby crystals, and the crystals' own glow.
     color += albedo * uBlockLightColor * vExtra.z;
@@ -186,7 +198,7 @@ void main()
         vec3 l = toLamp / max(d, 0.0001);
         float cone = smoothstep(0.86, 0.965, dot(-l, uHeadDir));
         float falloff = (1.0 - smoothstep(60.0, 110.0, d)) / (1.0 + d * d * 0.006);
-        vec3 lamp = uUnlit != 0 ? albedo * 0.7 : blinnPhong(albedo, n, l, v);
+        vec3 lamp = uUnlit != 0 ? albedo * 0.7 : blinnPhong(albedo, n, l, v, wet);
         color += lamp * uHeadColor * (cone * falloff);
     }
 
@@ -336,6 +348,9 @@ void AdvancedLighting::invalidate()
     m_previousFbo = 0;
     m_normalOffset = 0.0f;
     m_depthBias = 0.0f;
+    m_headOn = false;
+    for (int i = 0; i < 3; ++i)
+        m_headPos[i] = m_headDir[i] = 0.0f;
     m_sky = SkyState();
     identity(m_lightView);
     identity(m_lightProj);
@@ -422,6 +437,7 @@ bool AdvancedLighting::init()
     m_locTexture = glGetUniformLocation(m_program, "uTexture");
     m_locWaterLevel = glGetUniformLocation(m_program, "uWaterLevel");
     m_locBlockLightColor = glGetUniformLocation(m_program, "uBlockLightColor");
+    m_locWetness = glGetUniformLocation(m_program, "uWetness");
 
     // Textured drawing code (glBindTexture on unit 0) keeps working through the
     // shader. Untextured code leaves the default texture object 0 bound, so
@@ -556,6 +572,24 @@ void AdvancedLighting::prepare(const LightingFrame &frame)
     m_sky.day = day;
     m_sky.dusk = dusk * day;
 
+    // Rain: the clouds close in, so the sun dims and the sky, the fog and
+    // the light from the sky all turn grey.
+    const float rain = clamp01(frame.rain);
+    m_sky.overcast = rain;
+    if (rain > 0.0f)
+    {
+        const float grey[3] = {0.16f * day + 0.004f, 0.18f * day + 0.005f, 0.21f * day + 0.008f};
+        const float blend = 0.8f * rain;
+        for (int i = 0; i < 3; ++i)
+        {
+            lightColor[i] *= 1.0f - 0.65f * rain;
+            m_sky.zenith[i] += (grey[i] * 0.8f - m_sky.zenith[i]) * blend;
+            m_sky.horizon[i] += (grey[i] * 1.6f - m_sky.horizon[i]) * blend;
+            m_fogColor[i] = m_sky.horizon[i];
+            m_skyAmbient[i] += (grey[i] * 1.5f - m_skyAmbient[i]) * blend * 0.6f;
+        }
+    }
+
     // Orthographic light camera that encloses every shadow caster.
     float center[3];
     float radius = 0.0f;
@@ -667,13 +701,17 @@ void AdvancedLighting::begin(const LightingFrame &frame)
     glUniform3fv(m_locGroundAmbient, 1, m_groundAmbient);
     glUniform3fv(m_locFogColor, 1, m_fogColor);
     // Under water the fog is drawn by the post pass instead.
-    glUniform1f(m_locFogDensity, (frame.orthographic || frame.cameraUnderwater) ? 0.0f : 0.002f);
+    glUniform1f(m_locFogDensity, (frame.orthographic || frame.cameraUnderwater)
+                                     ? 0.0f
+                                     : 0.002f + 0.002f * clamp01(frame.rain));
+    glUniform1f(m_locWetness, clamp01(frame.wetness));
     glUniform1f(m_locWaterLevel, frame.waterLevel);
     const float crystalLight[3] = {0.12f, 0.55f, 0.75f};
     glUniform3fv(m_locBlockLightColor, 1, crystalLight);
     glUniform1i(m_locUnlit, 0);
 
     const bool headlight = frame.headlight && frame.hasTrain;
+    m_headOn = headlight;
     glUniform1i(m_locHeadlightOn, headlight ? 1 : 0);
     if (headlight)
     {
@@ -688,6 +726,11 @@ void AdvancedLighting::begin(const LightingFrame &frame)
         }
         normalize3(dir);
         const float lampColor[3] = {3.2f, 2.9f, 2.3f};
+        for (int i = 0; i < 3; ++i)
+        {
+            m_headPos[i] = pos[i];
+            m_headDir[i] = dir[i];
+        }
         glUniform3fv(m_locHeadPos, 1, pos);
         glUniform3fv(m_locHeadDir, 1, dir);
         glUniform3fv(m_locHeadColor, 1, lampColor);

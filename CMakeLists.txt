@@ -89,6 +89,13 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     add_test(NAME TrackSpacingCheck COMMAND TrackSpacingCheck)
     set_tests_properties(TrackSpacingCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
+    add_executable(OceanRideClearanceCheck tests/OceanRideClearanceCheck.cpp
+        src/OceanWorld.cpp src/PixelArt.cpp src/Track.cpp src/ControlPoint.cpp)
+    target_include_directories(OceanRideClearanceCheck PRIVATE src)
+    target_link_libraries(OceanRideClearanceCheck PRIVATE Utilities glad)
+    add_test(NAME OceanRideClearanceCheck COMMAND OceanRideClearanceCheck)
+    set_tests_properties(OceanRideClearanceCheck PROPERTIES TIMEOUT 30 LABELS integration)
+
     add_test(NAME VersionCheck COMMAND RollerCoasters --version)
     set_tests_properties(VersionCheck PROPERTIES TIMEOUT 10
         PASS_REGULAR_EXPRESSION "RollerCoasters ${PROJECT_VERSION}" LABELS smoke)

@@ -102,4 +102,9 @@ class TrainView : public Fl_Gl_Window
     PostEffects effects;       // sky, water, SSAO, bloom, god rays
     GrassGround m_ground;      // grass blocks with dirt sides
     OceanWorld m_ocean;        // blocky sea floor, reef, ruins, wreck and tunnel
+
+    // Weather, eased towards the Rain button (TrainViewEffects.cpp).
+    float m_rain = 0.0f;        // 0 dry sky, 1 pouring
+    float m_wetness = 0.0f;     // 0 dry ground, 1 soaked: lags behind the rain
+    float m_weatherTime = -1.0f; // when the weather was last advanced
 };

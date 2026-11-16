@@ -82,8 +82,12 @@ class PostEffects
     void setUnderwaterCamera(const float cameraPos[3], const SkyState &sky);
     void applySSAO();
     void drawParticles(const SkyState &sky, float time);
+    // Mirror-like reflections on rain-soaked ground (wetness 0..1).
+    void applyWetGround(const AdvancedLighting &lighting, float wetness);
+    // rain 0..1 adds drop rings to the surface.
     void drawWater(const AdvancedLighting &lighting, float time, bool orthographic,
-                   bool underwater);
+                   bool underwater, float rain);
+    void drawRain(const SkyState &sky, float time, float rain);
     void applyUnderwater(const AdvancedLighting &lighting, float time);
     void finish(const SkyState &sky, bool bloom, bool underwater);
 
@@ -104,6 +108,7 @@ class PostEffects
     void bindTarget(const Target &t);
     void fullscreenQuad();
     void blur(Target &src, Target &tmp, float radius);
+    void buildWaterMesh();
 
     bool m_triedInit;
     bool m_ok;
@@ -130,9 +135,12 @@ class PostEffects
     unsigned int m_underwaterProgram;
     unsigned int m_shaftsProgram;
     unsigned int m_particleProgram;
+    unsigned int m_wetProgram;
+    unsigned int m_waterList; // display list of the surface mesh
 
     float m_camera[3];    // camera position, set by setUnderwaterCamera()
-    float m_deepColor[3]; // colour of the water around the camera
+    float m_deepColor[3]; // colour of the water looking down ...
+    float m_shallowColor[3]; // ... and looking up towards the surface
     std::vector<float> m_specks;
 
     // Camera of the main view, captured in beginScene().

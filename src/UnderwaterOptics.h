@@ -11,6 +11,13 @@
                   * sunThroughWater(): how much sunlight is left after
                     travelling down to a point. Red is absorbed first, so
                     deep water turns blue.
+                  * openWater(): the colour of the water itself along a
+                    line of sight: turquoise towards the surface, deep
+                    blue below, with a glow around the sun.
+
+                  The water is clear, like a tropical lagoon: things
+                  stay visible for a few hundred units and fade into
+                  blue rather than into the dark.
 
                   Pasted into the shaders after "#version 120".
 
@@ -18,8 +25,10 @@
 #pragma once
 
 const char *const kUnderwaterOpticsGlsl = R"GLSL(
-// Absorption per world unit of water (red, green, blue).
-const vec3 kWaterAbsorb = vec3(0.050, 0.024, 0.018);
+// Sunlight lost per world unit of depth (red, green, blue).
+const vec3 kWaterAbsorb = vec3(0.020, 0.0070, 0.0045);
+// Light lost per world unit along the line of sight.
+const vec3 kFogExtinction = vec3(0.0125, 0.0050, 0.0034);
 
 vec2 opticsHash(vec2 p)
 {
@@ -66,5 +75,13 @@ float caustics(vec3 p, vec3 lightDir, float waterLevel, float t)
 vec3 sunThroughWater(float depth, vec3 lightDir)
 {
     return exp(-kWaterAbsorb * (max(depth, 0.0) / max(lightDir.y, 0.2)));
+}
+
+// Colour of the open water looking along v.
+vec3 openWater(vec3 v, vec3 lightDir, vec3 lightColor, vec3 shallow, vec3 deep)
+{
+    vec3 c = mix(deep, shallow, smoothstep(-0.35, 0.75, v.y));
+    float sun = max(dot(v, lightDir), 0.0);
+    return c + lightColor * vec3(0.03, 0.10, 0.13) * (pow(sun, 6.0) * 0.5 + pow(sun, 40.0));
 }
 )GLSL";
