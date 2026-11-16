@@ -45,7 +45,8 @@ add_library(Utilities
     src/Utilities/3DUtils.h src/Utilities/3DUtils.cpp
     src/Utilities/ArcBallCam.H src/Utilities/ArcBallCam.cpp
     src/Utilities/FlyCam.H src/Utilities/FlyCam.cpp
-    src/Utilities/Pnt3f.H src/Utilities/Pnt3f.cpp)
+    src/Utilities/Pnt3f.H src/Utilities/Pnt3f.cpp
+    src/Utilities/TwoFingerGesture.H src/Utilities/TwoFingerGesture.cpp)
 target_link_libraries(Utilities PUBLIC project_options fltk)
 
 add_executable(RollerCoasters
@@ -59,7 +60,8 @@ add_executable(RollerCoasters
     src/TrainWindow.H src/TrainWindow.cpp)
 target_include_directories(RollerCoasters SYSTEM PRIVATE
     "${PROJECT_SOURCE_DIR}/include/glm-0.9.8.5/glm")
-target_link_libraries(RollerCoasters PRIVATE Utilities glad)
+# hid: HidP_* parse the raw precision touchpad reports.
+target_link_libraries(RollerCoasters PRIVATE Utilities glad hid)
 
 if(ROLLERCOASTERS_BUILD_TESTS)
     enable_testing()
@@ -74,6 +76,12 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     target_link_libraries(FlyCamCheck PRIVATE Utilities)
     add_test(NAME FlyCamCheck COMMAND FlyCamCheck)
     set_tests_properties(FlyCamCheck PROPERTIES TIMEOUT 30 LABELS integration)
+
+    add_executable(TwoFingerGestureCheck tests/TwoFingerGestureCheck.cpp)
+    target_include_directories(TwoFingerGestureCheck PRIVATE src/Utilities)
+    target_link_libraries(TwoFingerGestureCheck PRIVATE Utilities)
+    add_test(NAME TwoFingerGestureCheck COMMAND TwoFingerGestureCheck)
+    set_tests_properties(TwoFingerGestureCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
     add_executable(TrackRoundTripCheck tests/TrackRoundTripCheck.cpp
         src/Track.cpp src/ControlPoint.cpp)

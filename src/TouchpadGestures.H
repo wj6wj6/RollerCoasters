@@ -1,9 +1,12 @@
-// Precision touchpad gestures through Windows Direct Manipulation.
+// Precision touchpad gestures that orbit and zoom at the same time.
 //
-// Windows turns a two-finger touchpad gesture into either scroll or pinch
-// (Ctrl + wheel) messages, never both at once. Direct Manipulation reports
-// the fingers' movement and spread together, so the camera can orbit and
-// zoom in the same gesture. Without it, the wheel messages still work.
+// Windows decides per gesture whether two fingers scroll or pinch: the wheel
+// messages and even Direct Manipulation report one or the other, never both.
+// So the finger positions are read from the touchpad's raw HID reports, and
+// the fingers' shared movement and their spread are applied together.
+// Direct Manipulation still claims the gesture so Windows sends no wheel
+// messages for it, and its output is the fallback when raw reports are
+// unusable. Without either, the wheel messages still work.
 #pragma once
 
 #include <cstdint>
@@ -13,6 +16,10 @@ struct IDirectManipulationUpdateManager;
 struct IDirectManipulationViewport;
 struct IDirectManipulationContent;
 class ViewportHandler;
+struct RawTouchpad;
+
+// Prints one "[touchpad] ..." line to the console.
+void touchpadLog(const char *format, ...);
 
 class TouchpadGestures
 {
@@ -44,6 +51,7 @@ class TouchpadGestures
     bool hitTest(unsigned int pointerId);
     void statusChanged(int status);
     void contentUpdated(IDirectManipulationContent *content);
+    void rawInput(void *rawInputHandle);
 
   private:
     static void tick(void *data);
@@ -51,6 +59,11 @@ class TouchpadGestures
     void stopTicking();
     void resetTransform();
     bool readTransform(float &scale, float &x, float &y) const;
+    void readReport(char *report, unsigned long length);
+    void rawFrame();
+    void endRawGesture();
+    bool rawStartAllowed() const;
+    static void coast(void *data);
 
     void *hwnd = nullptr;
     void *failedWindow = nullptr; // do not retry a window where setup failed
@@ -63,6 +76,7 @@ class TouchpadGestures
     IDirectManipulationViewport *viewport = nullptr;
     IDirectManipulationContent *content = nullptr;
     ViewportHandler *handler = nullptr;
+    RawTouchpad *raw = nullptr;
     unsigned long handlerCookie = 0;
     bool comInitialized = false;
     bool ticking = false;
@@ -76,4 +90,8 @@ class TouchpadGestures
     float lastScale = 1;
     float lastX = 0;
     float lastY = 0;
+    int gestureUpdates = 0; // diagnostics for the console log
+    float gestureMoveX = 0;
+    float gestureMoveY = 0;
+    float gestureZoom = 1;
 };

@@ -90,6 +90,14 @@ static int touchpadWheel(void *event, void *data)
         state |= FL_ALT;
     const float steps = (float)delta / WHEEL_DELTA;
     const bool precise = isPreciseWheel(delta);
+    // A touchpad gesture that reaches here bypassed Direct Manipulation.
+    static std::chrono::steady_clock::time_point lastLog;
+    const auto now = std::chrono::steady_clock::now();
+    if (now - lastLog > std::chrono::milliseconds(500))
+        touchpadLog("wheel message: %s delta %d%s%s",
+                    message->message == WM_MOUSEWHEEL ? "vertical" : "horizontal", delta,
+                    (keys & MK_CONTROL) ? ", Ctrl (pinch)" : "", precise ? ", precise" : "");
+    lastLog = now;
     // Match FLTK's signs: wheel up is -dy, tilting right is +dx.
     const float dx = message->message == WM_MOUSEWHEEL ? 0.0f : steps;
     const float dy = message->message == WM_MOUSEWHEEL ? -steps : 0.0f;
