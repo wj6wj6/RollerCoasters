@@ -62,7 +62,8 @@ add_executable(RollerCoasters
     src/Track.H src/Track.cpp
     src/TrackRenderer.H src/TrackRenderer.cpp
     src/TrainView.H src/TrainView.cpp
-    src/TrainWindow.H src/TrainWindow.cpp)
+    src/TrainWindow.H src/TrainWindow.cpp
+    src/UiTheme.h src/UiTheme.cpp)
 target_include_directories(RollerCoasters SYSTEM PRIVATE
     "${PROJECT_SOURCE_DIR}/include/glm-0.9.8.5/glm")
 target_link_libraries(RollerCoasters PRIVATE Utilities glad)
