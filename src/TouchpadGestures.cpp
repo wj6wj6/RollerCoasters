@@ -675,15 +675,15 @@ void TouchpadGestures::rawFrame()
         raw->zoom = 1;
         return;
     }
+    const float seconds = std::chrono::duration<float>(now - raw->lastFrame).count();
+    raw->lastFrame = now;
     float moveX = 0, moveY = 0, ratio = 1;
-    raw->filter.update(centerX, centerY, spread, moveX, moveY, ratio);
+    raw->filter.update(centerX, centerY, spread, seconds, moveX, moveY, ratio);
     // A full pad-width swipe turns like dragging across the whole canvas.
     RECT client = {0, 0, 0, 0};
     GetClientRect(static_cast<HWND>(hwnd), &client);
     const float dx = moveX * (float)client.right;
     const float dy = moveY * (float)client.bottom;
-    const float seconds = std::chrono::duration<float>(now - raw->lastFrame).count();
-    raw->lastFrame = now;
     if (seconds > .002f)
     {
         raw->velocityX = raw->velocityX * .6f + dx / seconds * .4f;
