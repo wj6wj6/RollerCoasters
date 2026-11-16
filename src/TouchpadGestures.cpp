@@ -3,6 +3,8 @@
 #include <windows.h>
 #include <directmanipulation.h>
 #include <FL/Fl.H>
+#include <cstdarg>
+#include <cstdio>
 
 namespace
 {
@@ -12,6 +14,27 @@ const wchar_t *const kOwnerProperty = L"RollerCoasters.TouchpadGestures";
 const float kContentSize = 40000;
 const double kTickSeconds = 1.0 / 60.0;
 } // namespace
+
+// Diagnostics on the console: whether touchpad gestures reach Direct
+// Manipulation, and what each gesture did.
+void touchpadLog(const char *format, ...)
+{
+    std::va_list arguments;
+    va_start(arguments, format);
+    std::fputs("[touchpad] ", stdout);
+    std::vprintf(format, arguments);
+    std::fputc('\n', stdout);
+    std::fflush(stdout);
+    va_end(arguments);
+}
+
+static bool setupFailed(TouchpadGestures &gestures, const char *step, HRESULT result)
+{
+    touchpadLog("Direct Manipulation setup failed at %s (HRESULT 0x%08lx); using wheel messages",
+                step, (unsigned long)result);
+    gestures.detach();
+    return false;
+}
 
 class ViewportHandler final : public IDirectManipulationViewportEventHandler
 {
@@ -116,18 +139,16 @@ bool TouchpadGestures::attach(void *window, Accept acceptFn, Apply applyFn, void
 
     comInitialized = SUCCEEDED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED));
     // Without Direct Manipulation the wheel messages keep working as before.
-    if (FAILED(CoCreateInstance(__uuidof(DirectManipulationManager), nullptr, CLSCTX_INPROC_SERVER,
-                                IID_PPV_ARGS(&manager))))
-    {
-        detach();
-        return false;
-    }
-    if (FAILED(manager->GetUpdateManager(IID_PPV_ARGS(&updates))) ||
-        FAILED(manager->CreateViewport(nullptr, target, IID_PPV_ARGS(&viewport))))
-    {
-        detach();
-        return false;
-    }
+    HRESULT result = CoCreateInstance(__uuidof(DirectManipulationManager), nullptr,
+                                      CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&manager));
+    if (FAILED(result))
+        return setupFailed(*this, "CoCreateInstance", result);
+    result = manager->GetUpdateManager(IID_PPV_ARGS(&updates));
+    if (FAILED(result))
+        return setupFailed(*this, "GetUpdateManager", result);
+    result = manager->CreateViewport(nullptr, target, IID_PPV_ARGS(&viewport));
+    if (FAILED(result))
+        return setupFailed(*this, "CreateViewport", result);
     // Pan and pinch together; only the pan keeps moving after the fingers lift.
     const DIRECTMANIPULATION_CONFIGURATION configuration =
         static_cast<DIRECTMANIPULATION_CONFIGURATION>(
@@ -138,14 +159,18 @@ bool TouchpadGestures::attach(void *window, Accept acceptFn, Apply applyFn, void
             DIRECTMANIPULATION_CONFIGURATION_SCALING);
     handler = new ViewportHandler(*this);
     DWORD cookie = 0;
-    if (FAILED(viewport->ActivateConfiguration(configuration)) ||
-        FAILED(viewport->SetViewportOptions(DIRECTMANIPULATION_VIEWPORT_OPTIONS_MANUALUPDATE)) ||
-        FAILED(viewport->AddEventHandler(target, handler, &cookie)) ||
-        FAILED(viewport->GetPrimaryContent(IID_PPV_ARGS(&content))))
-    {
-        detach();
-        return false;
-    }
+    result = viewport->ActivateConfiguration(configuration);
+    if (FAILED(result))
+        return setupFailed(*this, "ActivateConfiguration", result);
+    result = viewport->SetViewportOptions(DIRECTMANIPULATION_VIEWPORT_OPTIONS_MANUALUPDATE);
+    if (FAILED(result))
+        return setupFailed(*this, "SetViewportOptions", result);
+    result = viewport->AddEventHandler(target, handler, &cookie);
+    if (FAILED(result))
+        return setupFailed(*this, "AddEventHandler", result);
+    result = viewport->GetPrimaryContent(IID_PPV_ARGS(&content));
+    if (FAILED(result))
+        return setupFailed(*this, "GetPrimaryContent", result);
     handlerCookie = cookie;
     IDirectManipulationPrimaryContent *primary = nullptr;
     if (SUCCEEDED(viewport->GetPrimaryContent(IID_PPV_ARGS(&primary))) && primary)
@@ -160,13 +185,15 @@ bool TouchpadGestures::attach(void *window, Accept acceptFn, Apply applyFn, void
     previousProc =
         SetWindowLongPtrW(target, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&touchpadWindowProc));
     hwnd = window;
-    if (FAILED(manager->Activate(target)) || FAILED(viewport->Enable()))
-    {
-        detach();
-        return false;
-    }
+    result = manager->Activate(target);
+    if (FAILED(result))
+        return setupFailed(*this, "Activate", result);
+    result = viewport->Enable();
+    if (FAILED(result))
+        return setupFailed(*this, "Enable", result);
     resetLater(this);
     failedWindow = nullptr;
+    touchpadLog("Direct Manipulation ready; two-finger gestures should start with a hit test");
     return true;
 }
 
@@ -233,9 +260,16 @@ bool TouchpadGestures::readTransform(float &scale, float &x, float &y) const
 bool TouchpadGestures::hitTest(unsigned int pointerId)
 {
     POINTER_INPUT_TYPE type = PT_POINTER;
-    if (!viewport || !GetPointerType(pointerId, &type) || type != PT_TOUCHPAD ||
-        (accept && !accept(user)))
+    const BOOL known = GetPointerType(pointerId, &type);
+    touchpadLog("hit test: pointer %u, type %lu%s", pointerId, (unsigned long)type,
+                known ? "" : " (unknown)");
+    if (!viewport || !known || type != PT_TOUCHPAD)
         return false;
+    if (accept && !accept(user))
+    {
+        touchpadLog("not World view; leaving the gesture to the wheel messages");
+        return false;
+    }
     HWND target = static_cast<HWND>(hwnd);
     // A gesture that starts right after the last one must not race its reset.
     if (Fl::has_timeout(resetLater, this))
@@ -249,8 +283,15 @@ bool TouchpadGestures::hitTest(unsigned int pointerId)
     ScreenToClient(target, &cursor);
     anchorX = (float)cursor.x;
     anchorY = (float)cursor.y;
-    if (FAILED(viewport->SetContact(pointerId)))
+    const HRESULT contact = viewport->SetContact(pointerId);
+    if (FAILED(contact))
+    {
+        touchpadLog("SetContact failed (HRESULT 0x%08lx)", (unsigned long)contact);
         return false;
+    }
+    gestureUpdates = 0;
+    gestureMoveX = gestureMoveY = 0;
+    gestureZoom = 1;
     resetting = false;
     if (!readTransform(lastScale, lastX, lastY))
     {
@@ -268,6 +309,11 @@ bool TouchpadGestures::hitTest(unsigned int pointerId)
 
 void TouchpadGestures::statusChanged(int current)
 {
+    if (!resetting)
+        touchpadLog("status %d -> %d", status, current);
+    if (current == DIRECTMANIPULATION_READY && !resetting && gestureUpdates > 0)
+        touchpadLog("gesture: %d updates, moved %.0f, %.0f px, zoom x%.2f", gestureUpdates,
+                    gestureMoveX, gestureMoveY, gestureZoom);
     status = current;
     if (current == DIRECTMANIPULATION_READY && !resetting)
     {
@@ -306,6 +352,10 @@ void TouchpadGestures::contentUpdated(IDirectManipulationContent *updated)
     lastScale = scale;
     lastX = x;
     lastY = y;
+    ++gestureUpdates;
+    gestureMoveX += dx;
+    gestureMoveY += dy;
+    gestureZoom *= ratio;
     if (apply && (dx != 0 || dy != 0 || ratio != 1))
         apply(user, dx, dy, ratio);
 }
