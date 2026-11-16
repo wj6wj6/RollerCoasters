@@ -91,6 +91,11 @@ void TrainView::drawGround()
 //
 // * The sea floor around the island, with the fish moving
 //========================================================================
+float TrainView::animationTime() const
+{
+    return secondsSinceStart();
+}
+
 void TrainView::drawUnderwater(bool shadowPass)
 {
     m_ocean.draw(shadowPass, secondsSinceStart());

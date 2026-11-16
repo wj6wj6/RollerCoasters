@@ -1835,23 +1835,60 @@ void setGlow(float glow)
     glMultiTexCoord4f(GL_TEXTURE1, glow, 0.0f, 0.0f, 1.0f);
 }
 
-// An ellipse a creature swims round and round.
+// The patch of water a creature keeps to: it wanders about inside the
+// ellipse (radiusX, radiusZ) around (x, y, z) and never leaves it. `speed`
+// sets how briskly, `phase` makes each creature's path its own.
 struct Lap
 {
     float x, y, z, radiusX, radiusZ, speed, phase, scale;
 };
 
-// Moves to the creature's place on its lap, facing the way it swims.
-void enterLap(const Lap &lap, float time, float bob)
+// A smooth path that keeps within -1..1 on each axis and takes a long time
+// to repeat: a few sine waves whose periods do not line up. With `nimble`
+// a quicker, smaller wave is added, for small fish that dart about.
+void wanderAt(float a, float phase, bool nimble, float out[3])
 {
-    const float a = time * lap.speed + lap.phase;
-    const float direction = lap.speed > 0.0f ? 1.0f : -1.0f;
-    const float heading =
-        atan2f(-sinf(a) * lap.radiusX * direction, cosf(a) * lap.radiusZ * direction);
+    const float p = phase * 7.31f;
+    float x = 0.62f * sinf(a + p) + 0.38f * sinf(a * 2.31f + p * 1.7f + 1.3f);
+    float z = 0.62f * cosf(a * 0.83f + p * 0.6f) + 0.38f * sinf(a * 1.87f + p * 2.3f + 4.1f);
+    float y = 0.6f * sinf(a * 1.31f + p * 1.1f + 2.0f) + 0.4f * sinf(a * 2.9f + p * 0.7f);
+    if (nimble)
+    {
+        x = 0.85f * x + 0.15f * sinf(a * 4.13f + p * 3.1f);
+        z = 0.85f * z + 0.15f * cosf(a * 3.7f + p * 2.9f);
+    }
+    out[0] = x;
+    out[1] = y;
+    out[2] = z;
+}
+
+// Moves to where the creature is now, nose pointing the way it is swimming
+// (tilting up and down a little as it climbs and dives). `offset` moves the
+// whole patch, which is how a school drifts about together.
+void enterLap(const Lap &lap, float time, float bob, bool nimble = false,
+              const float *offset = nullptr)
+{
+    const float a = time * fabsf(lap.speed) + lap.phase;
+    float here[3], ahead[3];
+    wanderAt(a, lap.phase, nimble, here);
+    wanderAt(a + 0.05f, lap.phase, nimble, ahead);
+    const float scaleAxis[3] = {lap.radiusX, bob, lap.radiusZ};
+    float position[3], heading[3];
+    for (int k = 0; k < 3; ++k)
+    {
+        position[k] = here[k] * scaleAxis[k];
+        heading[k] = (ahead[k] - here[k]) * scaleAxis[k];
+    }
+    const float flat = sqrtf(heading[0] * heading[0] + heading[2] * heading[2]);
+    const float turn = flat > 1.0e-5f ? atan2f(heading[0], heading[2]) : 0.0f;
+    float pitch = flat > 1.0e-5f ? atan2f(heading[1], flat) : 0.0f;
+    pitch = fmaxf(-0.6f, fminf(0.6f, pitch));
     glPushMatrix();
-    glTranslatef(lap.x + cosf(a) * lap.radiusX, lap.y + sinf(a * 2.3f + lap.phase) * bob,
-                 lap.z + sinf(a) * lap.radiusZ);
-    glRotatef(heading * 57.29578f, 0.0f, 1.0f, 0.0f);
+    glTranslatef(lap.x + position[0] + (offset ? offset[0] : 0.0f),
+                 lap.y + position[1] + (offset ? offset[1] : 0.0f),
+                 lap.z + position[2] + (offset ? offset[2] : 0.0f));
+    glRotatef(turn * 57.29578f, 0.0f, 1.0f, 0.0f);
+    glRotatef(-pitch * 57.29578f, 1.0f, 0.0f, 0.0f);
     glScalef(lap.scale, lap.scale, lap.scale);
 }
 
@@ -2167,8 +2204,9 @@ void OceanWorld::drawSeaLife(float time)
 {
     setGlow(0.0f);
 
-    // Small schools that circle the ride itself, just above the train: the
-    // tube carved around the ride is always open water.
+    // Small schools that keep to the ride itself, just above the train: the
+    // tube carved around the ride is always open water. Each school drifts
+    // about as a whole while its fish dart around inside it.
     struct Ring
     {
         int point;
@@ -2183,19 +2221,17 @@ void OceanWorld::drawSeaLife(float time)
     for (const Ring &ring : rings)
     {
         const float *c = kDemoTrack[ring.point];
+        const float schoolPhase = static_cast<float>(school) * 1.9f;
+        float drift[3];
+        wanderAt(time * 0.22f + schoolPhase, schoolPhase, false, drift);
+        const float offset[3] = {drift[0] * 3.4f, drift[1] * 0.6f, drift[2] * 3.4f};
         for (int i = 0; i < 10; ++i)
         {
             const float fi = static_cast<float>(i);
-            const float speed = (school % 2 == 0 ? 0.42f : -0.36f);
-            const Lap lap = {c[0],
-                             c[1] + 5.6f + static_cast<float>(i % 3) * 0.5f,
-                             c[2],
-                             6.3f + 0.7f * sinf(fi * 1.7f),
-                             6.3f + 0.7f * sinf(fi * 1.7f),
-                             speed,
-                             fi * 0.63f + static_cast<float>(school),
-                             0.85f};
-            enterLap(lap, time, 0.5f);
+            const Lap lap = {
+                c[0], c[1] + 6.2f, c[2], 3.1f, 3.1f, 0.75f + 0.05f * fi, fi * 0.63f + schoolPhase,
+                0.85f};
+            enterLap(lap, time, 1.0f, true, offset);
             drawFishShape(ring.body, ring.fin, sinf(time * 8.0f + fi * 3.1f) * 25.0f);
             glPopMatrix();
         }
@@ -2211,23 +2247,33 @@ void OceanWorld::drawSeaLife(float time)
     };
     const Swarm swarms[] = {
         {40.0f, -11.0f, 196.0f, 26.0f, 0.2f, 44, {150, 190, 230}, {70, 100, 150}},
-        {226.0f, -10.0f, 60.0f, 22.0f, -0.24f, 36, {250, 210, 90}, {230, 120, 40}},
+        {226.0f, -10.0f, 60.0f, 22.0f, 0.24f, 36, {250, 210, 90}, {230, 120, 40}},
         {-150.0f, -9.0f, 215.0f, 20.0f, 0.22f, 32, {200, 230, 240}, {90, 140, 170}},
-        {150.0f, -9.0f, 205.0f, 24.0f, -0.18f, 36, {240, 130, 150}, {250, 240, 220}}};
+        {150.0f, -9.0f, 205.0f, 24.0f, 0.18f, 36, {240, 130, 150}, {250, 240, 220}}};
     for (const Swarm &s : swarms)
+    {
+        const float schoolPhase = static_cast<float>(school) * 1.9f;
+        float drift[3];
+        wanderAt(time * s.speed * 0.6f + schoolPhase, schoolPhase, false, drift);
+        const float offset[3] = {drift[0] * s.radius * 0.55f, drift[1] * 0.8f,
+                                 drift[2] * s.radius * 0.55f};
         for (int i = 0; i < s.count; ++i)
         {
             const float fi = static_cast<float>(i);
             const float spread = static_cast<float>(hash(i, school, 601u) % 100u) * 0.01f;
-            const float radius = s.radius * (0.45f + 0.55f * spread);
-            const Lap lap = {s.x,           s.y + sinf(fi * 2.1f) * 2.6f,      s.z,        radius,
-                             radius * 0.8f, s.speed * (1.25f - 0.5f * spread), fi * 0.61f, 1.0f};
-            enterLap(lap, time, 0.8f);
+            const float radius = s.radius * 0.45f * (0.5f + 0.5f * spread);
+            const Lap lap = {
+                s.x, s.y, s.z, radius, radius, s.speed * (2.6f + spread), fi * 0.61f + schoolPhase,
+                1.0f};
+            enterLap(lap, time, 1.8f, true, offset);
             drawFishShape(s.body, s.fin, sinf(time * 7.0f + fi * 2.3f) * 22.0f);
             glPopMatrix();
         }
+        ++school;
+    }
 
-    // Everything large keeps above the scenery limit (y = -15).
+    // Everything large keeps above the scenery limit (y = -15) and roams its
+    // own patch of open water.
     const Lap sharks[] = {{215.0f, -10.5f, 30.0f, 38.0f, 30.0f, 0.16f, 0.0f, 1.4f},
                           {215.0f, -9.0f, 30.0f, 30.0f, 38.0f, 0.13f, 3.3f, 1.2f},
                           {60.0f, -10.0f, 238.0f, 44.0f, 26.0f, -0.12f, 1.2f, 1.5f}};

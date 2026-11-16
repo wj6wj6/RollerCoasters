@@ -40,6 +40,7 @@
 #include "Utilities/3DUtils.h"
 #include "TrackRenderer.H"
 #include "CallBacks.H"
+#include "TrainModel.h"
 #include <FL/x.H>
 #include <FL/gl.h>
 
@@ -745,41 +746,6 @@ void TrainView::setProjection()
 // TODO:
 // if you have other objects in the world, make sure to draw them
 //########################################################################
-static void drawTrainBox(float halfX, float halfY, float halfZ)
-{
-    glBegin(GL_QUADS);
-    glNormal3f(0, 0, 1);
-    glVertex3f(-halfX, -halfY, halfZ);
-    glVertex3f(halfX, -halfY, halfZ);
-    glVertex3f(halfX, halfY, halfZ);
-    glVertex3f(-halfX, halfY, halfZ);
-    glNormal3f(0, 0, -1);
-    glVertex3f(halfX, -halfY, -halfZ);
-    glVertex3f(-halfX, -halfY, -halfZ);
-    glVertex3f(-halfX, halfY, -halfZ);
-    glVertex3f(halfX, halfY, -halfZ);
-    glNormal3f(0, 1, 0);
-    glVertex3f(-halfX, halfY, halfZ);
-    glVertex3f(halfX, halfY, halfZ);
-    glVertex3f(halfX, halfY, -halfZ);
-    glVertex3f(-halfX, halfY, -halfZ);
-    glNormal3f(0, -1, 0);
-    glVertex3f(-halfX, -halfY, -halfZ);
-    glVertex3f(halfX, -halfY, -halfZ);
-    glVertex3f(halfX, -halfY, halfZ);
-    glVertex3f(-halfX, -halfY, halfZ);
-    glNormal3f(1, 0, 0);
-    glVertex3f(halfX, -halfY, halfZ);
-    glVertex3f(halfX, -halfY, -halfZ);
-    glVertex3f(halfX, halfY, -halfZ);
-    glVertex3f(halfX, halfY, halfZ);
-    glNormal3f(-1, 0, 0);
-    glVertex3f(-halfX, -halfY, -halfZ);
-    glVertex3f(-halfX, -halfY, halfZ);
-    glVertex3f(-halfX, halfY, halfZ);
-    glVertex3f(-halfX, halfY, -halfZ);
-    glEnd();
-}
 
 static void drawTreeCone(float radius, float height)
 {
@@ -878,44 +844,11 @@ void TrainView::drawStuff(bool doingShadows)
     drawTree(78.0f, 68.0f, doingShadows);
     drawTree(0.0f, 88.0f, doingShadows);
 
-    // draw the train
+    // draw the train: three coupled cars with riders (TrainModel)
     if (!tw->trainCam->value() && m_pTrack->points.size() >= 4)
     {
         const TrackSplineType splineType = static_cast<TrackSplineType>(tw->splineBrowser->value());
-        const Pnt3f position = m_pTrack->evaluatePosition(m_pTrack->trainU, splineType);
-        Pnt3f forward = m_pTrack->evaluateTangent(m_pTrack->trainU, splineType);
-        Pnt3f side;
-        Pnt3f up;
-        makeTrackFrame(forward, side, up);
-
-        const GLfloat frame[16] = {side.x,     side.y,     side.z,     0.0f,      up.x,      up.y,
-                                   up.z,       0.0f,       forward.x,  forward.y, forward.z, 0.0f,
-                                   position.x, position.y, position.z, 1.0f};
-
-        glPushAttrib(GL_CURRENT_BIT);
-        glPushMatrix();
-        glMultMatrixf(frame);
-        glTranslatef(0.0f, 1.1f, 0.0f);
-        if (!doingShadows)
-            glColor3ub(35, 110, 190);
-        drawTrainBox(1.5f, 0.65f, 2.4f);
-
-        glPushMatrix();
-        glTranslatef(0.0f, 0.85f, -0.25f);
-        if (!doingShadows)
-            glColor3ub(55, 155, 220);
-        drawTrainBox(0.95f, 0.55f, 1.1f);
-        glPopMatrix();
-
-        glPushMatrix();
-        glTranslatef(0.0f, -0.05f, 2.45f);
-        if (!doingShadows)
-            glColor3ub(230, 75, 35);
-        drawTrainBox(1.15f, 0.45f, 0.35f);
-        glPopMatrix();
-
-        glPopMatrix();
-        glPopAttrib();
+        TrainModel::draw(*m_pTrack, splineType, doingShadows, animationTime());
     }
 }
 

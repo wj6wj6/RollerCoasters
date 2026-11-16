@@ -54,6 +54,7 @@ add_executable(RollerCoasters
     src/OceanWorld.h src/OceanWorld.cpp
     src/PixelArt.h src/PixelArt.cpp
     src/PostEffects.h src/PostEffects.cpp
+    src/TrainModel.h src/TrainModel.cpp
     src/TrainViewEffects.cpp
     src/TransformGizmo.h src/TransformGizmo.cpp
     src/UnderwaterOptics.h

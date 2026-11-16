@@ -11,6 +11,8 @@ flowchart LR
     View --> Track
     View --> Rails[TrackRenderer / 鐵軌、枕木與弧長表]
     Rails --> Track
+    View --> Train[TrainModel / 三節車廂、乘客與車燈]
+    Train --> Track
     View --> Gizmo[TransformGizmo / 控制點移動把手的挑選、拖曳與繪製]
     View --> Camera[ArcBallCam / 相機與手勢平滑]
     Camera --> Timer[FLTK event loop / timeout]
@@ -53,6 +55,7 @@ flowchart LR
 岩拱、閘門與隧道是沿著 `Ocean Ride` 的三種 spline 挖出來的，植物另外避開軌道周圍的淨空帶，
 `OceanWorld::rideObstructions()` 與測試 `OceanRideClearanceCheck` 用正式的 `CTrack` 取樣檢查列車不會碰到方塊或植物。
 魚群、鯊魚、海龜、魟魚、鯨魚與水母每格以方塊即時畫出，大型生物只在景物高度上限之上活動。
+牠們的位置是時間的函數（幾個週期互不整除的正弦波相加），所以不需保存狀態就能在各自的橢圓水域內不重複地遊走，且不會游出範圍。
 光照 shader 對水面以下的像素依深度吸收陽光（紅光最先消失）並乘上 caustics；
 鏡頭在水下時改走水下流程：不畫反射，水面改從下方畫（Snell 窗），加上漂浮微粒與氣泡，
 再以半解析度沿視線 ray march shadow map 算出光束，最後全解析度套上水霧。

@@ -110,6 +110,10 @@ class TrainView : public Fl_Gl_Window
     void drawGround();
     void drawUnderwater(bool shadowPass);
 
+    // seconds since the program started: drives everything that moves by
+    // itself (TrainViewEffects.cpp)
+    float animationTime() const;
+
   public:
     ArcBallCam arcball; // keep an ArcBall for the UI
     int selectedCube;   // simple - just remember which cube is selected
