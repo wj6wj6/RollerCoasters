@@ -4,7 +4,7 @@
      Comment:     A free-fly observer camera for FlTk OpenGL windows.
 
                   Keyboard (hold to move, the view keeps a level horizon):
-                    W / S          fly forward / back along the view direction
+                    W / S          fly forward / back, level with the ground
                     A / D          strafe left / right
                     E / Q          rise / sink (also Page Up / Page Down)
                     arrow keys     turn and look up / down
@@ -18,6 +18,10 @@
                     pinch / Ctrl   fly forward / back
                     Alt or Shift   scroll strafes and rises
                     mouse wheel    fly forward / back
+
+                  The camera stays above the ground and within a box around
+                  the scene, so it cannot get lost under the floor or in the
+                  empty sky. lookAt() turns smoothly toward a point.
 
                   Held keys move the camera on an FLTK timeout using the
                   real elapsed time, so the speed is in world units per
@@ -71,8 +75,16 @@ class FlyCam
     // matrix already on the projection stack.
     void setProjection(bool doClear = true) const;
 
-    // Release held keys, end any drag and stop the movement timer.
+    // Release held keys, end any drag, stop the movement timer and any turn.
     void stop();
+
+    // Turn smoothly (over turnSeconds) to face a point. Any look input, such as
+    // a drag or an arrow key, takes over and ends the turn.
+    void lookAt(float x, float y, float z);
+    bool turning() const
+    {
+        return turnActive;
+    }
 
     void setSpeed(float unitsPerSecond);
     float speed() const
@@ -102,6 +114,10 @@ class FlyCam
     static constexpr float scrollSeconds = .15f;        // wheel travel per notch, in seconds
     static constexpr float slideSecondsPerPixel = .01f; // touchpad slide per pixel
     static constexpr float turnDegreesPerSecond = 90.0f;
+    static constexpr float turnSeconds = .35f;   // lookAt() duration
+    static constexpr float minHeight = 1.0f;     // eye height above the ground
+    static constexpr float maxHeight = 400.0f;   // highest the camera can go
+    static constexpr float maxDistance = 400.0f; // |x| and |z| limit
 
   private:
     enum Key
@@ -121,11 +137,15 @@ class FlyCam
     };
 
     static void tick(void *data);
+    static void turnTick(void *data);
+    void endTurn();
+    void keepInBounds();
     static int keyFor(int key);
     bool anyMotionHeld() const;
     void step(float seconds);
     void look(float yawDelta, float pitchDelta);
-    void move(float forwardDistance, float rightDistance, float upDistance);
+    // level: forward stays parallel to the ground instead of following the pitch.
+    void move(float forwardDistance, float rightDistance, float upDistance, bool level = false);
     void redraw() const;
 
     bool held[KeyCount];
@@ -134,6 +154,13 @@ class FlyCam
     int lastX;
     int lastY;
     std::chrono::steady_clock::time_point lastTick;
+
+    bool turnActive;
+    float turnFromYaw;
+    float turnFromPitch;
+    float turnYaw;   // yaw change over the whole turn
+    float turnPitch; // pitch change over the whole turn
+    std::chrono::steady_clock::time_point turnStart;
 
     float eyeX;
     float eyeY;

@@ -91,25 +91,26 @@ static bool checkViewMatrix()
                 pass ? "PASS" : "FAIL", x, y, z, camera.yaw(), camera.pitch());
 
     // From a narrower world view, the camera moves closer so the origin keeps its size.
-    float straight[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -250, 1};
+    float straight[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, -20, -250, 1};
     FlyCam wide;
     wide.setup(nullptr, 60);
     wide.setFromViewMatrix(straight, 40);
     wide.position(x, y, z);
     const float expected = 250 * std::tan(20 * pi / 180) / std::tan(30 * pi / 180);
-    const bool framed = approx(x, 0, 1e-3f) && approx(y, 0, 1e-3f) && approx(z, expected, 1e-2f);
+    const bool framed = approx(x, 0, 1e-3f) && approx(y, 20, 1e-3f) && approx(z, expected, 1e-2f);
     std::printf("%s: a 40 deg world view at distance 250 becomes a 60 deg view at %.2f\n",
                 framed ? "PASS" : "FAIL", z);
     return pass && framed;
 }
 
-static bool checkHeldKey(int code, bool fast, float expectX, float expectY, float expectZ,
-                         const char *name)
+// pitch: keys fly level with the ground even while looking down.
+static bool checkHeldKey(int code, bool fast, float pitch, float expectX, float expectY,
+                         float expectZ, const char *name)
 {
     Fl_Gl_Window window(600, 600);
     FlyCam camera;
     camera.setup(&window);
-    camera.setPose(0, 10, 0, 0, 0);
+    camera.setPose(0, 30, 0, 0, pitch);
     camera.setSpeed(20);
     if (fast)
         key(camera, FL_KEYDOWN, FL_Shift_L);
@@ -121,11 +122,11 @@ static bool checkHeldKey(int code, bool fast, float expectX, float expectY, floa
     pump(.1);
     const bool stopped = !camera.moving() && distanceFrom(camera, x, y, z) < 1e-4f;
 
-    const float travelled = distanceFrom(camera, 0, 10, 0);
+    const float travelled = distanceFrom(camera, 0, 30, 0);
     const float speed = 20 * (fast ? FlyCam::boost : 1.0f);
     const float expected = speed * (float)held;
     const float slack = speed * lateSeconds;
-    const float dot = ((x - 0) * expectX + (y - 10) * expectY + (z - 0) * expectZ) /
+    const float dot = ((x - 0) * expectX + (y - 30) * expectY + (z - 0) * expectZ) /
                       (travelled > 0 ? travelled : 1);
     const bool pass =
         travelled <= expected + 1e-3f && travelled >= expected - slack && dot > .999f && stopped;
@@ -139,7 +140,7 @@ static bool checkTurnKeysAndPitchLimit()
     Fl_Gl_Window window(600, 600);
     FlyCam camera;
     camera.setup(&window);
-    camera.setPose(0, 0, 0, 0, 0);
+    camera.setPose(0, 50, 0, 0, 0);
     const double held = holdKey(camera, FL_Right, .3);
     pump(.05);
     const float expected = FlyCam::turnDegreesPerSecond * (float)held;
@@ -161,7 +162,7 @@ static bool checkDragLook()
     Fl_Gl_Window window(600, 600);
     FlyCam camera;
     camera.setup(&window);
-    camera.setPose(0, 0, 0, 0, 0);
+    camera.setPose(0, 50, 0, 0, 0);
     Fl::e_x = 300;
     Fl::e_y = 300;
     Fl::e_state = FL_BUTTON1;
@@ -184,7 +185,7 @@ static bool checkScroll()
     Fl_Gl_Window window(600, 600);
     FlyCam camera;
     camera.setup(&window);
-    camera.setPose(0, 0, 0, 0, 0);
+    camera.setPose(0, 50, 0, 0, 0);
     camera.setSpeed(20);
     const float notch = 20 * FlyCam::scrollSeconds;
 
@@ -193,24 +194,24 @@ static bool checkScroll()
         camera.scroll(.25f, .25f, 0, true);
     const bool look = approx(camera.yaw(), FlyCam::scrollDegrees, 1e-3f) &&
                       approx(camera.pitch(), -FlyCam::scrollDegrees, 1e-3f) &&
-                      distanceFrom(camera, 0, 0, 0) < 1e-5f;
+                      distanceFrom(camera, 0, 50, 0) < 1e-5f;
 
     // Spreading two fingers arrives as Ctrl + wheel up and flies forward.
-    camera.setPose(0, 0, 0, 0, 0);
+    camera.setPose(0, 50, 0, 0, 0);
     camera.scroll(0, -.5f, FL_CTRL, true);
     float x, y, z;
     camera.position(x, y, z);
     const bool pinch = approx(z, -.5f * notch, 1e-4f) && approx(x, 0, 1e-5f);
 
     // Alt + scroll slides sideways and up without turning.
-    camera.setPose(0, 0, 0, 0, 0);
+    camera.setPose(0, 50, 0, 0, 0);
     camera.scroll(1, -1, FL_ALT, true);
     camera.position(x, y, z);
-    const bool slide = approx(x, notch, 1e-4f) && approx(y, notch, 1e-4f) && approx(z, 0, 1e-5f) &&
-                       camera.yaw() == 0;
+    const bool slide = approx(x, notch, 1e-4f) && approx(y, 50 + notch, 1e-4f) &&
+                       approx(z, 0, 1e-5f) && camera.yaw() == 0;
 
     // A mouse wheel notch up flies forward instead of tilting the view.
-    camera.setPose(0, 0, 0, 0, 0);
+    camera.setPose(0, 50, 0, 0, 0);
     Fl::e_dx = 0;
     Fl::e_dy = -1;
     Fl::e_state = 0;
@@ -220,19 +221,19 @@ static bool checkScroll()
 
     // Direct Manipulation: fingers moving right drag the scene right (turn left)
     // while a 10% spread flies forward by one wheel notch in the same update.
-    camera.setPose(0, 0, 0, 0, 0);
+    camera.setPose(0, 50, 0, 0, 0);
     camera.touchpadGesture(40, 0, 1.1f, false);
     camera.position(x, y, z);
     const float turned = camera.yaw();
     const bool gesture = approx(turned, -40 * FlyCam::dragDegreesPerPixel, 1e-3f) &&
-                         approx(distanceFrom(camera, 0, 0, 0), notch, 1e-3f);
+                         approx(distanceFrom(camera, 0, 50, 0), notch, 1e-3f);
     // With Alt or Shift the fingers slide the camera instead of turning it.
-    camera.setPose(0, 0, 0, 0, 0);
+    camera.setPose(0, 50, 0, 0, 0);
     camera.touchpadGesture(10, -10, 1, true);
     camera.position(x, y, z);
     const float perPixel = 20 * FlyCam::slideSecondsPerPixel;
-    const bool gestureSlide =
-        approx(x, -10 * perPixel, 1e-4f) && approx(y, -10 * perPixel, 1e-4f) && camera.yaw() == 0;
+    const bool gestureSlide = approx(x, -10 * perPixel, 1e-4f) &&
+                              approx(y, 50 - 10 * perPixel, 1e-4f) && camera.yaw() == 0;
 
     const bool pass = look && pinch && slide && wheel && gesture && gestureSlide;
     std::printf("%s: touchpad scroll and gestures look, pinch and wheel fly, Alt slides\n",
@@ -256,7 +257,7 @@ static bool checkSpeedKeysAndUnfocus()
     const bool clamped = camera.speed() == FlyCam::maxSpeed;
 
     // Losing focus while a key is held must not leave the camera drifting.
-    camera.setPose(0, 0, 0, 0, 0);
+    camera.setPose(0, 50, 0, 0, 0);
     key(camera, FL_KEYDOWN, 'w');
     pump(.1);
     camera.handle(FL_UNFOCUS);
@@ -270,20 +271,78 @@ static bool checkSpeedKeysAndUnfocus()
     return pass;
 }
 
+static bool checkBounds()
+{
+    Fl_Gl_Window window(600, 600);
+    FlyCam camera;
+    camera.setup(&window);
+    // Sinking below the floor stops at eye height; flying far stops at the edge.
+    camera.setPose(0, 5, 0, 0, -60);
+    camera.scroll(0, -100, FL_CTRL, true); // a big pinch dives along the view
+    float x, y, z;
+    camera.position(x, y, z);
+    const bool ground = approx(y, FlyCam::minHeight, 1e-4f);
+    camera.setPose(1000, 1000, -1000, 0, 0);
+    camera.position(x, y, z);
+    const bool box = approx(x, FlyCam::maxDistance, 1e-4f) && approx(y, FlyCam::maxHeight, 1e-4f) &&
+                     approx(z, -FlyCam::maxDistance, 1e-4f);
+    const bool pass = ground && box;
+    std::printf("%s: the camera stays above the ground and inside the scene box\n",
+                pass ? "PASS" : "FAIL");
+    return pass;
+}
+
+static bool checkLookAt()
+{
+    Fl_Gl_Window window(600, 600);
+    FlyCam camera;
+    camera.setup(&window);
+    // Facing -Z; the target is behind and below on the right: turn the short way.
+    camera.setPose(0, 20, 0, 170, 0);
+    camera.lookAt(10, 10, 10);
+    const float startYaw = camera.yaw();
+    pump(FlyCam::turnSeconds * .4);
+    const float midYaw = camera.yaw();
+    pump(FlyCam::turnSeconds);
+    const float targetYaw = std::atan2(10.0f, -10.0f) * 180 / pi;
+    const float targetPitch = std::atan2(-10.0f, std::sqrt(200.0f)) * 180 / pi;
+    const bool smooth = startYaw == 170 && midYaw != 170 && midYaw != targetYaw;
+    const bool arrived = !camera.turning() && approx(camera.yaw(), targetYaw, 1e-2f) &&
+                         approx(camera.pitch(), targetPitch, 1e-2f);
+    // Taking the short way, every step stays between 135 and 170 degrees.
+    const bool shortWay = midYaw > targetYaw - .01f && midYaw < 170.01f;
+
+    // Looking around during a turn ends it at once.
+    camera.lookAt(0, 20, -100);
+    pump(.05);
+    camera.scroll(1, 0, 0, true);
+    const float steered = camera.yaw();
+    pump(FlyCam::turnSeconds);
+    const bool cancelled = !camera.turning() && camera.yaw() == steered;
+    const bool pass = smooth && arrived && shortWay && cancelled;
+    std::printf("%s: lookAt turns smoothly the short way (%.1f -> %.1f -> %.1f) and yields to "
+                "the user\n",
+                pass ? "PASS" : "FAIL", startYaw, midYaw, camera.yaw());
+    return pass;
+}
+
 int main()
 {
     bool view = checkViewMatrix();
-    bool forward = checkHeldKey('w', false, 0, 0, -1, "W");
-    bool back = checkHeldKey('s', false, 0, 0, 1, "S");
-    bool left = checkHeldKey('a', false, -1, 0, 0, "A");
-    bool up = checkHeldKey('e', false, 0, 1, 0, "E");
-    bool down = checkHeldKey('q', false, 0, -1, 0, "Q");
-    bool fast = checkHeldKey('d', true, 1, 0, 0, "Shift + D");
+    bool forward = checkHeldKey('w', false, -30, 0, 0, -1, "W");
+    bool back = checkHeldKey('s', false, -30, 0, 0, 1, "S");
+    bool left = checkHeldKey('a', false, 0, -1, 0, 0, "A");
+    bool up = checkHeldKey('e', false, 0, 0, 1, 0, "E");
+    bool down = checkHeldKey('q', false, 0, 0, -1, 0, "Q");
+    bool fast = checkHeldKey('d', true, 0, 1, 0, 0, "Shift + D");
     bool turn = checkTurnKeysAndPitchLimit();
     bool drag = checkDragLook();
     bool scroll = checkScroll();
     bool speed = checkSpeedKeysAndUnfocus();
-    return view && forward && back && left && up && down && fast && turn && drag && scroll && speed
+    bool bounds = checkBounds();
+    bool lookAt = checkLookAt();
+    return view && forward && back && left && up && down && fast && turn && drag && scroll &&
+                   speed && bounds && lookAt
                ? 0
                : 1;
 }

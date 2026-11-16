@@ -29,8 +29,9 @@ const float longestStep = .1f;
 } // namespace
 
 FlyCam::FlyCam()
-    : timerActive(false), dragging(false), lastX(0), lastY(0), eyeX(0), eyeY(40.0f), eyeZ(150.0f),
-      yawDegrees(0), pitchDegrees(-15.0f), fieldOfView(60.0f), moveSpeed(30.0f), wind(nullptr)
+    : timerActive(false), dragging(false), lastX(0), lastY(0), turnActive(false), turnFromYaw(0),
+      turnFromPitch(0), turnYaw(0), turnPitch(0), eyeX(0), eyeY(40.0f), eyeZ(150.0f), yawDegrees(0),
+      pitchDegrees(-15.0f), fieldOfView(60.0f), moveSpeed(30.0f), wind(nullptr)
 {
     for (bool &key : held)
         key = false;
@@ -39,6 +40,7 @@ FlyCam::FlyCam()
 FlyCam::~FlyCam()
 {
     Fl::remove_timeout(tick, this);
+    Fl::remove_timeout(turnTick, this);
 }
 
 void FlyCam::setup(Fl_Gl_Window *window, float fov)
@@ -56,6 +58,7 @@ void FlyCam::setPose(float x, float y, float z, float yaw, float pitch)
     yawDegrees = 0;
     pitchDegrees = 0;
     look(yaw, pitch);
+    keepInBounds();
 }
 
 void FlyCam::setFromViewMatrix(const float m[16], float sourceFieldOfView)
@@ -110,8 +113,27 @@ void FlyCam::setSpeed(float unitsPerSecond)
     moveSpeed = unitsPerSecond;
 }
 
+void FlyCam::keepInBounds()
+{
+    if (eyeY < minHeight)
+        eyeY = minHeight;
+    if (eyeY > maxHeight)
+        eyeY = maxHeight;
+    if (eyeX < -maxDistance)
+        eyeX = -maxDistance;
+    if (eyeX > maxDistance)
+        eyeX = maxDistance;
+    if (eyeZ < -maxDistance)
+        eyeZ = -maxDistance;
+    if (eyeZ > maxDistance)
+        eyeZ = maxDistance;
+}
+
 void FlyCam::look(float yawDelta, float pitchDelta)
 {
+    // The user is steering again; a lookAt() turn must not fight it.
+    if (turnActive && (yawDelta != 0 || pitchDelta != 0))
+        endTurn();
     yawDegrees += yawDelta;
     // Keep yaw in [-180, 180) so it never loses precision after long spins.
     yawDegrees -= 360.0f * floorf((yawDegrees + 180.0f) / 360.0f);
@@ -122,14 +144,74 @@ void FlyCam::look(float yawDelta, float pitchDelta)
         pitchDegrees = -pitchLimit;
 }
 
-void FlyCam::move(float forwardDistance, float rightDistance, float upDistance)
+void FlyCam::move(float forwardDistance, float rightDistance, float upDistance, bool level)
 {
     float fx, fy, fz;
     forward(fx, fy, fz);
     const float yaw = yawDegrees * degreesToRadians;
+    if (level)
+    {
+        fx = sinf(yaw);
+        fy = 0;
+        fz = -cosf(yaw);
+    }
     eyeX += fx * forwardDistance + cosf(yaw) * rightDistance;
     eyeY += fy * forwardDistance + upDistance;
     eyeZ += fz * forwardDistance + sinf(yaw) * rightDistance;
+    keepInBounds();
+}
+
+void FlyCam::lookAt(float x, float y, float z)
+{
+    const float dx = x - eyeX;
+    const float dy = y - eyeY;
+    const float dz = z - eyeZ;
+    const float horizontal = sqrtf(dx * dx + dz * dz);
+    if (horizontal < 1e-4f && fabsf(dy) < 1e-4f)
+        return;
+    const float yaw = horizontal > 1e-4f ? atan2f(dx, -dz) / degreesToRadians : yawDegrees;
+    float pitch = atan2f(dy, horizontal) / degreesToRadians;
+    if (pitch > pitchLimit)
+        pitch = pitchLimit;
+    if (pitch < -pitchLimit)
+        pitch = -pitchLimit;
+    turnFromYaw = yawDegrees;
+    turnFromPitch = pitchDegrees;
+    // Take the short way round.
+    turnYaw = yaw - yawDegrees;
+    turnYaw -= 360.0f * floorf((turnYaw + 180.0f) / 360.0f);
+    turnPitch = pitch - pitchDegrees;
+    turnStart = std::chrono::steady_clock::now();
+    if (!turnActive)
+        Fl::add_timeout(tickSeconds, turnTick, this);
+    turnActive = true;
+}
+
+void FlyCam::endTurn()
+{
+    Fl::remove_timeout(turnTick, this);
+    turnActive = false;
+}
+
+void FlyCam::turnTick(void *data)
+{
+    FlyCam *camera = static_cast<FlyCam *>(data);
+    const float elapsed =
+        std::chrono::duration<float>(std::chrono::steady_clock::now() - camera->turnStart).count();
+    float t = elapsed / turnSeconds;
+    if (t > 1)
+        t = 1;
+    // Ease in and out so the turn starts and stops gently.
+    const float eased = t * t * (3 - 2 * t);
+    float yaw = camera->turnFromYaw + camera->turnYaw * eased;
+    yaw -= 360.0f * floorf((yaw + 180.0f) / 360.0f);
+    camera->yawDegrees = yaw;
+    camera->pitchDegrees = camera->turnFromPitch + camera->turnPitch * eased;
+    camera->redraw();
+    if (t < 1)
+        Fl::repeat_timeout(tickSeconds, turnTick, data);
+    else
+        camera->turnActive = false;
 }
 
 void FlyCam::redraw() const
@@ -187,7 +269,7 @@ void FlyCam::step(float seconds)
     const float upAmount = (held[Up] ? 1.0f : 0.0f) - (held[Down] ? 1.0f : 0.0f);
     const float turn = (held[TurnRight] ? 1.0f : 0.0f) - (held[TurnLeft] ? 1.0f : 0.0f);
     const float tilt = (held[LookUp] ? 1.0f : 0.0f) - (held[LookDown] ? 1.0f : 0.0f);
-    move(forwardAmount * distance, rightAmount * distance, upAmount * distance);
+    move(forwardAmount * distance, rightAmount * distance, upAmount * distance, true);
     look(turn * turnDegreesPerSecond * seconds, tilt * turnDegreesPerSecond * seconds);
     redraw();
 }
@@ -209,6 +291,7 @@ void FlyCam::tick(void *data)
 
 void FlyCam::stop()
 {
+    endTurn();
     Fl::remove_timeout(tick, this);
     timerActive = false;
     dragging = false;

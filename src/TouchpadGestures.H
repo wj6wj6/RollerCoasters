@@ -42,6 +42,10 @@ class TouchpadGestures
     {
         return hwnd;
     }
+
+    // Keep turning briefly after a flick. A first-person camera turns this off,
+    // because a view that keeps spinning after the fingers lift is disorienting.
+    bool inertia = true;
     std::intptr_t previousWindowProc() const
     {
         return previousProc;

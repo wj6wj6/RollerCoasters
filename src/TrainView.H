@@ -85,6 +85,14 @@ class TrainView : public Fl_Gl_Window
     // Move the observer camera to where the world camera is looking from.
     void placeFlyCamAtWorldView();
 
+    // Where the train is now (the track centre without a train).
+    Pnt3f trainPosition() const;
+
+    // Orientation aids for the observer camera: ground out to the horizon, and
+    // an overlay with a top-down map, the eye height and a centre crosshair.
+    void drawFlyHorizon();
+    void drawFlyOverlay();
+
   public:
     ArcBallCam arcball; // keep an ArcBall for the UI
     FlyCam flyCam;      // free-moving observer camera
