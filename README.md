@@ -31,9 +31,9 @@ pwsh -File scripts/check.ps1 -Stage all -Compiler clang -Config Release
 
 ## 操作
 
-- World：雙指捲動旋轉；Shift + 左鍵拖曳或右鍵拖曳也可旋轉。
-- 平移：Alt + 雙指捲動或 Alt + 右鍵拖曳。
-- 縮放：雙指張開放大、捏合縮小；也可 Ctrl + 捲動。
+- World：觸控板雙指移動旋轉（滑鼠滾輪左右傾斜也可）；在空白處單指（左鍵）拖曳、Shift + 左鍵拖曳或右鍵拖曳也可旋轉。
+- 平移：Alt 或 Shift + 雙指捲動；Alt + 在空白處左鍵拖曳或 Alt + 右鍵拖曳。
+- 縮放：滑鼠滾輪向上放大、向下縮小；觸控板雙指張開放大、捏合縮小。觸控板可以一邊移動雙指旋轉、一邊捏合縮放；拖曳旋轉或平移時也能用滾輪縮放。
 - 重設：Shift + 左鍵雙擊或右鍵雙擊。
 - 控制面板在視窗右側，外觀仿 3D 建模軟體的屬性編輯器：深灰面板、圓角灰色按鈕，開啟或選取的項目是藍色。由上到下六個面板：
   `Ride`（Run、前後步進、ArcLength、Speed）、`Camera`（World／Train／Top）、

@@ -54,6 +54,7 @@ class CTrack;
 #include "OceanWorld.h"
 #include "TransformGizmo.h"
 #include "TrackRenderer.H"
+#include "TouchpadGestures.H"
 
 class TrainView : public Fl_Gl_Window
 {
@@ -121,6 +122,7 @@ class TrainView : public Fl_Gl_Window
     TrainWindow *tw;               // The parent of this display window
     CTrack *m_pTrack;              // The track of the entire scene
     TrackRenderer m_trackRenderer; // Draws the rails and sleepers
+    TouchpadGestures touchpad;     // Orbit and pinch zoom in one gesture
 
     AdvancedLighting lighting; // shadow maps, per-pixel light, headlight
     PostEffects effects;       // sky, water, SSAO, bloom, god rays

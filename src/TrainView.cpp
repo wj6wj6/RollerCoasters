@@ -24,6 +24,7 @@
 
 *************************************************************************/
 
+#include <chrono>
 #include <iostream>
 #include <math.h>
 #include <FL/Fl.H>
@@ -44,14 +45,30 @@
 #include <FL/x.H>
 #include <FL/gl.h>
 
-// Preserve the Ctrl flag supplied by Windows pinch-to-zoom messages.
-// Reading only the physical keyboard state can lose this synthetic flag.
-static int touchpadZoom(void *event, void *data)
+// Touchpads send wheel deltas smaller than one notch. A burst that contains any
+// such delta stays precise for a moment, so a stray whole notch is not smoothed.
+static bool isPreciseWheel(int delta)
+{
+    static std::chrono::steady_clock::time_point lastPrecise;
+    const auto now = std::chrono::steady_clock::now();
+    if (delta % WHEEL_DELTA != 0)
+    {
+        lastPrecise = now;
+        return true;
+    }
+    return now - lastPrecise < std::chrono::milliseconds(300);
+}
+
+// FLTK 1.3 rounds wheel messages to whole notches, which makes touchpad scrolling
+// and pinching move in coarse, delayed steps. Read the exact delta here instead.
+// The modifier flags come from the message, keeping the synthetic Ctrl of pinch.
+static int touchpadWheel(void *event, void *data)
 {
     MSG *message = static_cast<MSG *>(event);
+    if (message->message != WM_MOUSEWHEEL && message->message != WM_MOUSEHWHEEL)
+        return 0;
     TrainView *view = static_cast<TrainView *>(data);
-    if (message->message != WM_MOUSEWHEEL || !(LOWORD(message->wParam) & MK_CONTROL) || !view->tw ||
-        !view->tw->worldCam->value() || !view->shown())
+    if (!view->tw || !view->tw->worldCam->value() || !view->shown())
         return 0;
     HWND canvas = fl_xid(view);
     if (!canvas || GetAncestor(message->hwnd, GA_ROOT) != GetAncestor(canvas, GA_ROOT))
@@ -62,8 +79,39 @@ static int touchpadZoom(void *event, void *data)
     POINT position = {(short)LOWORD(message->lParam), (short)HIWORD(message->lParam)};
     if (!PtInRect(&bounds, position))
         return 0;
-    view->arcball.zoomByWheel((float)(short)HIWORD(message->wParam) / WHEEL_DELTA);
+    const int delta = (short)HIWORD(message->wParam);
+    const WORD keys = LOWORD(message->wParam);
+    int state = 0;
+    if (keys & MK_CONTROL)
+        state |= FL_CTRL;
+    if (keys & MK_SHIFT)
+        state |= FL_SHIFT;
+    if (GetKeyState(VK_MENU) < 0)
+        state |= FL_ALT;
+    const float steps = (float)delta / WHEEL_DELTA;
+    const bool precise = isPreciseWheel(delta);
+    // Match FLTK's signs: wheel up is -dy, tilting right is +dx.
+    if (message->message == WM_MOUSEWHEEL)
+        view->arcball.scroll(0, -steps, state, precise);
+    else
+        view->arcball.scroll(steps, 0, state, precise);
     return 1;
+}
+
+static bool touchpadAccepts(void *data)
+{
+    TrainView *view = static_cast<TrainView *>(data);
+    return view->tw && view->tw->worldCam->value();
+}
+
+// Direct Manipulation reports finger movement and pinch together, so the
+// camera orbits (Alt or Shift pans) and zooms in the same gesture.
+static void touchpadMoves(void *data, float dx, float dy, float scale)
+{
+    if (!touchpadAccepts(data))
+        return;
+    const bool pan = GetKeyState(VK_MENU) < 0 || GetKeyState(VK_SHIFT) < 0;
+    static_cast<TrainView *>(data)->arcball.touchpadGesture(dx, dy, scale, pan);
 }
 
 #ifdef EXAMPLE_SOLUTION
@@ -82,12 +130,12 @@ TrainView::TrainView(int x, int y, int w, int h, const char *l) : Fl_Gl_Window(x
     mode(FL_RGB | FL_ALPHA | FL_DOUBLE | FL_STENCIL);
 
     resetArcball();
-    Fl::add_system_handler(touchpadZoom, this);
+    Fl::add_system_handler(touchpadWheel, this);
 }
 
 TrainView::~TrainView()
 {
-    Fl::remove_system_handler(touchpadZoom);
+    Fl::remove_system_handler(touchpadWheel);
 }
 
 //************************************************************************
@@ -152,9 +200,12 @@ int TrainView::handle(int event)
                 }
             }
             doPick();
-            // dragging a point by its body moves it parallel to the screen
+            // dragging a point by its body moves it parallel to the screen;
+            // dragging empty space orbits (Alt pans), so one finger is enough on a touchpad
             if (canEdit() && hasSelection() && m_editCameraValid)
                 beginEdit(EDIT_DRAG, TransformGizmo::VIEW, mx, my);
+            else if (selectedCube < 0 && tw->worldCam->value())
+                arcball.beginDrag((Fl::event_state() & FL_ALT) != 0);
             damage(1);
             return 1;
         };
@@ -547,6 +598,9 @@ void TrainView::draw()
     }
     else
         throw std::runtime_error("Could not initialize GLAD!");
+
+    // FLTK may recreate the canvas window, so (re)attach to the current one.
+    touchpad.attach(fl_xid(this), touchpadAccepts, touchpadMoves, this);
 
     // A new GL context starts without our textures, shaders and frame
     // buffers; let the track and the lighting rebuild them.
