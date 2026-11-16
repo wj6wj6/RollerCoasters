@@ -31,9 +31,9 @@ pwsh -File scripts/check.ps1 -Stage all -Compiler clang -Config Release
 
 ## 操作
 
-- World：雙指捲動旋轉；Shift + 左鍵拖曳或右鍵拖曳也可旋轉。
-- 平移：Alt + 雙指捲動或 Alt + 右鍵拖曳。
-- 縮放：雙指張開放大、捏合縮小；也可 Ctrl + 捲動。
+- World：雙指捲動旋轉；在空白處單指（左鍵）拖曳、Shift + 左鍵拖曳或右鍵拖曳也可旋轉。
+- 平移：Alt 或 Shift + 雙指捲動；Alt + 在空白處左鍵拖曳或 Alt + 右鍵拖曳。
+- 縮放：雙指張開放大、捏合縮小；也可 Ctrl + 捲動。觸控板可以一邊移動雙指旋轉、一邊捏合縮放；拖曳旋轉或平移時也能用滾輪縮放。
 - 重設：Shift + 左鍵雙擊或右鍵雙擊。
 - 控制面板提供 Run、速度、相機與控制點操作；Load／Save 讀寫軌道文字檔。
 

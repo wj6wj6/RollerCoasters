@@ -142,7 +142,21 @@ class ArcBallCam
     int handle(int e);
 
     // Positive wheel steps zoom in; Windows pinch gestures use this too.
-    void zoomByWheel(float steps);
+    // Precise steps (touchpad) apply at once; whole mouse-wheel notches are smoothed.
+    void zoomByWheel(float steps, bool precise = false);
+
+    // Scroll in wheel notches with FLTK signs (+dx right, +dy down): plain scroll
+    // orbits, Ctrl zooms, Alt or Shift pans. Precise touchpad deltas apply at once
+    // because the OS already smooths them; mouse-wheel notches are spread over frames.
+    void scroll(float dx, float dy, int state, bool precise);
+
+    // Start a camera drag for a button the caller already took, such as a left
+    // drag on empty space. Later FL_DRAG/FL_RELEASE events go through handle().
+    void beginDrag(bool pan);
+
+    // Apply one touchpad update where the fingers moved (dx, dy) window pixels
+    // and spread apart by scale, so orbit (or pan) and zoom happen together.
+    void touchpadGesture(float dx, float dy, float scale, bool pan);
     float cameraDistance() const
     {
         return eyeZ;
@@ -194,6 +208,7 @@ class ArcBallCam
     void stopGesture();
     void startGesture();
     void orbit(float yawDelta, float pitchDelta);
+    void applyZoom(float steps);
     float pendingGestureX = 0;
     float pendingGestureY = 0;
     float pendingZoom = 0;
@@ -215,9 +230,6 @@ class ArcBallCam
         Rotate,
         Pan
     } mode;
-
-    float panX; // this keeps track of the panning - the current pan is
-    float panY;
 
     float eyeX; // in eyeX, eyeY, but this is the displacement for undoing the last
     float eyeY; // addition
