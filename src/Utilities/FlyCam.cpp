@@ -266,6 +266,38 @@ int FlyCam::keyFor(int key)
     return -1;
 }
 
+int FlyCam::keyForScanCode(unsigned scan, bool extended)
+{
+    switch (scan)
+    {
+    case 0x11:
+        return 'w';
+    case 0x1E:
+        return 'a';
+    case 0x1F:
+        return 's';
+    case 0x20:
+        return 'd';
+    case 0x10:
+        return 'q';
+    case 0x12:
+        return 'e';
+    case 0x21:
+        return 'f';
+    case 0x13:
+        return 'r';
+    case 0x39:
+        return ' ';
+    case 0x2A:
+        return FL_Shift_L;
+    case 0x36:
+        return FL_Shift_R;
+    case 0x1D:
+        return extended ? FL_Control_R : FL_Control_L;
+    }
+    return 0;
+}
+
 bool FlyCam::anyMotionHeld() const
 {
     for (int key = 0; key < KeyCount; ++key)

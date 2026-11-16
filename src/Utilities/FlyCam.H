@@ -114,6 +114,12 @@ class FlyCam
         return fieldOfView;
     }
 
+    // The FLTK key for a flying key given by its physical position (a set 1
+    // scan code from Windows), or 0. Reading keys this way keeps WASD working
+    // with any keyboard layout and while a Chinese input method such as Zhuyin
+    // is on: it turns letter keys into VK_PROCESSKEY, and FLTK never sees them.
+    static int keyForScanCode(unsigned scan, bool extended);
+
     void setSpeed(float unitsPerSecond);
     float speed() const
     {

@@ -352,6 +352,28 @@ static bool checkFieldOfView()
     return pass;
 }
 
+static bool checkScanCodes()
+{
+    // Physical key positions (set 1 scan codes), whatever the layout or input method.
+    const bool wasd =
+        FlyCam::keyForScanCode(0x11, false) == 'w' && FlyCam::keyForScanCode(0x1E, false) == 'a' &&
+        FlyCam::keyForScanCode(0x1F, false) == 's' && FlyCam::keyForScanCode(0x20, false) == 'd';
+    const bool upDown = FlyCam::keyForScanCode(0x39, false) == ' ' &&
+                        FlyCam::keyForScanCode(0x2A, false) == FL_Shift_L &&
+                        FlyCam::keyForScanCode(0x36, false) == FL_Shift_R &&
+                        FlyCam::keyForScanCode(0x12, false) == 'e' &&
+                        FlyCam::keyForScanCode(0x10, false) == 'q';
+    const bool other = FlyCam::keyForScanCode(0x1D, false) == FL_Control_L &&
+                       FlyCam::keyForScanCode(0x1D, true) == FL_Control_R &&
+                       FlyCam::keyForScanCode(0x21, false) == 'f' &&
+                       FlyCam::keyForScanCode(0x13, false) == 'r' &&
+                       FlyCam::keyForScanCode(0x2C, false) == 0; // Z is not a flying key
+    const bool pass = wasd && upDown && other;
+    std::printf("%s: flying keys are read by physical position (scan code)\n",
+                pass ? "PASS" : "FAIL");
+    return pass;
+}
+
 static bool checkLookAt()
 {
     Fl_Gl_Window window(600, 600);
@@ -405,8 +427,9 @@ int main()
     bool bounds = checkBounds();
     bool lookAt = checkLookAt();
     bool fov = checkFieldOfView();
+    bool scanCodes = checkScanCodes();
     return view && forward && back && left && up && down && upAlt && downAlt && fast && turn &&
-                   drag && scroll && mouse && speed && bounds && lookAt && fov
+                   drag && scroll && mouse && speed && bounds && lookAt && fov && scanCodes
                ? 0
                : 1;
 }

@@ -88,6 +88,8 @@ class TrainView : public Fl_Gl_Window
     // Spectator-style mouse look in the observer camera: the cursor is hidden
     // and held at the view centre while captured. Esc or losing focus frees it.
     void setMouseCaptured(bool captured);
+    // Turns the keyboard input method (IME) for this window on or off.
+    void setInputMethodEnabled(bool enabled);
     void centerCursor();
 
     // Where the train is now (the track centre without a train).

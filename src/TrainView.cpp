@@ -31,6 +31,7 @@
 
 // we will need OpenGL, and OpenGL needs windows.h
 #include <windows.h>
+#include <imm.h>
 //#include "GL/gl.h"
 #include <glad/glad.h>
 #include <glm/glm.hpp>
@@ -104,6 +105,29 @@ static int touchpadWheel(void *event, void *data)
     return 1;
 }
 
+// In Fly mode, take the flying keys before FLTK and the input method see them
+// and hand them to the view as FLTK key events.
+static int flyKeys(void *event, void *data)
+{
+    MSG *message = static_cast<MSG *>(event);
+    if (message->message != WM_KEYDOWN && message->message != WM_KEYUP)
+        return 0;
+    TrainView *view = static_cast<TrainView *>(data);
+    if (!view->tw || !view->shown() || !view->tw->flyCam->value())
+        return 0;
+    HWND canvas = fl_xid(view);
+    if (!canvas || GetAncestor(message->hwnd, GA_ROOT) != GetAncestor(canvas, GA_ROOT))
+        return 0;
+    const unsigned scan = (unsigned)(message->lParam >> 16) & 0xFF;
+    const bool extended = ((message->lParam >> 24) & 1) != 0;
+    const int key = FlyCam::keyForScanCode(scan, extended);
+    if (!key)
+        return 0;
+    Fl::e_keysym = key;
+    view->handle(message->message == WM_KEYDOWN ? FL_KEYDOWN : FL_KEYUP);
+    return 1;
+}
+
 static bool touchpadAccepts(void *data)
 {
     TrainView *view = static_cast<TrainView *>(data);
@@ -160,6 +184,7 @@ TrainView::TrainView(int x, int y, int w, int h, const char *l) : Fl_Gl_Window(x
     flyCam.setup(this, flyFieldOfView);
     flyCam.setGround(flyLowest - FlyCam::minHeight); // the eye stays minHeight above it
     Fl::add_system_handler(touchpadWheel, this);
+    Fl::add_system_handler(flyKeys, this);
 }
 
 TrainView::~TrainView()
@@ -167,6 +192,7 @@ TrainView::~TrainView()
     if (mouseCaptured)
         ClipCursor(nullptr);
     Fl::remove_system_handler(touchpadWheel);
+    Fl::remove_system_handler(flyKeys);
 }
 
 //************************************************************************
@@ -239,6 +265,7 @@ void TrainView::cameraChanged()
 {
     // A first-person view that keeps spinning after a flick is disorienting.
     touchpad.inertia = !tw->flyCam->value();
+    setInputMethodEnabled(!tw->flyCam->value());
     if (!tw->flyCam->value())
     {
         setMouseCaptured(false);
@@ -249,6 +276,20 @@ void TrainView::cameraChanged()
         placeFlyCamAtWorldView();
     // Take keyboard focus from the camera button so WASD works at once.
     Fl::focus(this);
+}
+
+//========================================================================
+void TrainView::setInputMethodEnabled(bool enabled)
+//========================================================================
+{
+    // A Chinese input method would catch WASD for its composition window, so
+    // switch it off for this window while flying and back on afterwards.
+    HWND canvas = fl_xid(this);
+    if (!canvas)
+        return;
+    const DWORD flags = enabled ? IACE_DEFAULT : 0;
+    (void)ImmAssociateContextEx(canvas, nullptr, flags);
+    (void)ImmAssociateContextEx(GetAncestor(canvas, GA_ROOT), nullptr, flags);
 }
 
 //************************************************************************

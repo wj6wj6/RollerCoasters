@@ -61,7 +61,7 @@ add_executable(RollerCoasters
 target_include_directories(RollerCoasters SYSTEM PRIVATE
     "${PROJECT_SOURCE_DIR}/include/glm-0.9.8.5/glm")
 # hid: HidP_* parse the raw precision touchpad reports.
-target_link_libraries(RollerCoasters PRIVATE Utilities glad hid)
+target_link_libraries(RollerCoasters PRIVATE Utilities glad hid imm32)
 
 if(ROLLERCOASTERS_BUILD_TESTS)
     enable_testing()

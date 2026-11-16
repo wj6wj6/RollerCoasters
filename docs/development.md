@@ -67,7 +67,7 @@ hooks 與 CI 使用同一個 PowerShell 入口與 `tools.json`。hooks 只檢查
 ## 測試範圍
 
 - `GestureMotionCheck`：正式 FLTK event loop／timer 與 `ArcBallCam`，涵蓋手勢平滑度、總旋轉量、重設、水平線、縮放、俯仰限制、觸控板細小位移立即套用、空白處拖曳旋轉、旋轉與縮放同時作用及拖曳中縮放。
-- `FlyCamCheck`：正式 FLTK event loop／timer 與 `FlyCam`，涵蓋由 World 視圖矩陣接續、視角差補償、WASD／空白鍵／Shift／QE 依實際時間移動與放開即停、Ctrl 加速、方向鍵轉向與俯仰限制、拖曳看、滑鼠看、滾輪調速、觸控板捲動／捏合／平移、速度按鍵與失去焦點時停止、地面（含 `setGround()` 降低與升高後不跳動）與場景範圍限制、視野設定與上下限，以及 `lookAt()` 走短邊平滑轉向且使用者轉頭時立即讓出。
+- `FlyCamCheck`：正式 FLTK event loop／timer 與 `FlyCam`，涵蓋由 World 視圖矩陣接續、視角差補償、WASD／空白鍵／Shift／QE 依實際時間移動與放開即停、Ctrl 加速、方向鍵轉向與俯仰限制、拖曳看、滑鼠看、滾輪調速、觸控板捲動／捏合／平移、速度按鍵與失去焦點時停止、地面（含 `setGround()` 降低與升高後不跳動）與場景範圍限制、視野設定與上下限、飛行按鍵的掃描碼對應，以及 `lookAt()` 走短邊平滑轉向且使用者轉頭時立即讓出。
 - `TwoFingerGestureCheck`：觸控板兩指濾波，驗證靜止不動、純捏合不轉動、純移動不縮放、兩者明顯時同時作用。
 - `TrackRoundTripCheck`：正式 `CTrack::writePoints/readPoints` 與真實暫存檔，驗證座標、方向、控制點數與載入後列車位置歸零。
 - `VersionCheck`：啟動正式 executable 的 `--version`，不建立 GUI。
