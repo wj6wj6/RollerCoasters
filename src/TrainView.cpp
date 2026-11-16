@@ -142,12 +142,10 @@ static void touchpadMoves(void *data, float dx, float dy, float scale)
 // Field of view of the world camera, in degrees.
 static const float worldFieldOfView = 40.0f;
 
-// Scenery positions (x, z), shared by the 3D scene and the observer's map.
+// Scenery positions (x, z).
 static const float treePositions[][2] = {
     {-82.0f, -68.0f}, {-78.0f, 70.0f}, {82.0f, -70.0f}, {78.0f, 68.0f}, {0.0f, 88.0f}};
 static const int treeCount = (int)(sizeof(treePositions) / sizeof(treePositions[0]));
-// drawFloor(200, 10) covers -100..100 in x and z.
-static const float floorHalfSize = 100.0f;
 
 //************************************************************************
 //
@@ -583,17 +581,12 @@ void TrainView::drawFlyHorizon()
 
 //************************************************************************
 //
-// * Overlay for the observer camera: a north-up map (x right, -z up) of the
-//   floor, track, trees and train with the camera's position and heading,
-//   the eye height and speed under it, and a crosshair at the view centre.
+// * Overlay for the observer camera: a crosshair at the view centre and a
+//   controls hint along the bottom.
 //========================================================================
 void TrainView::drawFlyOverlay()
 //========================================================================
 {
-    float eyeX, eyeY, eyeZ, fx, fy, fz;
-    flyCam.position(eyeX, eyeY, eyeZ);
-    flyCam.forward(fx, fy, fz);
-
     glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_VIEWPORT_BIT | GL_LINE_BIT |
                  GL_COLOR_BUFFER_BIT);
     glDisable(GL_LIGHTING);
@@ -628,111 +621,7 @@ void TrainView::drawFlyOverlay()
     glVertex2f(cx, cy + 8);
     glEnd();
 
-    // Map in the top-right corner; it zooms out to keep the camera on it.
-    int size = (w() < h() ? w() : h()) / 4;
-    if (size < 110)
-        size = 110;
-    if (size > 190)
-        size = 190;
-    const int margin = 10, textHeight = 18;
-    const int left = w() - size - margin, bottom = h() - size - margin;
-    float range = 120.0f;
-    const float reach = 1.15f * (fabsf(eyeX) > fabsf(eyeZ) ? fabsf(eyeX) : fabsf(eyeZ));
-    if (reach > range)
-        range = reach;
-
-    // Background (with a strip for the text) and border, in pixels.
-    glColor4f(0, 0, 0, .55f);
-    glBegin(GL_QUADS);
-    glVertex2f((float)left, (float)(bottom - textHeight));
-    glVertex2f((float)(left + size), (float)(bottom - textHeight));
-    glVertex2f((float)(left + size), (float)(bottom + size));
-    glVertex2f((float)left, (float)(bottom + size));
-    glEnd();
-    glLineWidth(1);
-    glColor4f(1, 1, 1, .6f);
-    glBegin(GL_LINE_LOOP);
-    glVertex2f(left + .5f, bottom - textHeight + .5f);
-    glVertex2f(left + size - .5f, bottom - textHeight + .5f);
-    glVertex2f(left + size - .5f, bottom + size - .5f);
-    glVertex2f(left + .5f, bottom + size - .5f);
-    glEnd();
-
-    char text[64];
-    snprintf(text, sizeof(text), "height %.0f   speed %.0f", eyeY, flyCam.speed());
-    glColor4f(1, 1, 1, .9f);
-    gl_font(FL_HELVETICA, 11);
-    gl_draw(text, (float)(left + 6), (float)(bottom - textHeight + 5));
-
-    // World units inside the map square: screen x = world x, screen y = -z.
-    glViewport(left, bottom, size, size);
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    glOrtho(-range, range, -range, range, -1, 1);
-    glMatrixMode(GL_MODELVIEW);
-
-    glColor4f(.75f, .75f, .75f, .35f);
-    glBegin(GL_QUADS);
-    glVertex2f(-floorHalfSize, -floorHalfSize);
-    glVertex2f(floorHalfSize, -floorHalfSize);
-    glVertex2f(floorHalfSize, floorHalfSize);
-    glVertex2f(-floorHalfSize, floorHalfSize);
-    glEnd();
-
-    const float unit = range / size; // one pixel in world units
-    if (m_pTrack->points.size() >= 4)
-    {
-        const TrackSplineType splineType = static_cast<TrackSplineType>(tw->splineBrowser->value());
-        const int samples = (int)m_pTrack->points.size() * 16;
-        glLineWidth(2);
-        glColor4f(.85f, .62f, .35f, 1);
-        glBegin(GL_LINE_LOOP);
-        for (int i = 0; i < samples; ++i)
-        {
-            const Pnt3f p = m_pTrack->evaluatePosition(
-                (float)i * (float)m_pTrack->points.size() / (float)samples, splineType);
-            glVertex2f(p.x, -p.z);
-        }
-        glEnd();
-    }
-
-    glPointSize(5);
-    glBegin(GL_POINTS);
-    glColor4f(.2f, .7f, .3f, 1);
-    for (int i = 0; i < treeCount; ++i)
-        glVertex2f(treePositions[i][0], -treePositions[i][1]);
-    if (m_pTrack->points.size() >= 4)
-    {
-        const Pnt3f train = trainPosition();
-        glColor4f(.35f, .65f, 1, 1);
-        glVertex2f(train.x, -train.z);
-    }
-    glEnd();
-
-    // The camera: a wedge showing the view direction, then an arrow.
-    const float heading = atan2f(fx, -fz);
-    const float half = 30.0f * 3.14159265f / 180.0f;
-    const float wedge = 45 * unit;
-    glColor4f(1, .9f, .2f, .25f);
-    glBegin(GL_TRIANGLES);
-    glVertex2f(eyeX, -eyeZ);
-    glVertex2f(eyeX + wedge * sinf(heading - half), -eyeZ + wedge * cosf(heading - half));
-    glVertex2f(eyeX + wedge * sinf(heading + half), -eyeZ + wedge * cosf(heading + half));
-    glEnd();
-    const float tip = 12 * unit, back = 8 * unit;
-    glColor4f(1, .9f, .2f, 1);
-    glBegin(GL_TRIANGLES);
-    glVertex2f(eyeX + tip * sinf(heading), -eyeZ + tip * cosf(heading));
-    glVertex2f(eyeX + back * sinf(heading + 2.5f), -eyeZ + back * cosf(heading + 2.5f));
-    glVertex2f(eyeX + back * sinf(heading - 2.5f), -eyeZ + back * cosf(heading - 2.5f));
-    glEnd();
-
     // Controls hint along the bottom of the view.
-    glViewport(0, 0, w(), h());
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    glOrtho(0, w(), 0, h(), -1, 1);
-    glMatrixMode(GL_MODELVIEW);
     const char *lines[2] = {mouseCaptured ? "Mouse looks around  -  Esc frees the mouse"
                                           : "Click the view to look with the mouse",
                             "WASD move  Space/Shift up/down  Ctrl fast  Wheel speed  F train"};

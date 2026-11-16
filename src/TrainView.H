@@ -94,7 +94,7 @@ class TrainView : public Fl_Gl_Window
     Pnt3f trainPosition() const;
 
     // Orientation aids for the observer camera: ground out to the horizon, and
-    // an overlay with a top-down map, the eye height and a centre crosshair.
+    // an overlay with a centre crosshair and a controls hint.
     void drawFlyHorizon();
     void drawFlyOverlay();
 

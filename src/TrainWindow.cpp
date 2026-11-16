@@ -112,7 +112,7 @@ TrainWindow::TrainWindow(const int x, const int y)
                         "Speed: mouse wheel, +/- keys or the fly speed slider\n"
                         "Also: right drag or arrow keys look; E/Q up/down\n"
                         "Touchpad: two fingers look, spread / pinch fly, Alt + two fingers slide\n"
-                        "Lost? F: face the train; R: back to the World view; map at top right");
+                        "Lost? F: face the train; R: back to the World view");
         camGroup->end();
 
         pty += 30;
