@@ -62,7 +62,8 @@ class TrainWindow : public Fl_Double_Window
     // it should handle forward and backwards
     void advanceTrain(float dir = 1);
 
-    // simple helper function to set up a button
+    // simple helper function to set up a button: makes it a toggle and gives
+    // it the panel's on/off colours (see UiTheme.h)
     void togglify(Fl_Button *, int state = 0);
 
     // timer that redraws the view so the water and leaves keep moving
@@ -100,6 +101,7 @@ class TrainWindow : public Fl_Double_Window
     Fl_Button *headlightButton; // spotlight on the train's nose
     Fl_Value_Slider *timeOfDay; // moves the sun, 0 to 24 hours
     Fl_Button *waterButton;     // reflective ocean around the island
+    Fl_Button *rainButton;      // rain: wet ground, streaks and ripples
     Fl_Button *bloomButton;     // bloom and god rays
     Fl_Button *ssaoButton;      // screen space ambient occlusion
 

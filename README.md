@@ -35,7 +35,11 @@ pwsh -File scripts/check.ps1 -Stage all -Compiler clang -Config Release
 - 平移：Alt + 雙指捲動或 Alt + 右鍵拖曳。
 - 縮放：雙指張開放大、捏合縮小；也可 Ctrl + 捲動。
 - 重設：Shift + 左鍵雙擊或右鍵雙擊。
-- 控制面板提供 Run、速度、相機與控制點操作；Load／Save 讀寫軌道文字檔。
+- 控制面板在視窗右側，深色霓虹風格，依功能分成五張卡片，由上到下為：
+  `RIDE`（Run、前後步進、ArcLength、Speed）、`CAMERA`（World／Train／Top）、
+  `TRACK`（Spline Type、Add／Delete Point、Load／Save／Reset、R±X／R±Z）、
+  `LIGHTING`（Light+、Shadows、Headlight、Bloom、SSAO、Time）、`WORLD`（Water、Rain、Ocean Ride）。
+  開關亮青色代表開啟、深色代表關閉；Load／Save 讀寫軌道文字檔。
 - 光影：`Light+` 開啟 shader 逐像素光照與 shadow map 陰影，關閉即回到原本固定管線畫面。
   `Shadows`、`Headlight`（火車頭燈）、`Water`（島外海面反射與折射）、`Bloom`（泛光與 god rays）、`SSAO` 可個別開關；
   `Time` 滑桿 0–24 時移動太陽與月亮，夜晚最容易看到頭燈。顯卡不支援時自動退回原本畫法。
