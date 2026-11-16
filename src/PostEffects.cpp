@@ -1262,7 +1262,7 @@ void PostEffects::applyWetGround(const AdvancedLighting &lighting, float wetness
 void PostEffects::buildWaterMesh()
 {
     const float reach = kWaterGridCell * static_cast<float>(kWaterGridCells) * 0.5f;
-    const float far = 1500.0f;
+    const float horizon = 1500.0f;
     const float y = waterLevel;
     m_waterList = glGenLists(1);
     glNewList(m_waterList, GL_COMPILE);
@@ -1277,10 +1277,10 @@ void PostEffects::buildWaterMesh()
             glVertex3f(x0 + kWaterGridCell, y, z0 + kWaterGridCell);
             glVertex3f(x0 + kWaterGridCell, y, z0);
         }
-    const float skirts[4][4] = {{-far, -far, far, -reach},
-                                {-far, reach, far, far},
-                                {-far, -reach, -reach, reach},
-                                {reach, -reach, far, reach}};
+    const float skirts[4][4] = {{-horizon, -horizon, horizon, -reach},
+                                {-horizon, reach, horizon, horizon},
+                                {-horizon, -reach, -reach, reach},
+                                {reach, -reach, horizon, reach}};
     for (const float *r : skirts)
     {
         glVertex3f(r[0], y, r[1]);
