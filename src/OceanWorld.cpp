@@ -1897,6 +1897,11 @@ void drawFishShape(const unsigned char body[3], const unsigned char fin[3], floa
     glColor3ubv(body);
     fishBox(-0.22f, -0.35f, -0.55f, 0.22f, 0.35f, 0.6f);
     fishBox(-0.16f, -0.24f, 0.6f, 0.16f, 0.2f, 0.85f);
+    // a white eye with a black dot on each side of the head
+    glColor3ub(250, 250, 250);
+    fishBox(-0.235f, 0.02f, 0.3f, 0.235f, 0.24f, 0.52f);
+    glColor3ub(16, 16, 20);
+    fishBox(-0.25f, 0.07f, 0.36f, 0.25f, 0.19f, 0.48f);
     glColor3ubv(fin);
     fishBox(-0.24f, -0.37f, -0.05f, 0.24f, 0.37f, 0.15f); // stripe
     fishBox(-0.05f, 0.35f, -0.35f, 0.05f, 0.6f, 0.2f);    // dorsal fin
@@ -1912,6 +1917,8 @@ void drawShark(float time)
     glColor3ub(92, 108, 128);
     fishBox(-0.7f, -0.6f, -2.0f, 0.7f, 0.7f, 2.2f);
     fishBox(-0.5f, -0.45f, 2.2f, 0.5f, 0.4f, 3.6f);
+    glColor3ub(16, 16, 20);
+    fishBox(-0.52f, 0.02f, 2.75f, 0.52f, 0.2f, 2.95f); // eyes
     glColor3ub(214, 220, 226);
     fishBox(-0.6f, -0.75f, -1.6f, 0.6f, -0.6f, 3.2f); // pale belly
     glColor3ub(74, 88, 108);
@@ -1938,6 +1945,9 @@ void drawTurtle(float time)
     fishBox(-0.95f, -0.48f, -1.2f, 0.95f, -0.35f, 1.2f); // plastron
     glColor3ub(120, 160, 96);
     fishBox(-0.35f, -0.2f, 1.4f, 0.35f, 0.3f, 2.1f); // head
+    glColor3ub(16, 16, 20);
+    fishBox(-0.37f, 0.08f, 1.8f, 0.37f, 0.22f, 1.94f); // eyes
+    glColor3ub(120, 160, 96);
     fishBox(-0.75f, -0.1f, -1.9f, -0.3f, 0.05f, -1.3f);
     fishBox(0.3f, -0.1f, -1.9f, 0.75f, 0.05f, -1.3f);
     const float flap = sinf(time * 2.0f) * 26.0f;
@@ -1961,6 +1971,8 @@ void drawRay(float time)
     fishBox(-0.08f, -0.03f, -4.2f, 0.08f, 0.07f, -1.2f); // tail
     fishBox(-0.9f, -0.05f, 1.4f, -0.5f, 0.15f, 2.0f);    // head fins
     fishBox(0.5f, -0.05f, 1.4f, 0.9f, 0.15f, 2.0f);
+    glColor3ub(16, 16, 20);
+    fishBox(-1.22f, 0.08f, 1.0f, 1.22f, 0.2f, 1.14f); // eyes
     glColor3ub(214, 222, 230);
     fishBox(-1.1f, -0.2f, -1.0f, 1.1f, -0.1f, 1.2f); // white belly
     for (int side = -1; side <= 1; side += 2)
@@ -1990,6 +2002,9 @@ void drawWhale(float time)
     glColor3ub(58, 84, 120);
     fishBox(-2.0f, -1.6f, -5.0f, 2.0f, 2.0f, 5.0f);
     fishBox(-1.8f, -1.2f, 5.0f, 1.8f, 1.6f, 8.6f);
+    glColor3ub(16, 16, 20);
+    fishBox(-1.83f, -0.5f, 6.0f, 1.83f, -0.1f, 6.4f); // eyes
+    glColor3ub(58, 84, 120);
     fishBox(-0.25f, 2.0f, -2.6f, 0.25f, 2.7f, -1.4f); // dorsal fin
     glColor3ub(204, 214, 224);
     fishBox(-1.8f, -2.1f, -4.0f, 1.8f, -1.6f, 8.2f); // throat and belly
@@ -2204,69 +2219,119 @@ void OceanWorld::drawSeaLife(float time)
 {
     setGlow(0.0f);
 
-    // Small schools that keep to the ride itself, just above the train: the
-    // tube carved around the ride is always open water. Each school drifts
-    // about as a whole while its fish dart around inside it.
-    struct Ring
+    // Schools that travel along the ride, a little above the train, the way
+    // fish follow a reef edge: the tube carved around the ride is always
+    // open water, so they can go its whole underwater length. The fish of a
+    // school keep a loose formation and all head the same way; half of the
+    // schools go with the ride and half against it. At either end, up by the
+    // surface, a school shrinks away and starts again at the other end.
+    struct Runner
     {
-        int point;
+        float start;     // where along the stretch it is at time 0, 0..1
+        float direction; // +1 with the ride, -1 against it
         unsigned char body[3], fin[3];
     };
-    const Ring rings[] = {
-        {4, {250, 200, 60}, {40, 60, 120}},     {6, {230, 120, 50}, {250, 250, 250}},
-        {8, {90, 150, 230}, {250, 220, 80}},    {10, {240, 90, 120}, {250, 240, 200}},
-        {12, {60, 210, 200}, {30, 90, 110}},    {14, {250, 170, 60}, {60, 60, 70}},
-        {19, {190, 120, 240}, {250, 230, 120}}, {20, {250, 220, 90}, {230, 90, 60}}};
+    const Runner runners[] = {{0.02f, 1.0f, {250, 200, 60}, {40, 60, 120}},
+                              {0.18f, -1.0f, {230, 120, 50}, {250, 250, 250}},
+                              {0.34f, 1.0f, {90, 150, 230}, {250, 220, 80}},
+                              {0.50f, -1.0f, {240, 90, 120}, {250, 240, 200}},
+                              {0.66f, 1.0f, {60, 210, 200}, {30, 90, 110}},
+                              {0.82f, -1.0f, {250, 170, 60}, {60, 60, 70}},
+                              {0.10f, -1.0f, {190, 120, 240}, {250, 230, 120}},
+                              {0.58f, 1.0f, {250, 220, 90}, {230, 90, 60}}};
+    const float stretchFrom = 3.3f;
+    const float stretchLength = 17.0f; // in control points: down to the exit gates
+    const float runnerSpeed = 0.11f;   // control points a second, about 7 units
     int school = 0;
-    for (const Ring &ring : rings)
+    for (const Runner &runner : runners)
     {
-        const float *c = kDemoTrack[ring.point];
-        const float schoolPhase = static_cast<float>(school) * 1.9f;
-        float drift[3];
-        wanderAt(time * 0.22f + schoolPhase, schoolPhase, false, drift);
-        const float offset[3] = {drift[0] * 3.4f, drift[1] * 0.6f, drift[2] * 3.4f};
-        for (int i = 0; i < 10; ++i)
+        const float schoolSeed = static_cast<float>(school) * 1.9f;
+        for (int i = 0; i < 12; ++i)
         {
             const float fi = static_cast<float>(i);
-            const Lap lap = {
-                c[0], c[1] + 6.2f, c[2], 3.1f, 3.1f, 0.75f + 0.05f * fi, fi * 0.63f + schoolPhase,
-                0.85f};
-            enterLap(lap, time, 1.0f, true, offset);
-            drawFishShape(ring.body, ring.fin, sinf(time * 8.0f + fi * 3.1f) * 25.0f);
+            // The fish's own place in the formation, shifting slowly.
+            const float along =
+                (static_cast<float>(hash(i, school, 621u) % 100u) * 0.01f - 0.5f) * 0.16f;
+            const float lateral =
+                (static_cast<float>(hash(i, school, 622u) % 100u) * 0.01f - 0.5f) * 3.4f +
+                sinf(time * 0.7f + fi * 1.3f) * 0.35f + runner.direction * 2.0f;
+            const float height =
+                5.7f + (static_cast<float>(hash(i, school, 623u) % 100u) * 0.01f - 0.5f) * 1.8f +
+                sinf(time * 0.9f + fi * 2.1f + schoolSeed) * 0.25f;
+            float travelled = runner.start + runner.direction * time * runnerSpeed / stretchLength +
+                              along / stretchLength;
+            travelled -= floorf(travelled);
+            // small near either end, full size in between
+            const float edge = fminf(travelled, 1.0f - travelled) / 0.02f;
+            const float size = 0.85f * fmaxf(0.0f, fminf(1.0f, edge));
+            if (size < 0.02f)
+                continue;
+            const float u = stretchFrom + travelled * stretchLength;
+            float here[3], forward[3], left[3];
+            ridePoint(u, 2, here);
+            rideFrame(u, forward, left);
+            const float heading =
+                atan2f(forward[0] * runner.direction, forward[2] * runner.direction);
+            const float pitch = asinf(fmaxf(-0.6f, fminf(0.6f, forward[1] * runner.direction)));
+            glPushMatrix();
+            glTranslatef(here[0] + left[0] * lateral, here[1] + height,
+                         here[2] + left[2] * lateral);
+            glRotatef(heading * 57.29578f, 0.0f, 1.0f, 0.0f);
+            glRotatef(-pitch * 57.29578f, 1.0f, 0.0f, 0.0f);
+            glScalef(size, size, size);
+            drawFishShape(runner.body, runner.fin, sinf(time * 8.0f + fi * 3.1f) * 25.0f);
             glPopMatrix();
         }
         ++school;
     }
 
     // Big schools high in the open water, seen against the bright surface.
+    // Each roams a long stretch of deep water above everything on the sea
+    // bed; its fish keep formation and face the way the school is going.
     struct Swarm
     {
-        float x, y, z, radius, speed;
+        float x, y, z, radiusX, radiusZ, speed;
         int count;
         unsigned char body[3], fin[3];
     };
     const Swarm swarms[] = {
-        {40.0f, -11.0f, 196.0f, 26.0f, 0.2f, 44, {150, 190, 230}, {70, 100, 150}},
-        {226.0f, -10.0f, 60.0f, 22.0f, 0.24f, 36, {250, 210, 90}, {230, 120, 40}},
-        {-150.0f, -9.0f, 215.0f, 20.0f, 0.22f, 32, {200, 230, 240}, {90, 140, 170}},
-        {150.0f, -9.0f, 205.0f, 24.0f, 0.18f, 36, {240, 130, 150}, {250, 240, 220}}};
-    for (const Swarm &s : swarms)
+        {50.0f, -9.5f, 238.0f, 150.0f, 38.0f, 0.06f, 48, {150, 190, 230}, {70, 100, 150}},
+        {246.0f, -9.5f, 70.0f, 36.0f, 110.0f, 0.07f, 40, {250, 210, 90}, {230, 120, 40}},
+        {120.0f, -8.5f, 250.0f, 110.0f, 30.0f, 0.08f, 36, {240, 130, 150}, {250, 240, 220}},
+        {-30.0f, -9.0f, 262.0f, 90.0f, 22.0f, 0.07f, 32, {200, 230, 240}, {90, 140, 170}}};
+    for (const Swarm &swarm : swarms)
     {
-        const float schoolPhase = static_cast<float>(school) * 1.9f;
-        float drift[3];
-        wanderAt(time * s.speed * 0.6f + schoolPhase, schoolPhase, false, drift);
-        const float offset[3] = {drift[0] * s.radius * 0.55f, drift[1] * 0.8f,
-                                 drift[2] * s.radius * 0.55f};
-        for (int i = 0; i < s.count; ++i)
+        const float schoolSeed = static_cast<float>(school) * 1.9f;
+        const float a = time * swarm.speed + schoolSeed;
+        float here[3], ahead[3];
+        wanderAt(a, schoolSeed, false, here);
+        wanderAt(a + 0.02f, schoolSeed, false, ahead);
+        const float dx = (ahead[0] - here[0]) * swarm.radiusX;
+        const float dz = (ahead[2] - here[2]) * swarm.radiusZ;
+        const float flat = sqrtf(dx * dx + dz * dz);
+        const float fx = flat > 1.0e-5f ? dx / flat : 0.0f; // the way the school is going
+        const float fz = flat > 1.0e-5f ? dz / flat : 1.0f;
+        const float heading = atan2f(fx, fz);
+        for (int i = 0; i < swarm.count; ++i)
         {
             const float fi = static_cast<float>(i);
-            const float spread = static_cast<float>(hash(i, school, 601u) % 100u) * 0.01f;
-            const float radius = s.radius * 0.45f * (0.5f + 0.5f * spread);
-            const Lap lap = {
-                s.x, s.y, s.z, radius, radius, s.speed * (2.6f + spread), fi * 0.61f + schoolPhase,
-                1.0f};
-            enterLap(lap, time, 1.8f, true, offset);
-            drawFishShape(s.body, s.fin, sinf(time * 7.0f + fi * 2.3f) * 22.0f);
+            // a long, loose formation: further along than across
+            const float along =
+                (static_cast<float>(hash(i, school, 631u) % 100u) * 0.01f - 0.5f) * 22.0f +
+                sinf(time * 0.5f + fi * 1.9f) * 0.8f;
+            const float across =
+                (static_cast<float>(hash(i, school, 632u) % 100u) * 0.01f - 0.5f) * 9.0f +
+                sinf(time * 0.6f + fi * 1.1f) * 0.5f;
+            const float height =
+                (static_cast<float>(hash(i, school, 633u) % 100u) * 0.01f - 0.5f) * 3.6f +
+                sinf(time * 0.8f + fi * 2.7f) * 0.3f;
+            glPushMatrix();
+            glTranslatef(swarm.x + here[0] * swarm.radiusX + fx * along + fz * across,
+                         swarm.y + here[1] * 0.8f + height,
+                         swarm.z + here[2] * swarm.radiusZ + fz * along - fx * across);
+            glRotatef((heading + sinf(time * 1.1f + fi * 1.7f) * 0.12f) * 57.29578f, 0.0f, 1.0f,
+                      0.0f);
+            drawFishShape(swarm.body, swarm.fin, sinf(time * 7.0f + fi * 2.3f) * 22.0f);
             glPopMatrix();
         }
         ++school;
@@ -2274,36 +2339,36 @@ void OceanWorld::drawSeaLife(float time)
 
     // Everything large keeps above the scenery limit (y = -15) and roams its
     // own patch of open water.
-    const Lap sharks[] = {{215.0f, -10.5f, 30.0f, 38.0f, 30.0f, 0.16f, 0.0f, 1.4f},
-                          {215.0f, -9.0f, 30.0f, 30.0f, 38.0f, 0.13f, 3.3f, 1.2f},
-                          {60.0f, -10.0f, 238.0f, 44.0f, 26.0f, -0.12f, 1.2f, 1.5f}};
+    const Lap sharks[] = {{238.0f, -10.5f, 60.0f, 40.0f, 110.0f, 0.075f, 0.0f, 1.4f},
+                          {244.0f, -9.0f, 90.0f, 36.0f, 100.0f, 0.06f, 3.3f, 1.2f},
+                          {40.0f, -10.0f, 246.0f, 150.0f, 30.0f, 0.055f, 1.2f, 1.5f}};
     for (const Lap &lap : sharks)
     {
-        enterLap(lap, time, 0.6f);
+        enterLap(lap, time, 0.9f);
         drawShark(time + lap.phase);
         glPopMatrix();
     }
 
-    const Lap turtles[] = {{176.0f, -12.0f, -10.0f, 22.0f, 22.0f, 0.2f, 0.5f, 1.5f},
-                           {-70.0f, -11.0f, 176.0f, 20.0f, 16.0f, -0.17f, 2.0f, 1.3f},
-                           {-185.0f, -10.0f, -165.0f, 14.0f, 14.0f, 0.22f, 4.0f, 1.4f}};
+    const Lap turtles[] = {{196.0f, -12.0f, -6.0f, 40.0f, 46.0f, 0.07f, 0.5f, 1.5f},
+                           {-66.0f, -11.0f, 176.0f, 55.0f, 17.0f, 0.06f, 2.0f, 1.3f},
+                           {-185.0f, -10.0f, -165.0f, 16.0f, 16.0f, 0.16f, 4.0f, 1.4f}};
     for (const Lap &lap : turtles)
     {
-        enterLap(lap, time, 0.8f);
+        enterLap(lap, time, 1.0f);
         drawTurtle(time + lap.phase);
         glPopMatrix();
     }
 
-    const Lap rays[] = {{120.0f, -9.5f, 216.0f, 55.0f, 28.0f, 0.11f, 0.0f, 2.2f},
-                        {-60.0f, -8.5f, 250.0f, 60.0f, 22.0f, -0.09f, 2.6f, 2.0f}};
+    const Lap rays[] = {{120.0f, -9.5f, 232.0f, 115.0f, 38.0f, 0.05f, 0.0f, 2.2f},
+                        {-40.0f, -8.5f, 256.0f, 85.0f, 26.0f, 0.055f, 2.6f, 2.0f}};
     for (const Lap &lap : rays)
     {
-        enterLap(lap, time, 0.5f);
+        enterLap(lap, time, 0.6f);
         drawRay(time + lap.phase);
         glPopMatrix();
     }
 
-    const Lap whale = {185.0f, -7.5f, 120.0f, 45.0f, 75.0f, 0.045f, 0.4f, 2.2f};
+    const Lap whale = {214.0f, -7.5f, 112.0f, 58.0f, 118.0f, 0.03f, 0.4f, 2.2f};
     enterLap(whale, time, 0.4f);
     drawWhale(time);
     glPopMatrix();
