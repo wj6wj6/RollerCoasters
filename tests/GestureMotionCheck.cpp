@@ -139,6 +139,60 @@ static bool checkPitchLimit()
     return pass;
 }
 
+static bool checkPreciseScroll()
+{
+    Fl_Gl_Window window(600, 600);
+    ArcBallCam camera;
+    camera.setup(&window, 40, 250, 0, 0, 0);
+    HMatrix initial, current;
+    camera.getMatrix(initial);
+    // A touchpad sends many sub-notch deltas; each one must move the camera at once.
+    double expected = 0;
+    bool immediate = true;
+    for (int event = 0; event < 8; ++event)
+    {
+        camera.scroll(.125f, 0, 0, true);
+        expected += .035 * .125 * 180 / 3.141592653589793;
+        camera.getMatrix(current);
+        if (std::fabs(angle(initial, current) - expected) > .01)
+            immediate = false;
+    }
+    std::printf("%s: precise touchpad scroll follows each delta (total %.3f deg)\n",
+                immediate ? "PASS" : "FAIL", angle(initial, current));
+
+    const float before = camera.cameraDistance();
+    camera.zoomByWheel(.5f, true);
+    const double zoomExpected = before * std::pow(1.1, -.5);
+    bool zoom = std::fabs(camera.cameraDistance() - zoomExpected) < .01;
+    std::printf("%s: precise pinch zoom applies at once (%.3f -> %.3f)\n", zoom ? "PASS" : "FAIL",
+                before, camera.cameraDistance());
+    return immediate && zoom;
+}
+
+static bool checkEmptySpaceDrag()
+{
+    Fl_Gl_Window window(600, 600);
+    ArcBallCam camera;
+    camera.setup(&window, 40, 250, 0, 0, 0);
+    HMatrix initial, current;
+    camera.getMatrix(initial);
+    Fl::e_x = 300;
+    Fl::e_y = 300;
+    Fl::e_state = FL_BUTTON1;
+    camera.beginDrag(false);
+    Fl::e_x = 360;
+    bool taken = camera.handle(FL_DRAG) == 1;
+    camera.getMatrix(current);
+    // 60 px of a 600 px window is .2 NDC; drags orbit 1.5 rad per NDC unit.
+    const double expected = .3 * 180 / 3.141592653589793;
+    bool rotate = taken && std::fabs(angle(initial, current) - expected) < .05;
+    bool released = camera.handle(FL_RELEASE) == 1 && camera.handle(FL_DRAG) == 0;
+    std::printf("%s: left drag on empty space orbits %.3f deg and ends on release\n",
+                rotate && released ? "PASS" : "FAIL", angle(initial, current));
+    Fl::e_state = 0;
+    return rotate && released;
+}
+
 int main()
 {
     bool vertical = checkMotion(0, 1);
@@ -149,8 +203,10 @@ int main()
     bool zoomOut = checkZoom(-1);
     bool fineZoom = checkZoom(.25f);
     bool pitchLimit = checkPitchLimit();
+    bool precise = checkPreciseScroll();
+    bool emptyDrag = checkEmptySpaceDrag();
     return vertical && horizontal && diagonal && level && zoomIn && zoomOut && fineZoom &&
-                   pitchLimit
+                   pitchLimit && precise && emptyDrag
                ? 0
                : 1;
 }

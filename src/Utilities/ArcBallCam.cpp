@@ -102,13 +102,78 @@ void ArcBallCam::startGesture()
     }
 }
 
-void ArcBallCam::zoomByWheel(float steps)
+void ArcBallCam::zoomByWheel(float steps, bool precise)
 {
     if (mode != None || steps == 0)
         return;
+    if (precise)
+    {
+        applyZoom(steps);
+        wind->damage(1);
+        return;
+    }
     pendingGestureX = pendingGestureY = 0;
     pendingZoom += steps;
     startGesture();
+}
+
+void ArcBallCam::applyZoom(float steps)
+{
+    eyeZ *= (float)pow(1.1, -steps);
+    if (eyeZ < 1.0f)
+        eyeZ = 1.0f;
+    if (eyeZ > 900.0f)
+        eyeZ = 900.0f;
+}
+
+void ArcBallCam::scroll(float dx, float dy, int state, bool precise)
+{
+    // Do not change the drag's coordinate frame mid-drag.
+    if (mode != None)
+        return;
+    if (state & FL_CTRL)
+    {
+        zoomByWheel(-dy, precise);
+    }
+    else if (state & (FL_ALT | FL_SHIFT))
+    {
+        stopGesture();
+        eyeX += dx * eyeZ * .02f;
+        eyeY -= dy * eyeZ * .02f;
+    }
+    else if (precise)
+    {
+        // Follow the fingers directly; extra smoothing only adds lag.
+        orbit(-dx * .035f, -dy * .035f);
+    }
+    else
+    {
+        pendingZoom = 0;
+        // Limit large scroll bursts to keep rotation controllable.
+        if (dx > 10)
+            dx = 10;
+        if (dx < -10)
+            dx = -10;
+        if (dy > 10)
+            dy = 10;
+        if (dy < -10)
+            dy = -10;
+        pendingGestureX += dx;
+        pendingGestureY += dy;
+        if (dx != 0 || dy != 0)
+            startGesture();
+    }
+    wind->damage(1);
+}
+
+void ArcBallCam::beginDrag(bool pan)
+{
+    stopGesture();
+    float x, y;
+    getMouseNDC(x, y);
+    down(x, y);
+    mode = pan ? Pan : Rotate;
+    wind->damage(1);
 }
 
 void ArcBallCam::orbit(float yawDelta, float pitchDelta)
@@ -153,11 +218,7 @@ void ArcBallCam::animateGesture(void *data)
         camera->orbit(-dx * .035f, -dy * .035f);
     const float zoom = camera->pendingZoom * blend;
     camera->pendingZoom -= zoom;
-    camera->eyeZ *= (float)pow(1.1, -zoom);
-    if (camera->eyeZ < 1.0f)
-        camera->eyeZ = 1.0f;
-    if (camera->eyeZ > 900.0f)
-        camera->eyeZ = 900.0f;
+    camera->applyZoom(zoom);
     camera->wind->damage(1);
     if (blend == 1)
     {
@@ -277,44 +338,11 @@ int ArcBallCam::handle(int e)
             return 1;
         };
         break;
-    case FL_MOUSEWHEEL: {
-        // Touchpad two-finger gestures arrive as wheel events.
-        // Do not change the drag's coordinate frame mid-drag.
-        if (mode != None)
-            return 1;
-        float dx = (float)Fl::event_dx();
-        float dy = (float)Fl::event_dy();
-        if (Fl::event_state() & FL_CTRL)
-        {
-            zoomByWheel(-dy);
-        }
-        else if (Fl::event_state() & FL_ALT)
-        {
-            stopGesture();
-            eyeX += dx * eyeZ * .02f;
-            eyeY -= dy * eyeZ * .02f;
-        }
-        else
-        {
-            pendingZoom = 0;
-            // Limit large scroll bursts to keep rotation controllable.
-            if (dx > 10)
-                dx = 10;
-            if (dx < -10)
-                dx = -10;
-            if (dy > 10)
-                dy = 10;
-            if (dy < -10)
-                dy = -10;
-            pendingGestureX += dx;
-            pendingGestureY += dy;
-            if (dx != 0 || dy != 0)
-                startGesture();
-        }
-        wind->damage(1);
+    case FL_MOUSEWHEEL:
+        // FLTK rounds wheel input to whole notches; Windows touchpads reach
+        // scroll() with their exact deltas through TrainView's system handler.
+        scroll((float)Fl::event_dx(), (float)Fl::event_dy(), Fl::event_state(), false);
         return 1;
-    };
-    break;
     }
     return 0;
 }

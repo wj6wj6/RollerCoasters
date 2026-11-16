@@ -13,6 +13,7 @@ flowchart LR
     View --> Camera[ArcBallCam / 相機與手勢平滑]
     Camera --> Timer[FLTK event loop / timeout]
     Timer --> Camera
+    Wheel[Windows 滾輪訊息 / system handler] -->|原始位移| Camera
     Track <-->|readPoints / writePoints| File[使用者軌道文字檔]
     View --> GL[GLAD / OpenGL / GLU]
 ```
@@ -20,7 +21,7 @@ flowchart LR
 `TrainWindow` 持有場景狀態與 widget；`TrainView` 讀取場景與 UI 選項並繪圖。
 `TrackRenderer` 建立累積弧長表，依弧長等距擺放枕木，並以程式產生的像素材質畫方塊風鐵軌；`makeTrackFrame()` 也放在這裡，供列車與相機共用。
 `CallBacks` 處理按鈕、軌道載入儲存與列車更新。
-`ArcBallCam` 用 FLTK timeout 分攤旋轉與縮放，Windows 特定觸控處理位於 `TrainView.cpp`。
+`ArcBallCam` 用 FLTK timeout 分攤滑鼠滾輪的整格旋轉與縮放；觸控板的細小位移則立即套用。FLTK 1.3 會把滾輪訊息捨入為整格，因此 `TrainView.cpp` 以 system handler 直接讀取 Windows `WM_MOUSEWHEEL`／`WM_MOUSEHWHEEL` 的原始位移。
 `Utilities` 包含相機、幾何點與 OpenGL 輔助函式。
 
 軌道格式首行為控制點數，其後每行是位置 `x y z` 與可選方向 `x y z`。
