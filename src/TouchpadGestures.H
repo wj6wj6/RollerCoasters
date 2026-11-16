@@ -18,9 +18,6 @@ struct IDirectManipulationContent;
 class ViewportHandler;
 struct RawTouchpad;
 
-// Prints one "[touchpad] ..." line to the console.
-void touchpadLog(const char *format, ...);
-
 class TouchpadGestures
 {
   public:
@@ -90,8 +87,4 @@ class TouchpadGestures
     float lastScale = 1;
     float lastX = 0;
     float lastY = 0;
-    int gestureUpdates = 0; // diagnostics for the console log
-    float gestureMoveX = 0;
-    float gestureMoveY = 0;
-    float gestureZoom = 1;
 };

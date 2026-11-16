@@ -145,9 +145,9 @@ class ArcBallCam
     // Precise steps (touchpad) apply at once; whole mouse-wheel notches are smoothed.
     void zoomByWheel(float steps, bool precise = false);
 
-    // Scroll in wheel notches with FLTK signs (+dx right, +dy down): plain scroll
-    // orbits, Ctrl zooms, Alt or Shift pans. Precise touchpad deltas apply at once
-    // because the OS already smooths them; mouse-wheel notches are spread over frames.
+    // Scroll in wheel notches with FLTK signs (+dx right, +dy down): the wheel
+    // zooms, a sideways tilt orbits, Alt or Shift pans. Precise (sub-notch)
+    // deltas apply at once; whole mouse-wheel notches are spread over frames.
     void scroll(float dx, float dy, int state, bool precise);
 
     // Start a camera drag for a button the caller already took, such as a left

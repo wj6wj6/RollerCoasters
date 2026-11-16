@@ -8,8 +8,6 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
-#include <cstdarg>
-#include <cstdio>
 #include <vector>
 
 namespace
@@ -21,23 +19,9 @@ const float kContentSize = 40000;
 const double kTickSeconds = 1.0 / 60.0;
 } // namespace
 
-// Diagnostics on the console: whether touchpad gestures reach Direct
-// Manipulation, and what each gesture did.
-void touchpadLog(const char *format, ...)
+// Without Direct Manipulation the wheel messages keep working as before.
+static bool setupFailed(TouchpadGestures &gestures)
 {
-    std::va_list arguments;
-    va_start(arguments, format);
-    std::fputs("[touchpad] ", stdout);
-    std::vprintf(format, arguments);
-    std::fputc('\n', stdout);
-    std::fflush(stdout);
-    va_end(arguments);
-}
-
-static bool setupFailed(TouchpadGestures &gestures, const char *step, HRESULT result)
-{
-    touchpadLog("Direct Manipulation setup failed at %s (HRESULT 0x%08lx); using wheel messages",
-                step, (unsigned long)result);
     gestures.detach();
     return false;
 }
@@ -133,8 +117,6 @@ struct RawTouchpad
     TwoFingerGesture filter; // jitter, thresholds and which motion dominates
     std::chrono::steady_clock::time_point lastFrame;
     float velocityX = 0, velocityY = 0; // window pixels per second
-    int frames = 0;
-    float movedX = 0, movedY = 0, zoom = 1;
 };
 
 static float physicalPerLogical(const HIDP_VALUE_CAPS &value, float &physicalSize)
@@ -197,8 +179,6 @@ static bool loadLayout(RawTouchpad &raw, HANDLE device)
         }
     }
     raw.layoutOk = hasCount && !raw.fingerLinks.empty() && raw.padWidth > 0;
-    touchpadLog("raw touchpad layout: %u finger slots, contact count %s, pad width %.0f",
-                (unsigned)raw.fingerLinks.size(), hasCount ? "found" : "missing", raw.padWidth);
     return raw.layoutOk;
 }
 
@@ -248,13 +228,13 @@ bool TouchpadGestures::attach(void *window, Accept acceptFn, Apply applyFn, void
     HRESULT result = CoCreateInstance(__uuidof(DirectManipulationManager), nullptr,
                                       CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&manager));
     if (FAILED(result))
-        return setupFailed(*this, "CoCreateInstance", result);
+        return setupFailed(*this);
     result = manager->GetUpdateManager(IID_PPV_ARGS(&updates));
     if (FAILED(result))
-        return setupFailed(*this, "GetUpdateManager", result);
+        return setupFailed(*this);
     result = manager->CreateViewport(nullptr, target, IID_PPV_ARGS(&viewport));
     if (FAILED(result))
-        return setupFailed(*this, "CreateViewport", result);
+        return setupFailed(*this);
     // Pan and pinch together; only the pan keeps moving after the fingers lift.
     const DIRECTMANIPULATION_CONFIGURATION configuration =
         static_cast<DIRECTMANIPULATION_CONFIGURATION>(
@@ -267,16 +247,16 @@ bool TouchpadGestures::attach(void *window, Accept acceptFn, Apply applyFn, void
     DWORD cookie = 0;
     result = viewport->ActivateConfiguration(configuration);
     if (FAILED(result))
-        return setupFailed(*this, "ActivateConfiguration", result);
+        return setupFailed(*this);
     result = viewport->SetViewportOptions(DIRECTMANIPULATION_VIEWPORT_OPTIONS_MANUALUPDATE);
     if (FAILED(result))
-        return setupFailed(*this, "SetViewportOptions", result);
+        return setupFailed(*this);
     result = viewport->AddEventHandler(target, handler, &cookie);
     if (FAILED(result))
-        return setupFailed(*this, "AddEventHandler", result);
+        return setupFailed(*this);
     result = viewport->GetPrimaryContent(IID_PPV_ARGS(&content));
     if (FAILED(result))
-        return setupFailed(*this, "GetPrimaryContent", result);
+        return setupFailed(*this);
     handlerCookie = cookie;
     IDirectManipulationPrimaryContent *primary = nullptr;
     if (SUCCEEDED(viewport->GetPrimaryContent(IID_PPV_ARGS(&primary))) && primary)
@@ -293,26 +273,18 @@ bool TouchpadGestures::attach(void *window, Accept acceptFn, Apply applyFn, void
     hwnd = window;
     result = manager->Activate(target);
     if (FAILED(result))
-        return setupFailed(*this, "Activate", result);
+        return setupFailed(*this);
     result = viewport->Enable();
     if (FAILED(result))
-        return setupFailed(*this, "Enable", result);
+        return setupFailed(*this);
     resetLater(this);
     failedWindow = nullptr;
-    touchpadLog("Direct Manipulation ready; two-finger gestures should start with a hit test");
 
     // Raw precision touchpad reports (digitizer page, touch pad usage).
     RAWINPUTDEVICE device = {0x0D, 0x05, 0, target};
+    // Without it, Direct Manipulation's pan-or-pinch output is used instead.
     if (RegisterRawInputDevices(&device, 1, sizeof(device)))
-    {
         raw = new RawTouchpad();
-        touchpadLog("raw touchpad input registered");
-    }
-    else
-    {
-        touchpadLog("raw touchpad input unavailable (error %lu); using Direct Manipulation only",
-                    (unsigned long)GetLastError());
-    }
     return true;
 }
 
@@ -387,16 +359,9 @@ bool TouchpadGestures::readTransform(float &scale, float &x, float &y) const
 bool TouchpadGestures::hitTest(unsigned int pointerId)
 {
     POINTER_INPUT_TYPE type = PT_POINTER;
-    const BOOL known = GetPointerType(pointerId, &type);
-    touchpadLog("hit test: pointer %u, type %lu%s", pointerId, (unsigned long)type,
-                known ? "" : " (unknown)");
-    if (!viewport || !known || type != PT_TOUCHPAD)
+    if (!viewport || !GetPointerType(pointerId, &type) || type != PT_TOUCHPAD ||
+        (accept && !accept(user)))
         return false;
-    if (accept && !accept(user))
-    {
-        touchpadLog("not World view; leaving the gesture to the wheel messages");
-        return false;
-    }
     HWND target = static_cast<HWND>(hwnd);
     // A gesture that starts right after the last one must not race its reset.
     if (Fl::has_timeout(resetLater, this))
@@ -410,15 +375,8 @@ bool TouchpadGestures::hitTest(unsigned int pointerId)
     ScreenToClient(target, &cursor);
     anchorX = (float)cursor.x;
     anchorY = (float)cursor.y;
-    const HRESULT contact = viewport->SetContact(pointerId);
-    if (FAILED(contact))
-    {
-        touchpadLog("SetContact failed (HRESULT 0x%08lx)", (unsigned long)contact);
+    if (FAILED(viewport->SetContact(pointerId)))
         return false;
-    }
-    gestureUpdates = 0;
-    gestureMoveX = gestureMoveY = 0;
-    gestureZoom = 1;
     resetting = false;
     if (!readTransform(lastScale, lastX, lastY))
     {
@@ -436,11 +394,6 @@ bool TouchpadGestures::hitTest(unsigned int pointerId)
 
 void TouchpadGestures::statusChanged(int current)
 {
-    if (!resetting)
-        touchpadLog("status %d -> %d", status, current);
-    if (current == DIRECTMANIPULATION_READY && !resetting && gestureUpdates > 0)
-        touchpadLog("gesture: %d updates, moved %.0f, %.0f px, zoom x%.2f", gestureUpdates,
-                    gestureMoveX, gestureMoveY, gestureZoom);
     status = current;
     if (current == DIRECTMANIPULATION_READY && !resetting)
     {
@@ -483,10 +436,6 @@ void TouchpadGestures::contentUpdated(IDirectManipulationContent *updated)
     // from also sending wheel messages.
     if (raw && raw->works)
         return;
-    ++gestureUpdates;
-    gestureMoveX += dx;
-    gestureMoveY += dy;
-    gestureZoom *= ratio;
     if (apply && (dx != 0 || dy != 0 || ratio != 1))
         apply(user, dx, dy, ratio);
 }
@@ -670,9 +619,6 @@ void TouchpadGestures::rawFrame()
         raw->filter.start(centerX, centerY, spread);
         raw->lastFrame = now;
         raw->velocityX = raw->velocityY = 0;
-        raw->frames = 0;
-        raw->movedX = raw->movedY = 0;
-        raw->zoom = 1;
         return;
     }
     const float seconds = std::chrono::duration<float>(now - raw->lastFrame).count();
@@ -689,10 +635,6 @@ void TouchpadGestures::rawFrame()
         raw->velocityX = raw->velocityX * .6f + dx / seconds * .4f;
         raw->velocityY = raw->velocityY * .6f + dy / seconds * .4f;
     }
-    ++raw->frames;
-    raw->movedX += dx;
-    raw->movedY += dy;
-    raw->zoom *= ratio;
     raw->works = true;
     if (apply && (dx != 0 || dy != 0 || ratio != 1))
         apply(user, dx, dy, ratio);
@@ -701,8 +643,6 @@ void TouchpadGestures::rawFrame()
 void TouchpadGestures::endRawGesture()
 {
     raw->tracking = false;
-    touchpadLog("raw gesture: %d frames, moved %.0f, %.0f px, zoom x%.2f", raw->frames, raw->movedX,
-                raw->movedY, raw->zoom);
     // Keep turning briefly after a flick, like the system's scroll inertia.
     const float idle =
         std::chrono::duration<float>(std::chrono::steady_clock::now() - raw->lastFrame).count();
