@@ -55,6 +55,7 @@ add_executable(RollerCoasters
     src/PixelArt.h src/PixelArt.cpp
     src/PostEffects.h src/PostEffects.cpp
     src/TrainViewEffects.cpp
+    src/TransformGizmo.h src/TransformGizmo.cpp
     src/UnderwaterOptics.h
     src/CallBacks.H src/CallBacks.cpp
     src/ControlPoint.H src/ControlPoint.cpp
@@ -89,6 +90,12 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     target_link_libraries(TrackSpacingCheck PRIVATE Utilities glad)
     add_test(NAME TrackSpacingCheck COMMAND TrackSpacingCheck)
     set_tests_properties(TrackSpacingCheck PROPERTIES TIMEOUT 10 LABELS integration)
+
+    add_executable(GizmoDragCheck tests/GizmoDragCheck.cpp src/TransformGizmo.cpp)
+    target_include_directories(GizmoDragCheck PRIVATE src)
+    target_link_libraries(GizmoDragCheck PRIVATE glad)
+    add_test(NAME GizmoDragCheck COMMAND GizmoDragCheck)
+    set_tests_properties(GizmoDragCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
     add_executable(OceanRideClearanceCheck tests/OceanRideClearanceCheck.cpp
         src/OceanWorld.cpp src/PixelArt.cpp src/Track.cpp src/ControlPoint.cpp)

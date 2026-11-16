@@ -35,11 +35,17 @@ pwsh -File scripts/check.ps1 -Stage all -Compiler clang -Config Release
 - 平移：Alt + 雙指捲動或 Alt + 右鍵拖曳。
 - 縮放：雙指張開放大、捏合縮小；也可 Ctrl + 捲動。
 - 重設：Shift + 左鍵雙擊或右鍵雙擊。
-- 控制面板在視窗右側，深色霓虹風格，依功能分成五張卡片，由上到下為：
-  `RIDE`（Run、前後步進、ArcLength、Speed）、`CAMERA`（World／Train／Top）、
-  `TRACK`（Spline Type、Add／Delete Point、Load／Save／Reset、R±X／R±Z）、
-  `LIGHTING`（Light+、Shadows、Headlight、Bloom、SSAO、Time）、`WORLD`（Water、Rain、Ocean Ride）。
-  開關亮青色代表開啟、深色代表關閉；Load／Save 讀寫軌道文字檔。
+- 控制面板在視窗右側，外觀仿 3D 建模軟體的屬性編輯器：深灰面板、圓角灰色按鈕，開啟或選取的項目是藍色。由上到下六個面板：
+  `Ride`（Run、前後步進、ArcLength、Speed）、`Camera`（World／Train／Top）、
+  `Track`（Spline Type、Add／Delete Point、Load／Save／Reset、R±X／R±Z）、`Transform`（選取控制點的 X／Y／Z，可直接輸入）、
+  `Lighting`（Light+、Shadows、Headlight、Bloom、SSAO、Time）、`World`（Water、Rain、Ocean Ride）。Load／Save 讀寫軌道文字檔。
+- 編輯控制點（World 與 Top 相機）：左鍵點選，選到的控制點變橘色並出現移動把手。
+  - 拖紅／綠／藍箭頭沿 X／Y／Z 軸移動，拖小方塊在該平面內移動，直接拖控制點則平行於畫面移動。
+  - 鍵盤操作與 3D 建模軟體相同：`G` 移動、`R` 傾斜（改變控制點的上方向），之後按 `X`／`Y`／`Z` 鎖定軸，`Shift` + `X`／`Y`／`Z` 鎖定另外兩軸的平面；
+    左鍵或 Enter 確定，右鍵或 Esc 取消並還原。按住 `Ctrl` 以 1 單位（傾斜時 5 度）吸附。
+  - `Shift` + `D` 複製控制點並立刻移動，`Delete` 或 `X` 刪除，`Ctrl` + `Z` 復原上一次變更（再按一次重做）。
+  - 數字鍵盤 `1`／`7`／`0` 切換 World／Top／Train 相機。畫面左上角會顯示目前相機、選取的控制點與操作中的數值。
+  - 控制點是編輯輔助，不投射陰影。
 - 光影：`Light+` 開啟 shader 逐像素光照與 shadow map 陰影，關閉即回到原本固定管線畫面。
   `Shadows`、`Headlight`（火車頭燈）、`Water`（島外海面波浪、反射與折射）、`Bloom`（泛光與 god rays）、`SSAO` 可個別開關；
   `Time` 滑桿 0–24 時移動太陽與月亮，夜晚最容易看到頭燈。顯卡不支援時自動退回原本畫法。

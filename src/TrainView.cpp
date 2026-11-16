@@ -39,7 +39,9 @@
 #include "TrainWindow.H"
 #include "Utilities/3DUtils.h"
 #include "TrackRenderer.H"
+#include "CallBacks.H"
 #include <FL/x.H>
+#include <FL/gl.h>
 
 // Preserve the Ctrl flag supplied by Windows pinch-to-zoom messages.
 // Reading only the physical keyboard state can lose this synthetic flag.
@@ -111,6 +113,10 @@ void TrainView::resetArcball()
 //========================================================================
 int TrainView::handle(int event)
 {
+    // an edit in progress sees every event before the camera does
+    if (m_editMode != EDIT_IDLE && editEvent(event))
+        return 1;
+
     // see if the ArcBall will handle the event - if it does,
     // then we're done
     // note: the arcball only gets the event if we're in world view
@@ -129,7 +135,25 @@ int TrainView::handle(int event)
         // if the left button be pushed is left mouse button
         if (last_push == FL_LEFT_MOUSE)
         {
+            const int mx = Fl::event_x();
+            const int my = Fl::event_y();
+            // a handle of the selected point wins over picking another point
+            if (canEdit() && hasSelection() && m_editCameraValid)
+            {
+                const Pnt3f &p = m_pTrack->points[static_cast<size_t>(selectedCube)].pos;
+                const float position[3] = {p.x, p.y, p.z};
+                const TransformGizmo::Handle handle =
+                    TransformGizmo::pick(m_editCamera, position, m_gizmoSize, mx, my);
+                if (handle != TransformGizmo::NONE)
+                {
+                    beginEdit(EDIT_DRAG, handle, mx, my);
+                    return 1;
+                }
+            }
             doPick();
+            // dragging a point by its body moves it parallel to the screen
+            if (canEdit() && hasSelection() && m_editCameraValid)
+                beginEdit(EDIT_DRAG, TransformGizmo::VIEW, mx, my);
             damage(1);
             return 1;
         };
@@ -141,40 +165,36 @@ int TrainView::handle(int event)
         last_push = 0;
         return 1;
 
-    // Mouse button drag event
-    case FL_DRAG:
-
-        // Compute the new control point position
-        if ((last_push == FL_LEFT_MOUSE) && (selectedCube >= 0))
+    // highlight the handle under the mouse
+    case FL_MOVE:
+        if (canEdit() && hasSelection() && m_editCameraValid)
         {
-            ControlPoint *cp = &m_pTrack->points[selectedCube];
-
-            double r1x, r1y, r1z, r2x, r2y, r2z;
-            getMouseLine(r1x, r1y, r1z, r2x, r2y, r2z);
-
-            double rx, ry, rz;
-            mousePoleGo(r1x, r1y, r1z, r2x, r2y, r2z, static_cast<double>(cp->pos.x),
-                        static_cast<double>(cp->pos.y), static_cast<double>(cp->pos.z), rx, ry, rz,
-                        (Fl::event_state() & FL_CTRL) != 0);
-
-            cp->pos.x = (float)rx;
-            cp->pos.y = (float)ry;
-            cp->pos.z = (float)rz;
-            damage(1);
+            const Pnt3f &p = m_pTrack->points[static_cast<size_t>(selectedCube)].pos;
+            const float position[3] = {p.x, p.y, p.z};
+            const TransformGizmo::Handle handle = TransformGizmo::pick(
+                m_editCamera, position, m_gizmoSize, Fl::event_x(), Fl::event_y());
+            if (handle != m_hoverHandle)
+            {
+                m_hoverHandle = handle;
+                damage(1);
+            }
         }
-        break;
+        return 1;
 
     // in order to get keyboard events, we need to accept focus
     case FL_FOCUS:
         return 1;
 
-    // every time the mouse enters this window, aggressively take focus
+    // every time the mouse enters this window, aggressively take focus;
+    // returning 1 is what makes FLTK send FL_MOVE afterwards
     case FL_ENTER:
         focus(this);
-        break;
+        return 1;
 
     case FL_KEYBOARD:
         int k = Fl::event_key();
+        if (editKey(k))
+            return 1;
         if (k == 'p')
         {
             // Print out the selected control point information
@@ -194,6 +214,316 @@ int TrainView::handle(int event)
     }
 
     return Fl_Gl_Window::handle(event);
+}
+
+//************************************************************************
+//
+// * Control point editing
+//
+//   Left click selects a point. On the selected point: drag an arrow to
+//   move along that axis, a square to move in that plane, the point itself
+//   to move parallel to the screen. From the keyboard, as in a 3D modelling
+//   program: G moves and R tilts until a left click or Enter accepts, or a
+//   right click or Esc puts the point back; X / Y / Z keep to that axis and
+//   Shift + X / Y / Z to the other two. Ctrl snaps to whole units (5 degrees
+//   when tilting). Shift + D duplicates, Delete or X removes, Ctrl + Z takes
+//   back the last change. Numpad 1 / 7 / 0 switch to the world, top and train
+//   cameras.
+//========================================================================
+bool TrainView::canEdit() const
+{
+    // the control points are hidden while riding the train
+    return !tw->trainCam->value();
+}
+
+bool TrainView::hasSelection() const
+{
+    return selectedCube >= 0 && selectedCube < static_cast<int>(m_pTrack->points.size());
+}
+
+void TrainView::beginEdit(EditMode mode, TransformGizmo::Handle handle, int mouseX, int mouseY)
+{
+    if (!hasSelection())
+        return;
+    m_editStart = m_pTrack->points[static_cast<size_t>(selectedCube)];
+    m_undoPoint = m_editStart;
+    m_undoIndex = selectedCube;
+    m_undoValid = true;
+    m_editMode = mode;
+    m_editHandle = handle;
+    m_editStartX = mouseX;
+    m_editStartY = mouseY;
+    damage(1);
+}
+
+void TrainView::updateEdit(int mouseX, int mouseY)
+{
+    if (!hasSelection() || !m_editCameraValid)
+        return;
+    ControlPoint &point = m_pTrack->points[static_cast<size_t>(selectedCube)];
+    const bool snap = (Fl::event_state() & FL_CTRL) != 0;
+    const float start[3] = {m_editStart.pos.x, m_editStart.pos.y, m_editStart.pos.z};
+
+    if (m_editMode == EDIT_ROTATE)
+    {
+        // The angle the mouse has swept around the point on screen turns the
+        // point's up direction about the chosen axis, or about the line of
+        // sight when none is chosen.
+        float cx = 0.0f, cy = 0.0f;
+        if (!TransformGizmo::project(m_editCamera, start, cx, cy))
+            return;
+        const float before =
+            atan2f(static_cast<float>(m_editStartY) - cy, static_cast<float>(m_editStartX) - cx);
+        const float now = atan2f(static_cast<float>(mouseY) - cy, static_cast<float>(mouseX) - cx);
+        float angle = now - before;
+        if (snap)
+        {
+            const float step = 5.0f * 3.14159265f / 180.0f;
+            angle = floorf(angle / step + 0.5f) * step;
+        }
+        float axis[3] = {0.0f, 0.0f, 0.0f};
+        TransformGizmo::viewDirection(m_editCamera, start, axis);
+        if (m_editHandle >= TransformGizmo::AXIS_X && m_editHandle <= TransformGizmo::AXIS_Z)
+        {
+            // turn the way the mouse goes whichever side the axis is seen from
+            const int index = m_editHandle - TransformGizmo::AXIS_X;
+            const float towards = axis[index];
+            axis[0] = axis[1] = axis[2] = 0.0f;
+            axis[index] = towards >= 0.0f ? 1.0f : -1.0f;
+        }
+        const float up[3] = {m_editStart.orient.x, m_editStart.orient.y, m_editStart.orient.z};
+        float turned[3] = {0.0f, 0.0f, 0.0f};
+        TransformGizmo::rotate(up, axis, angle, turned);
+        point.orient = Pnt3f(turned[0], turned[1], turned[2]);
+        point.orient.normalize();
+    }
+    else
+    {
+        float moved[3] = {0.0f, 0.0f, 0.0f};
+        if (!TransformGizmo::drag(m_editHandle, m_editCamera, start, m_editStartX, m_editStartY,
+                                  mouseX, mouseY, moved))
+            return;
+        if (snap)
+            for (int k = 0; k < 3; ++k)
+                moved[k] = start[k] + floorf(moved[k] - start[k] + 0.5f);
+        point.pos = Pnt3f(moved[0], moved[1], moved[2]);
+    }
+    damage(1);
+}
+
+void TrainView::endEdit(bool keep)
+{
+    if (!keep && hasSelection())
+        m_pTrack->points[static_cast<size_t>(selectedCube)] = m_editStart;
+    m_editMode = EDIT_IDLE;
+    m_editHandle = TransformGizmo::NONE;
+    m_hoverHandle = TransformGizmo::NONE;
+    damage(1);
+}
+
+void TrainView::undoEdit()
+{
+    if (!m_undoValid || m_undoIndex < 0 || m_undoIndex >= static_cast<int>(m_pTrack->points.size()))
+        return;
+    // swap, so a second Ctrl + Z brings the change back
+    ControlPoint &point = m_pTrack->points[static_cast<size_t>(m_undoIndex)];
+    const ControlPoint current = point;
+    point = m_undoPoint;
+    m_undoPoint = current;
+    selectedCube = m_undoIndex;
+    damage(1);
+}
+
+// Events while a point is being moved or tilted. True if the event was used.
+bool TrainView::editEvent(int event)
+{
+    if (!hasSelection() || !canEdit())
+    {
+        endEdit(false);
+        return false;
+    }
+    const bool held = m_editMode == EDIT_DRAG;
+    switch (event)
+    {
+    case FL_DRAG:
+    case FL_MOVE:
+        updateEdit(Fl::event_x(), Fl::event_y());
+        return true;
+    case FL_PUSH:
+        if (held)
+            return true;
+        // left click accepts, any other button puts the point back
+        endEdit(Fl::event_button() == FL_LEFT_MOUSE);
+        return true;
+    case FL_RELEASE:
+        if (held)
+            endEdit(true);
+        return true;
+    case FL_KEYBOARD: {
+        const int key = Fl::event_key();
+        if (key == FL_Escape)
+        {
+            endEdit(false);
+            return true;
+        }
+        if (key == FL_Enter || key == FL_KP_Enter)
+        {
+            endEdit(true);
+            return true;
+        }
+        if (!held && (key == 'x' || key == 'y' || key == 'z'))
+        {
+            // start over from where the point was, held to the new axis
+            const int axis = key - 'x';
+            const bool plane = (Fl::event_state() & FL_SHIFT) != 0 && m_editMode == EDIT_GRAB;
+            const TransformGizmo::Handle wanted = static_cast<TransformGizmo::Handle>(
+                (plane ? TransformGizmo::PLANE_YZ : TransformGizmo::AXIS_X) + axis);
+            const TransformGizmo::Handle free =
+                m_editMode == EDIT_GRAB ? TransformGizmo::VIEW : TransformGizmo::NONE;
+            m_pTrack->points[static_cast<size_t>(selectedCube)] = m_editStart;
+            m_editHandle = m_editHandle == wanted ? free : wanted;
+            updateEdit(Fl::event_x(), Fl::event_y());
+            damage(1);
+        }
+        return true; // no other key does anything in the middle of an edit
+    }
+    default:
+        return false;
+    }
+}
+
+// Keys when no edit is in progress. True if the key was used.
+bool TrainView::editKey(int key)
+{
+    const int state = Fl::event_state();
+    if (key == FL_KP + '1' || key == FL_KP + '7' || key == FL_KP + '0')
+    {
+        Fl_Button *camera =
+            key == FL_KP + '1' ? tw->worldCam : (key == FL_KP + '7' ? tw->topCam : tw->trainCam);
+        camera->setonly();
+        tw->damageMe();
+        return true;
+    }
+    if (!canEdit())
+        return false;
+    if (key == 'z' && (state & FL_CTRL) != 0)
+    {
+        undoEdit();
+        return true;
+    }
+    if (!hasSelection())
+        return false;
+
+    if (key == 'g' && m_editCameraValid)
+    {
+        beginEdit(EDIT_GRAB, TransformGizmo::VIEW, Fl::event_x(), Fl::event_y());
+        return true;
+    }
+    if (key == 'r' && m_editCameraValid)
+    {
+        beginEdit(EDIT_ROTATE, TransformGizmo::NONE, Fl::event_x(), Fl::event_y());
+        return true;
+    }
+    if (key == 'd' && (state & FL_SHIFT) != 0 && m_editCameraValid)
+    {
+        // the new point goes in after the selected one; pick it up at once
+        const size_t before = m_pTrack->points.size();
+        addPointCB(nullptr, tw);
+        if (m_pTrack->points.size() > before)
+        {
+            selectedCube = (selectedCube + 1) % static_cast<int>(m_pTrack->points.size());
+            beginEdit(EDIT_GRAB, TransformGizmo::VIEW, Fl::event_x(), Fl::event_y());
+        }
+        return true;
+    }
+    if (key == FL_Delete || key == 'x')
+    {
+        m_undoValid = false; // the indices are about to change
+        deletePointCB(nullptr, tw);
+        return true;
+    }
+    return false;
+}
+
+// Remembers the camera for the mouse maths, then draws the handles on the
+// selected point and a line of text saying what is going on.
+void TrainView::drawEditOverlay()
+{
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glUseProgram(0);
+    glViewport(0, 0, w(), h());
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    setProjection();
+    glGetDoublev(GL_MODELVIEW_MATRIX, m_editCamera.view);
+    glGetDoublev(GL_PROJECTION_MATRIX, m_editCamera.projection);
+    m_editCamera.viewport[0] = 0;
+    m_editCamera.viewport[1] = 0;
+    m_editCamera.viewport[2] = w();
+    m_editCamera.viewport[3] = h();
+    m_editCameraValid = true;
+
+    tw->syncTransform();
+
+    const bool selected = canEdit() && hasSelection();
+    if (selected)
+    {
+        const ControlPoint &point = m_pTrack->points[static_cast<size_t>(selectedCube)];
+        const float position[3] = {point.pos.x, point.pos.y, point.pos.z};
+        m_gizmoSize = TransformGizmo::worldSize(m_editCamera, position, 90.0f);
+        const bool modal = m_editMode == EDIT_GRAB || m_editMode == EDIT_ROTATE;
+        TransformGizmo::draw(position, m_gizmoSize,
+                             m_editMode == EDIT_IDLE ? m_hoverHandle : m_editHandle, modal);
+    }
+
+    // one line of text in the top left corner, as a 3D view has
+    char text[160] = "";
+    const char *camera = tw->topCam->value()
+                             ? "Top Orthographic"
+                             : (tw->trainCam->value() ? "Train Camera" : "User Perspective");
+    if (!selected)
+        snprintf(text, sizeof(text), "%s", camera);
+    else
+    {
+        const ControlPoint &point = m_pTrack->points[static_cast<size_t>(selectedCube)];
+        const char *axes[8] = {"",       " along X", " along Y", " along Z",
+                               " in YZ", " in XZ",   " in XY",   ""};
+        if (m_editMode == EDIT_GRAB || m_editMode == EDIT_DRAG)
+            snprintf(text, sizeof(text), "Move%s   D: %.2f  %.2f  %.2f   [X/Y/Z] axis  [Ctrl] snap",
+                     axes[m_editHandle], static_cast<double>(point.pos.x - m_editStart.pos.x),
+                     static_cast<double>(point.pos.y - m_editStart.pos.y),
+                     static_cast<double>(point.pos.z - m_editStart.pos.z));
+        else if (m_editMode == EDIT_ROTATE)
+            snprintf(text, sizeof(text),
+                     "Tilt%s   up: %.2f  %.2f  %.2f   [X/Y/Z] axis  [Ctrl] snap",
+                     axes[m_editHandle], static_cast<double>(point.orient.x),
+                     static_cast<double>(point.orient.y), static_cast<double>(point.orient.z));
+        else
+            snprintf(text, sizeof(text), "%s  |  Point %d   %.1f  %.1f  %.1f   [G] move  [R] tilt",
+                     camera, selectedCube, static_cast<double>(point.pos.x),
+                     static_cast<double>(point.pos.y), static_cast<double>(point.pos.z));
+    }
+    glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_DEPTH_TEST);
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glOrtho(0.0, static_cast<double>(w()), 0.0, static_cast<double>(h()), -1.0, 1.0);
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+    gl_font(FL_HELVETICA, 12);
+    glColor3f(0.0f, 0.0f, 0.0f);
+    gl_draw(text, 11.0f, static_cast<float>(h() - 21));
+    glColor3f(0.92f, 0.92f, 0.92f);
+    gl_draw(text, 10.0f, static_cast<float>(h() - 20));
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    glPopAttrib();
 }
 
 //************************************************************************
@@ -312,6 +642,7 @@ void TrainView::draw()
     if (advanced)
     {
         drawAdvanced();
+        drawEditOverlay();
         return;
     }
 
@@ -335,6 +666,7 @@ void TrainView::draw()
         drawStuff(true);
         unsetupShadows();
     }
+    drawEditOverlay();
 }
 
 //************************************************************************
@@ -514,17 +846,16 @@ void TrainView::drawStuff(bool doingShadows)
     // Draw the control points
     // don't draw the control points if you're driving
     // (otherwise you get sea-sick as you drive through them)
-    if (!tw->trainCam->value())
+    // they are editing aids rather than part of the scene, so they cast no
+    // shadows; the selected one is orange
+    if (!tw->trainCam->value() && !doingShadows)
     {
         for (size_t i = 0; i < m_pTrack->points.size(); ++i)
         {
-            if (!doingShadows)
-            {
-                if (((int)i) != selectedCube)
-                    glColor3ub(240, 60, 60);
-                else
-                    glColor3ub(240, 240, 30);
-            }
+            if (((int)i) != selectedCube)
+                glColor3ub(215, 215, 215);
+            else
+                glColor3ub(255, 150, 30);
             m_pTrack->points[i].draw();
         }
     }

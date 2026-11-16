@@ -5,12 +5,13 @@ flowchart LR
     Main[main / 版本參數] --> Window[TrainWindow / 控制面板]
     Window --> View[TrainView / OpenGL 畫布]
     Window --> Track[CTrack / 控制點與 trainU]
-    Window --> Theme[UiTheme / 深色霓虹配色與卡片樣式]
+    Window --> Theme[UiTheme / 深灰面板與圓角控制項樣式]
     Window --> Callbacks[CallBacks / UI 動作]
     Callbacks --> Track
     View --> Track
     View --> Rails[TrackRenderer / 鐵軌、枕木與弧長表]
     Rails --> Track
+    View --> Gizmo[TransformGizmo / 控制點移動把手的挑選、拖曳與繪製]
     View --> Camera[ArcBallCam / 相機與手勢平滑]
     Camera --> Timer[FLTK event loop / timeout]
     Timer --> Camera
@@ -31,6 +32,8 @@ flowchart LR
 `TrainWindow` 持有場景狀態與 widget；`TrainView` 讀取場景與 UI 選項並繪圖。
 `TrackRenderer` 建立累積弧長表，依弧長等距擺放枕木，並以程式產生的像素材質畫方塊風鐵軌；`makeTrackFrame()` 也放在這裡，供列車與相機共用。
 `CallBacks` 處理按鈕、軌道載入儲存與列車更新。
+`TrainView::handle()` 處理控制點編輯：`TransformGizmo` 以上一幀的相機矩陣做純數學運算（滑鼠射線對軸取最近點、對平面取交點），
+不需要 OpenGL context，所以由 `GizmoDragCheck` 測試；編輯進行中的事件會先於相機處理，結果同步到 `Transform` 面板。
 `ArcBallCam` 用 FLTK timeout 分攤旋轉與縮放，Windows 特定觸控處理位於 `TrainView.cpp`。
 `Utilities` 包含相機、幾何點與 OpenGL 輔助函式。
 

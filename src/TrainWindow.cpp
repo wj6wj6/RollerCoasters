@@ -89,18 +89,19 @@ TrainWindow::TrainWindow(const int x, const int y)
         UiTheme::stylePanel(widgets);
         widgets->begin();
 
-        Fl_Box *title = new Fl_Box(cardX, pty, 120, 22, "ROLLER COASTER");
+        Fl_Box *title = new Fl_Box(cardX + 2, pty, 120, 20, "Roller Coaster");
         UiTheme::styleCaption(title, UiTheme::kText, 12);
         title->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-        Fl_Box *subtitle = new Fl_Box(cardX + 120, pty, cardW - 120, 22, "DEEP SEA");
-        UiTheme::styleCaption(subtitle, UiTheme::kAccent2, UiTheme::kTitleSize);
+        Fl_Box *subtitle = new Fl_Box(cardX + 120, pty, cardW - 122, 20, "Properties");
+        UiTheme::styleCaption(subtitle, UiTheme::kTextMuted, UiTheme::kTitleSize);
+        subtitle->labelfont(FL_HELVETICA);
         subtitle->align(FL_ALIGN_RIGHT | FL_ALIGN_INSIDE);
 
-        pty += 22 + gap;
+        pty += 20 + 2;
 
         // ---- RIDE: run, step and speed
         Fl_Group *rideCard =
-            UiTheme::beginCard(cardX, pty, cardW, titleH + 2 * rowH + gap + bottomPad, "RIDE");
+            UiTheme::beginCard(cardX, pty, cardW, titleH + 2 * rowH + gap + bottomPad, "Ride");
         pty += titleH;
 
         runButton = new Fl_Button(innerX, pty, colW, rowH, "Run");
@@ -129,7 +130,7 @@ TrainWindow::TrainWindow(const int x, const int y)
 
         // ---- CAMERA: the card is also the radio button group
         Fl_Group *camGroup =
-            UiTheme::beginCard(cardX, pty, cardW, titleH + rowH + bottomPad, "CAMERA");
+            UiTheme::beginCard(cardX, pty, cardW, titleH + rowH + bottomPad, "Camera");
         pty += titleH;
         worldCam = new Fl_Button(innerX, pty, colW, rowH, "World");
         worldCam->type(FL_RADIO_BUTTON); // radio button
@@ -157,10 +158,10 @@ TrainWindow::TrainWindow(const int x, const int y)
 
         // ---- TRACK: spline type and control point editing
         const int browserLabelH = 13;
-        const int browserH = 64;
+        const int browserH = 62;
         Fl_Group *trackCard = UiTheme::beginCard(
             cardX, pty, cardW, titleH + browserLabelH + browserH + 3 * (gap + rowH) + bottomPad,
-            "TRACK");
+            "Track");
         pty += titleH + browserLabelH;
 
         // browser to select spline types
@@ -216,9 +217,40 @@ TrainWindow::TrainWindow(const int x, const int y)
         trackCard->end();
         pty += cardGap;
 
+        // ---- Transform: where the selected control point is. The view also
+        // moves it with the handles drawn on it and with G / R (TrainView.cpp)
+        Fl_Group *transformCard =
+            UiTheme::beginCard(cardX, pty, cardW, titleH + rowH + bottomPad, "Transform");
+        pty += titleH;
+        {
+            const int labelW = 12;
+            const int fieldW = (innerW - 2 * gap) / 3 - labelW;
+            Fl_Value_Input **fields[3] = {&pointX, &pointY, &pointZ};
+            const char *names[3] = {"X", "Y", "Z"};
+            const Fl_Color colours[3] = {UiTheme::kAxisX, UiTheme::kAxisY, UiTheme::kAxisZ};
+            for (int axis = 0; axis < 3; ++axis)
+            {
+                const int fx = innerX + axis * (fieldW + labelW + gap) + labelW;
+                Fl_Value_Input *field = new Fl_Value_Input(fx, pty, fieldW, rowH, names[axis]);
+                UiTheme::styleNumberField(field, colours[axis]);
+                field->range(-1000.0, 1000.0);
+                field->step(0.1);
+                field->callback(transformCB, this);
+                field->tooltip("Position of the selected control point.\n"
+                               "In the view: drag an arrow or a square, or press G to move,\n"
+                               "then X / Y / Z to keep to one axis (Shift: the other two),\n"
+                               "R to tilt, Ctrl to snap, Esc or right click to cancel.");
+                field->deactivate();
+                *fields[axis] = field;
+            }
+        }
+        pty += rowH + bottomPad;
+        transformCard->end();
+        pty += cardGap;
+
         // ---- LIGHTING: shader lighting and screen effects
         Fl_Group *lightCard = UiTheme::beginCard(
-            cardX, pty, cardW, titleH + 3 * rowH + 2 * gap + bottomPad, "LIGHTING");
+            cardX, pty, cardW, titleH + 3 * rowH + 2 * gap + bottomPad, "Lighting");
         pty += titleH;
 
         lightingButton = new Fl_Button(innerX, pty, colW, rowH, "Light+");
@@ -254,9 +286,9 @@ TrainWindow::TrainWindow(const int x, const int y)
         pty += cardGap;
 
         // ---- WORLD: water, weather and the underwater demo ride
-        const int oceanH = 30;
+        const int oceanH = 26;
         Fl_Group *worldCard = UiTheme::beginCard(cardX, pty, cardW,
-                                                 titleH + rowH + gap + oceanH + bottomPad, "WORLD");
+                                                 titleH + rowH + gap + oceanH + bottomPad, "World");
         pty += titleH;
 
         waterButton = new Fl_Button(innerX, pty, halfW, rowH, "Water");
@@ -309,6 +341,60 @@ void TrainWindow::animateEffectsCB(void *data)
     if (tw->lightingButton->value() && !tw->runButton->value())
         tw->trainView->damage(1);
     Fl::repeat_timeout(1.0 / 30.0, animateEffectsCB, data);
+}
+
+//************************************************************************
+//
+// * One of the Transform fields was edited: move the selected control point
+//========================================================================
+void TrainWindow::transformCB(Fl_Widget *, void *data)
+{
+    TrainWindow *tw = static_cast<TrainWindow *>(data);
+    const int selected = tw->trainView->selectedCube;
+    if (selected < 0 || selected >= static_cast<int>(tw->m_Track.points.size()))
+        return;
+    Pnt3f &pos = tw->m_Track.points[static_cast<size_t>(selected)].pos;
+    pos.x = static_cast<float>(tw->pointX->value());
+    pos.y = static_cast<float>(tw->pointY->value());
+    pos.z = static_cast<float>(tw->pointZ->value());
+    tw->trainView->damage(1);
+}
+
+//************************************************************************
+//
+// * Shows the selected control point in the Transform fields, greyed out
+//   when nothing is selected. A field being typed in is left alone.
+//========================================================================
+void TrainWindow::syncTransform()
+{
+    const int selected = trainView->selectedCube;
+    const bool valid = selected >= 0 && selected < static_cast<int>(m_Track.points.size());
+    Fl_Value_Input *fields[3] = {pointX, pointY, pointZ};
+    float values[3] = {0.0f, 0.0f, 0.0f};
+    if (valid)
+    {
+        const Pnt3f &pos = m_Track.points[static_cast<size_t>(selected)].pos;
+        values[0] = pos.x;
+        values[1] = pos.y;
+        values[2] = pos.z;
+    }
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        Fl_Value_Input *field = fields[axis];
+        if (valid != (field->active() != 0))
+        {
+            if (valid)
+                field->activate();
+            else
+                field->deactivate();
+        }
+        if (Fl::focus() == &field->input)
+            continue;
+        // one decimal is what the field shows
+        const double shown = floor(static_cast<double>(values[axis]) * 10.0 + 0.5) / 10.0;
+        if (field->value() != shown)
+            field->value(shown);
+    }
 }
 
 //************************************************************************

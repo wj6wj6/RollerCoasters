@@ -52,6 +52,7 @@ class CTrack;
 #include "PostEffects.h"
 #include "GrassGround.h"
 #include "OceanWorld.h"
+#include "TransformGizmo.h"
 #include "TrackRenderer.H"
 
 class TrainView : public Fl_Gl_Window
@@ -80,6 +81,25 @@ class TrainView : public Fl_Gl_Window
     // pick a point (for when the mouse goes down)
     void doPick();
 
+    // Control point editing: the move handles on the selected point, moving
+    // (G) and tilting (R) from the keyboard, undo. See handle().
+    enum EditMode
+    {
+        EDIT_IDLE = 0,
+        EDIT_DRAG,  // a handle, or the point itself, held with the mouse
+        EDIT_GRAB,  // moving after G: ends with a click, Enter or Esc
+        EDIT_ROTATE // tilting after R
+    };
+    bool canEdit() const;
+    bool hasSelection() const;
+    void beginEdit(EditMode mode, TransformGizmo::Handle handle, int mouseX, int mouseY);
+    void updateEdit(int mouseX, int mouseY);
+    void endEdit(bool keep);
+    bool editEvent(int event);
+    bool editKey(int key);
+    void undoEdit();
+    void drawEditOverlay();
+
     // shader lighting, shadow maps and post effects (TrainViewEffects.cpp)
     bool advancedLightingOn();
     void drawAdvanced();
@@ -102,6 +122,19 @@ class TrainView : public Fl_Gl_Window
     PostEffects effects;       // sky, water, SSAO, bloom, god rays
     GrassGround m_ground;      // grass blocks with dirt sides
     OceanWorld m_ocean;        // blocky sea floor, reef, ruins, wreck and tunnel
+
+    // Control point editing state.
+    TransformGizmo::Camera m_editCamera = {}; // the camera of the last frame drawn
+    bool m_editCameraValid = false;
+    float m_gizmoSize = 1.0f; // length of the handles in world units
+    EditMode m_editMode = EDIT_IDLE;
+    TransformGizmo::Handle m_editHandle = TransformGizmo::NONE;
+    TransformGizmo::Handle m_hoverHandle = TransformGizmo::NONE;
+    int m_editStartX = 0, m_editStartY = 0; // mouse when the edit began
+    ControlPoint m_editStart;               // the point when the edit began
+    bool m_undoValid = false;
+    int m_undoIndex = -1;
+    ControlPoint m_undoPoint;
 
     // Weather, eased towards the Rain button (TrainViewEffects.cpp).
     float m_rain = 0.0f;         // 0 dry sky, 1 pouring

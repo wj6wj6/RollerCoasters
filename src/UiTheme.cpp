@@ -9,6 +9,7 @@
 #include <FL/Fl_Button.H>
 #include <FL/Fl_Group.H>
 #include <FL/Fl_Tooltip.H>
+#include <FL/Fl_Value_Input.H>
 #include <FL/Fl_Value_Slider.H>
 #include <FL/fl_draw.H>
 #pragma warning(pop)
@@ -32,47 +33,42 @@ void setGlobalColor(void (*setter)(unsigned char, unsigned char, unsigned char),
     setter(channel(c, 24), channel(c, 16), channel(c, 8));
 }
 
-int luminance(Fl_Color c)
+// A filled rectangle with its corners rounded off.
+void roundedRect(int x, int y, int w, int h, int radius, Fl_Color c)
 {
-    unsigned char r = 0;
-    unsigned char g = 0;
-    unsigned char b = 0;
-    Fl::get_color(c, r, g, b);
-    return (r * 30 + g * 59 + b * 11) / 100;
+    const int r = (w < 2 * radius || h < 2 * radius) ? 0 : radius;
+    fl_color(c);
+    if (r == 0)
+    {
+        fl_rectf(x, y, w, h);
+        return;
+    }
+    fl_rectf(x + r, y, w - 2 * r, h);
+    fl_rectf(x, y + r, w, h - 2 * r);
+    const int d = 2 * r;
+    fl_pie(x, y, d, d, 90.0, 180.0);
+    fl_pie(x + w - d - 1, y, d, d, 0.0, 90.0);
+    fl_pie(x, y + h - d - 1, d, d, 180.0, 270.0);
+    fl_pie(x + w - d - 1, y + h - d - 1, d, d, 270.0, 360.0);
 }
 
-// flat fill with a one pixel border: a dark fill gets the teal edge, a neon
-// fill gets a lighter rim of its own colour
+// rounded fill inside a thin dark outline
 void drawWidgetBox(int x, int y, int w, int h, Fl_Color c)
 {
     if (w <= 0 || h <= 0)
         return;
-    fl_color(c);
-    fl_rectf(x, y, w, h);
-    fl_color(luminance(c) > 100 ? fl_color_average(FL_WHITE, c, 0.45f) : UiTheme::kEdge);
-    fl_rect(x, y, w, h);
+    roundedRect(x, y, w, h, 4, UiTheme::kEdge);
+    roundedRect(x + 1, y + 1, w - 2, h - 2, 3, c);
 }
 
-// card: fill, dim border, a short neon bar at the top left and a small neon
-// corner at the bottom right
+// panel: rounded body with a small disclosure triangle where the title starts
 void drawCardBox(int x, int y, int w, int h, Fl_Color c)
 {
     if (w <= 0 || h <= 0)
         return;
-    fl_color(c);
-    fl_rectf(x, y, w, h);
-    fl_color(UiTheme::kCardEdge);
-    fl_rect(x, y, w, h);
-
-    fl_color(UiTheme::kAccent);
-    const int bar = w < 34 ? w : 34;
-    fl_rectf(x, y, bar, 2);
-    const int corner = w < 8 || h < 8 ? 0 : 8;
-    if (corner > 0)
-    {
-        fl_xyline(x + w - corner, y + h - 1, x + w - 1);
-        fl_yxline(x + w - 1, y + h - corner, y + h - 1);
-    }
+    roundedRect(x, y, w, h, 5, c);
+    fl_color(UiTheme::kTextMuted);
+    fl_polygon(x + 7, y + 8, x + 15, y + 8, x + 11, y + 13);
 }
 
 void styleLabel(Fl_Widget *widget, Fl_Color color)
@@ -120,12 +116,12 @@ Fl_Group *UiTheme::beginCard(int x, int y, int w, int h, const char *title)
     card->box(kCardBox);
     card->color(kCard);
 
-    Fl_Box *caption = new Fl_Box(x + 6, y + 5, w - 12, 12, title);
+    Fl_Box *caption = new Fl_Box(x + 20, y + 4, w - 26, 14, title);
     caption->box(FL_NO_BOX);
     caption->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-    caption->labelfont(FL_HELVETICA_BOLD);
+    caption->labelfont(FL_HELVETICA);
     caption->labelsize(kTitleSize);
-    caption->labelcolor(kAccent);
+    caption->labelcolor(kText);
     return card;
 }
 
@@ -148,9 +144,9 @@ void UiTheme::styleToggle(Fl_Button *button)
 {
     button->box(kWidgetBox);
     button->down_box(kWidgetDownBox);
-    button->color(kSurface);
+    button->color(kSurfaceHi);
     // Fl_Button picks a contrasting label colour by itself when it is on,
-    // which gives dark text on the neon fill
+    // which gives white text on the blue fill
     button->selection_color(kAccent);
     styleLabel(button, kTextDim);
 }
@@ -161,8 +157,8 @@ void UiTheme::styleAccentButton(Fl_Button *button)
     button->down_box(kWidgetDownBox);
     button->color(kAccent2);
     button->selection_color(kAccent2Hi);
-    button->labelfont(FL_HELVETICA_BOLD);
-    button->labelsize(13);
+    button->labelfont(FL_HELVETICA);
+    button->labelsize(12);
     button->labelcolor(kTextOnAccent);
 }
 
@@ -173,10 +169,10 @@ void UiTheme::styleSlider(Fl_Value_Slider *slider)
     slider->box(kWidgetBox);
     slider->slider(FL_FLAT_BOX);
     slider->color(kSurface);
-    slider->selection_color(kAccentDim);
-    slider->textfont(FL_HELVETICA_BOLD);
+    slider->selection_color(kAccent);
+    slider->textfont(FL_HELVETICA);
     slider->textsize(kFontSize);
-    slider->textcolor(kAccent);
+    slider->textcolor(kText);
     slider->align(FL_ALIGN_LEFT);
     styleLabel(slider, kTextMuted);
 }
@@ -198,12 +194,27 @@ void UiTheme::styleBrowser(Fl_Browser *browser)
     browser->scrollbar.slider(kWidgetBox);
     browser->scrollbar.color(kPanel);
     browser->scrollbar.selection_color(kSurfaceHi);
-    browser->scrollbar.labelcolor(kAccent);
+    browser->scrollbar.labelcolor(kText);
     browser->hscrollbar.box(FL_FLAT_BOX);
     browser->hscrollbar.slider(kWidgetBox);
     browser->hscrollbar.color(kPanel);
     browser->hscrollbar.selection_color(kSurfaceHi);
-    browser->hscrollbar.labelcolor(kAccent);
+    browser->hscrollbar.labelcolor(kText);
+}
+
+void UiTheme::styleNumberField(Fl_Value_Input *field, Fl_Color labelColor)
+{
+    field->box(kWidgetBox);
+    field->color(kSurface);
+    field->selection_color(kAccent);
+    field->textfont(FL_HELVETICA);
+    field->textsize(kFontSize);
+    field->textcolor(kText);
+    field->cursor_color(kText);
+    field->align(FL_ALIGN_LEFT);
+    field->labelfont(FL_HELVETICA_BOLD);
+    field->labelsize(kFontSize);
+    field->labelcolor(labelColor);
 }
 
 void UiTheme::styleCaption(Fl_Widget *widget, Fl_Color color, Fl_Fontsize size)
