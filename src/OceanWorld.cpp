@@ -1897,11 +1897,9 @@ void drawFishShape(const unsigned char body[3], const unsigned char fin[3], floa
     glColor3ubv(body);
     fishBox(-0.22f, -0.35f, -0.55f, 0.22f, 0.35f, 0.6f);
     fishBox(-0.16f, -0.24f, 0.6f, 0.16f, 0.2f, 0.85f);
-    // a white eye with a black dot on each side of the head
-    glColor3ub(250, 250, 250);
-    fishBox(-0.235f, 0.02f, 0.3f, 0.235f, 0.24f, 0.52f);
+    // a black dot of an eye on each side of the head
     glColor3ub(16, 16, 20);
-    fishBox(-0.25f, 0.07f, 0.36f, 0.25f, 0.19f, 0.48f);
+    fishBox(-0.235f, 0.06f, 0.34f, 0.235f, 0.2f, 0.48f);
     glColor3ubv(fin);
     fishBox(-0.24f, -0.37f, -0.05f, 0.24f, 0.37f, 0.15f); // stripe
     fishBox(-0.05f, 0.35f, -0.35f, 0.05f, 0.6f, 0.2f);    // dorsal fin
