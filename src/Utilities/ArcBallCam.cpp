@@ -143,26 +143,26 @@ void ArcBallCam::scroll(float dx, float dy, int state, bool precise)
         eyeX += dx * eyeZ * .02f;
         eyeY -= dy * eyeZ * .02f;
     }
-    else if (precise)
-    {
-        // Follow the fingers directly; extra smoothing only adds lag.
-        orbit(-dx * .035f, -dy * .035f);
-    }
     else
     {
-        // Limit large scroll bursts to keep rotation controllable.
-        if (dx > 10)
-            dx = 10;
-        if (dx < -10)
-            dx = -10;
-        if (dy > 10)
-            dy = 10;
-        if (dy < -10)
-            dy = -10;
-        pendingGestureX += dx;
-        pendingGestureY += dy;
-        if (dx != 0 || dy != 0)
+        // The wheel zooms (wheel up moves closer); tilting it sideways orbits.
+        if (dy != 0)
+            zoomByWheel(-dy, precise);
+        if (dx != 0 && precise)
+        {
+            // Follow the input directly; extra smoothing only adds lag.
+            orbit(-dx * .035f, 0);
+        }
+        else if (dx != 0)
+        {
+            // Limit large scroll bursts to keep rotation controllable.
+            if (dx > 10)
+                dx = 10;
+            if (dx < -10)
+                dx = -10;
+            pendingGestureX += dx;
             startGesture();
+        }
     }
     wind->damage(1);
 }

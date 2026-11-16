@@ -122,11 +122,9 @@ static bool checkPitchLimit()
     Fl_Gl_Window window(600, 600);
     ArcBallCam camera;
     camera.setup(&window, 40, 250, 0, 0, 0);
-    Fl::e_dx = 0;
-    Fl::e_dy = 10;
-    Fl::e_state = 0;
+    // A long upward touchpad swipe must stop short of the pole.
     for (int event = 0; event < 20; ++event)
-        camera.handle(FL_MOUSEWHEEL);
+        camera.touchpadGesture(0, 100, 1, false);
     for (int frame = 0; frame < 50; ++frame)
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
@@ -136,6 +134,31 @@ static bool checkPitchLimit()
     camera.getMatrix(matrix);
     bool pass = matrix[1][1] > .087f && std::fabs(matrix[1][0]) < .001;
     std::printf("%s: large vertical swipe cannot flip the camera\n", pass ? "PASS" : "FAIL");
+    return pass;
+}
+
+static bool checkWheelZoom()
+{
+    Fl_Gl_Window window(600, 600);
+    ArcBallCam camera;
+    camera.setup(&window, 40, 250, .2f, .4f, 0);
+    HMatrix initial, current;
+    camera.getMatrix(initial);
+    Fl::e_dx = 0;
+    Fl::e_dy = -1; // one notch up
+    Fl::e_state = 0;
+    camera.handle(FL_MOUSEWHEEL);
+    bool smooth = camera.cameraDistance() == 250;
+    for (int frame = 0; frame < 40; ++frame)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        Fl::check();
+    }
+    camera.getMatrix(current);
+    bool pass = smooth && std::fabs(camera.cameraDistance() - 250 / 1.1) < .1 &&
+                angle(initial, current) < .05;
+    std::printf("%s: mouse wheel up zooms in smoothly (250 -> %.3f), view direction unchanged\n",
+                pass ? "PASS" : "FAIL", camera.cameraDistance());
     return pass;
 }
 
@@ -245,9 +268,9 @@ static bool checkOrbitAndZoomTogether()
 
 int main()
 {
-    bool vertical = checkMotion(0, 1);
-    bool horizontal = checkMotion(-1, 0);
-    bool diagonal = checkMotion(1, 1);
+    bool wheelZoom = checkWheelZoom();
+    bool tiltLeft = checkMotion(-1, 0);
+    bool tiltRight = checkMotion(1, 0);
     bool level = checkLevelHorizon();
     bool zoomIn = checkZoom(1);
     bool zoomOut = checkZoom(-1);
@@ -256,7 +279,7 @@ int main()
     bool precise = checkPreciseScroll();
     bool emptyDrag = checkEmptySpaceDrag();
     bool together = checkOrbitAndZoomTogether();
-    return vertical && horizontal && diagonal && level && zoomIn && zoomOut && fineZoom &&
+    return wheelZoom && tiltLeft && tiltRight && level && zoomIn && zoomOut && fineZoom &&
                    pitchLimit && precise && emptyDrag && together
                ? 0
                : 1;
