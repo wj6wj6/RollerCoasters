@@ -132,6 +132,9 @@ static void touchpadMoves(void *data, float dx, float dy, float scale)
 
 // Field of view of the world camera, in degrees.
 static const float worldFieldOfView = 40.0f;
+// The lowest the observer camera can fly. Tracks may dive below the floor at
+// y = 0 (into the sea, say), so the camera can follow them well under it.
+static const float flyLowest = -200.0f;
 
 // Scenery positions (x, z).
 static const float treePositions[][2] = {
@@ -153,6 +156,7 @@ TrainView::TrainView(int x, int y, int w, int h, const char *l) : Fl_Gl_Window(x
 
     resetArcball();
     flyCam.setup(this);
+    flyCam.setGround(flyLowest - FlyCam::minHeight); // the eye stays minHeight above it
     Fl::add_system_handler(touchpadWheel, this);
 }
 
@@ -187,7 +191,6 @@ void TrainView::placeFlyCamAtWorldView()
     arcball.setProjection();
     GLfloat view[16];
     glGetFloatv(GL_MODELVIEW_MATRIX, view);
-    flyCam.setGround(flyGround());
     flyCam.setFromViewMatrix(view, worldFieldOfView);
     flyCamPlaced = true;
     damage(1);
@@ -506,11 +509,7 @@ void TrainView::draw()
     // set to opengl fixed pipeline(use opengl 1.x draw function)
     glUseProgram(0);
 
-    // The horizon is ground seen from above; under it (a track that dives below
-    // the floor) it would only hide the view.
-    float flyX, flyY, flyZ;
-    flyCam.position(flyX, flyY, flyZ);
-    if (tw->flyCam->value() && flyY > 0)
+    if (tw->flyCam->value())
         drawFlyHorizon();
 
     setupFloor();
@@ -536,20 +535,6 @@ void TrainView::draw()
 
     if (tw->flyCam->value())
         drawFlyOverlay();
-}
-
-//========================================================================
-float TrainView::flyGround() const
-//========================================================================
-{
-    // The floor is at y = 0, but a track may dive below it (into the sea, say).
-    // Let the observer follow it down to a little under its lowest point.
-    const float margin = 10.0f;
-    float lowest = 0;
-    for (const ControlPoint &point : m_pTrack->points)
-        if (point.pos.y - margin < lowest)
-            lowest = point.pos.y - margin;
-    return lowest;
 }
 
 //========================================================================
@@ -654,11 +639,7 @@ void TrainView::setProjection()
         arcball.setProjection(false);
     // The free-moving observer camera
     else if (tw->flyCam->value())
-    {
-        // Control points can be dragged at any time, so follow the track down.
-        flyCam.setGround(flyGround());
         flyCam.setProjection(false);
-    }
     // Or we use the top cam
     else if (tw->topCam->value())
     {
