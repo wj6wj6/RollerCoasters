@@ -135,6 +135,8 @@ static const float worldFieldOfView = 40.0f;
 // The lowest the observer camera can fly. Tracks may dive below the floor at
 // y = 0 (into the sea, say), so the camera can follow them well under it.
 static const float flyLowest = -200.0f;
+// The observer camera's starting field of view; the "fly FOV" slider changes it.
+static const float flyFieldOfView = 90.0f;
 
 // Scenery positions (x, z).
 static const float treePositions[][2] = {
@@ -155,7 +157,7 @@ TrainView::TrainView(int x, int y, int w, int h, const char *l) : Fl_Gl_Window(x
     mode(FL_RGB | FL_ALPHA | FL_DOUBLE | FL_STENCIL);
 
     resetArcball();
-    flyCam.setup(this);
+    flyCam.setup(this, flyFieldOfView);
     flyCam.setGround(flyLowest - FlyCam::minHeight); // the eye stays minHeight above it
     Fl::add_system_handler(touchpadWheel, this);
 }

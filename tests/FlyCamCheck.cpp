@@ -334,6 +334,24 @@ static bool checkBounds()
     return pass;
 }
 
+static bool checkFieldOfView()
+{
+    Fl_Gl_Window window(600, 600);
+    FlyCam camera;
+    camera.setup(&window, 90);
+    const bool start = approx(camera.fieldOfViewDegrees(), 90, 1e-4f);
+    camera.setFieldOfView(70);
+    const bool set = approx(camera.fieldOfViewDegrees(), 70, 1e-4f);
+    camera.setFieldOfView(500);
+    const bool high = approx(camera.fieldOfViewDegrees(), FlyCam::maxFieldOfView, 1e-4f);
+    camera.setFieldOfView(1);
+    const bool low = approx(camera.fieldOfViewDegrees(), FlyCam::minFieldOfView, 1e-4f);
+    const bool pass = start && set && high && low;
+    std::printf("%s: field of view starts at 90, follows the slider and is clamped\n",
+                pass ? "PASS" : "FAIL");
+    return pass;
+}
+
 static bool checkLookAt()
 {
     Fl_Gl_Window window(600, 600);
@@ -386,8 +404,9 @@ int main()
     bool speed = checkSpeedKeysAndUnfocus();
     bool bounds = checkBounds();
     bool lookAt = checkLookAt();
+    bool fov = checkFieldOfView();
     return view && forward && back && left && up && down && upAlt && downAlt && fast && turn &&
-                   drag && scroll && mouse && speed && bounds && lookAt
+                   drag && scroll && mouse && speed && bounds && lookAt && fov
                ? 0
                : 1;
 }

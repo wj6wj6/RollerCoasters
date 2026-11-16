@@ -47,7 +47,17 @@ void FlyCam::setup(Fl_Gl_Window *window, float fov)
 {
     stop();
     wind = window;
-    fieldOfView = fov;
+    setFieldOfView(fov);
+}
+
+void FlyCam::setFieldOfView(float degrees)
+{
+    if (degrees < minFieldOfView)
+        degrees = minFieldOfView;
+    if (degrees > maxFieldOfView)
+        degrees = maxFieldOfView;
+    fieldOfView = degrees;
+    redraw();
 }
 
 void FlyCam::setPose(float x, float y, float z, float yaw, float pitch)

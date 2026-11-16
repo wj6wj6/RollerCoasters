@@ -76,6 +76,15 @@ void flySpeedCB(Fl_Widget *, TrainWindow *tw)
 
 //***************************************************************************
 //
+// * The observer camera field of view slider moved
+//===========================================================================
+void flyFovCB(Fl_Widget *, TrainWindow *tw)
+{
+    tw->trainView->flyCam.setFieldOfView(static_cast<float>(tw->flyFov->value()));
+}
+
+//***************************************************************************
+//
 // * Callback that adds a new point to the spline
 // idea: add the point AFTER the selected point
 //===========================================================================

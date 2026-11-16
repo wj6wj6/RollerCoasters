@@ -107,6 +107,13 @@ class FlyCam
         return groundY;
     }
 
+    // Vertical field of view in degrees, kept within min/maxFieldOfView.
+    void setFieldOfView(float degrees);
+    float fieldOfViewDegrees() const
+    {
+        return fieldOfView;
+    }
+
     void setSpeed(float unitsPerSecond);
     float speed() const
     {
@@ -127,6 +134,8 @@ class FlyCam
         return timerActive;
     }
 
+    static constexpr float minFieldOfView = 30.0f;
+    static constexpr float maxFieldOfView = 120.0f;
     static constexpr float minSpeed = 1.0f;
     static constexpr float maxSpeed = 200.0f;
     static constexpr float boost = 2.5f;                // Ctrl multiplier

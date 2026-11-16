@@ -165,6 +165,16 @@ TrainWindow::TrainWindow(const int x, const int y)
         flySpeed->type(FL_HORIZONTAL);
         flySpeed->callback((Fl_Callback *)flySpeedCB, this);
 
+        pty += 25;
+        flyFov = new Fl_Value_Slider(675, pty, 120, 20, "fly FOV");
+        flyFov->range(FlyCam::minFieldOfView, FlyCam::maxFieldOfView);
+        flyFov->step(1);
+        flyFov->value(trainView->flyCam.fieldOfViewDegrees());
+        flyFov->align(FL_ALIGN_LEFT);
+        flyFov->type(FL_HORIZONTAL);
+        flyFov->tooltip("Field of view of the Fly camera, in degrees");
+        flyFov->callback((Fl_Callback *)flyFovCB, this);
+
         pty += 30;
 
         // TODO: add widgets for all of your fancier features here
