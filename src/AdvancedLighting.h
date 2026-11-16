@@ -72,8 +72,8 @@ struct SkyState
     float lightColor[3];
     float zenith[3];
     float horizon[3];
-    float day;  // 0 at night, 1 in daylight
-    float dusk; // 1 near sunrise and sunset
+    float day;      // 0 at night, 1 in daylight
+    float dusk;     // 1 near sunrise and sunset
     float overcast; // 0 clear, 1 rain clouds
 };
 

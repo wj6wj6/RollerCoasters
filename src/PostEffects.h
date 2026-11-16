@@ -85,8 +85,8 @@ class PostEffects
     // Mirror-like reflections on rain-soaked ground (wetness 0..1).
     void applyWetGround(const AdvancedLighting &lighting, float wetness);
     // rain 0..1 adds drop rings to the surface.
-    void drawWater(const AdvancedLighting &lighting, float time, bool orthographic,
-                   bool underwater, float rain);
+    void drawWater(const AdvancedLighting &lighting, float time, bool orthographic, bool underwater,
+                   float rain);
     void drawRain(const SkyState &sky, float time, float rain);
     void applyUnderwater(const AdvancedLighting &lighting, float time);
     void finish(const SkyState &sky, bool bloom, bool underwater);
@@ -138,8 +138,8 @@ class PostEffects
     unsigned int m_wetProgram;
     unsigned int m_waterList; // display list of the surface mesh
 
-    float m_camera[3];    // camera position, set by setUnderwaterCamera()
-    float m_deepColor[3]; // colour of the water looking down ...
+    float m_camera[3];       // camera position, set by setUnderwaterCamera()
+    float m_deepColor[3];    // colour of the water looking down ...
     float m_shallowColor[3]; // ... and looking up towards the surface
     std::vector<float> m_specks;
 

@@ -115,11 +115,11 @@ bool isCoral(int block)
 // more rings back onto the island. It stays a few units above the sea bed;
 // everything in its way is carved out, whichever spline type draws it.
 const float kDemoTrack[][3] = {
-    {30, 6, -20},      {72, 6, -8},       {108, 2, 4},       {140, -12, 14},   {172, -27, 2},
-    {204, -33, -14},   {232, -34, 22},    {236, -34, 78},    {214, -34, 128},  {170, -33, 166},
-    {112, -34, 188},   {50, -35, 188},    {-12, -35, 188},   {-74, -34, 190},  {-132, -33, 196},
-    {-180, -32, 168},  {-205, -31, 112},  {-208, -30, 48},   {-206, -30, -18}, {-196, -25, -78},
-    {-168, -14, -134}, {-126, -1, -146},  {-84, 10, -152},   {-44, 12, -112},  {-10, 9, -62}};
+    {30, 6, -20},      {72, 6, -8},      {108, 2, 4},     {140, -12, 14},   {172, -27, 2},
+    {204, -33, -14},   {232, -34, 22},   {236, -34, 78},  {214, -34, 128},  {170, -33, 166},
+    {112, -34, 188},   {50, -35, 188},   {-12, -35, 188}, {-74, -34, 190},  {-132, -33, 196},
+    {-180, -32, 168},  {-205, -31, 112}, {-208, -30, 48}, {-206, -30, -18}, {-196, -25, -78},
+    {-168, -14, -134}, {-126, -1, -146}, {-84, 10, -152}, {-44, 12, -112},  {-10, 9, -62}};
 const int kDemoCount = static_cast<int>(sizeof(kDemoTrack) / sizeof(kDemoTrack[0]));
 
 // Control points the scenery is placed around.
@@ -497,8 +497,9 @@ Image makeLantern()
             const int s = shadeOf(x, y, 141u, 6);
             const bool frame = x == 0 || y == 0 || x == S - 1 || y == S - 1;
             const bool bar = x == 7 || x == 8 || y == 7 || y == 8;
-            const bool core = (x > 2 && x < 6 && y > 2 && y < 6) || (x > 9 && x < 13 && y > 2 && y < 6) ||
-                              (x > 2 && x < 6 && y > 9 && y < 13) || (x > 9 && x < 13 && y > 9 && y < 13);
+            const bool core =
+                (x > 2 && x < 6 && y > 2 && y < 6) || (x > 9 && x < 13 && y > 2 && y < 6) ||
+                (x > 2 && x < 6 && y > 9 && y < 13) || (x > 9 && x < 13 && y > 9 && y < 13);
             if (frame)
                 set(p, x, y, 96 + s, 150 + s, 160 + s);
             else if (bar)
@@ -537,7 +538,8 @@ Image makeMarble()
         {
             const int s = shadeOf(x, y, 161u, 5);
             const bool edge = x == 0 || y == 0 || x == S - 1 || y == S - 1;
-            const bool vein = (x + 3 * y + static_cast<int>(hash(x / 4, y / 4, 162u) % 3u)) % 13 == 0;
+            const bool vein =
+                (x + 3 * y + static_cast<int>(hash(x / 4, y / 4, 162u) % 3u)) % 13 == 0;
             if (edge)
                 set(p, x, y, 196 + s, 204 + s, 212 + s);
             else if (vein)
@@ -957,10 +959,10 @@ void buildRocks(Grid &g)
         float u, side, radius, topY;
     };
     const Spire spires[] = {
-        {4.4f, 21.0f, 8.0f, -20.0f},   {5.6f, -22.0f, 9.0f, -18.0f},  {6.5f, 24.0f, 10.0f, -17.0f},
-        {7.5f, -24.0f, 8.0f, -22.0f},  {8.4f, 22.0f, 7.0f, -24.0f},   {9.6f, -30.0f, 10.0f, -18.0f},
-        {10.4f, 23.0f, 9.0f, -17.0f},  {14.5f, -24.0f, 9.0f, -18.0f}, {15.1f, 24.0f, 10.0f, -17.0f},
-        {19.4f, 21.0f, 8.0f, -22.0f},  {19.8f, -22.0f, 9.0f, -20.0f}, {20.3f, 23.0f, 7.0f, -24.0f}};
+        {4.4f, 21.0f, 8.0f, -20.0f},  {5.6f, -22.0f, 9.0f, -18.0f},  {6.5f, 24.0f, 10.0f, -17.0f},
+        {7.5f, -24.0f, 8.0f, -22.0f}, {8.4f, 22.0f, 7.0f, -24.0f},   {9.6f, -30.0f, 10.0f, -18.0f},
+        {10.4f, 23.0f, 9.0f, -17.0f}, {14.5f, -24.0f, 9.0f, -18.0f}, {15.1f, 24.0f, 10.0f, -17.0f},
+        {19.4f, 21.0f, 8.0f, -22.0f}, {19.8f, -22.0f, 9.0f, -20.0f}, {20.3f, 23.0f, 7.0f, -24.0f}};
     unsigned int seed = 71u;
     for (const Spire &s : spires)
     {
@@ -1036,7 +1038,8 @@ void buildReefs(Grid &g)
             if (!inReef(cx, cz))
                 continue;
             const int top = g.top(bx, bz);
-            if (top < kMinY || top > -3 || g.get(bx, top, bz) == ISLAND || isCoral(g.get(bx, top, bz)))
+            if (top < kMinY || top > -3 || g.get(bx, top, bz) == ISLAND ||
+                isCoral(g.get(bx, top, bz)))
                 continue;
             const unsigned int h = hash(bx, bz, 301u);
             const float pick =
@@ -1099,8 +1102,8 @@ void buildClams(Grid &g)
     {
         float u, side;
     };
-    const Spot spots[] = {{3.7f, -19.0f}, {4.8f, 19.0f},   {5.3f, -30.0f},
-                          {6.2f, -20.0f}, {19.6f, 34.0f},  {20.1f, -19.0f}};
+    const Spot spots[] = {{3.7f, -19.0f}, {4.8f, 19.0f},  {5.3f, -30.0f},
+                          {6.2f, -20.0f}, {19.6f, 34.0f}, {20.1f, -19.0f}};
     int n = 0;
     for (const Spot &s : spots)
     {
@@ -1365,7 +1368,8 @@ void decorate(Grid &g, const Clearance &clear)
                             : r < 0.17f ? ANEMONE
                                         : NO_PLANT;
                 else if (ground == PLANKS)
-                    plant = r < 0.06f ? SEAGRASS : (r < 0.10f ? ANEMONE : (r < 0.13f ? GLOW_BUD : NO_PLANT));
+                    plant = r < 0.06f ? SEAGRASS
+                                      : (r < 0.10f ? ANEMONE : (r < 0.13f ? GLOW_BUD : NO_PLANT));
 
                 if (plant == KELP)
                 {
@@ -1373,7 +1377,8 @@ void decorate(Grid &g, const Clearance &clear)
                     for (int k = 0; k < height; ++k)
                     {
                         const int cell = above + k;
-                        if (cell > kSceneryTop || g.solid(bx, cell, bz) || clear.blocks(bx, cell, bz))
+                        if (cell > kSceneryTop || g.solid(bx, cell, bz) ||
+                            clear.blocks(bx, cell, bz))
                             break;
                         g.plant[Grid::index(bx, cell, bz)] = KELP;
                     }
@@ -2030,11 +2035,11 @@ void OceanWorld::shadowBounds(float lo[3], float hi[3])
 const std::vector<float> &OceanWorld::bubbleSources()
 {
     static const float sources[][3] = {
-        {-98.0f, -38.0f, 228.0f},   {-84.0f, -38.0f, 224.0f},  {190.0f, -37.0f, -30.0f},
-        {222.0f, -38.0f, 40.0f},    {160.0f, -24.0f, 30.0f},   {20.0f, -38.0f, 172.0f},
-        {60.0f, -38.0f, 206.0f},    {22.0f, -18.0f, 252.0f},   {-190.0f, -36.0f, 150.0f},
-        {-200.0f, -28.0f, -70.0f},  {-150.0f, -22.0f, -150.0f}, {245.0f, -38.0f, 110.0f},
-        {-60.0f, -38.0f, 176.0f},   {-100.0f, -38.0f, 204.0f}};
+        {-98.0f, -38.0f, 228.0f},  {-84.0f, -38.0f, 224.0f},   {190.0f, -37.0f, -30.0f},
+        {222.0f, -38.0f, 40.0f},   {160.0f, -24.0f, 30.0f},    {20.0f, -38.0f, 172.0f},
+        {60.0f, -38.0f, 206.0f},   {22.0f, -18.0f, 252.0f},    {-190.0f, -36.0f, 150.0f},
+        {-200.0f, -28.0f, -70.0f}, {-150.0f, -22.0f, -150.0f}, {245.0f, -38.0f, 110.0f},
+        {-60.0f, -38.0f, 176.0f},  {-100.0f, -38.0f, 204.0f}};
     static const std::vector<float> list(&sources[0][0],
                                          &sources[0][0] + sizeof(sources) / sizeof(float));
     return list;
@@ -2171,10 +2176,11 @@ void OceanWorld::drawSeaLife(float time)
         int point;
         unsigned char body[3], fin[3];
     };
-    const Ring rings[] = {{4, {250, 200, 60}, {40, 60, 120}},    {6, {230, 120, 50}, {250, 250, 250}},
-                          {8, {90, 150, 230}, {250, 220, 80}},   {10, {240, 90, 120}, {250, 240, 200}},
-                          {12, {60, 210, 200}, {30, 90, 110}},   {14, {250, 170, 60}, {60, 60, 70}},
-                          {19, {190, 120, 240}, {250, 230, 120}}, {20, {250, 220, 90}, {230, 90, 60}}};
+    const Ring rings[] = {
+        {4, {250, 200, 60}, {40, 60, 120}},     {6, {230, 120, 50}, {250, 250, 250}},
+        {8, {90, 150, 230}, {250, 220, 80}},    {10, {240, 90, 120}, {250, 240, 200}},
+        {12, {60, 210, 200}, {30, 90, 110}},    {14, {250, 170, 60}, {60, 60, 70}},
+        {19, {190, 120, 240}, {250, 230, 120}}, {20, {250, 220, 90}, {230, 90, 60}}};
     int school = 0;
     for (const Ring &ring : rings)
     {
@@ -2183,9 +2189,14 @@ void OceanWorld::drawSeaLife(float time)
         {
             const float fi = static_cast<float>(i);
             const float speed = (school % 2 == 0 ? 0.42f : -0.36f);
-            const Lap lap = {c[0], c[1] + 5.6f + static_cast<float>(i % 3) * 0.5f, c[2],
-                             6.3f + 0.7f * sinf(fi * 1.7f), 6.3f + 0.7f * sinf(fi * 1.7f), speed,
-                             fi * 0.63f + static_cast<float>(school), 0.85f};
+            const Lap lap = {c[0],
+                             c[1] + 5.6f + static_cast<float>(i % 3) * 0.5f,
+                             c[2],
+                             6.3f + 0.7f * sinf(fi * 1.7f),
+                             6.3f + 0.7f * sinf(fi * 1.7f),
+                             speed,
+                             fi * 0.63f + static_cast<float>(school),
+                             0.85f};
             enterLap(lap, time, 0.5f);
             drawFishShape(ring.body, ring.fin, sinf(time * 8.0f + fi * 3.1f) * 25.0f);
             glPopMatrix();
@@ -2200,18 +2211,19 @@ void OceanWorld::drawSeaLife(float time)
         int count;
         unsigned char body[3], fin[3];
     };
-    const Swarm swarms[] = {{40.0f, -11.0f, 196.0f, 26.0f, 0.2f, 44, {150, 190, 230}, {70, 100, 150}},
-                            {226.0f, -10.0f, 60.0f, 22.0f, -0.24f, 36, {250, 210, 90}, {230, 120, 40}},
-                            {-150.0f, -9.0f, 215.0f, 20.0f, 0.22f, 32, {200, 230, 240}, {90, 140, 170}},
-                            {150.0f, -9.0f, 205.0f, 24.0f, -0.18f, 36, {240, 130, 150}, {250, 240, 220}}};
+    const Swarm swarms[] = {
+        {40.0f, -11.0f, 196.0f, 26.0f, 0.2f, 44, {150, 190, 230}, {70, 100, 150}},
+        {226.0f, -10.0f, 60.0f, 22.0f, -0.24f, 36, {250, 210, 90}, {230, 120, 40}},
+        {-150.0f, -9.0f, 215.0f, 20.0f, 0.22f, 32, {200, 230, 240}, {90, 140, 170}},
+        {150.0f, -9.0f, 205.0f, 24.0f, -0.18f, 36, {240, 130, 150}, {250, 240, 220}}};
     for (const Swarm &s : swarms)
         for (int i = 0; i < s.count; ++i)
         {
             const float fi = static_cast<float>(i);
             const float spread = static_cast<float>(hash(i, school, 601u) % 100u) * 0.01f;
             const float radius = s.radius * (0.45f + 0.55f * spread);
-            const Lap lap = {s.x, s.y + sinf(fi * 2.1f) * 2.6f, s.z, radius, radius * 0.8f,
-                             s.speed * (1.25f - 0.5f * spread), fi * 0.61f, 1.0f};
+            const Lap lap = {s.x,           s.y + sinf(fi * 2.1f) * 2.6f,      s.z,        radius,
+                             radius * 0.8f, s.speed * (1.25f - 0.5f * spread), fi * 0.61f, 1.0f};
             enterLap(lap, time, 0.8f);
             drawFishShape(s.body, s.fin, sinf(time * 7.0f + fi * 2.3f) * 22.0f);
             glPopMatrix();
