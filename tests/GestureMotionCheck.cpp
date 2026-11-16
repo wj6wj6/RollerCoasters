@@ -258,6 +258,16 @@ static bool checkOrbitAndZoomTogether()
     camera.beginDrag(true);
     camera.zoomByWheel(1, true);
     bool zoomDuringDrag = std::fabs(camera.cameraDistance() - 250 / 1.1) < .01;
+    // A mouse-wheel notch while the drag is still held zooms in too.
+    Fl::e_dx = 0;
+    Fl::e_dy = -1;
+    camera.handle(FL_MOUSEWHEEL);
+    for (int frame = 0; frame < 40; ++frame)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        Fl::check();
+    }
+    zoomDuringDrag = zoomDuringDrag && std::fabs(camera.cameraDistance() - 250 / 1.21) < .1;
     Fl::e_x = 330;
     camera.handle(FL_DRAG);
     camera.handle(FL_RELEASE);

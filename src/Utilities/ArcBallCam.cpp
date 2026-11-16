@@ -134,7 +134,9 @@ void ArcBallCam::scroll(float dx, float dy, int state, bool precise)
     }
     else if (mode != None)
     {
-        // Do not change the drag's coordinate frame mid-drag.
+        // Zooming during a drag is fine; turning or panning would fight the
+        // drag's coordinate frame, so a sideways tilt is ignored until it ends.
+        zoomByWheel(-dy, precise);
         return;
     }
     else if (state & (FL_ALT | FL_SHIFT))
