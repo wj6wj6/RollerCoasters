@@ -48,6 +48,7 @@ class CTrack;
 
 // this uses the old ArcBall Code
 #include "Utilities/ArcBallCam.H"
+#include "Utilities/FlyCam.H"
 #include "TrackRenderer.H"
 
 class TrainView : public Fl_Gl_Window
@@ -76,8 +77,17 @@ class TrainView : public Fl_Gl_Window
     // pick a point (for when the mouse goes down)
     void doPick();
 
+    // Call when the camera buttons change: entering the observer (fly) camera
+    // places it at the world view the first time; leaving it stops any motion.
+    void cameraChanged();
+
+    // Move the observer camera to where the world camera is looking from.
+    void placeFlyCamAtWorldView();
+
   public:
     ArcBallCam arcball; // keep an ArcBall for the UI
+    FlyCam flyCam;      // free-moving observer camera
+    bool flyCamPlaced;  // has the observer camera been placed yet?
     int selectedCube;   // simple - just remember which cube is selected
 
     TrainWindow *tw;               // The parent of this display window

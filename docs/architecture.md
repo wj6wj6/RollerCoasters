@@ -11,9 +11,14 @@ flowchart LR
     View --> Rails[TrackRenderer / 鐵軌、枕木與弧長表]
     Rails --> Track
     View --> Camera[ArcBallCam / 相機與手勢平滑]
+    View --> Fly[FlyCam / 觀察者自由相機]
+    Camera -->|進入 Fly 時的視角| Fly
     Camera --> Timer[FLTK event loop / timeout]
     Timer --> Camera
+    Fly -->|按住按鍵時| Timer
+    Timer --> Fly
     Wheel[Windows 滾輪訊息 / system handler] -->|原始位移| Camera
+    Wheel -->|Fly 模式| Fly
     Track <-->|readPoints / writePoints| File[使用者軌道文字檔]
     View --> GL[GLAD / OpenGL / GLU]
 ```
@@ -22,6 +27,7 @@ flowchart LR
 `TrackRenderer` 建立累積弧長表，依弧長等距擺放枕木，並以程式產生的像素材質畫方塊風鐵軌；`makeTrackFrame()` 也放在這裡，供列車與相機共用。
 `CallBacks` 處理按鈕、軌道載入儲存與列車更新。
 `ArcBallCam` 用 FLTK timeout 分攤滑鼠滾輪的整格旋轉與縮放；觸控板的細小位移則立即套用。FLTK 1.3 會把滾輪訊息捨入為整格，因此 `TrainView.cpp` 以 system handler 直接讀取 Windows `WM_MOUSEWHEEL`／`WM_MOUSEHWHEEL` 的原始位移。
+`FlyCam` 是 Fly 相機按鈕的觀察者模式：記錄位置、yaw 與 pitch（水平線固定），按住移動鍵時以 FLTK timeout 依實際經過時間移動，因此速度單位是每秒世界單位，與幀率無關。第一次進入時 `TrainView` 讀回 World 相機的 modelview 矩陣作為起點，並依兩者視角差沿視線移動，使畫面不跳動。失去焦點或切換相機時清除按住的按鍵，避免相機持續漂移。
 `Utilities` 包含相機、幾何點與 OpenGL 輔助函式。
 
 軌道格式首行為控制點數，其後每行是位置 `x y z` 與可選方向 `x y z`。

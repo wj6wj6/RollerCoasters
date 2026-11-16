@@ -57,6 +57,25 @@ void damageCB(Fl_Widget *, TrainWindow *tw)
 
 //***************************************************************************
 //
+// * The camera radio buttons changed
+//===========================================================================
+void cameraCB(Fl_Widget *, TrainWindow *tw)
+{
+    tw->trainView->cameraChanged();
+    tw->damageMe();
+}
+
+//***************************************************************************
+//
+// * The observer camera speed slider moved
+//===========================================================================
+void flySpeedCB(Fl_Widget *, TrainWindow *tw)
+{
+    tw->trainView->flyCam.setSpeed(static_cast<float>(tw->flySpeed->value()));
+}
+
+//***************************************************************************
+//
 // * Callback that adds a new point to the spline
 // idea: add the point AFTER the selected point
 //===========================================================================

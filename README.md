@@ -35,6 +35,11 @@ pwsh -File scripts/check.ps1 -Stage all -Compiler clang -Config Release
 - 平移：Alt 或 Shift + 雙指捲動；Alt + 在空白處左鍵拖曳或 Alt + 右鍵拖曳。
 - 縮放：雙指張開放大、捏合縮小；也可 Ctrl + 捲動。
 - 重設：Shift + 左鍵雙擊或右鍵雙擊。
+- Fly（觀察者模式）：第一次切換時從目前 World 視角出發，之後切換相機會保留位置。
+  - 移動：按住 W／S 前進後退（沿視線方向）、A／D 左右平移、E／Q 上升下降（或 Page Up／Page Down）；按住 Shift 三倍速。
+  - 看：在空白處左鍵拖曳或右鍵拖曳、方向鍵、觸控板雙指捲動。
+  - 觸控板：雙指張開／捏合（或 Ctrl + 捲動）前進後退；Alt 或 Shift + 雙指捲動左右、上下平移。滑鼠滾輪前進後退。
+  - 速度：面板的 fly speed（每秒移動單位）或 +／- 鍵；R 回到 World 視角位置。
 - 控制面板提供 Run、速度、相機與控制點操作；Load／Save 讀寫軌道文字檔。
 
 個人軌道請存 `data/`，備份存 `backups/`，兩者均不納入版控。

@@ -67,6 +67,7 @@ hooks 與 CI 使用同一個 PowerShell 入口與 `tools.json`。hooks 只檢查
 ## 測試範圍
 
 - `GestureMotionCheck`：正式 FLTK event loop／timer 與 `ArcBallCam`，涵蓋手勢平滑度、總旋轉量、重設、水平線、縮放、俯仰限制、觸控板細小位移立即套用與空白處拖曳旋轉。
+- `FlyCamCheck`：正式 FLTK event loop／timer 與 `FlyCam`，涵蓋由 World 視圖矩陣接續、視角差補償、WASD／QE 依實際時間移動與放開即停、Shift 加速、方向鍵轉向與俯仰限制、拖曳看、觸控板捲動／捏合／平移、速度按鍵與失去焦點時停止。
 - `TrackRoundTripCheck`：正式 `CTrack::writePoints/readPoints` 與真實暫存檔，驗證座標、方向、控制點數與載入後列車位置歸零。
 - `VersionCheck`：啟動正式 executable 的 `--version`，不建立 GUI。
 

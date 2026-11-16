@@ -29,6 +29,11 @@ void resetCB(Fl_Widget *, TrainWindow *tw);
 // Something change and thus we need to update the view
 void damageCB(Fl_Widget *, TrainWindow *tw);
 
+// A camera button changed: start or stop the observer camera, then redraw
+void cameraCB(Fl_Widget *, TrainWindow *tw);
+// The observer camera speed slider moved
+void flySpeedCB(Fl_Widget *, TrainWindow *tw);
+
 // Callback that adds a new point to the spline
 // idea: add the point AFTER the selected point
 void addPointCB(Fl_Widget *, TrainWindow *tw);

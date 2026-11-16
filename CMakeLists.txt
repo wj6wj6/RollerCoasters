@@ -44,6 +44,7 @@ target_include_directories(glad SYSTEM PUBLIC "${PROJECT_SOURCE_DIR}/include/gla
 add_library(Utilities
     src/Utilities/3DUtils.h src/Utilities/3DUtils.cpp
     src/Utilities/ArcBallCam.H src/Utilities/ArcBallCam.cpp
+    src/Utilities/FlyCam.H src/Utilities/FlyCam.cpp
     src/Utilities/Pnt3f.H src/Utilities/Pnt3f.cpp)
 target_link_libraries(Utilities PUBLIC project_options fltk)
 
@@ -66,6 +67,12 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     target_link_libraries(GestureMotionCheck PRIVATE Utilities)
     add_test(NAME GestureMotionCheck COMMAND GestureMotionCheck)
     set_tests_properties(GestureMotionCheck PROPERTIES TIMEOUT 30 LABELS integration)
+
+    add_executable(FlyCamCheck tests/FlyCamCheck.cpp)
+    target_include_directories(FlyCamCheck PRIVATE src/Utilities)
+    target_link_libraries(FlyCamCheck PRIVATE Utilities)
+    add_test(NAME FlyCamCheck COMMAND FlyCamCheck)
+    set_tests_properties(FlyCamCheck PROPERTIES TIMEOUT 30 LABELS integration)
 
     add_executable(TrackRoundTripCheck tests/TrackRoundTripCheck.cpp
         src/Track.cpp src/ControlPoint.cpp)

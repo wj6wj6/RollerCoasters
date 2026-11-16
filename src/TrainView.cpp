@@ -65,7 +65,10 @@ static int touchpadWheel(void *event, void *data)
     if (message->message != WM_MOUSEWHEEL && message->message != WM_MOUSEHWHEEL)
         return 0;
     TrainView *view = static_cast<TrainView *>(data);
-    if (!view->tw || !view->tw->worldCam->value() || !view->shown())
+    if (!view->tw || !view->shown())
+        return 0;
+    const bool fly = view->tw->flyCam->value() != 0;
+    if (!view->tw->worldCam->value() && !fly)
         return 0;
     HWND canvas = fl_xid(view);
     if (!canvas || GetAncestor(message->hwnd, GA_ROOT) != GetAncestor(canvas, GA_ROOT))
@@ -88,16 +91,21 @@ static int touchpadWheel(void *event, void *data)
     const float steps = (float)delta / WHEEL_DELTA;
     const bool precise = isPreciseWheel(delta);
     // Match FLTK's signs: wheel up is -dy, tilting right is +dx.
-    if (message->message == WM_MOUSEWHEEL)
-        view->arcball.scroll(0, -steps, state, precise);
+    const float dx = message->message == WM_MOUSEWHEEL ? 0.0f : steps;
+    const float dy = message->message == WM_MOUSEWHEEL ? -steps : 0.0f;
+    if (fly)
+        view->flyCam.scroll(dx, dy, state, precise);
     else
-        view->arcball.scroll(steps, 0, state, precise);
+        view->arcball.scroll(dx, dy, state, precise);
     return 1;
 }
 
 #ifdef EXAMPLE_SOLUTION
 #include "TrainExample/TrainExample.H"
 #endif
+
+// Field of view of the world camera, in degrees.
+static const float worldFieldOfView = 40.0f;
 
 //************************************************************************
 //
@@ -108,9 +116,11 @@ TrainView::TrainView(int x, int y, int w, int h, const char *l) : Fl_Gl_Window(x
 {
     tw = 0;
     selectedCube = -1;
+    flyCamPlaced = false;
     mode(FL_RGB | FL_ALPHA | FL_DOUBLE | FL_STENCIL);
 
     resetArcball();
+    flyCam.setup(this);
     Fl::add_system_handler(touchpadWheel, this);
 }
 
@@ -129,7 +139,38 @@ void TrainView::resetArcball()
     // Set up the camera to look at the world
     // these parameters might seem magical, and they kindof are
     // a little trial and error goes a long way
-    arcball.setup(this, 40, 250, .2f, .4f, 0);
+    arcball.setup(this, worldFieldOfView, 250, .2f, .4f, 0);
+}
+
+//************************************************************************
+//
+// * Start the observer camera where the world camera currently looks from
+//========================================================================
+void TrainView::placeFlyCamAtWorldView()
+//========================================================================
+{
+    make_current();
+    arcball.setProjection();
+    GLfloat view[16];
+    glGetFloatv(GL_MODELVIEW_MATRIX, view);
+    flyCam.setFromViewMatrix(view, worldFieldOfView);
+    flyCamPlaced = true;
+    damage(1);
+}
+
+//========================================================================
+void TrainView::cameraChanged()
+//========================================================================
+{
+    if (!tw->flyCam->value())
+    {
+        flyCam.stop();
+        return;
+    }
+    if (!flyCamPlaced)
+        placeFlyCamAtWorldView();
+    // Take keyboard focus from the camera button so WASD works at once.
+    Fl::focus(this);
 }
 
 //************************************************************************
@@ -150,6 +191,23 @@ int TrainView::handle(int event)
         if (arcball.handle(event))
             return 1;
 
+    // The observer camera takes held keys, right drags and the wheel.
+    if (tw->flyCam->value())
+    {
+        const float speedBefore = flyCam.speed();
+        const int used = flyCam.handle(event);
+        if (flyCam.speed() != speedBefore)
+            tw->flySpeed->value(flyCam.speed());
+        if (used)
+            return 1;
+        // R puts the observer back at the world camera's viewpoint.
+        if (event == FL_KEYBOARD && Fl::event_key() == 'r')
+        {
+            placeFlyCamAtWorldView();
+            return 1;
+        }
+    }
+
     // remember what button was used
     static int last_push;
 
@@ -165,6 +223,9 @@ int TrainView::handle(int event)
             // Dragging empty space orbits (Alt pans), so one finger is enough on a touchpad.
             if (selectedCube < 0 && tw->worldCam->value())
                 arcball.beginDrag((Fl::event_state() & FL_ALT) != 0);
+            // In the observer camera the same drag looks around.
+            else if (selectedCube < 0 && tw->flyCam->value())
+                flyCam.beginDrag();
             damage(1);
             return 1;
         };
@@ -365,6 +426,9 @@ void TrainView::setProjection()
     // Check whether we use the world camp
     if (tw->worldCam->value())
         arcball.setProjection(false);
+    // The free-moving observer camera
+    else if (tw->flyCam->value())
+        flyCam.setProjection(false);
     // Or we use the top cam
     else if (tw->topCam->value())
     {
