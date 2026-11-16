@@ -1,4 +1,5 @@
 #include "TouchpadGestures.H"
+#include "Utilities/TwoFingerGesture.H"
 
 #include <windows.h>
 #include <directmanipulation.h>
@@ -129,7 +130,7 @@ struct RawTouchpad
     bool works = false; // a raw gesture has moved the camera
     bool tracking = false;
     ULONG idA = 0, idB = 0;
-    float centerX = 0, centerY = 0, spread = 0;
+    TwoFingerGesture filter; // jitter, thresholds and which motion dominates
     std::chrono::steady_clock::time_point lastFrame;
     float velocityX = 0, velocityY = 0; // window pixels per second
     int frames = 0;
@@ -651,9 +652,10 @@ void TouchpadGestures::rawFrame()
     RawTouchpad::Contact b = raw->contacts[1];
     if (b.id < a.id)
         std::swap(a, b);
-    const float centerX = (a.x + b.x) * .5f;
-    const float centerY = (a.y + b.y) * .5f;
-    const float spread = std::hypot(a.x - b.x, a.y - b.y);
+    // In touchpad widths, the same scale on both axes.
+    const float centerX = (a.x + b.x) * .5f / raw->padWidth;
+    const float centerY = (a.y + b.y) * .5f / raw->padWidth;
+    const float spread = std::hypot(a.x - b.x, a.y - b.y) / raw->padWidth;
     const auto now = std::chrono::steady_clock::now();
     if (!raw->tracking || a.id != raw->idA || b.id != raw->idB)
     {
@@ -665,9 +667,7 @@ void TouchpadGestures::rawFrame()
         raw->tracking = true;
         raw->idA = a.id;
         raw->idB = b.id;
-        raw->centerX = centerX;
-        raw->centerY = centerY;
-        raw->spread = spread;
+        raw->filter.start(centerX, centerY, spread);
         raw->lastFrame = now;
         raw->velocityX = raw->velocityY = 0;
         raw->frames = 0;
@@ -675,16 +675,13 @@ void TouchpadGestures::rawFrame()
         raw->zoom = 1;
         return;
     }
-    // A full pad-width swipe turns like dragging across the whole canvas;
-    // both axes use the pad width so motion is the same in every direction.
+    float moveX = 0, moveY = 0, ratio = 1;
+    raw->filter.update(centerX, centerY, spread, moveX, moveY, ratio);
+    // A full pad-width swipe turns like dragging across the whole canvas.
     RECT client = {0, 0, 0, 0};
     GetClientRect(static_cast<HWND>(hwnd), &client);
-    const float dx = (centerX - raw->centerX) / raw->padWidth * (float)client.right;
-    const float dy = (centerY - raw->centerY) / raw->padWidth * (float)client.bottom;
-    const float ratio = (spread > 0 && raw->spread > 0) ? spread / raw->spread : 1;
-    raw->centerX = centerX;
-    raw->centerY = centerY;
-    raw->spread = spread;
+    const float dx = moveX * (float)client.right;
+    const float dy = moveY * (float)client.bottom;
     const float seconds = std::chrono::duration<float>(now - raw->lastFrame).count();
     raw->lastFrame = now;
     if (seconds > .002f)
