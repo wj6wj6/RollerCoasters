@@ -62,6 +62,11 @@ class FlyCam
     // touchpad scrolling looks around; mouse wheel notches fly forward.
     void scroll(float dx, float dy, int state, bool precise);
 
+    // One Direct Manipulation update: finger movement in window pixels and the
+    // pinch ratio since the last update. The scene follows the fingers (looking
+    // around, or sliding when slide is true) while spreading flies forward.
+    void touchpadGesture(float dx, float dy, float scale, bool slide);
+
     // Set up the projection and modelview matrices. Pass false to keep a pick
     // matrix already on the projection stack.
     void setProjection(bool doClear = true) const;
@@ -91,10 +96,11 @@ class FlyCam
 
     static constexpr float minSpeed = 1.0f;
     static constexpr float maxSpeed = 200.0f;
-    static constexpr float boost = 3.0f;               // Shift multiplier
-    static constexpr float dragDegreesPerPixel = .25f; // mouse look
-    static constexpr float scrollDegrees = 3.0f;       // touchpad look per notch
-    static constexpr float scrollSeconds = .15f;       // wheel travel per notch, in seconds
+    static constexpr float boost = 3.0f;                // Shift multiplier
+    static constexpr float dragDegreesPerPixel = .25f;  // mouse look
+    static constexpr float scrollDegrees = 3.0f;        // touchpad look per notch
+    static constexpr float scrollSeconds = .15f;        // wheel travel per notch, in seconds
+    static constexpr float slideSecondsPerPixel = .01f; // touchpad slide per pixel
     static constexpr float turnDegreesPerSecond = 90.0f;
 
   private:

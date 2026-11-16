@@ -53,6 +53,7 @@ add_executable(RollerCoasters
     src/ControlPoint.H src/ControlPoint.cpp
     src/main.cpp src/Object.H
     src/Track.H src/Track.cpp
+    src/TouchpadGestures.H src/TouchpadGestures.cpp
     src/TrackRenderer.H src/TrackRenderer.cpp
     src/TrainView.H src/TrainView.cpp
     src/TrainWindow.H src/TrainWindow.cpp)

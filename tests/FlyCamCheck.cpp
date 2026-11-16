@@ -218,8 +218,24 @@ static bool checkScroll()
     camera.position(x, y, z);
     const bool wheel = taken && approx(z, -notch, 1e-4f) && camera.pitch() == 0;
 
-    const bool pass = look && pinch && slide && wheel;
-    std::printf("%s: touchpad scroll looks, pinch and wheel fly, Alt + scroll slides\n",
+    // Direct Manipulation: fingers moving right drag the scene right (turn left)
+    // while a 10% spread flies forward by one wheel notch in the same update.
+    camera.setPose(0, 0, 0, 0, 0);
+    camera.touchpadGesture(40, 0, 1.1f, false);
+    camera.position(x, y, z);
+    const float turned = camera.yaw();
+    const bool gesture = approx(turned, -40 * FlyCam::dragDegreesPerPixel, 1e-3f) &&
+                         approx(distanceFrom(camera, 0, 0, 0), notch, 1e-3f);
+    // With Alt or Shift the fingers slide the camera instead of turning it.
+    camera.setPose(0, 0, 0, 0, 0);
+    camera.touchpadGesture(10, -10, 1, true);
+    camera.position(x, y, z);
+    const float perPixel = 20 * FlyCam::slideSecondsPerPixel;
+    const bool gestureSlide =
+        approx(x, -10 * perPixel, 1e-4f) && approx(y, -10 * perPixel, 1e-4f) && camera.yaw() == 0;
+
+    const bool pass = look && pinch && slide && wheel && gesture && gestureSlide;
+    std::printf("%s: touchpad scroll and gestures look, pinch and wheel fly, Alt slides\n",
                 pass ? "PASS" : "FAIL");
     return pass;
 }

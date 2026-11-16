@@ -238,6 +238,22 @@ void FlyCam::scroll(float dx, float dy, int state, bool precise)
     redraw();
 }
 
+void FlyCam::touchpadGesture(float dx, float dy, float scale, bool slide)
+{
+    // Same step as the wheel: one notch per 10% of spread.
+    if (scale > 0 && scale != 1)
+        move(logf(scale) / logf(1.1f) * moveSpeed * scrollSeconds, 0, 0);
+    // A mouse drag owns the view direction until it ends.
+    if (!dragging && (dx != 0 || dy != 0))
+    {
+        if (slide)
+            move(0, -dx * moveSpeed * slideSecondsPerPixel, dy * moveSpeed * slideSecondsPerPixel);
+        else
+            look(-dx * dragDegreesPerPixel, dy * dragDegreesPerPixel);
+    }
+    redraw();
+}
+
 int FlyCam::handle(int event)
 {
     switch (event)
