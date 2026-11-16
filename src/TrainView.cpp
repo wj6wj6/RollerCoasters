@@ -41,7 +41,6 @@
 #include "Utilities/3DUtils.h"
 #include "TrackRenderer.H"
 #include <FL/x.H>
-#include <FL/gl.h>
 
 // Touchpads send wheel deltas smaller than one notch. A burst that contains any
 // such delta stays precise for a moment, so a stray whole notch is not smoothed.
@@ -196,6 +195,7 @@ void TrainView::placeFlyCamAtWorldView()
     arcball.setProjection();
     GLfloat view[16];
     glGetFloatv(GL_MODELVIEW_MATRIX, view);
+    flyCam.setGround(flyGround());
     flyCam.setFromViewMatrix(view, worldFieldOfView);
     flyCamPlaced = true;
     damage(1);
@@ -514,7 +514,11 @@ void TrainView::draw()
     // set to opengl fixed pipeline(use opengl 1.x draw function)
     glUseProgram(0);
 
-    if (tw->flyCam->value())
+    // The horizon is ground seen from above; under it (a track that dives below
+    // the floor) it would only hide the view.
+    float flyX, flyY, flyZ;
+    flyCam.position(flyX, flyY, flyZ);
+    if (tw->flyCam->value() && flyY > 0)
         drawFlyHorizon();
 
     setupFloor();
@@ -540,6 +544,20 @@ void TrainView::draw()
 
     if (tw->flyCam->value())
         drawFlyOverlay();
+}
+
+//========================================================================
+float TrainView::flyGround() const
+//========================================================================
+{
+    // The floor is at y = 0, but a track may dive below it (into the sea, say).
+    // Let the observer follow it down to a little under its lowest point.
+    const float margin = 10.0f;
+    float lowest = 0;
+    for (const ControlPoint &point : m_pTrack->points)
+        if (point.pos.y - margin < lowest)
+            lowest = point.pos.y - margin;
+    return lowest;
 }
 
 //========================================================================
@@ -581,8 +599,7 @@ void TrainView::drawFlyHorizon()
 
 //************************************************************************
 //
-// * Overlay for the observer camera: a crosshair at the view centre and a
-//   controls hint along the bottom.
+// * Overlay for the observer camera: a crosshair at the view centre.
 //========================================================================
 void TrainView::drawFlyOverlay()
 //========================================================================
@@ -621,29 +638,6 @@ void TrainView::drawFlyOverlay()
     glVertex2f(cx, cy + 8);
     glEnd();
 
-    // Controls hint along the bottom of the view.
-    const char *lines[2] = {mouseCaptured ? "Mouse looks around  -  Esc frees the mouse"
-                                          : "Click the view to look with the mouse",
-                            "WASD move  Space/Shift up/down  Ctrl fast  Wheel speed  F train"};
-    // A dim band keeps the text readable over the light floor.
-    glColor4f(0, 0, 0, .45f);
-    glBegin(GL_QUADS);
-    glVertex2f(0, 0);
-    glVertex2f((float)w(), 0);
-    glVertex2f((float)w(), 40);
-    glVertex2f(0, 40);
-    glEnd();
-    gl_font(FL_HELVETICA, 12);
-    for (int i = 0; i < 2; ++i)
-    {
-        const float x = (w() - (float)gl_width(lines[i])) * .5f;
-        const float y = 10.0f + 16.0f * (1 - i);
-        glColor4f(0, 0, 0, .7f);
-        gl_draw(lines[i], x + 1, y - 1);
-        glColor4f(1, 1, 1, .9f);
-        gl_draw(lines[i], x, y);
-    }
-
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();
     glMatrixMode(GL_MODELVIEW);
@@ -668,7 +662,11 @@ void TrainView::setProjection()
         arcball.setProjection(false);
     // The free-moving observer camera
     else if (tw->flyCam->value())
+    {
+        // Control points can be dragged at any time, so follow the track down.
+        flyCam.setGround(flyGround());
         flyCam.setProjection(false);
+    }
     // Or we use the top cam
     else if (tw->topCam->value())
     {

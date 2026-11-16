@@ -26,7 +26,9 @@
 
                   The camera stays above the ground and within a box around
                   the scene, so it cannot get lost under the floor or in the
-                  empty sky. lookAt() turns smoothly toward a point.
+                  empty sky. The ground height can be lowered with
+                  setGround() for scenes that go below y = 0, such as a ride
+                  under the sea. lookAt() turns smoothly toward a point.
 
                   Held keys move the camera on an FLTK timeout using the
                   real elapsed time, so the speed is in world units per
@@ -94,6 +96,17 @@ class FlyCam
         return turnActive;
     }
 
+    // The lowest ground the camera may reach: the eye stays minHeight above it.
+    // Takes effect on the next movement, so raising it never makes the view jump.
+    void setGround(float y)
+    {
+        groundY = y;
+    }
+    float ground() const
+    {
+        return groundY;
+    }
+
     void setSpeed(float unitsPerSecond);
     float speed() const
     {
@@ -125,7 +138,7 @@ class FlyCam
     static constexpr float slideSecondsPerPixel = .01f; // touchpad slide per pixel
     static constexpr float turnDegreesPerSecond = 90.0f;
     static constexpr float turnSeconds = .35f;   // lookAt() duration
-    static constexpr float minHeight = 1.0f;     // eye height above the ground
+    static constexpr float minHeight = 1.0f;     // eye height above setGround()
     static constexpr float maxHeight = 400.0f;   // highest the camera can go
     static constexpr float maxDistance = 400.0f; // |x| and |z| limit
 
@@ -179,6 +192,7 @@ class FlyCam
     float pitchDegrees;
     float fieldOfView;
     float moveSpeed;
+    float groundY;
 
     Fl_Gl_Window *wind;
 };

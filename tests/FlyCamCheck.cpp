@@ -311,12 +311,25 @@ static bool checkBounds()
     float x, y, z;
     camera.position(x, y, z);
     const bool ground = approx(y, FlyCam::minHeight, 1e-4f);
+    // A track under the sea lowers the ground; raising it again waits for the
+    // next move instead of making the view jump.
+    camera.setGround(-50);
+    camera.scroll(0, -100, FL_CTRL, true);
+    camera.position(x, y, z);
+    const bool seaFloor = approx(y, -50 + FlyCam::minHeight, 1e-4f);
+    camera.setGround(0);
+    float x2, y2, z2;
+    camera.position(x2, y2, z2);
+    const bool noJump = approx(y2, y, 1e-4f);
+    camera.scroll(0, -1, FL_CTRL, true);
+    camera.position(x2, y2, z2);
+    const bool raised = approx(y2, FlyCam::minHeight, 1e-4f);
     camera.setPose(1000, 1000, -1000, 0, 0);
     camera.position(x, y, z);
     const bool box = approx(x, FlyCam::maxDistance, 1e-4f) && approx(y, FlyCam::maxHeight, 1e-4f) &&
                      approx(z, -FlyCam::maxDistance, 1e-4f);
-    const bool pass = ground && box;
-    std::printf("%s: the camera stays above the ground and inside the scene box\n",
+    const bool pass = ground && seaFloor && noJump && raised && box;
+    std::printf("%s: the camera stays above the (adjustable) ground and inside the scene box\n",
                 pass ? "PASS" : "FAIL");
     return pass;
 }

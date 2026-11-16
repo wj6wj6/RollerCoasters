@@ -31,7 +31,7 @@ const float longestStep = .1f;
 FlyCam::FlyCam()
     : timerActive(false), dragging(false), lastX(0), lastY(0), turnActive(false), turnFromYaw(0),
       turnFromPitch(0), turnYaw(0), turnPitch(0), eyeX(0), eyeY(40.0f), eyeZ(150.0f), yawDegrees(0),
-      pitchDegrees(-15.0f), fieldOfView(60.0f), moveSpeed(30.0f), wind(nullptr)
+      pitchDegrees(-15.0f), fieldOfView(60.0f), moveSpeed(30.0f), groundY(0), wind(nullptr)
 {
     for (bool &key : held)
         key = false;
@@ -115,8 +115,8 @@ void FlyCam::setSpeed(float unitsPerSecond)
 
 void FlyCam::keepInBounds()
 {
-    if (eyeY < minHeight)
-        eyeY = minHeight;
+    if (eyeY < groundY + minHeight)
+        eyeY = groundY + minHeight;
     if (eyeY > maxHeight)
         eyeY = maxHeight;
     if (eyeX < -maxDistance)

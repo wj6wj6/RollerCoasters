@@ -93,8 +93,12 @@ class TrainView : public Fl_Gl_Window
     // Where the train is now (the track centre without a train).
     Pnt3f trainPosition() const;
 
+    // The lowest the observer camera may fly: the floor, or under the track
+    // where it goes below the floor.
+    float flyGround() const;
+
     // Orientation aids for the observer camera: ground out to the horizon, and
-    // an overlay with a centre crosshair and a controls hint.
+    // an overlay with a centre crosshair.
     void drawFlyHorizon();
     void drawFlyOverlay();
 
