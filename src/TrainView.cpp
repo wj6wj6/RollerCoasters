@@ -31,6 +31,7 @@
 
 // we will need OpenGL, and OpenGL needs windows.h
 #include <windows.h>
+#include <imm.h>
 //#include "GL/gl.h"
 #include <glad/glad.h>
 #include <glm/glm.hpp>
@@ -68,7 +69,10 @@ static int touchpadWheel(void *event, void *data)
     if (message->message != WM_MOUSEWHEEL && message->message != WM_MOUSEHWHEEL)
         return 0;
     TrainView *view = static_cast<TrainView *>(data);
-    if (!view->tw || !view->tw->worldCam->value() || !view->shown())
+    if (!view->tw || !view->shown())
+        return 0;
+    const bool fly = view->tw->flyCam->value() != 0;
+    if (!view->tw->worldCam->value() && !fly)
         return 0;
     HWND canvas = fl_xid(view);
     if (!canvas || GetAncestor(message->hwnd, GA_ROOT) != GetAncestor(canvas, GA_ROOT))
@@ -91,17 +95,46 @@ static int touchpadWheel(void *event, void *data)
     const float steps = (float)delta / WHEEL_DELTA;
     const bool precise = isPreciseWheel(delta);
     // Match FLTK's signs: wheel up is -dy, tilting right is +dx.
-    if (message->message == WM_MOUSEWHEEL)
-        view->arcball.scroll(0, -steps, state, precise);
+    const float dx = message->message == WM_MOUSEWHEEL ? 0.0f : steps;
+    const float dy = message->message == WM_MOUSEWHEEL ? -steps : 0.0f;
+    if (fly)
+    {
+        view->flyCam.scroll(dx, dy, state, precise);
+        // The mouse wheel changes the flying speed; keep the slider in step.
+        view->tw->flySpeed->value(view->flyCam.speed());
+    }
     else
-        view->arcball.scroll(steps, 0, state, precise);
+        view->arcball.scroll(dx, dy, state, precise);
+    return 1;
+}
+
+// In Fly mode, take the flying keys before FLTK and the input method see them
+// and hand them to the view as FLTK key events.
+static int flyKeys(void *event, void *data)
+{
+    MSG *message = static_cast<MSG *>(event);
+    if (message->message != WM_KEYDOWN && message->message != WM_KEYUP)
+        return 0;
+    TrainView *view = static_cast<TrainView *>(data);
+    if (!view->tw || !view->shown() || !view->tw->flyCam->value())
+        return 0;
+    HWND canvas = fl_xid(view);
+    if (!canvas || GetAncestor(message->hwnd, GA_ROOT) != GetAncestor(canvas, GA_ROOT))
+        return 0;
+    const unsigned scan = (unsigned)(message->lParam >> 16) & 0xFF;
+    const bool extended = ((message->lParam >> 24) & 1) != 0;
+    const int key = FlyCam::keyForScanCode(scan, extended);
+    if (!key)
+        return 0;
+    Fl::e_keysym = key;
+    view->handle(message->message == WM_KEYDOWN ? FL_KEYDOWN : FL_KEYUP);
     return 1;
 }
 
 static bool touchpadAccepts(void *data)
 {
     TrainView *view = static_cast<TrainView *>(data);
-    return view->tw && view->tw->worldCam->value();
+    return view->tw && (view->tw->worldCam->value() || view->tw->flyCam->value());
 }
 
 // Direct Manipulation reports finger movement and pinch together, so the
@@ -110,13 +143,27 @@ static void touchpadMoves(void *data, float dx, float dy, float scale)
 {
     if (!touchpadAccepts(data))
         return;
-    const bool pan = GetKeyState(VK_MENU) < 0 || GetKeyState(VK_SHIFT) < 0;
-    static_cast<TrainView *>(data)->arcball.touchpadGesture(dx, dy, scale, pan);
+    const bool alt = GetKeyState(VK_MENU) < 0;
+    const bool pan = alt || GetKeyState(VK_SHIFT) < 0;
+    TrainView *view = static_cast<TrainView *>(data);
+    // In Fly mode Shift sinks the camera, so only Alt slides.
+    if (view->tw->flyCam->value())
+        view->flyCam.touchpadGesture(dx, dy, scale, alt);
+    else
+        view->arcball.touchpadGesture(dx, dy, scale, pan);
 }
 
 #ifdef EXAMPLE_SOLUTION
 #include "TrainExample/TrainExample.H"
 #endif
+
+// Field of view of the world camera, in degrees.
+static const float worldFieldOfView = 40.0f;
+// The lowest the observer camera can fly. Tracks may dive below the floor at
+// y = 0 (into the sea, say), so the camera can follow them well under it.
+static const float flyLowest = -200.0f;
+// The observer camera's starting field of view; the "fly FOV" slider changes it.
+static const float flyFieldOfView = 90.0f;
 
 //************************************************************************
 //
@@ -127,15 +174,23 @@ TrainView::TrainView(int x, int y, int w, int h, const char *l) : Fl_Gl_Window(x
 {
     tw = 0;
     selectedCube = -1;
+    flyCamPlaced = false;
+    mouseCaptured = false;
     mode(FL_RGB | FL_ALPHA | FL_DOUBLE | FL_STENCIL);
 
     resetArcball();
+    flyCam.setup(this, flyFieldOfView);
+    flyCam.setGround(flyLowest - FlyCam::minHeight); // the eye stays minHeight above it
     Fl::add_system_handler(touchpadWheel, this);
+    Fl::add_system_handler(flyKeys, this);
 }
 
 TrainView::~TrainView()
 {
+    if (mouseCaptured)
+        ClipCursor(nullptr);
     Fl::remove_system_handler(touchpadWheel);
+    Fl::remove_system_handler(flyKeys);
 }
 
 //************************************************************************
@@ -148,7 +203,95 @@ void TrainView::resetArcball()
     // Set up the camera to look at the world
     // these parameters might seem magical, and they kindof are
     // a little trial and error goes a long way
-    arcball.setup(this, 40, 250, .2f, .4f, 0);
+    arcball.setup(this, worldFieldOfView, 250, .2f, .4f, 0);
+}
+
+//************************************************************************
+//
+// * Start the observer camera where the world camera currently looks from
+//========================================================================
+void TrainView::placeFlyCamAtWorldView()
+//========================================================================
+{
+    make_current();
+    arcball.setProjection();
+    GLfloat view[16];
+    glGetFloatv(GL_MODELVIEW_MATRIX, view);
+    flyCam.setFromViewMatrix(view, worldFieldOfView);
+    flyCamPlaced = true;
+    damage(1);
+}
+
+//========================================================================
+void TrainView::centerCursor()
+//========================================================================
+{
+    POINT center = {w() / 2, h() / 2};
+    HWND canvas = fl_xid(this);
+    if (canvas && ClientToScreen(canvas, &center))
+        SetCursorPos(center.x, center.y);
+}
+
+//========================================================================
+void TrainView::setMouseCaptured(bool captured)
+//========================================================================
+{
+    if (captured == mouseCaptured)
+        return;
+    mouseCaptured = captured;
+    HWND canvas = fl_xid(this);
+    if (captured)
+    {
+        cursor(FL_CURSOR_NONE);
+        // Keep the hidden cursor over the view so no move is lost at an edge.
+        RECT bounds;
+        if (canvas && GetWindowRect(canvas, &bounds))
+            ClipCursor(&bounds);
+        centerCursor();
+    }
+    else
+    {
+        ClipCursor(nullptr);
+        cursor(FL_CURSOR_DEFAULT);
+    }
+    damage(1);
+}
+
+//========================================================================
+void TrainView::cameraChanged()
+//========================================================================
+{
+    // A first-person view that keeps spinning after a flick is disorienting.
+    touchpad.inertia = !tw->flyCam->value();
+    setInputMethodEnabled(!tw->flyCam->value());
+    if (!tw->flyCam->value())
+    {
+        setMouseCaptured(false);
+        flyCam.stop();
+        return;
+    }
+    if (!flyCamPlaced)
+        placeFlyCamAtWorldView();
+    // Take keyboard focus from the camera button so WASD works at once.
+    Fl::focus(this);
+}
+
+//========================================================================
+void TrainView::setInputMethodEnabled(bool enabled)
+//========================================================================
+{
+    // A Chinese input method would catch WASD for its composition window, so
+    // switch it off for this window while flying and back on afterwards.
+    HWND canvas = fl_xid(this);
+    if (!canvas)
+        return;
+    const DWORD flags = enabled ? IACE_DEFAULT : 0;
+    // A null context is documented for these flags (0 detaches the input
+    // method, IACE_DEFAULT restores it), but the SAL annotation says _In_.
+#pragma warning(suppress : 6387)
+    (void)ImmAssociateContextEx(canvas, nullptr, flags);
+#pragma warning(suppress : 6387)
+    (void)ImmAssociateContextEx(GetAncestor(canvas, GA_ROOT), nullptr, flags);
 }
 
 //************************************************************************
@@ -172,6 +315,62 @@ int TrainView::handle(int event)
     if (tw->worldCam->value())
         if (arcball.handle(event))
             return 1;
+
+    // The observer camera takes held keys, right drags and the wheel.
+    if (tw->flyCam->value())
+    {
+        if (mouseCaptured)
+        {
+            switch (event)
+            {
+            case FL_MOVE:
+            case FL_DRAG: {
+                // The cursor is hidden and kept at the centre; its offset is the turn.
+                const int dx = Fl::event_x() - w() / 2;
+                const int dy = Fl::event_y() - h() / 2;
+                if (dx != 0 || dy != 0)
+                {
+                    flyCam.mouseLook((float)dx, (float)dy);
+                    centerCursor();
+                }
+                return 1;
+            }
+            // Clicks do nothing while the mouse steers the view.
+            case FL_PUSH:
+            case FL_RELEASE:
+                return 1;
+            case FL_UNFOCUS:
+            case FL_HIDE:
+                setMouseCaptured(false);
+                break;
+            }
+        }
+        // Esc frees the mouse; it must not reach the window, which would close.
+        if (event == FL_KEYBOARD && Fl::event_key() == FL_Escape)
+        {
+            setMouseCaptured(false);
+            return 1;
+        }
+        const float speedBefore = flyCam.speed();
+        const int used = flyCam.handle(event);
+        if (flyCam.speed() != speedBefore)
+            tw->flySpeed->value(flyCam.speed());
+        if (used)
+            return 1;
+        // R puts the observer back at the world camera's viewpoint.
+        if (event == FL_KEYBOARD && Fl::event_key() == 'r')
+        {
+            placeFlyCamAtWorldView();
+            return 1;
+        }
+        // F turns to face the train, so it is easy to find again.
+        if (event == FL_KEYBOARD && Fl::event_key() == 'f')
+        {
+            const Pnt3f target = trainPosition();
+            flyCam.lookAt(target.x, target.y, target.z);
+            return 1;
+        }
+    }
 
     // remember what button was used
     static int last_push;
@@ -206,6 +405,10 @@ int TrainView::handle(int event)
                 beginEdit(EDIT_DRAG, TransformGizmo::VIEW, mx, my);
             else if (selectedCube < 0 && tw->worldCam->value())
                 arcball.beginDrag((Fl::event_state() & FL_ALT) != 0);
+            // In the observer camera a click on empty space captures the mouse
+            // for spectator-style mouse look (Esc frees it).
+            else if (selectedCube < 0 && tw->flyCam->value())
+                setMouseCaptured(true);
             damage(1);
             return 1;
         };
@@ -237,8 +440,8 @@ int TrainView::handle(int event)
     case FL_FOCUS:
         return 1;
 
-    // every time the mouse enters this window, aggressively take focus;
-    // returning 1 is what makes FLTK send FL_MOVE afterwards
+    // every time the mouse enters this window, aggressively take focus
+    // (returning 1 also asks FLTK for FL_MOVE events, used by mouse look)
     case FL_ENTER:
         focus(this);
         return 1;
@@ -453,6 +656,7 @@ bool TrainView::editKey(int key)
         Fl_Button *camera =
             key == FL_KP + '1' ? tw->worldCam : (key == FL_KP + '7' ? tw->topCam : tw->trainCam);
         camera->setonly();
+        cameraChanged();
         tw->damageMe();
         return true;
     }
@@ -531,10 +735,13 @@ void TrainView::drawEditOverlay()
     // one line of text in the top left corner, as a 3D view has
     char text[160] = "";
     const char *camera =
-        tw->topCam->value() ? "Top Orthographic"
-                            : (tw->trainCam->value()
-                                   ? "Train Camera"
-                                   : (tw->chaseCam->value() ? "Chase Camera" : "User Perspective"));
+        tw->topCam->value()
+            ? "Top Orthographic"
+            : (tw->trainCam->value()
+                   ? "Train Camera"
+                   : (tw->chaseCam->value()
+                          ? "Chase Camera"
+                          : (tw->flyCam->value() ? "Fly Camera" : "User Perspective")));
     if (!selected)
         snprintf(text, sizeof(text), "%s", camera);
     else
@@ -700,8 +907,13 @@ void TrainView::draw()
     {
         drawAdvanced();
         drawEditOverlay();
+        if (tw->flyCam->value())
+            drawFlyOverlay();
         return;
     }
+
+    if (tw->flyCam->value())
+        drawFlyHorizon();
 
     // the island is lit like everything else: its cliffs need the shading
     setupFloor();
@@ -724,6 +936,94 @@ void TrainView::draw()
         unsetupShadows();
     }
     drawEditOverlay();
+
+    if (tw->flyCam->value())
+        drawFlyOverlay();
+}
+
+//========================================================================
+Pnt3f TrainView::trainPosition() const
+//========================================================================
+{
+    if (m_pTrack->points.size() < 4)
+        return Pnt3f(0, 0, 0);
+    const TrackSplineType splineType = static_cast<TrackSplineType>(tw->splineBrowser->value());
+    return m_pTrack->evaluatePosition(m_pTrack->trainU, splineType);
+}
+
+//************************************************************************
+//
+// * Ground out to the horizon for the observer camera. The checkered floor
+//   ends at 100 units; past it the sky colour would fill the whole view, so
+//   flying out or looking down far would lose any sense of up and down.
+//========================================================================
+void TrainView::drawFlyHorizon()
+//========================================================================
+{
+    const float extent = 1500.0f;
+    glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_DEPTH_BUFFER_BIT);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_STENCIL_TEST); // keep shadows on the checkered floor only
+    // Drawn first without writing depth, so the floor and everything else simply
+    // paint over it; a depth-tested plane this large would z-fight the floor.
+    glDepthMask(GL_FALSE);
+    glColor3f(.22f, .32f, .2f);
+    glBegin(GL_QUADS);
+    glNormal3f(0, 1, 0);
+    glVertex3f(-extent, 0, -extent);
+    glVertex3f(-extent, 0, extent);
+    glVertex3f(extent, 0, extent);
+    glVertex3f(extent, 0, -extent);
+    glEnd();
+    glPopAttrib();
+}
+
+//************************************************************************
+//
+// * Overlay for the observer camera: a crosshair at the view centre.
+//========================================================================
+void TrainView::drawFlyOverlay()
+//========================================================================
+{
+    glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_VIEWPORT_BIT | GL_LINE_BIT |
+                 GL_COLOR_BUFFER_BIT);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_STENCIL_TEST);
+    glDisable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+
+    // Crosshair in window pixels.
+    glViewport(0, 0, w(), h());
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(0, w(), 0, h(), -1, 1);
+    glMatrixMode(GL_MODELVIEW);
+    const float cx = w() * .5f, cy = h() * .5f;
+    glLineWidth(2);
+    glColor4f(1, 1, 1, .7f);
+    glBegin(GL_LINES);
+    glVertex2f(cx - 8, cy);
+    glVertex2f(cx - 3, cy);
+    glVertex2f(cx + 3, cy);
+    glVertex2f(cx + 8, cy);
+    glVertex2f(cx, cy - 8);
+    glVertex2f(cx, cy - 3);
+    glVertex2f(cx, cy + 3);
+    glVertex2f(cx, cy + 8);
+    glEnd();
+
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
+    glPopAttrib();
 }
 
 //************************************************************************
@@ -741,6 +1041,9 @@ void TrainView::setProjection()
     // Check whether we use the world camp
     if (tw->worldCam->value())
         arcball.setProjection(false);
+    // The free-moving observer camera
+    else if (tw->flyCam->value())
+        flyCam.setProjection(false);
     // Or we use the top cam
     else if (tw->topCam->value())
     {

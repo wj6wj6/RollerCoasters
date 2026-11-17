@@ -49,6 +49,7 @@ void resetCB(Fl_Widget *, TrainWindow *tw)
     tw->editButton->value(1);
     tw->runButton->value(0);
     tw->worldCam->setonly();
+    tw->trainView->cameraChanged();
     tw->damageMe();
 }
 
@@ -59,6 +60,34 @@ void resetCB(Fl_Widget *, TrainWindow *tw)
 void damageCB(Fl_Widget *, TrainWindow *tw)
 {
     tw->damageMe();
+}
+
+//***************************************************************************
+//
+// * The camera radio buttons changed
+//===========================================================================
+void cameraCB(Fl_Widget *, TrainWindow *tw)
+{
+    tw->trainView->cameraChanged();
+    tw->damageMe();
+}
+
+//***************************************************************************
+//
+// * The observer camera speed slider moved
+//===========================================================================
+void flySpeedCB(Fl_Widget *, TrainWindow *tw)
+{
+    tw->trainView->flyCam.setSpeed(static_cast<float>(tw->flySpeed->value()));
+}
+
+//***************************************************************************
+//
+// * The observer camera field of view slider moved
+//===========================================================================
+void flyFovCB(Fl_Widget *, TrainWindow *tw)
+{
+    tw->trainView->flyCam.setFieldOfView(static_cast<float>(tw->flyFov->value()));
 }
 
 //***************************************************************************
@@ -198,6 +227,7 @@ void grandTourCB(Fl_Widget *, TrainWindow *tw)
     tw->arcLength->value(1);
     tw->speed->value(1.0);
     tw->trainCam->setonly();
+    tw->trainView->cameraChanged();
     tw->runButton->value(1);
     tw->damageMe();
 }

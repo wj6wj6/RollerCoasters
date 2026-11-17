@@ -37,12 +37,16 @@
 #include "CallBacks.H"
 #include "UiTheme.h"
 
+// The panel's cards are laid out for this height; the window starts at it
+// so the cards are never squeezed (the strip below them takes any change).
+static const int kPanelHeight = 690;
+
 //************************************************************************
 //
 // * Constructor
 //========================================================================
 TrainWindow::TrainWindow(const int x, const int y)
-    : Fl_Double_Window(x, y, 800, 600, "Train and Roller Coaster")
+    : Fl_Double_Window(x, y, 800, kPanelHeight, "Train and Roller Coaster")
 //========================================================================
 {
     // dark neon look for the control panel (see UiTheme.h); has to come
@@ -79,13 +83,13 @@ TrainWindow::TrainWindow(const int x, const int y)
 
         int pty = 5; // where the next widget goes
 
-        trainView = new TrainView(5, 5, 590, 590);
+        trainView = new TrainView(5, 5, 590, kPanelHeight - 10);
         trainView->tw = this;
         trainView->m_pTrack = &m_Track;
         this->resizable(trainView);
 
         // to make resizing work better, put all the widgets in a group
-        widgets = new Fl_Group(panelX, 0, 200, 600);
+        widgets = new Fl_Group(panelX, 0, 200, kPanelHeight);
         UiTheme::stylePanel(widgets);
         widgets->begin();
 
@@ -128,40 +132,71 @@ TrainWindow::TrainWindow(const int x, const int y)
         rideCard->end();
         pty += cardGap;
 
-        // ---- CAMERA: the card is also the radio button group
-        Fl_Group *camGroup =
-            UiTheme::beginCard(cardX, pty, cardW, titleH + rowH + bottomPad, "Camera");
+        // ---- CAMERA: the card is also the radio button group. Two rows of
+        // cameras, then the Fly camera's speed and field of view.
+        Fl_Group *camGroup = UiTheme::beginCard(cardX, pty, cardW,
+                                                titleH + 4 * rowH + 3 * gap + bottomPad, "Camera");
         pty += titleH;
         worldCam = new Fl_Button(innerX, pty, colW, rowH, "World");
         worldCam->type(FL_RADIO_BUTTON); // radio button
         worldCam->value(1);              // turned on
         UiTheme::styleToggle(worldCam);
-        worldCam->callback((Fl_Callback *)damageCB, this);
+        worldCam->callback((Fl_Callback *)cameraCB, this);
         worldCam->tooltip("Rotate: two-finger scroll, Shift + left drag, or right drag\n"
                           "Pan: Alt + two-finger scroll (or Alt + right drag)\n"
                           "Reset: Shift + double left click (or double right click)\n"
                           "Zoom: spread fingers to zoom in; pinch to zoom out (no Ctrl needed)\n"
                           "Also: Ctrl + scroll up to zoom in; Ctrl + scroll down to zoom out");
-        // four cameras share the row
-        const int camW = (innerW - 3 * gap) / 4;
-        worldCam->resize(innerX, pty, camW, rowH);
-        trainCam = new Fl_Button(innerX + camW + gap, pty, camW, rowH, "Train");
+        trainCam = new Fl_Button(col2, pty, colW, rowH, "Train");
         trainCam->type(FL_RADIO_BUTTON);
         trainCam->value(0);
         UiTheme::styleToggle(trainCam);
-        trainCam->callback((Fl_Callback *)damageCB, this);
-        chaseCam = new Fl_Button(innerX + 2 * (camW + gap), pty, camW, rowH, "Chase");
+        trainCam->callback((Fl_Callback *)cameraCB, this);
+        chaseCam = new Fl_Button(col3, pty, col3W, rowH, "Chase");
         chaseCam->type(FL_RADIO_BUTTON);
         chaseCam->value(0);
         UiTheme::styleToggle(chaseCam);
-        chaseCam->callback((Fl_Callback *)damageCB, this);
+        chaseCam->callback((Fl_Callback *)cameraCB, this);
         chaseCam->tooltip("Follows behind the train: see the riders against the scenery");
-        const int cam4 = innerX + 3 * (camW + gap);
-        topCam = new Fl_Button(cam4, pty, innerX + innerW - cam4, rowH, "Top");
+
+        pty += rowH + gap;
+        topCam = new Fl_Button(innerX, pty, halfW, rowH, "Top");
         topCam->type(FL_RADIO_BUTTON);
         topCam->value(0);
         UiTheme::styleToggle(topCam);
-        topCam->callback((Fl_Callback *)damageCB, this);
+        topCam->callback((Fl_Callback *)cameraCB, this);
+        flyCam = new Fl_Button(half2, pty, half2W, rowH, "Fly");
+        flyCam->type(FL_RADIO_BUTTON);
+        flyCam->value(0);
+        UiTheme::styleToggle(flyCam);
+        flyCam->callback((Fl_Callback *)cameraCB, this);
+        flyCam->tooltip("Observer camera (spectator style), starts at the World view\n"
+                        "Click the view: the mouse looks around; Esc frees the mouse\n"
+                        "Move: W/A/S/D (level), Space up, Shift down, hold Ctrl to go faster\n"
+                        "Speed: mouse wheel, +/- keys or the fly speed slider\n"
+                        "Also: right drag or arrow keys look; E/Q up/down\n"
+                        "Touchpad: two fingers look, spread / pinch fly, Alt + two fingers slide\n"
+                        "Lost? F: face the train; R: back to the World view");
+
+        // observer camera speed (world units per second) and field of view
+        pty += rowH + gap;
+        flySpeed = new Fl_Value_Slider(sliderX, pty, sliderW, rowH, "Fly");
+        UiTheme::styleSlider(flySpeed);
+        flySpeed->range(FlyCam::minSpeed, FlyCam::maxSpeed);
+        flySpeed->step(1);
+        flySpeed->value(trainView->flyCam.speed());
+        flySpeed->tooltip("How fast the Fly camera moves, in world units per second");
+        flySpeed->callback((Fl_Callback *)flySpeedCB, this);
+
+        pty += rowH + gap;
+        flyFov = new Fl_Value_Slider(sliderX, pty, sliderW, rowH, "FOV");
+        UiTheme::styleSlider(flyFov);
+        flyFov->range(FlyCam::minFieldOfView, FlyCam::maxFieldOfView);
+        flyFov->step(1);
+        flyFov->value(trainView->flyCam.fieldOfViewDegrees());
+        flyFov->tooltip("Field of view of the Fly camera, in degrees");
+        flyFov->callback((Fl_Callback *)flyFovCB, this);
+
         pty += rowH + bottomPad;
         camGroup->end();
         pty += cardGap;
@@ -335,7 +370,7 @@ TrainWindow::TrainWindow(const int x, const int y)
 
         // we need to make a little phantom widget to have things resize correctly:
         // the cards keep their size and only this strip below them stretches
-        Fl_Box *resizebox = new Fl_Box(panelX, pty, 200, 600 - pty);
+        Fl_Box *resizebox = new Fl_Box(panelX, pty, 200, kPanelHeight - pty);
         widgets->resizable(resizebox);
 
         widgets->end();
@@ -350,7 +385,7 @@ TrainWindow::TrainWindow(const int x, const int y)
 
     // The program opens on the demo: riding the Grand Tour, in a window wide
     // enough to enjoy the view.
-    resize(x, y, 1180, 690);
+    resize(x, y, 1180, kPanelHeight);
     grandTourCB(nullptr, this);
 }
 

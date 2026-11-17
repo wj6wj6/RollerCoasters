@@ -93,6 +93,7 @@ class TrainWindow : public Fl_Double_Window
     Fl_Button *trainCam;
     Fl_Button *chaseCam; // behind the train, looking over it
     Fl_Button *topCam;
+    Fl_Button *flyCam; // free-moving observer camera
 
     // the type of the spline (use its value to determine)
     Fl_Browser *splineBrowser;
@@ -119,6 +120,10 @@ class TrainWindow : public Fl_Double_Window
     Fl_Button *editButton;      // show the control points for editing
     Fl_Button *bloomButton;     // bloom and god rays
     Fl_Button *ssaoButton;      // screen space ambient occlusion
+    // how fast the observer camera flies, in world units per second
+    Fl_Value_Slider *flySpeed;
+    // the observer camera's field of view, in degrees
+    Fl_Value_Slider *flyFov;
 
     // we have other widgets as part of the sample solution
     // this is not for 559 students to know about
