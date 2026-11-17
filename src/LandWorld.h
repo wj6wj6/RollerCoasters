@@ -6,7 +6,8 @@
 
                   * a snow mountain the ride spirals up on a ledge, with
                     a spruce forest on its lower slopes and a stream that
-                    cascades down its west side into the sea,
+                    steps down its west side into the sea in columns of
+                    still, see-through water blocks,
                   * badlands with banded clay and a canyon cut down to
                     sea level, so the sea (and its reflections) fills it;
                     a pond on the plateau spills into it as a waterfall,
@@ -29,9 +30,9 @@
                   Built once into display lists with the same baked
                   lighting as OceanWorld: sky light that fades in tunnels,
                   the glow of lava, lanterns and crystals, and ambient
-                  occlusion in the corners. Everything that moves (falling
-                  water, windmill, animals, clouds, balloons) is drawn
-                  every frame from boxes.
+                  occlusion in the corners. Everything that moves (windmill,
+                  animals, clouds, balloons) is drawn every frame from
+                  boxes.
 
                   The flat variant is the plain grass island the track
                   editor works on: level ground and a few trees.
@@ -55,6 +56,11 @@ class LandWorld
     // scenery. shadowPass: only the solid blocks, for the shadow map.
     // time (seconds) moves the water, the animals and the clouds.
     void draw(bool flat, bool shadowPass, float time);
+
+    // The see-through water blocks (streams, falls, ponds). Call after
+    // everything else is drawn, outside the shadow pass: they are blended
+    // over what is behind them.
+    void drawWater(bool flat);
 
     // Stands the track on wooden trestles. rail: points along the track,
     // about evenly spaced, x, y, z for each. Only where the ground of the

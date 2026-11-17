@@ -478,29 +478,27 @@ Image makeFarmland()
     return p;
 }
 
-Image makeWater(bool falling)
+// Still water as in a block game: deep blue with a violet cast, a few
+// lighter ripples drifting across, see-through (alpha about 0.6; the shader
+// cuts out texels below 0.5).
+Image makeWater()
 {
     Image p = PixelArt::blank();
     for (int y = 0; y < S; ++y)
         for (int x = 0; x < S; ++x)
         {
-            const int s = shadeOf(x, y, 171u, 6);
-            if (falling)
-            {
-                // long white streaks that fall
-                const unsigned int column = hash(x, 0, 172u);
-                const int start = static_cast<int>(column % 16u);
-                const int length = 5 + static_cast<int>((column >> 8) % 7u);
-                const bool streak = ((y - start + 16) % 16) < length && column % 3u != 0;
-                if (streak)
-                    set(p, x, y, 226 + s, 242 + s, 255);
-                else
-                    set(p, x, y, 86 + s, 160 + s, 236);
-            }
-            else if ((x + y * 3 + static_cast<int>(hash(0, y / 4, 173u) % 5u)) % 11 < 2)
-                set(p, x, y, 150 + s, 204 + s, 250);
+            const int s = shadeOf(x, y, 171u, 5);
+            // ripples: short streaks that wander along the rows
+            const int wobble = static_cast<int>(hash(0, y / 2, 173u) % 7u);
+            const bool ripple =
+                ((x + wobble + (y / 3) * 5) % 9) < 2 && hash(x / 3, y, 174u) % 3u != 0;
+            const bool dark = hash(x, 0, 175u) % 7u == 0 && y % 5 != 0;
+            if (ripple)
+                set(p, x, y, 104 + s, 126 + s, 244, 158);
+            else if (dark)
+                set(p, x, y, 60 + s, 76 + s, 200, 158);
             else
-                set(p, x, y, 52 + s, 122 + s, 220);
+                set(p, x, y, 74 + s, 94 + s, 226, 150);
         }
     return p;
 }
@@ -714,9 +712,7 @@ Image make(int texture)
     case FARMLAND:
         return makeFarmland();
     case WATER:
-        return makeWater(false);
-    case WATERFALL:
-        return makeWater(true);
+        return makeWater();
     case TALL_GRASS:
         return makeBlades(84, 150, 52, 5, 261u);
     case FERN:
@@ -742,7 +738,7 @@ bool repeatsVertically(int texture)
 {
     // tops tile both ways; sides clamp so their top row stays on top,
     // except the ones stretched over several blocks
-    return texture == WATERFALL || texture == GRASS_TOP || texture == SAND || texture == OAK_SIDE;
+    return texture == GRASS_TOP || texture == SAND || texture == OAK_SIDE;
 }
 
 } // namespace LandTextures

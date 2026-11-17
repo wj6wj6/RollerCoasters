@@ -63,8 +63,7 @@ enum Texture
     HAY_SIDE,
     HAY_TOP,
     FARMLAND,
-    WATER,
-    WATERFALL, // tiles vertically, scrolled to make the water fall
+    WATER, // still and see-through
     // cut-out plants
     TALL_GRASS,
     FERN,

@@ -1248,12 +1248,16 @@ void TrainView::drawStuff(bool doingShadows)
     if (sceneryOn() && m_pTrack->points.size() >= 4)
         drawSupports(doingShadows);
 
-    // draw the train: three coupled cars with riders (TrainModel)
+    // draw the train: a locomotive and five carts with riders (TrainModel)
     if (!tw->trainCam->value() && m_pTrack->points.size() >= 4)
     {
         const TrackSplineType splineType = static_cast<TrackSplineType>(tw->splineBrowser->value());
         TrainModel::draw(*m_pTrack, splineType, doingShadows, animationTime());
     }
+
+    // the island's see-through water last, blended over everything behind it
+    if (!doingShadows)
+        m_land.drawWater(!sceneryOn());
 }
 
 //

@@ -80,11 +80,11 @@ caustics、吸收係數與水體顏色放在 `UnderwaterOptics.h`，三個 shade
 
 `Grand Tour` 的控制點定義在 `OceanWorld`（前 25 點是海底段，其後是陸地段），`OceanWorld::rideSamples()` 把整圈以三種 spline 取樣。
 `LandWorld` 用這些取樣點建島：先由雜訊與幾個地形函式（雪山、火山與火山口、岩山、惡地台地與峽谷）算出每一格的高度與生態，
-填入方塊後放上熔岩湖與熔岩河、溪流與瀑布、村莊、池塘與漂浮島，再沿路線挖出淨空管（比列車需要的空間大），
+填入方塊後放上熔岩湖與熔岩河、溪流與瀑布（水往下一階時，下方那一格整欄填滿水方塊；流出島邊時最後一欄填到海面）、村莊、池塘與漂浮島，再沿路線挖出淨空管（比列車需要的空間大），
 挖剩的薄頂會移除、軌道正下方鋪碎石，有頂的路段在牆上嵌燈籠或水晶，最後才種樹與花草（只種在淨空帶之外）。
 光照烘焙與 `OceanWorld` 相同（天光、發光方塊、ambient occlusion）；熔岩與燈籠的暖光寫進頂點顏色與發光量，水晶的冷光用 shader 既有的方塊光。
 `LandWorld::rideObstructions()` 與測試 `LandRideClearanceCheck` 用正式的 `CTrack` 取樣，檢查三種 spline 下列車都不會碰到方塊或植物。
-會動的東西（瀑布水流、風車、動物、雲、熱氣球）每格以方塊即時畫出；`drawSupports()` 依目前軌道每 9 單位立一座木棧橋，
+水方塊是半透明的靜態水：不遮擋旁邊的面、不擋天光也不算 ambient occlusion，網格另外編成一個 display list，由 `TrainView::drawStuff()` 在最後以 alpha 混合、不寫深度的方式畫上（不進 shadow map，目標的 alpha 保持不變）；挖軌道時被切斷而懸空的水會移除。會動的東西（風車、動物、雲、熱氣球）每格以方塊即時畫出；`drawSupports()` 依目前軌道每 9 單位立一座木棧橋，
 從軌道往下找到地面，下方有另一段軌道或熔岩時不立。山體也畫進 shadow map，所以會投影。
 `Scenery` 關閉時 `LandWorld` 改建平坦的編輯用島；固定管線（`Light+` 關閉）的平面陰影只在這個模式使用。
 `Train`／`Chase` 相機由 `TrainView::setProjection()` 從軌道座標系算出；`Chase` 用 `TrainModel::parameterBehind()` 沿軌道往回取最後一節礦車後方的點，抬高後看向火車頭，所以會留在為軌道挖出的空間裡。
