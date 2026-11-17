@@ -96,6 +96,10 @@ TrainWindow::TrainWindow(const int x, const int y)
         trainCam->value(0);
         trainCam->selection_color((Fl_Color)3);
         trainCam->callback((Fl_Callback *)cameraCB, this);
+        trainCam->tooltip("Ride the train and turn your head\n"
+                          "Look around: drag the view (left or right button)\n"
+                          "Touchpad: two fingers look around\n"
+                          "Look ahead again: double click, R or Home");
         topCam = new Fl_Button(699, pty, 45, 20, "Top");
         topCam->type(FL_RADIO_BUTTON);
         topCam->value(0);

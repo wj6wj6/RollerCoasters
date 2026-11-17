@@ -49,6 +49,7 @@ class CTrack;
 // this uses the old ArcBall Code
 #include "Utilities/ArcBallCam.H"
 #include "Utilities/FlyCam.H"
+#include "Utilities/HeadLook.H"
 #include "TrackRenderer.H"
 #include "TouchpadGestures.H"
 
@@ -92,6 +93,11 @@ class TrainView : public Fl_Gl_Window
     void setInputMethodEnabled(bool enabled);
     void centerCursor();
 
+    // Train camera: look straight ahead again, and mouse drags that turn the
+    // rider's head (returns 1 when the event was used).
+    void recenterHead();
+    int handleTrainLook(int event);
+
     // Where the train is now (the track centre without a train).
     Pnt3f trainPosition() const;
 
@@ -106,8 +112,12 @@ class TrainView : public Fl_Gl_Window
     void drawFlyOverlay();
 
   public:
-    ArcBallCam arcball;     // keep an ArcBall for the UI
-    FlyCam flyCam;          // free-moving observer camera
+    ArcBallCam arcball; // keep an ArcBall for the UI
+    FlyCam flyCam;      // free-moving observer camera
+    HeadLook headLook;  // where the rider looks in the Train camera
+    bool headDragging;  // is a mouse drag turning the rider's head?
+    int headDragX;      // last mouse position of that drag
+    int headDragY;
     bool flyCamPlaced;      // has the observer camera been placed yet?
     bool mouseCaptured;     // does the mouse steer the observer camera?
     float trainFieldOfView; // the train camera's field of view, in degrees
