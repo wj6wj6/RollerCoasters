@@ -18,7 +18,7 @@ pwsh -File scripts/check.ps1 -Stage all -Config Release
 ./out/package/Release/RollerCoasters.exe --version
 ```
 
-交付 `out/package/Release/`。目標機器需 Windows x64、支援 OpenGL 的顯示驅動，以及 Microsoft Visual C++ 2015–2022 x64 Runtime。
+交付 `out/package/Release/`。目標機器需 Windows x64、支援 OpenGL 的顯示驅動，以及 Microsoft Visual C++ x64 Runtime（2015 之後的 v14 系列，需不舊於建置所用的 Visual Studio 版本）。
 使用 Clang 封裝時加上 `-Compiler clang`，交付目錄改為 `out/package/clang/Release/`，執行期前置需求相同。
 目前未包含安裝程式、程式簽章與自動更新；正式對外發布前應另行規劃。
 `--version` 驗證程式與執行期可啟動，無法驗證 GPU 呈現。
