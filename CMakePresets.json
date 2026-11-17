@@ -2,9 +2,25 @@
   "version": 6,
   "configurePresets": [
     {
+      "name": "vs",
+      "displayName": "Visual Studio (any version) / x64",
+      "description": "For opening the folder in Visual Studio or VS Code: uses whichever Visual Studio is installed, which sets up the x64 compiler itself",
+      "generator": "Ninja Multi-Config",
+      "binaryDir": "${sourceDir}/out/build/vs",
+      "architecture": {"value": "x64", "strategy": "external"},
+      "toolset": {"value": "host=x64", "strategy": "external"},
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "cl.exe",
+        "CMAKE_CXX_COMPILER": "cl.exe",
+        "CMAKE_CONFIGURATION_TYPES": "Debug;Release",
+        "ROLLERCOASTERS_BUILD_TESTS": "ON"
+      },
+      "condition": {"type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows"}
+    },
+    {
       "name": "windows",
-      "displayName": "Windows x64 / Visual Studio 2022",
-      "generator": "Visual Studio 17 2022",
+      "displayName": "Windows x64 / installed Visual Studio (MSBuild)",
+      "description": "Command line and CI: CMake picks the newest Visual Studio installed",
       "architecture": "x64",
       "binaryDir": "${sourceDir}/out/build/windows",
       "cacheVariables": {
@@ -30,5 +46,9 @@
       "binaryDir": "${sourceDir}/out/build/analyze",
       "cacheVariables": {"ROLLERCOASTERS_ANALYZE": "ON"}
     }
+  ],
+  "buildPresets": [
+    {"name": "vs-debug", "displayName": "Debug", "configurePreset": "vs", "configuration": "Debug"},
+    {"name": "vs-release", "displayName": "Release", "configurePreset": "vs", "configuration": "Release"}
   ]
 }
