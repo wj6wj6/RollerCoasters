@@ -61,6 +61,7 @@ add_executable(RollerCoasters
     src/TrainViewEffects.cpp
     src/TransformGizmo.h src/TransformGizmo.cpp
     src/UnderwaterOptics.h
+    src/WaterFlow.h src/WaterFlow.cpp
     src/CallBacks.H src/CallBacks.cpp
     src/EditKeys.h src/EditKeys.cpp
     src/ControlPoint.H src/ControlPoint.cpp
@@ -89,6 +90,12 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     target_link_libraries(FlyCamCheck PRIVATE Utilities)
     add_test(NAME FlyCamCheck COMMAND FlyCamCheck)
     set_tests_properties(FlyCamCheck PROPERTIES TIMEOUT 30 LABELS integration)
+
+    add_executable(WaterFlowCheck tests/WaterFlowCheck.cpp src/WaterFlow.cpp)
+    target_include_directories(WaterFlowCheck PRIVATE src)
+    target_link_libraries(WaterFlowCheck PRIVATE project_options)
+    add_test(NAME WaterFlowCheck COMMAND WaterFlowCheck)
+    set_tests_properties(WaterFlowCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
     add_executable(EditKeysCheck tests/EditKeysCheck.cpp src/EditKeys.cpp)
     target_include_directories(EditKeysCheck PRIVATE src src/Utilities)
@@ -130,7 +137,7 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     set_tests_properties(OceanRideClearanceCheck PROPERTIES TIMEOUT 30 LABELS integration)
 
     add_executable(LandRideClearanceCheck tests/LandRideClearanceCheck.cpp
-        src/LandWorld.cpp src/LandTextures.cpp src/OceanWorld.cpp src/PixelArt.cpp
+        src/LandWorld.cpp src/LandTextures.cpp src/OceanWorld.cpp src/PixelArt.cpp src/WaterFlow.cpp
         src/Track.cpp src/ControlPoint.cpp)
     target_include_directories(LandRideClearanceCheck PRIVATE src)
     target_link_libraries(LandRideClearanceCheck PRIVATE Utilities glad)

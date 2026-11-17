@@ -1,5 +1,6 @@
 // Checks that nothing on the island touches the demo ride: no block (ground, tree, house) and
-// no plant may come within reach of the train anywhere along it, for any of the spline types.
+// no plant may come within reach of the train anywhere along it, and no water may run beside,
+// under or over the track, for any of the spline types.
 // The path is sampled with the real CTrack, independently of the code that carves the scenery.
 #include "LandWorld.h"
 #include "OceanWorld.h"
@@ -42,7 +43,11 @@ int main()
         const int blocked = LandWorld::rideObstructions(path);
         std::printf("%s: %d of %d points obstructed -> %s\n", spline.name, blocked, count,
                     blocked == 0 ? "ok" : "BLOCKED");
-        clear = clear && blocked == 0;
+        // and no water runs beside, under or over the track
+        const int wet = LandWorld::waterNearRide(path);
+        std::printf("%s: %d water blocks near the track -> %s\n", spline.name, wet,
+                    wet == 0 ? "ok" : "WET");
+        clear = clear && blocked == 0 && wet == 0;
     }
 
     // A path straight through the snow mountain must be reported, or the check proves nothing.

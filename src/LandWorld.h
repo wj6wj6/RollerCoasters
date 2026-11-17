@@ -75,6 +75,11 @@ class LandWorld
     // demo ride gives 0 for every spline type.
     static int rideObstructions(const std::vector<float> &path);
 
+    // For tests: how many water blocks lie near the given path (x, y, z for
+    // each point): within 6 units sideways, from 6 below to 10 above, so
+    // beside, under or over the track. The demo ride gives 0.
+    static int waterNearRide(const std::vector<float> &path);
+
   private:
     struct Scene;
     Scene &scene(bool flat);

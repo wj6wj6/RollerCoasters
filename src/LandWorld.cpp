@@ -18,6 +18,7 @@
 #include "LandTextures.h"
 #include "OceanWorld.h"
 #include "PixelArt.h"
+#include "WaterFlow.h"
 
 namespace
 {
@@ -343,10 +344,9 @@ const int kCanyonPoints = 5;
 const float kLavaSouth[] = {58.0f, 67.5f, 61.0f, 80.0f, 57.0f, 92.0f, 58.0f, 103.0f};
 const float kLavaEast[] = {67.5f, 58.0f, 82.0f, 63.0f, 93.0f, 57.0f, 103.0f, 58.0f};
 
-// The stream down the west side of the snow mountain, the pond on the
-// badlands that spills into the canyon.
-const float kStream[] = {-72.0f, 28.0f, -84.0f, 24.0f, -93.0f, 30.0f, -103.0f, 31.0f};
-const float kSpill[] = {4.0f, 41.0f, 10.0f, 40.0f, 19.0f, 40.0f};
+// Springs on the snow mountain (x, z), placed where the water they give runs
+// down clear of the ride (LandRideClearanceCheck counts any water near it).
+const float kSprings[][2] = {{-44.0f, 52.0f}, {-28.0f, 36.0f}, {-84.0f, 52.0f}};
 
 // The village green in the north west, the meadow pond and the island
 // that floats above it.
@@ -461,12 +461,13 @@ struct Grid
     std::vector<unsigned char> warm;   // light of lava and lanterns, 0..14
     std::vector<unsigned char> cool;   // light of crystals, 0..14
     std::vector<unsigned char> carved; // 1: cleared for the ride
+    std::vector<unsigned char> level;  // water: 0 source, 1..7 flowing, 8 falling
     std::vector<unsigned char> biome;  // per column
 
     Grid()
         : block(static_cast<size_t>(kSizeXZ * kSizeY * kSizeXZ), AIR),
           plant(block.size(), NO_PLANT), sky(block.size(), 0), warm(block.size(), 0),
-          cool(block.size(), 0), carved(block.size(), 0),
+          cool(block.size(), 0), carved(block.size(), 0), level(block.size(), 0),
           biome(static_cast<size_t>(kSizeXZ * kSizeXZ), MEADOW)
     {
     }
@@ -757,16 +758,14 @@ void buildLavaLake(Grid &g)
         }
 }
 
-// Lets a liquid run along a line of points (x, z pairs): it takes the
-// place of the top block and never climbs, cutting a gully where the ground
-// rises. Where water steps down it pours into the lower column as a column
-// of whole water blocks, as in a block game, and off the edge of the island
-// it fills the last column down to the sea. A wide river also takes the
-// columns beside it.
-void traceLiquid(Grid &g, const float *points, int count, int liquid, bool wide)
+// Lets lava run along a line of points (x, z pairs): it takes the place of
+// the top block and never climbs, cutting a gully where the ground rises. A
+// wide river also takes the columns beside it. (Water is not traced: it
+// spreads from its sources by itself, see spreadWater().)
+void traceLava(Grid &g, const float *points, int count, bool wide)
 {
     int level = kMaxY;
-    int lastX = 0, lastZ = 0, lastLevel = 0;
+    int lastX = 0, lastZ = 0;
     bool started = false;
     std::vector<int> cells; // bx, bz, level of every cell of the channel
 
@@ -775,32 +774,21 @@ void traceLiquid(Grid &g, const float *points, int count, int liquid, bool wide)
             return;
         if (!Grid::insideColumn(bx, bz))
         {
-            // off the edge of the island: the last column becomes the fall
-            if (started && liquid == WATER)
-                for (int j = -1; j < lastLevel; ++j)
-                    g.put(lastX, j, lastZ, WATER);
             started = false;
             return;
         }
         const int top = g.top(bx, bz);
         const int here = top < level ? top : level;
-        if (g.get(bx, here, bz) == LAVA && liquid == WATER)
-            return;
         g.clearAbove(bx, here, bz);
-        g.put(bx, here, bz, liquid);
+        g.put(bx, here, bz, LAVA);
         if (here - 1 >= kMinY && g.get(bx, here - 1, bz) == AIR)
             g.put(bx, here - 1, bz, STONE);
         cells.push_back(bx);
         cells.push_back(bz);
         cells.push_back(here);
-        // a step down: the water above pours into this column
-        if (started && here < lastLevel && liquid == WATER)
-            for (int j = here + 1; j <= lastLevel; ++j)
-                g.put(bx, j, bz, WATER);
         level = here;
         lastX = bx;
         lastZ = bz;
-        lastLevel = here;
         started = true;
     };
 
@@ -828,23 +816,99 @@ void traceLiquid(Grid &g, const float *points, int count, int liquid, bool wide)
             const int bx = cells[i] + (k == 0 ? 1 : (k == 1 ? -1 : 0));
             const int bz = cells[i + 1] + (k == 2 ? 1 : (k == 3 ? -1 : 0));
             const int here = cells[i + 2];
-            if (!Grid::insideColumn(bx, bz) || g.top(bx, bz) < here ||
-                g.get(bx, here, bz) == liquid)
+            if (!Grid::insideColumn(bx, bz) || g.top(bx, bz) < here || g.get(bx, here, bz) == LAVA)
                 continue;
             g.clearAbove(bx, here, bz);
-            g.put(bx, here, bz, liquid);
+            g.put(bx, here, bz, LAVA);
         }
 }
 
-// Water must rest on something: a column of falling water that the ride cut
-// through would hang in the air above the track, so it goes.
-void dropHangingWater(Grid &g)
+// A spring: a source of water in place of the top block of the ground.
+void addSpring(Grid &g, float x, float z)
 {
+    const int bx = blockOf(x), bz = blockOf(z);
+    const int top = g.top(bx, bz);
+    g.clearAbove(bx, top, bz);
+    g.put(bx, top, bz, WATER);
+}
+
+// The room that must stay free of water round the ride: within kWaterReach
+// sideways of the centre line (the rails reach 1.6, the train 3), from
+// kWaterBelow under the rails to kWaterAbove over them, so no water runs
+// beside, under or over the track. Nothing holds the water back from it: the
+// springs are placed where the water runs down clear of it by itself, and
+// LandRideClearanceCheck checks that (LandWorld::waterNearRide()).
+const float kWaterReach = 6.0f;
+const float kWaterBelow = 6.0f;
+const float kWaterAbove = 10.0f;
+
+// Marks the cells of that room. ride: x, y, z for each point.
+std::vector<unsigned char> waterZone(const std::vector<float> &ride)
+{
+    const float reach = kWaterReach;
+    std::vector<unsigned char> zone(static_cast<size_t>(kSizeXZ * kSizeY * kSizeXZ), 0);
+    for (size_t i = 0; i + 2 < ride.size(); i += 3)
+    {
+        const float x = ride[i], y = ride[i + 1], z = ride[i + 2];
+        for (int bx = blockOf(x - reach); bx <= blockOf(x + reach); ++bx)
+            for (int bz = blockOf(z - reach); bz <= blockOf(z + reach); ++bz)
+            {
+                if (!Grid::insideColumn(bx, bz))
+                    continue;
+                const float x0 = static_cast<float>(bx) * kBlock;
+                const float z0 = static_cast<float>(bz) * kBlock;
+                const float nx = fmaxf(x0, fminf(x, x0 + kBlock));
+                const float nz = fmaxf(z0, fminf(z, z0 + kBlock));
+                if ((x - nx) * (x - nx) + (z - nz) * (z - nz) >= reach * reach)
+                    continue;
+                for (int j = blockOf(y - kWaterBelow); j <= blockOf(y + kWaterAbove); ++j)
+                    if (Grid::inside(bx, j, bz))
+                        zone[Grid::index(bx, j, bz)] = 1;
+            }
+    }
+    return zone;
+}
+
+// Lets the water flow from every water block (the sources) by the rules of
+// a block game (WaterFlow.h): down first, seven blocks sideways at most and
+// towards the nearest way down within four. Below the sea level the sea
+// takes it. (The room carved for the ride is solid to it, but the springs
+// are placed so it never gets there; see waterZone.)
+void spreadWater(Grid &g)
+{
+    WaterFlow::Field field(kSizeXZ, kSizeY, kSizeXZ);
     for (int bx = -kHalf; bx < kHalf; ++bx)
         for (int bz = -kHalf; bz < kHalf; ++bz)
-            for (int j = kMinY + 1; j <= kMaxY; ++j)
-                if (g.get(bx, j, bz) == WATER && g.get(bx, j - 1, bz) == AIR)
-                    g.put(bx, j, bz, AIR);
+            for (int j = kMinY; j <= kMaxY; ++j)
+            {
+                const size_t i = Grid::index(bx, j, bz);
+                const int x = bx + kHalf, y = j - kMinY, z = bz + kHalf;
+                const int b = g.block[i];
+                if (b == WATER)
+                    field.addSource(x, y, z);
+                else if (b != AIR || g.carved[i])
+                    field.setCell(x, y, z, WaterFlow::SOLID);
+                else if (j <= -1)
+                    field.setCell(x, y, z, WaterFlow::SINK);
+            }
+    field.spread();
+    for (int bx = -kHalf; bx < kHalf; ++bx)
+        for (int bz = -kHalf; bz < kHalf; ++bz)
+            for (int j = kMinY; j <= kMaxY; ++j)
+            {
+                const int x = bx + kHalf, y = j - kMinY, z = bz + kHalf;
+                if (field.cell(x, y, z) != WaterFlow::WATER)
+                    continue;
+                const size_t i = Grid::index(bx, j, bz);
+                g.block[i] = WATER;
+                g.level[i] = static_cast<unsigned char>(field.level(x, y, z));
+                // water falling into the sea reaches down to its surface
+                if (j == 0 && g.get(bx, -1, bz) == AIR && !g.carved[Grid::index(bx, -1, bz)])
+                {
+                    g.put(bx, -1, bz, WATER);
+                    g.level[Grid::index(bx, -1, bz)] = WaterFlow::FALLING;
+                }
+            }
 }
 
 // A round pond flush with a level bank.
@@ -892,23 +956,12 @@ void buildFloatingIsland(Grid &g)
                       k == 0 ? GRASS
                              : (k < 2 ? DIRT : (oneIn(dx + k, dz, 69u, 9) ? ORE_GOLD : STONE)));
         }
-    // the spring: a little pool and a spout on the east edge
+    // the spring: three sources in a channel to the east edge; the water
+    // runs over the edge and falls (spreadWater)
     g.put(kFloatX + 2, kFloatTop, kFloatZ, WATER);
     g.put(kFloatX + 3, kFloatTop, kFloatZ, WATER);
     g.put(kFloatX + 4, kFloatTop, kFloatZ, WATER);
     g.put(kFloatX + 4, kFloatTop - 1, kFloatZ, STONE);
-    // a small pool on the ground below the spout (it clears the air above
-    // it, so it comes first) ...
-    const int landing = g.top(kFloatX + 5, kFloatZ);
-    for (int dx = -1; dx <= 1; ++dx)
-        for (int dz = -1; dz <= 1; ++dz)
-        {
-            g.clearAbove(kFloatX + 5 + dx, landing, kFloatZ + dz);
-            g.put(kFloatX + 5 + dx, landing, kFloatZ + dz, WATER);
-        }
-    // ... and a column of water from the spout all the way down into it
-    for (int j = landing + 1; j <= kFloatTop; ++j)
-        g.put(kFloatX + 5, j, kFloatZ, WATER);
 }
 
 // ---------------------------------------------------------------------
@@ -1564,21 +1617,21 @@ void buildScenery(Grid &g, Extras &extras)
 
     buildTerrain(g);
     buildLavaLake(g);
-    traceLiquid(g, kLavaSouth, 4, LAVA, true);
-    traceLiquid(g, kLavaEast, 4, LAVA, true);
+    traceLava(g, kLavaSouth, 4, true);
+    traceLava(g, kLavaEast, 4, true);
     buildVillage(g, extras);
     buildPond(g, kPondX, kPondZ, kPondRadius);
-    buildPond(g, 5.0f, 41.0f, 3.2f); // on the badlands, spilling into the canyon
-    traceLiquid(g, kSpill, 3, WATER, false);
-    traceLiquid(g, kStream, 4, WATER, false);
+    buildPond(g, 5.0f, 41.0f, 3.2f); // a still pool on the badlands
+    for (const float *spring : kSprings)
+        addSpring(g, spring[0], spring[1]);
     buildFloatingIsland(g);
 
     carveRide(g, ride);
     const std::vector<float> along(ride.begin() + static_cast<long>(ride.size() / 3 * 2),
                                    ride.end());
     lightTunnels(g, along, clear);
-
-    dropHangingWater(g);
+    // after the carving, so the water flows round the ride's room
+    spreadWater(g);
 
     plantTrees(g, clear);
     spreadSky(g);
@@ -1660,17 +1713,12 @@ const Face kFaces[6] = {
 void addBlockFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
 {
     const int b = g.get(bx, j, bz);
-    const bool water = b == WATER;
-    // The surface of water sits a little below the top of its block, as in
-    // a block game; a column of falling water stays full height.
-    const float waterTop = water && g.get(bx, j + 1, bz) != WATER ? 0.875f : 1.0f;
     const float tint = 0.9f + 0.1f * static_cast<float>(hash(bx * 7 + j, bz, 401u) % 100u) / 100.0f;
     for (const Face &f : kFaces)
     {
         const int ox = bx + f.normal[0], oy = j + f.normal[1], oz = bz + f.normal[2];
-        // Water is see-through: a block shows its face behind it, and water
-        // shows its own faces only where it meets the air.
-        if (water ? g.solid(ox, oy, oz) : g.opaque(ox, oy, oz))
+        // Water is see-through: a block shows its face behind it.
+        if (g.opaque(ox, oy, oz))
             continue;
         if (oy < kMinY)
             continue; // the underside of the island
@@ -1731,7 +1779,7 @@ void addBlockFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
 
             Vertex v;
             v.pos[0] = static_cast<float>(bx + f.corner[c][0]) * kBlock;
-            v.pos[1] = (static_cast<float>(j) + (f.corner[c][1] == 1 ? waterTop : 0.0f)) * kBlock;
+            v.pos[1] = static_cast<float>(j + f.corner[c][1]) * kBlock;
             v.pos[2] = static_cast<float>(bz + f.corner[c][2]) * kBlock;
             for (int k = 0; k < 3; ++k)
                 v.normal[k] = static_cast<float>(f.normal[k]);
@@ -1746,6 +1794,80 @@ void addBlockFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
             v.extra[2] = glowFactor(cool / count);
             v.extra[3] = skyFactor(sky / count) * ao[open];
             batches[static_cast<size_t>(texture)].push_back(v);
+        }
+    }
+}
+
+// How high the water in a cell stands, in blocks: full when water is above
+// it or it is falling, otherwise as in a block game: a source 8/9 of the
+// block, flowing water an ninth less for every block it has flowed.
+float waterHeight(const Grid &g, int bx, int j, int bz)
+{
+    if (g.get(bx, j, bz) != WATER)
+        return 0.0f;
+    const int level = g.level[Grid::index(bx, j, bz)];
+    if (level == WaterFlow::FALLING || g.get(bx, j + 1, bz) == WATER)
+        return 1.0f;
+    return static_cast<float>(8 - level) / 9.0f;
+}
+
+// The faces of a water block: towards the air, and the part of a side that
+// stands above lower water next to it. Lit by the light of the open cell
+// each face looks into.
+void addWaterFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
+{
+    const float top = waterHeight(g, bx, j, bz);
+    std::vector<Vertex> &out = batches[static_cast<size_t>(LandTextures::WATER)];
+    for (const Face &f : kFaces)
+    {
+        const int ox = bx + f.normal[0], oy = j + f.normal[1], oz = bz + f.normal[2];
+        const int beside = g.get(ox, oy, oz);
+        if (oy < kMinY)
+            continue;
+        float bottom = 0.0f; // the part of a side face that shows, in blocks
+        if (f.normal[1] > 0)
+        {
+            if (beside == WATER)
+                continue;
+        }
+        else if (f.normal[1] < 0)
+        {
+            if (beside != AIR)
+                continue;
+        }
+        else if (beside == WATER)
+        {
+            bottom = waterHeight(g, ox, oy, oz);
+            if (bottom >= top)
+                continue;
+        }
+        else if (beside != AIR)
+            continue;
+
+        const int lx = beside == AIR ? ox : bx, ly = beside == AIR ? oy : j,
+                  lz = beside == AIR ? oz : bz;
+        Vertex v;
+        for (int k = 0; k < 3; ++k)
+        {
+            v.normal[k] = static_cast<float>(f.normal[k]);
+            v.color[k] = 1.0f;
+        }
+        v.extra[0] = 0.0f;
+        v.extra[1] = 0.0f;
+        v.extra[2] = glowFactor(static_cast<float>(g.coolAt(lx, ly, lz)));
+        v.extra[3] = skyFactor(static_cast<float>(g.skyAt(lx, ly, lz)));
+        for (int c = 0; c < 4; ++c)
+        {
+            const float y = f.normal[1] > 0
+                                ? top
+                                : (f.normal[1] < 0 ? 0.0f : (f.corner[c][1] == 1 ? top : bottom));
+            v.pos[0] = static_cast<float>(bx + f.corner[c][0]) * kBlock;
+            v.pos[1] = (static_cast<float>(j) + y) * kBlock;
+            v.pos[2] = static_cast<float>(bz + f.corner[c][2]) * kBlock;
+            v.uv[0] = f.uv[c][0];
+            // side faces show as much of the texture as they are tall
+            v.uv[1] = f.normal[1] != 0 ? f.uv[c][1] : 1.0f - y;
+            out.push_back(v);
         }
     }
 }
@@ -2027,6 +2149,20 @@ int LandWorld::rideObstructions(const std::vector<float> &path)
     return count;
 }
 
+int LandWorld::waterNearRide(const std::vector<float> &path)
+{
+    Grid g;
+    Extras extras;
+    buildScenery(g, extras);
+    // the same room the scenery keeps free of water, round the given path
+    const std::vector<unsigned char> zone = waterZone(path);
+    int count = 0;
+    for (size_t i = 0; i < zone.size(); ++i)
+        if (zone[i] && g.block[i] == WATER)
+            ++count;
+    return count;
+}
+
 LandWorld::Scene &LandWorld::scene(bool flat)
 {
     std::unique_ptr<Scene> &slot = flat ? m_flat : m_scenery;
@@ -2058,7 +2194,7 @@ LandWorld::Scene &LandWorld::scene(bool flat)
             {
                 const size_t cell = Grid::index(bx, j, bz);
                 if (s.grid.block[cell] == WATER)
-                    addBlockFaces(s.grid, bx, j, bz, water);
+                    addWaterFaces(s.grid, bx, j, bz, water);
                 else if (s.grid.block[cell] != AIR)
                     addBlockFaces(s.grid, bx, j, bz, solids);
                 else if (s.grid.plant[cell] != NO_PLANT)
