@@ -2,7 +2,7 @@
 
 ## 環境
 
-安裝 Visual Studio 2022／MSVC v143、Windows SDK 與 PowerShell 7.4+。
+安裝 Visual Studio 2022 或更新版本的 C++ 桌面開發工具（MSVC、Windows SDK、C++ CMake tools）與 PowerShell 7.4+。
 CMake、clang-format 的版本與官方下載 SHA256 固定在 `tools.json`。
 Clang 建置所用的 clang-cl 與 Ninja 也記錄於同一個檔案。
 
@@ -20,7 +20,11 @@ LLVM 官方封存檔約 822 MB，首次下載較久，僅解出 clang-format.exe
 此模式不使用 MinGW 的 C++ ABI。檢查腳本會透過 `vswhere`／`VsDevCmd.bat` 載入 x64 環境，設定只作用於該次腳本程序。
 
 尚未做到整個 Windows 工具鏈位元一致。CI 固定 `windows-2022` runner 系列，實際 runner image、PowerShell 與 MSVC 修訂版由 GitHub 維護。
-CMake 的 `windows` preset 固定 x64、C++17、Debug／Release；`analyze` preset 開啟 MSVC `/analyze`。
+CMake preset 不寫死 Visual Studio 版本（見 [ADR 0004](adr/0004-any-visual-studio-version.md)）：
+- `vs`：給 Visual Studio「開啟資料夾」與 VS Code CMake Tools 用。Ninja Multi-Config＋`cl.exe`，`architecture`／`toolset` 設為 `external`，由 IDE 依已安裝的 Visual Studio 載入 x64 環境；輸出到 `out/build/vs/`，build preset `vs-debug`／`vs-release`。
+- `windows`：命令列與 CI 用，不指定 generator，CMake 自動選用已安裝的最新 Visual Studio（MSBuild），固定 x64、C++17、Debug／Release。
+- `analyze` 繼承 `windows` 並開啟 MSVC `/analyze`。
+- 個人化設定（例如指定某一版 Visual Studio）放在未納入版控的 `CMakeUserPresets.json`。
 `clang` preset 使用 clang-cl 與 Ninja Multi-Config，輸出到獨立的 `out/build/clang/`。
 若直接執行 `cmake --preset clang`，請先進入 x64 Native Tools shell，並將指定版本的 clang-cl 與 Ninja 加入 PATH；一般開發可直接使用下方腳本。
 

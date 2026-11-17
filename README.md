@@ -4,8 +4,13 @@
 
 ## 建置與啟動
 
-安裝 Visual Studio 2022 的 **Desktop development with C++**（MSVC v143、Windows SDK），以及 PowerShell 7.4 以上版本。
-以下命令均在此 repository 根目錄執行：
+安裝 Visual Studio 2022 或更新版本（例如 2026）的 **使用 C++ 的桌面開發**（MSVC、Windows SDK、C++ CMake tools），以及 PowerShell 7.4 以上版本。
+
+最簡單的方式：clone 後在 Visual Studio 選「開啟資料夾」（或在檔案總管對資料夾按右鍵「使用 Visual Studio 開啟」），
+Visual Studio 會讀取 `CMakePresets.json`，選 `Visual Studio (any version) / x64` 與 `Debug`，啟動項目選 `RollerCoasters.exe` 後按 F5。
+VS Code 搭配 CMake Tools 擴充也一樣選這個 preset。這個 preset 不綁定 Visual Studio 版本，由 IDE 自行載入已安裝的 x64 編譯器。
+
+命令列建置與完整檢查，以下命令均在此 repository 根目錄執行：
 
 ```powershell
 pwsh -File scripts/setup-tools.ps1
