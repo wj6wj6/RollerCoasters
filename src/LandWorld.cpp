@@ -724,8 +724,6 @@ void buildTerrain(Grid &g)
                 case VOLCANO:
                     if (topY < 9.0f && patch > 0.45f)
                         b = depth == 0 ? GRASS : (depth < 2 ? DIRT : BASALT);
-                    else if (depth == 0 && topY > 30.0f && hash(bx, bz, 57u) % 7u == 0)
-                        b = MAGMA;
                     else if (depth == 0 && patch > 0.7f)
                         b = GRAVEL; // ash
                     else
@@ -1234,7 +1232,9 @@ void buildVillage(Grid &g, Extras &extras)
     g.put(-22, floor + 5, -19, WINDOW);
     extras.mill[0] = centerOf(-22);
     extras.mill[1] = static_cast<float>(floor + 6) * kBlock;
-    extras.mill[2] = static_cast<float>(-18) * kBlock + 1.2f;
+    // the hub stands clear of the roof's overhang (it reaches z = -42.5), so
+    // the sails turn in front of it
+    extras.mill[2] = static_cast<float>(-17) * kBlock + 0.8f;
     extras.hasMill = true;
 
     buildLampPost(g, -29, -32, floor);
@@ -1476,6 +1476,10 @@ void plantTrees(Grid &g, const Clearance &clear)
             else if (ground == GRASS || ground == SNOWY_DIRT)
             {
                 if (!clear.roomForTree(bx, top, bz))
+                    continue;
+                // nothing tall where the windmill's sails turn
+                const float millX = cx - centerOf(-22), millZ = cz + 42.5f;
+                if (millX * millX + millZ * millZ < 16.0f * 16.0f)
                     continue;
                 const float villageX = cx - kVillageX, villageZ = cz - kVillageZ;
                 const bool village =
@@ -1720,6 +1724,44 @@ float glowFactor(float level)
     return level <= 0.0f ? 0.0f : powf(0.7f, 14.0f - level);
 }
 
+// Turns the ground on the banks of the lava into magma, as lava that has
+// begun to cool: most of the blocks right beside it, fewer a step further,
+// none beyond, so the magma follows the lava instead of dotting the slope.
+void crustLava(Grid &g)
+{
+    std::vector<int> crust;
+    for (int bx = -kHalf; bx < kHalf; ++bx)
+        for (int bz = -kHalf; bz < kHalf; ++bz)
+        {
+            const int top = g.top(bx, bz);
+            if (top < kMinY)
+                continue;
+            const int b = g.get(bx, top, bz);
+            if (b != BASALT && b != GRAVEL && b != STONE)
+                continue;
+            int nearest = 3; // in blocks, counting both ways
+            for (int dx = -2; dx <= 2; ++dx)
+                for (int dz = -2; dz <= 2; ++dz)
+                {
+                    const int d = (dx < 0 ? -dx : dx) + (dz < 0 ? -dz : dz);
+                    if (d == 0 || d >= nearest || !Grid::insideColumn(bx + dx, bz + dz))
+                        continue;
+                    for (int j = top - 1; j <= top + 1; ++j)
+                        if (g.get(bx + dx, j, bz + dz) == LAVA)
+                            nearest = d;
+                }
+            const unsigned int roll = hash(bx, bz, 57u) % 10u;
+            if ((nearest == 1 && roll < 7u) || (nearest == 2 && roll < 3u))
+            {
+                crust.push_back(bx);
+                crust.push_back(top);
+                crust.push_back(bz);
+            }
+        }
+    for (size_t i = 0; i + 2 < crust.size(); i += 3)
+        g.put(crust[i], crust[i + 1], crust[i + 2], MAGMA);
+}
+
 // ---------------------------------------------------------------------
 // Building the world: no OpenGL here, so tests can use it.
 // ---------------------------------------------------------------------
@@ -1733,6 +1775,7 @@ void buildScenery(Grid &g, Extras &extras)
     buildLavaLake(g);
     traceLava(g, kLavaSouth, 4, true);
     traceLava(g, kLavaEast, 4, true);
+    crustLava(g);
     buildVillage(g, extras);
     buildPond(g, kPondX, kPondZ, kPondRadius);
     buildPond(g, 5.0f, 41.0f, 3.2f); // a still pool on the badlands
@@ -2213,6 +2256,8 @@ void LandWorld::releaseResources()
     m_scenery.reset();
     m_flat.reset();
     m_textures.clear();
+    m_trestles.clear();
+    m_supportPath.clear();
 }
 
 void LandWorld::shadowBounds(float lo[3], float hi[3])
@@ -2386,7 +2431,7 @@ void LandWorld::drawMoving(const Scene &s, float time)
         glPushMatrix();
         glTranslatef(s.extras.mill[0], s.extras.mill[1], s.extras.mill[2]);
         colour(96, 70, 44);
-        box(-0.5f, -0.5f, -1.2f, 0.5f, 0.5f, 0.3f); // the shaft
+        box(-0.5f, -0.5f, -3.4f, 0.5f, 0.5f, 0.3f); // the shaft, back to the tower
         glRotatef(time * 22.0f, 0.0f, 0.0f, 1.0f);
         for (int blade = 0; blade < 4; ++blade)
         {
@@ -2462,11 +2507,103 @@ void LandWorld::drawMoving(const Scene &s, float time)
     }
 }
 
-void LandWorld::drawSupports(const std::vector<float> &rail, bool shadowPass)
+// Where a post of a trestle stands: the ground under (x, z) below `from`
+// height. Water is gone through to its bed and lava stood in; off the island
+// the post goes down to the sea bed.
+float LandWorld::postGround(float x, float z, float from) const
+{
+    const int bx = blockOf(x), bz = blockOf(z);
+    if (!Grid::insideColumn(bx, bz) || !onIsland(bx, bz) || !m_scenery)
+        return OceanWorld::seaFloor(x, z);
+    const Grid &g = m_scenery->grid;
+    int j = blockOf(from);
+    j = j > kMaxY ? kMaxY : j;
+    for (; j >= kMinY; --j)
+    {
+        const int b = g.get(bx, j, bz);
+        if (b != AIR && b != WATER && !isGrowth(b))
+            return static_cast<float>(j + 1) * kBlock;
+    }
+    return OceanWorld::seaFloor(x, z);
+}
+
+// Works out the trestles for a track: one every kTrestleSpacing units along
+// it, wherever it is above the water and well above the ground. Each of the
+// two posts finds its own ground, so on a slope neither hangs in the air,
+// and a post that would pass through the room of another stretch of track
+// below is left out (the other one still stands); so are the cross beams.
+void LandWorld::planSupports(const std::vector<float> &path)
+{
+    m_trestles.clear();
+    const size_t count = path.size() / 3;
+    if (count < 4)
+        return;
+    const float spacing = 9.0f; // along the track, between trestles
+    const float lean = 2.0f;    // how far out a tall post's foot may go
+    // Is the stretch of track far from sample n (along it) in the way of a
+    // vertical post at (x, z) from y0 up to y1?
+    auto blocked = [&](size_t n, float x, float z, float y0, float y1) {
+        for (size_t k = 0; k < count; ++k)
+        {
+            const size_t along = k > n ? k - n : n - k;
+            if (along < 14 || count - along < 14)
+                continue; // this stretch of track itself
+            const float dx = path[3 * k] - x, dz = path[3 * k + 2] - z;
+            if (dx * dx + dz * dz > 3.4f * 3.4f)
+                continue;
+            const float ty = path[3 * k + 1];
+            if (ty + 5.6f > y0 && ty - 0.6f < y1) // the train's room there
+                return true;
+        }
+        return false;
+    };
+    float travelled = spacing;
+    for (size_t n = 0; n < count; ++n)
+    {
+        const size_t next = (n + 1) % count;
+        float ax = path[3 * next] - path[3 * n], az = path[3 * next + 2] - path[3 * n + 2];
+        const float length = sqrtf(ax * ax + az * az);
+        travelled += length;
+        if (travelled < spacing || length < 1.0e-4f)
+            continue;
+        const float x = path[3 * n], y = path[3 * n + 1], z = path[3 * n + 2];
+        if (y < OceanWorld::waterLevel() + 0.5f)
+            continue; // under water the track needs no posts
+        travelled = 0.0f;
+        ax /= length;
+        az /= length;
+        Trestle t;
+        t.x = x;
+        t.z = z;
+        t.yaw = atan2f(ax, az) * 57.29578f;
+        t.top = y - 0.2f; // up to the bottom of the sleepers
+        bool any = false;
+        for (int side = 0; side < 2; ++side)
+        {
+            const float s = side == 0 ? -1.0f : 1.0f;
+            const float centre = postGround(x, z, t.top);
+            const float foot = s * (1.5f + fminf((t.top - centre) * 0.06f, lean));
+            // local x is (az, -ax) in the world
+            const float fx = x + foot * az, fz = z - foot * ax;
+            t.foot[side] = foot;
+            t.ground[side] = postGround(fx, fz, t.top);
+            t.post[side] = t.top - t.ground[side] > 1.2f &&
+                           !blocked(n, fx, fz, t.ground[side], t.top) &&
+                           !blocked(n, x + 1.3f * s * az, z - 1.3f * s * ax, t.ground[side], t.top);
+            any = any || t.post[side];
+        }
+        if (any)
+            m_trestles.push_back(t);
+    }
+    m_supportPath = path;
+}
+
+void LandWorld::drawSupports(const std::vector<float> &path, bool shadowPass)
 {
     if (!m_scenery || !m_scenery->built)
         return;
-    const Grid &g = m_scenery->grid;
+    if (path != m_supportPath)
+        planSupports(path);
 
     glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_TEXTURE_BIT);
     if (!shadowPass)
@@ -2477,58 +2614,21 @@ void LandWorld::drawSupports(const std::vector<float> &rail, bool shadowPass)
         glColor3f(0.92f, 0.9f, 0.86f);
     }
     setGlow(0.0f);
-
-    // The lowest the track passes over every column, so that a trestle is
-    // not stood on a stretch of track running underneath.
-    std::vector<float> lowest(static_cast<size_t>(kSizeXZ * kSizeXZ), 1.0e9f);
-    for (size_t i = 0; i + 2 < rail.size(); i += 3)
-        for (int bx = blockOf(rail[i] - 4.0f); bx <= blockOf(rail[i] + 4.0f); ++bx)
-            for (int bz = blockOf(rail[i + 2] - 4.0f); bz <= blockOf(rail[i + 2] + 4.0f); ++bz)
-                if (Grid::insideColumn(bx, bz))
-                {
-                    float &low = lowest[Grid::column(bx, bz)];
-                    low = fminf(low, rail[i + 1]);
-                }
-
     const float post = 0.28f;
-    const size_t count = rail.size() / 3;
-    for (size_t n = 0; n < count; ++n)
+    for (const Trestle &t : m_trestles)
     {
-        const float x = rail[3 * n], y = rail[3 * n + 1], z = rail[3 * n + 2];
-        const int bx = blockOf(x), bz = blockOf(z);
-        if (!Grid::insideColumn(bx, bz) || lowest[Grid::column(bx, bz)] < y - 3.0f)
-            continue;
-        // the ground under the track here
-        int j = blockOf(y - 0.7f);
-        j = j > kMaxY ? kMaxY : j;
-        while (j >= kMinY && (g.get(bx, j, bz) == AIR || isGrowth(g.get(bx, j, bz))))
-            --j;
-        if (j < kMinY || g.get(bx, j, bz) == LAVA)
-            continue;
-        const float ground = static_cast<float>(j + 1) * kBlock;
-        const float top = y - 0.55f;
-        if (top - ground < 1.2f)
-            continue;
-        // across the track: horizontal, at right angles to the way it runs
-        const size_t next = (n + 1) % count;
-        float ax = rail[3 * next] - x, az = rail[3 * next + 2] - z;
-        const float length = sqrtf(ax * ax + az * az);
-        if (length < 1.0e-4f)
-            continue;
-        ax /= length;
-        az /= length;
         glPushMatrix();
-        glTranslatef(x, 0.0f, z);
-        glRotatef(atan2f(ax, az) * 57.29578f, 0.0f, 1.0f, 0.0f);
-        const float height = top - ground;
-        // Two posts that lean in towards the top, tied by cross beams.
-        for (int side = -1; side <= 1; side += 2)
+        glTranslatef(t.x, 0.0f, t.z);
+        glRotatef(t.yaw, 0.0f, 1.0f, 0.0f);
+        // Two posts that lean in towards the top, each from its own ground.
+        for (int side = 0; side < 2; ++side)
         {
-            const float s = static_cast<float>(side);
-            const float foot = s * (1.5f + fminf(height * 0.06f, 2.0f));
-            const float head = s * 1.3f;
+            if (!t.post[side])
+                continue;
+            const float ground = t.ground[side];
+            const float height = t.top - ground;
+            const float xs[2] = {t.foot[side], side == 0 ? -1.3f : 1.3f};
             glBegin(GL_QUADS);
-            const float xs[2] = {foot, head};
             for (int face = 0; face < 4; ++face)
             {
                 // corners of the post's square section, going round
@@ -2541,19 +2641,25 @@ void LandWorld::drawSupports(const std::vector<float> &rail, bool shadowPass)
                 glTexCoord2f(0.0f, height / 5.0f);
                 glVertex3f(xs[0] + cx[a], ground, cz[a]);
                 glTexCoord2f(0.0f, 0.0f);
-                glVertex3f(xs[1] + cx[a], top, cz[a]);
+                glVertex3f(xs[1] + cx[a], t.top, cz[a]);
                 glTexCoord2f(0.25f, 0.0f);
-                glVertex3f(xs[1] + cx[b], top, cz[b]);
+                glVertex3f(xs[1] + cx[b], t.top, cz[b]);
                 glTexCoord2f(0.25f, height / 5.0f);
                 glVertex3f(xs[0] + cx[b], ground, cz[b]);
             }
             glEnd();
         }
-        for (float h = top - 0.3f; h > ground + 2.0f; h -= 6.0f)
+        // Cross beams between the posts, down to the higher ground.
+        if (t.post[0] && t.post[1])
         {
-            const float t = (h - ground) / height;
-            const float reach = 1.3f + (1.0f - t) * (0.2f + fminf(height * 0.06f, 2.0f)) + post;
-            box(-reach, h - 0.4f, -0.2f, reach, h, 0.2f);
+            const float low = fmaxf(t.ground[0], t.ground[1]) + 2.0f;
+            for (float h = t.top - 0.3f; h > low; h -= 6.0f)
+            {
+                // where each post is at this height
+                const float r0 = -1.3f + (t.foot[0] + 1.3f) * (t.top - h) / (t.top - t.ground[0]);
+                const float r1 = 1.3f + (t.foot[1] - 1.3f) * (t.top - h) / (t.top - t.ground[1]);
+                box(r0 - post, h - 0.4f, -0.2f, r1 + post, h, 0.2f);
+            }
         }
         glPopMatrix();
     }

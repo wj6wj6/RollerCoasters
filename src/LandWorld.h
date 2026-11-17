@@ -62,10 +62,12 @@ class LandWorld
     // over what is behind them.
     void drawWater(bool flat);
 
-    // Stands the track on wooden trestles. rail: points along the track,
-    // about evenly spaced, x, y, z for each. Only where the ground of the
-    // scenery is well below the track and nothing else passes underneath.
-    void drawSupports(const std::vector<float> &rail, bool shadowPass);
+    // Stands the track on wooden trestles, one every 9 units along it
+    // wherever it is above the water and well above the ground; off the
+    // island the posts go down to the sea bed. path: points along the whole
+    // track about a unit apart, x, y, z for each. The trestles are worked
+    // out again only when the path changes.
+    void drawSupports(const std::vector<float> &path, bool shadowPass);
 
     // A box around the blocks that cast shadows.
     static void shadowBounds(float lo[3], float hi[3]);
@@ -81,6 +83,19 @@ class LandWorld
     static int waterNearRide(const std::vector<float> &path);
 
   private:
+    struct Trestle
+    {
+        float x, z, yaw; // centre under the track, and which way it runs
+        float top;       // the bottom of the sleepers
+        float foot[2];   // across the track, where each post meets the ground
+        float ground[2]; // and how high that ground is
+        bool post[2];    // a post would pass through other track: left out
+    };
+    float postGround(float x, float z, float from) const;
+    void planSupports(const std::vector<float> &path);
+    std::vector<Trestle> m_trestles;
+    std::vector<float> m_supportPath;
+
     struct Scene;
     Scene &scene(bool flat);
     void drawMoving(const Scene &scene, float time);

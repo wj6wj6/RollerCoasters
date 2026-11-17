@@ -74,6 +74,10 @@ class OceanWorld
     // Height of the water surface.
     static float waterLevel();
 
+    // Height of the terraced sea bed at (x, z), off the island: where the
+    // posts of a track over the sea stand.
+    static float seaFloor(float x, float z);
+
     // For tests: how many of the given points (x, y, z for each, a path the
     // train follows) have a block or a plant within the train's reach. The
     // demo ride gives 0 for every spline type.

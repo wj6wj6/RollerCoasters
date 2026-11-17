@@ -97,29 +97,45 @@ void TrainView::drawGround(bool shadowPass)
 
 //************************************************************************
 //
-// * Trestles under the track, one every 9 units along it
+// * Trestles under the track (LandWorld::drawSupports)
 //========================================================================
 void TrainView::drawSupports(bool shadowPass)
 {
-    const TrackSplineType splineType = static_cast<TrackSplineType>(tw->splineBrowser->value());
-    const float period = static_cast<float>(m_pTrack->points.size());
-    std::vector<float> rail;
-    Pnt3f last = m_pTrack->evaluatePosition(0.0f, splineType);
-    float travelled = 9.0f;
-    for (float u = 0.0f; u < period; u += 0.02f)
+    // Points along the whole track about a unit apart; worked out again only
+    // when the track or the spline type changes.
+    const int splineType = tw->splineBrowser->value();
+    bool same = splineType == m_supportSpline && m_pTrack->points.size() == m_supportPoints.size();
+    for (size_t i = 0; same && i < m_supportPoints.size(); ++i)
     {
-        const Pnt3f p = m_pTrack->evaluatePosition(u, splineType);
-        const float dx = p.x - last.x, dy = p.y - last.y, dz = p.z - last.z;
-        travelled += sqrtf(dx * dx + dy * dy + dz * dz);
-        last = p;
-        if (travelled < 9.0f)
-            continue;
-        travelled = 0.0f;
-        rail.push_back(p.x);
-        rail.push_back(p.y);
-        rail.push_back(p.z);
+        const Pnt3f &a = m_pTrack->points[i].pos, &b = m_supportPoints[i];
+        same = a.x == b.x && a.y == b.y && a.z == b.z;
     }
-    m_land.drawSupports(rail, shadowPass);
+    if (!same)
+    {
+        m_supportSpline = splineType;
+        m_supportPoints.clear();
+        for (const ControlPoint &p : m_pTrack->points)
+            m_supportPoints.push_back(p.pos);
+        m_supportPath.clear();
+        const TrackSplineType type = static_cast<TrackSplineType>(splineType);
+        const float period = static_cast<float>(m_pTrack->points.size());
+        Pnt3f last = m_pTrack->evaluatePosition(0.0f, type);
+        float travelled = 1.0f;
+        for (float u = 0.0f; u < period; u += 0.01f)
+        {
+            const Pnt3f p = m_pTrack->evaluatePosition(u, type);
+            const float dx = p.x - last.x, dy = p.y - last.y, dz = p.z - last.z;
+            travelled += sqrtf(dx * dx + dy * dy + dz * dz);
+            last = p;
+            if (travelled < 1.0f)
+                continue;
+            travelled = 0.0f;
+            m_supportPath.push_back(p.x);
+            m_supportPath.push_back(p.y);
+            m_supportPath.push_back(p.z);
+        }
+    }
+    m_land.drawSupports(m_supportPath, shadowPass);
 }
 
 //************************************************************************

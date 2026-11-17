@@ -888,6 +888,16 @@ bool inReef(float cx, float cz)
            (cx > -215.0f && cx < -105.0f && cz > -190.0f && cz < -92.0f);
 }
 
+// The top layer of the terraced sea bed at a column centre, `edge` units out
+// from the island's edge (before outcrops, the islet and the carving).
+int seaBedTop(float cx, float cz, float edge)
+{
+    float depth =
+        1.0f + (edge - 6.0f) / 11.0f + (valueNoise(cx * 0.025f, cz * 0.025f, 7u) - 0.5f) * 2.5f;
+    depth = fmaxf(1.0f, fminf(8.0f, depth));
+    return -static_cast<int>(floorf(depth + 0.5f)) - 1;
+}
+
 // Sand and stone terraces that step down away from the island, rocky
 // outcrops on the deep bed, and the rocky islet (its tunnel is carved later).
 void buildTerrain(Grid &g)
@@ -905,10 +915,7 @@ void buildTerrain(Grid &g)
                 g.put(bx, -1, bz, ISLAND);
                 continue;
             }
-            float depth = 1.0f + (edge - 6.0f) / 11.0f +
-                          (valueNoise(cx * 0.025f, cz * 0.025f, 7u) - 0.5f) * 2.5f;
-            depth = fmaxf(1.0f, fminf(8.0f, depth));
-            int top = -static_cast<int>(floorf(depth + 0.5f)) - 1;
+            int top = seaBedTop(cx, cz, edge);
 
             // The islet: a rough dome west of the island that breaks the surface.
             const float ex = (cx + 205.0f) / 58.0f;
@@ -2099,6 +2106,16 @@ void drawJellyfish(float time, float seed, const unsigned char colour[3])
 
 OceanWorld::OceanWorld() : m_built(false), m_solidList(0), m_plantList(0)
 {
+}
+
+float OceanWorld::seaFloor(float x, float z)
+{
+    const int bx = blockOf(x), bz = blockOf(z);
+    const float cx = centerOf(bx), cz = centerOf(bz);
+    const float edge = fmaxf(fabsf(cx), fabsf(cz)) - kIslandHalf;
+    if (edge < 0.0f)
+        return 0.0f; // under the island
+    return static_cast<float>(seaBedTop(cx, cz, edge) + 1) * kBlock;
 }
 
 float OceanWorld::waterLevel()

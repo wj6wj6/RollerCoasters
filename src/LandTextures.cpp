@@ -8,6 +8,8 @@
 
 #include "LandTextures.h"
 
+#include <math.h>
+
 namespace
 {
 
@@ -181,23 +183,58 @@ Image makeBasalt()
     return p;
 }
 
-// Dark rock with glowing cracks.
+// Magma: dark red-brown lumps of rock in a net of glowing cracks, as a
+// block game draws it. The lumps are the cells round a few points (tiling
+// across the edges); the cracks run where two cells meet, hottest in the
+// middle.
 Image makeMagma()
 {
-    Image p = mottled(64, 40, 36, 8, 61u);
-    for (int i = 0; i < 6; ++i)
+    // one point in each cell of a 3 x 3 grid, moved about inside it, so the
+    // lumps come out about the same size
+    const int seeds = 9;
+    float px[seeds], py[seeds];
+    for (int i = 0; i < seeds; ++i)
     {
-        int x = static_cast<int>(hash(i, 0, 62u) % 16u);
-        int y = static_cast<int>(hash(i, 1, 62u) % 16u);
-        for (int k = 0; k < 6; ++k)
-        {
-            set(p, x & 15, y & 15, 255, 150 + static_cast<int>(hash(i, k, 63u) % 70u), 40);
-            if (hash(i, k, 64u) % 2u == 0)
-                x += 1;
-            else
-                y += 1;
-        }
+        const float cell = 16.0f / 3.0f;
+        px[i] = (static_cast<float>(i % 3) + 0.1f +
+                 static_cast<float>(hash(i, 0, 61u) % 80u) / 100.0f) *
+                cell;
+        py[i] = (static_cast<float>(i / 3) + 0.1f +
+                 static_cast<float>(hash(i, 1, 61u) % 80u) / 100.0f) *
+                cell;
     }
+    Image p = PixelArt::blank();
+    for (int y = 0; y < S; ++y)
+        for (int x = 0; x < S; ++x)
+        {
+            // the nearest two cell centres, wrapping round the tile
+            float d1 = 1.0e9f, d2 = 1.0e9f;
+            for (int i = 0; i < seeds; ++i)
+                for (int oy = -1; oy <= 1; ++oy)
+                    for (int ox = -1; ox <= 1; ++ox)
+                    {
+                        const float dx =
+                            static_cast<float>(x) + 0.5f - px[i] - 16.0f * static_cast<float>(ox);
+                        const float dy =
+                            static_cast<float>(y) + 0.5f - py[i] - 16.0f * static_cast<float>(oy);
+                        const float d = dx * dx + dy * dy;
+                        if (d < d1)
+                        {
+                            d2 = d1;
+                            d1 = d;
+                        }
+                        else if (d < d2)
+                            d2 = d;
+                    }
+            const float gap = sqrtf(d2) - sqrtf(d1); // 0 on a crack
+            const int s = shadeOf(x, y, 62u, 6);
+            if (gap < 0.45f)
+                set(p, x, y, 255, 196 + s, 70); // the crack's hot middle
+            else if (gap < 1.1f)
+                set(p, x, y, 232 + s, 104 + s, 26); // its glowing edge
+            else
+                set(p, x, y, 92 + s, 34 + s / 2, 24 + s / 2); // the rock
+        }
     return p;
 }
 

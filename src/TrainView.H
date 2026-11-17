@@ -47,6 +47,8 @@ class CTrack;
 #pragma warning(pop)
 
 // this uses the old ArcBall Code
+#include <vector>
+
 #include "Utilities/ArcBallCam.H"
 #include "AdvancedLighting.h"
 #include "PostEffects.h"
@@ -168,6 +170,11 @@ class TrainView : public Fl_Gl_Window
     TransformGizmo::Camera m_editCamera = {}; // the camera of the last frame drawn
     bool m_editCameraValid = false;
     bool m_editCameraOrthographic = false; // the last frame was the Top view
+    // The track the trestles were last worked out for (drawSupports).
+    std::vector<Pnt3f> m_supportPoints;
+    int m_supportSpline = 0;
+    std::vector<float> m_supportPath;
+
     // The last frame drawn by a camera other than Fly, where Fly takes over.
     double m_flyHandover[16] = {};
     bool m_flyHandoverTop = false; // ... and it was the Top view
