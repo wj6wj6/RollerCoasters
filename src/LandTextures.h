@@ -63,7 +63,10 @@ enum Texture
     HAY_SIDE,
     HAY_TOP,
     FARMLAND,
-    WATER, // still and see-through
+    WATER,      // still and see-through
+    SEA_WATER,  // the same where it runs into the sea, in the sea's colours
+    FALL_WATER, // falling water: lighter, with streaks down it
+    FOAM,       // white water where a fall lands
     // cut-out plants
     TALL_GRASS,
     FERN,

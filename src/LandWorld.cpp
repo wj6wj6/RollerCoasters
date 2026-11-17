@@ -30,7 +30,13 @@ using PixelArt::hash;
 // ---------------------------------------------------------------------
 const float kBlock = 2.5f;
 const float kIslandHalf = 100.0f;
-const int kHalf = 40; // blocks each side of the origin: the island is +-100 units
+// The highest layer of blocks that touches the sea (the sea is at y = -1;
+// layer 0 spans 0 to 2.5): water in it is coloured like the sea.
+const int kSeaLayer = 0;
+// Blocks each side of the origin: the island is +-100 units (40 blocks), and
+// one more ring of open air round it, over the sea, for water running off
+// the island to fall through.
+const int kHalf = 41;
 const int kSizeXZ = 2 * kHalf;
 const int kMinY = -2; // block layer j spans y = 2.5 j .. 2.5 j + 2.5
 const int kMaxY = 47;
@@ -295,6 +301,12 @@ float centerOf(int b)
     return (static_cast<float>(b) + 0.5f) * kBlock;
 }
 
+// Is this column part of the island, not the ring of air over the sea?
+bool onIsland(int bx, int bz)
+{
+    return fabsf(centerOf(bx)) < kIslandHalf && fabsf(centerOf(bz)) < kIslandHalf;
+}
+
 int blockOf(float v)
 {
     return static_cast<int>(floorf(v / kBlock));
@@ -344,9 +356,12 @@ const int kCanyonPoints = 5;
 const float kLavaSouth[] = {58.0f, 67.5f, 61.0f, 80.0f, 57.0f, 92.0f, 58.0f, 103.0f};
 const float kLavaEast[] = {67.5f, 58.0f, 82.0f, 63.0f, 93.0f, 57.0f, 103.0f, 58.0f};
 
-// Springs on the snow mountain (x, z), placed where the water they give runs
-// down clear of the ride (LandRideClearanceCheck counts any water near it).
-const float kSprings[][2] = {{-44.0f, 52.0f}, {-28.0f, 36.0f}, {-84.0f, 52.0f}};
+// The waterfall on the north side of the snow mountain, where no track runs:
+// the blocks of the lip (x from kFallX0 to kFallX1, z = kFallLipZ), the
+// height it falls and the river from its pool to the north shore (x, z).
+const int kFallX0 = -21, kFallX1 = -18, kFallLipZ = 24;
+const int kFallDrop = 9;
+const float kRiver[] = {-47.0f, 80.0f, -51.0f, 90.0f, -48.0f, 101.0f};
 
 // The village green in the north west, the meadow pond and the island
 // that floats above it.
@@ -666,6 +681,8 @@ void buildTerrain(Grid &g)
     for (int bx = -kHalf; bx < kHalf; ++bx)
         for (int bz = -kHalf; bz < kHalf; ++bz)
         {
+            if (!onIsland(bx, bz))
+                continue; // the ring over the sea stays open
             const float cx = centerOf(bx), cz = centerOf(bz);
             const int top = tops[Grid::column(bx, bz)];
             const int biome = g.biome[Grid::column(bx, bz)];
@@ -678,7 +695,7 @@ void buildTerrain(Grid &g)
             {
                 const int nx = bx + (k == 0 ? 1 : (k == 1 ? -1 : 0));
                 const int nz = bz + (k == 2 ? 1 : (k == 3 ? -1 : 0));
-                if (!Grid::insideColumn(nx, nz))
+                if (!Grid::insideColumn(nx, nz) || !onIsland(nx, nz))
                     continue;
                 const int d = top - tops[Grid::column(nx, nz)];
                 steep = d > steep ? d : (-d > steep ? -d : steep);
@@ -823,13 +840,110 @@ void traceLava(Grid &g, const float *points, int count, bool wide)
         }
 }
 
-// A spring: a source of water in place of the top block of the ground.
-void addSpring(Grid &g, float x, float z)
+// A river of still water (sources) one block deep in a trench along a line
+// of points, starting at `level` and never climbing: where the ground drops
+// the river steps down with it. width: blocks across.
+void buildRiver(Grid &g, const float *points, int count, int level, int width)
 {
-    const int bx = blockOf(x), bz = blockOf(z);
-    const int top = g.top(bx, bz);
-    g.clearAbove(bx, top, bz);
-    g.put(bx, top, bz, WATER);
+    int lastX = 1 << 20, lastZ = 1 << 20;
+    auto visit = [&](int bx, int bz) {
+        if (bx == lastX && bz == lastZ)
+            return;
+        lastX = bx;
+        lastZ = bz;
+        for (int w = 0; w < width; ++w)
+        {
+            const int x = bx + w;
+            if (!Grid::insideColumn(x, bz) || !onIsland(x, bz))
+                continue;
+            const int top = g.top(x, bz);
+            level = top < level ? top : level;
+            g.clearAbove(x, level, bz);
+            g.put(x, level, bz, WATER);
+            if (g.get(x, level - 1, bz) == AIR)
+                g.put(x, level - 1, bz, GRAVEL);
+        }
+    };
+    for (int i = 0; i + 1 < count; ++i)
+    {
+        const float ax = points[2 * i], az = points[2 * i + 1];
+        const float ex = points[2 * i + 2] - ax, ez = points[2 * i + 3] - az;
+        const int steps = static_cast<int>(sqrtf(ex * ex + ez * ez) * 2.0f) + 1;
+        for (int s = 0; s <= steps; ++s)
+        {
+            const float t = static_cast<float>(s) / static_cast<float>(steps);
+            const int bx = blockOf(ax + ex * t), bz = blockOf(az + ez * t);
+            if (bx != lastX && bz != lastZ && lastX != (1 << 20))
+                visit(bx, lastZ); // no diagonal gaps
+            visit(bx, bz);
+        }
+    }
+}
+
+// A waterfall in a rocky gorge cut into the north side of the snow mountain:
+// a stream four blocks wide runs out of the rock to a sheer stone lip and
+// falls kFallDrop blocks into a pool; the gorge opens north and a river runs
+// from the pool down to the shore and into the sea. Only the sources are put
+// here; the fall itself is the water flowing over the lip (spreadWater).
+void buildWaterfall(Grid &g)
+{
+    const int lip = g.top((kFallX0 + kFallX1) / 2, kFallLipZ);
+    const int pool = lip - kFallDrop;
+    const int cx = (kFallX0 + kFallX1) / 2;
+
+    // The gorge: open down to the pool from the cliff out to the north, wider
+    // further out, its walls bare stone with the grass left on top.
+    for (int bz = kFallLipZ + 1; bz <= kFallLipZ + 9; ++bz)
+    {
+        const int half = 3 + (bz - kFallLipZ) / 3;
+        for (int bx = cx - half - 2; bx <= cx + half + 2; ++bx)
+        {
+            if (!Grid::insideColumn(bx, bz))
+                continue;
+            const int top = g.top(bx, bz);
+            if (bx >= cx - half && bx <= cx + half)
+            {
+                g.clearAbove(bx, pool, bz);
+                for (int j = kMinY; j <= pool; ++j)
+                    if (g.get(bx, j, bz) == AIR)
+                        g.put(bx, j, bz, STONE);
+                g.put(bx, pool, bz, hash(bx, bz, 451u) % 3u == 0 ? GRAVEL : STONE);
+            }
+            else
+                for (int j = pool; j < top; ++j) // the walls
+                    g.put(bx, j, bz, hash(bx * 3 + j, bz, 453u) % 4u == 0 ? MOSSY : STONE);
+        }
+    }
+    // The cliff behind the fall, sheer stone up to the lip, and stone round it.
+    for (int bx = cx - 4; bx <= cx + 4; ++bx)
+        for (int bz = kFallLipZ - 3; bz <= kFallLipZ; ++bz)
+        {
+            const int top = g.top(bx, bz);
+            for (int j = pool; j <= (top > lip ? top : lip); ++j)
+                g.put(bx, j, bz, hash(bx * 5 + j, bz, 455u) % 5u == 0 ? MOSSY : STONE);
+        }
+    // The stream: sources in a channel cut into the rock above the lip.
+    for (int bx = kFallX0; bx <= kFallX1; ++bx)
+        for (int bz = kFallLipZ - 2; bz <= kFallLipZ; ++bz)
+        {
+            g.clearAbove(bx, lip, bz);
+            g.put(bx, lip, bz, WATER);
+        }
+    // The pool, round and a block deep, under the fall.
+    for (int bx = cx - 3; bx <= cx + 3; ++bx)
+        for (int bz = kFallLipZ + 1; bz <= kFallLipZ + 6; ++bz)
+        {
+            const float dx = static_cast<float>(bx - cx),
+                        dz = static_cast<float>(bz - kFallLipZ - 3);
+            if (dx * dx + dz * dz * 1.4f > 11.0f)
+                continue;
+            g.put(bx, pool, bz, WATER);
+            g.put(bx, pool - 1, bz, GRAVEL);
+        }
+    // And the river from the pool to the sea.
+    const float start[] = {centerOf(cx), centerOf(kFallLipZ + 6), kRiver[0], kRiver[1]};
+    buildRiver(g, start, 2, pool, 2);
+    buildRiver(g, kRiver, static_cast<int>(sizeof(kRiver) / sizeof(kRiver[0]) / 2), pool, 2);
 }
 
 // The room that must stay free of water round the ride: within kWaterReach
@@ -1622,8 +1736,7 @@ void buildScenery(Grid &g, Extras &extras)
     buildVillage(g, extras);
     buildPond(g, kPondX, kPondZ, kPondRadius);
     buildPond(g, 5.0f, 41.0f, 3.2f); // a still pool on the badlands
-    for (const float *spring : kSprings)
-        addSpring(g, spring[0], spring[1]);
+    buildWaterfall(g);
     buildFloatingIsland(g);
 
     carveRide(g, ride);
@@ -1647,10 +1760,11 @@ void buildFlat(Grid &g)
     const Clearance clear;
     for (int bx = -kHalf; bx < kHalf; ++bx)
         for (int bz = -kHalf; bz < kHalf; ++bz)
-        {
-            g.put(bx, -2, bz, DIRT);
-            g.put(bx, -1, bz, GRASS);
-        }
+            if (onIsland(bx, bz))
+            {
+                g.put(bx, -2, bz, DIRT);
+                g.put(bx, -1, bz, GRASS);
+            }
     const int trees[][3] = {{-33, -27, 0}, {-31, 28, 1}, {33, -28, 1}, {31, 27, 0},  {0, 35, 2},
                             {-36, 2, 0},   {36, 0, 2},   {2, -36, 0},  {-20, 36, 1}, {22, -35, 2}};
     std::vector<Placed> blocks;
@@ -1817,7 +1931,20 @@ float waterHeight(const Grid &g, int bx, int j, int bz)
 void addWaterFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
 {
     const float top = waterHeight(g, bx, j, bz);
-    std::vector<Vertex> &out = batches[static_cast<size_t>(LandTextures::WATER)];
+    // Where it meets the sea it takes the sea's colour, falling water is
+    // lighter and streaked, and where a fall lands the pool is white water.
+    auto falling = [&g](int x, int y, int z) {
+        return g.get(x, y, z) == WATER && g.level[Grid::index(x, y, z)] == WaterFlow::FALLING;
+    };
+    int texture = LandTextures::WATER;
+    if (j <= kSeaLayer)
+        texture = LandTextures::SEA_WATER;
+    else if (falling(bx, j, bz))
+        texture = LandTextures::FALL_WATER;
+    else if (falling(bx, j + 1, bz) || falling(bx + 1, j + 1, bz) || falling(bx - 1, j + 1, bz) ||
+             falling(bx, j + 1, bz + 1) || falling(bx, j + 1, bz - 1))
+        texture = LandTextures::FOAM;
+    std::vector<Vertex> &out = batches[static_cast<size_t>(texture)];
     for (const Face &f : kFaces)
     {
         const int ox = bx + f.normal[0], oy = j + f.normal[1], oz = bz + f.normal[2];

@@ -481,8 +481,13 @@ Image makeFarmland()
 // Still water as in a block game: deep blue with a violet cast, a few
 // lighter ripples drifting across, see-through (alpha about 0.6; the shader
 // cuts out texels below 0.5).
-Image makeWater()
+// sea: the same in the turquoise of the sea, for water that runs into it.
+Image makeWater(bool sea)
 {
+    // the sea's colours: the turquoise of the shallows round the island
+    const int base[3] = {sea ? 64 : 74, sea ? 156 : 94, sea ? 196 : 226};
+    const int light[3] = {sea ? 132 : 104, sea ? 208 : 126, sea ? 232 : 244};
+    const int dark[3] = {sea ? 40 : 60, sea ? 122 : 76, sea ? 170 : 200};
     Image p = PixelArt::blank();
     for (int y = 0; y < S; ++y)
         for (int x = 0; x < S; ++x)
@@ -492,13 +497,48 @@ Image makeWater()
             const int wobble = static_cast<int>(hash(0, y / 2, 173u) % 7u);
             const bool ripple =
                 ((x + wobble + (y / 3) * 5) % 9) < 2 && hash(x / 3, y, 174u) % 3u != 0;
-            const bool dark = hash(x, 0, 175u) % 7u == 0 && y % 5 != 0;
-            if (ripple)
-                set(p, x, y, 104 + s, 126 + s, 244, 158);
-            else if (dark)
-                set(p, x, y, 60 + s, 76 + s, 200, 158);
+            const bool deep = hash(x, 0, 175u) % 7u == 0 && y % 5 != 0;
+            const int *c = ripple ? light : (deep ? dark : base);
+            set(p, x, y, c[0] + s, c[1] + s, c[2], ripple || deep ? 158 : 150);
+        }
+    return p;
+}
+
+// Falling water: lighter than still water, with long pale streaks down it.
+// Still like the rest (nothing scrolls); see-through as water is.
+Image makeFallingWater()
+{
+    Image p = PixelArt::blank();
+    for (int x = 0; x < S; ++x)
+    {
+        const unsigned int column = hash(x, 0, 177u);
+        const int start = static_cast<int>(column % 16u);
+        const int length = 4 + static_cast<int>((column >> 8) % 8u);
+        for (int y = 0; y < S; ++y)
+        {
+            const int s = shadeOf(x, y, 178u, 5);
+            const bool streak = ((y - start + 16) % 16) < length && column % 3u != 0;
+            if (streak)
+                set(p, x, y, 150 + s, 190 + s, 250, 170);
             else
-                set(p, x, y, 74 + s, 94 + s, 226, 150);
+                set(p, x, y, 86 + s, 120 + s, 236, 156);
+        }
+    }
+    return p;
+}
+
+// White water: foam with a little blue showing through.
+Image makeFoam()
+{
+    Image p = PixelArt::blank();
+    for (int y = 0; y < S; ++y)
+        for (int x = 0; x < S; ++x)
+        {
+            const int s = shadeOf(x, y, 179u, 8);
+            if (hash(x / 2, y / 2, 180u) % 4u == 0)
+                set(p, x, y, 150 + s, 196 + s, 240, 180);
+            else
+                set(p, x, y, 226 + s, 240 + s, 250, 210);
         }
     return p;
 }
@@ -712,7 +752,13 @@ Image make(int texture)
     case FARMLAND:
         return makeFarmland();
     case WATER:
-        return makeWater();
+        return makeWater(false);
+    case SEA_WATER:
+        return makeWater(true);
+    case FALL_WATER:
+        return makeFallingWater();
+    case FOAM:
+        return makeFoam();
     case TALL_GRASS:
         return makeBlades(84, 150, 52, 5, 261u);
     case FERN:
@@ -738,7 +784,7 @@ bool repeatsVertically(int texture)
 {
     // tops tile both ways; sides clamp so their top row stays on top,
     // except the ones stretched over several blocks
-    return texture == GRASS_TOP || texture == SAND || texture == OAK_SIDE;
+    return texture == FALL_WATER || texture == GRASS_TOP || texture == SAND || texture == OAK_SIDE;
 }
 
 } // namespace LandTextures
