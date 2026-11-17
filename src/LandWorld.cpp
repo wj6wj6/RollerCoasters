@@ -2354,11 +2354,20 @@ void LandWorld::drawWater(bool flat)
                  GL_DEPTH_BUFFER_BIT);
     glEnable(GL_TEXTURE_2D);
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-    // Blended over what is behind it without hiding it from later water
-    // faces; the target's alpha is left as it was for the post effects.
+    // First only the depth of the water, then its colour where it is the
+    // nearest surface: so only the front face of a body of water is blended
+    // over what is behind it, and the faces inside it and at its back (the
+    // planes between the blocks) do not show through. The target's alpha is
+    // left as it was for the post effects.
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+    glCallList(s.waterList);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glDepthMask(GL_FALSE);
+    glDepthFunc(GL_LEQUAL);
     glEnable(GL_BLEND);
     glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE);
-    glDepthMask(GL_FALSE);
     glCallList(s.waterList);
     setGlow(0.0f);
     glPopAttrib();
