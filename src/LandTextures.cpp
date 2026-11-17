@@ -478,29 +478,28 @@ Image makeFarmland()
     return p;
 }
 
-// Still water as in a block game: deep blue with a violet cast, a few
-// lighter ripples drifting across, see-through (alpha about 0.6; the shader
-// cuts out texels below 0.5).
-// sea: the same in the turquoise of the sea, for water that runs into it.
+// Still water as in a block game: an even light blue, smooth rather than
+// grainy, with a few faint streaks along the rows, a little lighter or a
+// little darker; see-through (alpha about 0.6; the shader cuts out texels
+// below 0.5). sea: the same in the turquoise of the sea, for water that runs
+// into it.
 Image makeWater(bool sea)
 {
-    // the sea's colours: the turquoise of the shallows round the island
-    const int base[3] = {sea ? 64 : 74, sea ? 156 : 94, sea ? 196 : 226};
-    const int light[3] = {sea ? 132 : 104, sea ? 208 : 126, sea ? 232 : 244};
-    const int dark[3] = {sea ? 40 : 60, sea ? 122 : 76, sea ? 170 : 200};
+    const int base[3] = {sea ? 92 : 104, sea ? 168 : 160, sea ? 200 : 206};
     Image p = PixelArt::blank();
     for (int y = 0; y < S; ++y)
         for (int x = 0; x < S; ++x)
-        {
-            const int s = shadeOf(x, y, 171u, 5);
-            // ripples: short streaks that wander along the rows
-            const int wobble = static_cast<int>(hash(0, y / 2, 173u) % 7u);
-            const bool ripple =
-                ((x + wobble + (y / 3) * 5) % 9) < 2 && hash(x / 3, y, 174u) % 3u != 0;
-            const bool deep = hash(x, 0, 175u) % 7u == 0 && y % 5 != 0;
-            const int *c = ripple ? light : (deep ? dark : base);
-            set(p, x, y, c[0] + s, c[1] + s, c[2], ripple || deep ? 158 : 150);
-        }
+            set(p, x, y, base[0], base[1], base[2], 152);
+    // streaks: short runs along a row, a few lighter, a few darker
+    for (int i = 0; i < 9; ++i)
+    {
+        const int x0 = static_cast<int>(hash(i, 0, 171u) % 16u);
+        const int y = static_cast<int>(hash(i, 1, 171u) % 16u);
+        const int length = 2 + static_cast<int>(hash(i, 2, 171u) % 4u);
+        const int shift = i % 3 == 0 ? -14 : 12;
+        for (int k = 0; k < length; ++k)
+            set(p, (x0 + k) % S, y, base[0] + shift, base[1] + shift, base[2] + shift, 156);
+    }
     return p;
 }
 
