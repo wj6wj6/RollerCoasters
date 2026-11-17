@@ -239,20 +239,20 @@ void TrainView::setFieldOfView(float degrees)
 
 //************************************************************************
 //
-// * Start the observer camera exactly where the last frame was seen from,
-//   whichever camera drew it, so switching to Fly does not jump. The view
-//   keeps its direction; only a banked train view loses its roll, since Fly
-//   keeps the horizon level.
+// * Start the observer camera exactly where the last frame not drawn by Fly
+//   was seen from (World, Train or Chase), so switching to Fly does not
+//   jump. The view keeps its direction; only a banked train view loses its
+//   roll, since Fly keeps the horizon level.
 //========================================================================
 void TrainView::placeFlyCamAtCurrentView()
 //========================================================================
 {
-    if (!m_editCameraValid)
+    if (!m_flyHandoverValid)
     {
         placeFlyCamAtWorldView();
         return;
     }
-    if (m_editCameraOrthographic)
+    if (m_flyHandoverTop)
     {
         // The Top view has no eye point: look straight down from the height
         // at which the same width of ground fills the view.
@@ -265,7 +265,7 @@ void TrainView::placeFlyCamAtCurrentView()
     {
         GLfloat view[16];
         for (int i = 0; i < 16; ++i)
-            view[i] = static_cast<GLfloat>(m_editCamera.view[i]);
+            view[i] = static_cast<GLfloat>(m_flyHandover[i]);
         flyCam.setFromViewMatrix(view);
     }
     damage(1);
@@ -803,6 +803,20 @@ void TrainView::drawEditOverlay()
     m_editCamera.viewport[3] = h();
     m_editCameraOrthographic = tw->topCam->value() != 0;
     m_editCameraValid = true;
+
+    // Remember the last frame a camera other than Fly drew, for switching to
+    // Fly. Which camera drew it follows setProjection(): World first, then
+    // Fly. While the Fly button is held down both it and the old camera's
+    // button are on, and a redraw then may already be a Fly frame (from the
+    // old Fly pose); those must not count.
+    const bool drawnByFly = !tw->worldCam->value() && tw->flyCam->value();
+    if (!drawnByFly)
+    {
+        for (int i = 0; i < 16; ++i)
+            m_flyHandover[i] = m_editCamera.view[i];
+        m_flyHandoverTop = !tw->worldCam->value() && tw->topCam->value();
+        m_flyHandoverValid = true;
+    }
 
     tw->syncTransform();
 

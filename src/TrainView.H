@@ -125,7 +125,8 @@ class TrainView : public Fl_Gl_Window
 
     // Move the observer camera to where the world camera is looking from (Home).
     void placeFlyCamAtWorldView();
-    // Move the observer camera to where the last frame was seen from.
+    // Move the observer camera to where the last frame not drawn by Fly was
+    // seen from (World, Train or Chase).
     void placeFlyCamAtCurrentView();
 
     // The FOV slider: the field of view of every perspective camera.
@@ -167,7 +168,11 @@ class TrainView : public Fl_Gl_Window
     TransformGizmo::Camera m_editCamera = {}; // the camera of the last frame drawn
     bool m_editCameraValid = false;
     bool m_editCameraOrthographic = false; // the last frame was the Top view
-    float m_gizmoSize = 1.0f;              // length of the handles in world units
+    // The last frame drawn by a camera other than Fly, where Fly takes over.
+    double m_flyHandover[16] = {};
+    bool m_flyHandoverTop = false; // ... and it was the Top view
+    bool m_flyHandoverValid = false;
+    float m_gizmoSize = 1.0f; // length of the handles in world units
     EditMode m_editMode = EDIT_IDLE;
     TransformGizmo::Handle m_editHandle = TransformGizmo::NONE;
     TransformGizmo::Handle m_hoverHandle = TransformGizmo::NONE;
