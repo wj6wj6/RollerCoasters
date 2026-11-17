@@ -17,9 +17,14 @@ namespace
 // arms reach a neighbour or the walls.
 const int kCarts = 5;
 const int kVehicles = 1 + kCarts;
-// Along the track, centre to centre: the locomotive's back is 2 units behind
-// its centre, a cart is 3.4 long, the couplings 0.6.
-const float kEngineToCart = 4.3f;
+// The locomotive's body is built at this scale, so it stands bigger than the
+// carts; its driver is not scaled, every rider is the same size.
+const float kEngineScale = 1.3f;
+// The seat height every rider sits at, above the top of the rails.
+const float kSeatLift = 0.3f;
+// Along the track, centre to centre: the locomotive's back is 2.6 units
+// behind its centre, a cart is 3.4 long, the couplings about 0.7.
+const float kEngineToCart = 5.0f;
 const float kCartToCart = 4.0f;
 
 bool gShadowPass = false;
@@ -208,9 +213,9 @@ void drawCart(int index, bool last, float time)
     // The seat is raised so the rider's body and waving arms show above the
     // walls, as on a ride; the arms stay well inside them.
     colour(70, 46, 28);
-    box(-0.8f, 0.82f, -1.5f, 0.8f, 1.6f, -0.6f);
+    box(-0.8f, 0.82f, -1.5f, 0.8f, 1.3f + kSeatLift, -0.6f);
     glPushMatrix();
-    glTranslatef(0.0f, 0.3f, 0.0f);
+    glTranslatef(0.0f, kSeatLift, 0.0f);
     drawRider(0.0f, -0.65f, index + 1, time);
     glPopMatrix();
     colour(150, 154, 162);
@@ -233,10 +238,13 @@ void drawCart(int index, bool last, float time)
 
 // The steam locomotive: a red boiler with brass bands and dome, a black
 // smokebox with the head lamp, a chimney, three driving wheels a side with
-// their rod, and a green cab with a grey roof and the driver. 5 long, from
-// z = -2 (the back of the cab) to z = 3 (the buffer beam).
+// their rod, and a green cab with a grey roof and the driver. Modelled 5
+// long, from z = -2 (the back of the cab) to z = 3 (the buffer beam), and
+// drawn kEngineScale times that size.
 void drawLocomotive(float time)
 {
+    glPushMatrix();
+    glScalef(kEngineScale, kEngineScale, kEngineScale);
     // frame and running gear
     colour(30, 30, 34);
     box(-1.0f, 0.34f, -2.0f, 1.0f, 0.72f, 3.0f);
@@ -291,17 +299,19 @@ void drawLocomotive(float time)
     colour(122, 126, 134);
     box(-1.48f, 2.72f, -2.3f, 1.48f, 2.9f, 0.24f); // roof
     box(-1.0f, 2.9f, -2.3f, 1.0f, 3.0f, 0.24f);
-    colour(70, 46, 28);
-    box(-0.7f, 0.9f, -1.9f, 0.7f, 1.3f, -1.1f); // the driver's seat
-    // the driver sits low, so the head and hands stay under the roof
-    glPushMatrix();
-    glTranslatef(0.0f, -0.42f, 0.0f);
-    drawRider(0.0f, -1.2f, 0, time);
-    glPopMatrix();
-
     // coupling to the first cart
     colour(60, 62, 70);
     box(-0.12f, 0.42f, -2.6f, 0.12f, 0.58f, -2.0f);
+    glPopMatrix();
+
+    // The driver, at the riders' size and seat height: the bigger cab has
+    // room above the head and the waving hands.
+    colour(70, 46, 28);
+    box(-0.8f, 0.9f * kEngineScale, -2.4f, 0.8f, 1.3f + kSeatLift, -1.5f);
+    glPushMatrix();
+    glTranslatef(0.0f, kSeatLift, 0.0f);
+    drawRider(0.0f, -1.5f, 0, time);
+    glPopMatrix();
 }
 
 // The track parameter `distance` further back along the track from u.

@@ -382,7 +382,7 @@ TrainWindow::TrainWindow(const int x, const int y)
     // set up callback on idle
     Fl::add_idle((void (*)(void *))runButtonCB, this);
 
-    // keep the water, clouds and leaves moving even when the train is stopped
+    // keep the water, clouds and plants moving even when the train is stopped
     Fl::add_timeout(1.0 / 30.0, animateEffectsCB, this);
 
     // The program opens on the demo: riding the Grand Tour, in a window wide

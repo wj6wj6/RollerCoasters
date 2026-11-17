@@ -42,8 +42,7 @@ struct LightingFrame
     bool orthographic = false; // the top view: no fog
     bool hdr = false;          // write linear HDR colour for the post effects
     float clipBelowY = -1e9f;  // discard anything below this height (reflections)
-    float time = 0.0f;         // seconds, drives the wind
-    bool wind = true;          // sway the tree tops
+    float time = 0.0f;         // seconds: swaying plants, caustics
 
     // Below this height things are under water: caustics, blue light.
     float waterLevel = -1e9f;
@@ -182,7 +181,6 @@ class AdvancedLighting
     int m_locHdr;
     int m_locClipY;
     int m_locTime;
-    int m_locWind;
     int m_locView;
     int m_locTexture;
     int m_locWaterLevel;

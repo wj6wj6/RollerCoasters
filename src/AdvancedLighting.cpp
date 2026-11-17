@@ -30,7 +30,6 @@ const char *kVertexShader = R"GLSL(
 uniform mat4 uInvView;
 uniform mat4 uView;
 uniform float uTime;
-uniform int uWind;
 varying vec3 vWorldPos;
 varying vec3 vWorldNormal;
 varying vec4 vColor;
@@ -48,16 +47,9 @@ void main()
     // never sets it gets (0, 0, 0, 1): no glow, no sway, full sky light.
     vExtra = gl_MultiTexCoord1;
 
-    // Leaves sway in the wind: green vertices above the trunk height move,
-    // more the higher they are, with a phase that depends on position.
-    vec3 c = gl_Color.rgb;
-    if (uWind != 0 && c.g > c.r * 1.2 && c.g > c.b * 1.1 && world.y > 3.0) {
-        float bend = min((world.y - 3.0) * 0.06, 1.0);
-        float phase = uTime * 1.7 + world.x * 0.11 + world.z * 0.07;
-        world.x += (sin(phase) * 0.35 + sin(phase * 2.3 + 1.0) * 0.12) * bend;
-        world.z += (cos(phase * 0.8) * 0.25) * bend;
-        eyePos = uView * world;
-    }
+    // Only what asks for it sways (the y of texture unit 1, below). Swaying
+    // every green vertex up high, as for the old cone trees, also bent the
+    // train's green cab and the riders' green shirts.
 
     // Kelp and sea grass sway in the current, the tips the most.
     float sway = gl_MultiTexCoord1.y;
@@ -432,7 +424,6 @@ bool AdvancedLighting::init()
     m_locHdr = glGetUniformLocation(m_program, "uHdr");
     m_locClipY = glGetUniformLocation(m_program, "uClipY");
     m_locTime = glGetUniformLocation(m_program, "uTime");
-    m_locWind = glGetUniformLocation(m_program, "uWind");
     m_locView = glGetUniformLocation(m_program, "uView");
     m_locTexture = glGetUniformLocation(m_program, "uTexture");
     m_locWaterLevel = glGetUniformLocation(m_program, "uWaterLevel");
@@ -695,7 +686,6 @@ void AdvancedLighting::begin(const LightingFrame &frame)
     glUniform1i(m_locHdr, frame.hdr ? 1 : 0);
     glUniform1f(m_locClipY, frame.clipBelowY);
     glUniform1f(m_locTime, frame.time);
-    glUniform1i(m_locWind, frame.wind ? 1 : 0);
     glUniform1i(m_locTexture, 0);
     glUniform3fv(m_locSkyAmbient, 1, m_skyAmbient);
     glUniform3fv(m_locGroundAmbient, 1, m_groundAmbient);

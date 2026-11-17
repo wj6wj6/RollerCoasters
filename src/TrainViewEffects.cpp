@@ -178,7 +178,6 @@ void TrainView::fillLightingFrame(LightingFrame &frame)
     frame.headlight = tw->headlightButton->value() != 0;
     frame.orthographic = tw->topCam->value() != 0;
     frame.time = secondsSinceStart();
-    frame.wind = true;
 
     // Rain sets in within a couple of seconds; the ground takes longer to
     // get wet and much longer to dry again.
