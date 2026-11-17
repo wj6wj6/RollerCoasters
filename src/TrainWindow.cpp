@@ -176,7 +176,9 @@ TrainWindow::TrainWindow(const int x, const int y)
                         "Speed: mouse wheel, +/- keys or the fly speed slider\n"
                         "Also: right drag or arrow keys look; E/Q up/down\n"
                         "Touchpad: two fingers look, spread / pinch fly, Alt + two fingers slide\n"
-                        "Lost? F: face the train; R: back to the World view");
+                        "Lost? F: face the train; Home: back to the World view\n"
+                        "Edit on: G / R move / tilt the selected point, Alt + D duplicates,\n"
+                        "Delete removes (Shift + D and X fly or do nothing here)");
 
         // observer camera speed (world units per second) and field of view
         pty += rowH + gap;

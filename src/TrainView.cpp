@@ -43,6 +43,7 @@
 #include "TrackRenderer.H"
 #include "CallBacks.H"
 #include "TrainModel.h"
+#include "EditKeys.h"
 #include <FL/x.H>
 #include <FL/gl.h>
 
@@ -127,6 +128,16 @@ static int flyKeys(void *event, void *data)
     if (!key)
         return 0;
     Fl::e_keysym = key;
+    // FLTK never saw this message, so take the modifiers from the keyboard:
+    // editing commands such as Ctrl + snapping read them.
+    int state = Fl::e_state & ~(FL_SHIFT | FL_CTRL | FL_ALT);
+    if (GetKeyState(VK_SHIFT) < 0)
+        state |= FL_SHIFT;
+    if (GetKeyState(VK_CONTROL) < 0)
+        state |= FL_CTRL;
+    if (GetKeyState(VK_MENU) < 0)
+        state |= FL_ALT;
+    Fl::e_state = state;
     view->handle(message->message == WM_KEYDOWN ? FL_KEYDOWN : FL_KEYUP);
     return 1;
 }
@@ -351,14 +362,19 @@ int TrainView::handle(int event)
             setMouseCaptured(false);
             return 1;
         }
+        // Editing commands first: none of them is a flying key (see
+        // EditKeys.h), so G, R, Alt + D, Delete and Ctrl + Z still work here.
+        if (event == FL_KEYBOARD && editKey(Fl::event_key()))
+            return 1;
         const float speedBefore = flyCam.speed();
         const int used = flyCam.handle(event);
         if (flyCam.speed() != speedBefore)
             tw->flySpeed->value(flyCam.speed());
         if (used)
             return 1;
-        // R puts the observer back at the world camera's viewpoint.
-        if (event == FL_KEYBOARD && Fl::event_key() == 'r')
+        // Home puts the observer back at the world camera's viewpoint (R
+        // tilts the selected control point).
+        if (event == FL_KEYBOARD && Fl::event_key() == FL_Home)
         {
             placeFlyCamAtWorldView();
             return 1;
@@ -483,7 +499,8 @@ int TrainView::handle(int event)
 //   Shift + X / Y / Z to the other two. Ctrl snaps to whole units (5 degrees
 //   when tilting). Shift + D duplicates, Delete or X removes, Ctrl + Z takes
 //   back the last change. Numpad 1 / 7 / 0 switch to the world, top and train
-//   cameras.
+//   cameras. In Fly, Alt + D duplicates and only Delete removes, so the
+//   flying keys are left alone (EditKeys.h).
 //========================================================================
 bool TrainView::canEdit() const
 {
@@ -506,6 +523,14 @@ void TrainView::beginEdit(EditMode mode, TransformGizmo::Handle handle, int mous
     m_undoValid = true;
     m_editMode = mode;
     m_editHandle = handle;
+    // In Fly the camera holds still while a point is moved or tilted, so the
+    // point follows the mouse and Shift can lock a plane (it sinks the camera
+    // otherwise). Keys still held fly again once the edit ends.
+    if (tw->flyCam->value())
+    {
+        flyCam.stop();
+        setMouseCaptured(false);
+    }
     m_editStartX = mouseX;
     m_editStartY = mouseY;
     damage(1);
@@ -647,22 +672,26 @@ bool TrainView::editEvent(int event)
     }
 }
 
-// Keys when no edit is in progress. True if the key was used.
+// Keys when no edit is in progress. True if the key was used. Which key is
+// which command, in Fly and in the other cameras, is in EditKeys.h.
 bool TrainView::editKey(int key)
 {
-    const int state = Fl::event_state();
-    if (key == FL_KP + '1' || key == FL_KP + '7' || key == FL_KP + '0')
+    const EditKeys::Action action =
+        EditKeys::forKey(key, Fl::event_state(), tw->flyCam->value() != 0);
+    if (action == EditKeys::CAMERA_WORLD || action == EditKeys::CAMERA_TOP ||
+        action == EditKeys::CAMERA_TRAIN)
     {
-        Fl_Button *camera =
-            key == FL_KP + '1' ? tw->worldCam : (key == FL_KP + '7' ? tw->topCam : tw->trainCam);
+        Fl_Button *camera = action == EditKeys::CAMERA_WORLD
+                                ? tw->worldCam
+                                : (action == EditKeys::CAMERA_TOP ? tw->topCam : tw->trainCam);
         camera->setonly();
         cameraChanged();
         tw->damageMe();
         return true;
     }
-    if (!canEdit())
+    if (action == EditKeys::NONE || !canEdit())
         return false;
-    if (key == 'z' && (state & FL_CTRL) != 0)
+    if (action == EditKeys::UNDO)
     {
         undoEdit();
         return true;
@@ -670,18 +699,21 @@ bool TrainView::editKey(int key)
     if (!hasSelection())
         return false;
 
-    if (key == 'g' && m_editCameraValid)
+    switch (action)
     {
+    case EditKeys::GRAB:
+        if (!m_editCameraValid)
+            return false;
         beginEdit(EDIT_GRAB, TransformGizmo::VIEW, Fl::event_x(), Fl::event_y());
         return true;
-    }
-    if (key == 'r' && m_editCameraValid)
-    {
+    case EditKeys::TILT:
+        if (!m_editCameraValid)
+            return false;
         beginEdit(EDIT_ROTATE, TransformGizmo::NONE, Fl::event_x(), Fl::event_y());
         return true;
-    }
-    if (key == 'd' && (state & FL_SHIFT) != 0 && m_editCameraValid)
-    {
+    case EditKeys::DUPLICATE: {
+        if (!m_editCameraValid)
+            return false;
         // the new point goes in after the selected one; pick it up at once
         const size_t before = m_pTrack->points.size();
         addPointCB(nullptr, tw);
@@ -692,13 +724,13 @@ bool TrainView::editKey(int key)
         }
         return true;
     }
-    if (key == FL_Delete || key == 'x')
-    {
+    case EditKeys::REMOVE:
         m_undoValid = false; // the indices are about to change
         deletePointCB(nullptr, tw);
         return true;
+    default:
+        return false;
     }
-    return false;
 }
 
 // Remembers the camera for the mouse maths, then draws the handles on the

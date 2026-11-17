@@ -62,6 +62,7 @@ add_executable(RollerCoasters
     src/TransformGizmo.h src/TransformGizmo.cpp
     src/UnderwaterOptics.h
     src/CallBacks.H src/CallBacks.cpp
+    src/EditKeys.h src/EditKeys.cpp
     src/ControlPoint.H src/ControlPoint.cpp
     src/main.cpp src/Object.H
     src/Track.H src/Track.cpp
@@ -88,6 +89,12 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     target_link_libraries(FlyCamCheck PRIVATE Utilities)
     add_test(NAME FlyCamCheck COMMAND FlyCamCheck)
     set_tests_properties(FlyCamCheck PROPERTIES TIMEOUT 30 LABELS integration)
+
+    add_executable(EditKeysCheck tests/EditKeysCheck.cpp src/EditKeys.cpp)
+    target_include_directories(EditKeysCheck PRIVATE src src/Utilities)
+    target_link_libraries(EditKeysCheck PRIVATE Utilities)
+    add_test(NAME EditKeysCheck COMMAND EditKeysCheck)
+    set_tests_properties(EditKeysCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
     add_executable(TwoFingerGestureCheck tests/TwoFingerGestureCheck.cpp)
     target_include_directories(TwoFingerGestureCheck PRIVATE src/Utilities)
