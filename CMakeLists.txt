@@ -45,6 +45,7 @@ add_library(Utilities
     src/Utilities/3DUtils.h src/Utilities/3DUtils.cpp
     src/Utilities/ArcBallCam.H src/Utilities/ArcBallCam.cpp
     src/Utilities/FlyCam.H src/Utilities/FlyCam.cpp
+    src/Utilities/HeadLook.H src/Utilities/HeadLook.cpp
     src/Utilities/Pnt3f.H src/Utilities/Pnt3f.cpp
     src/Utilities/TwoFingerGesture.H src/Utilities/TwoFingerGesture.cpp)
 target_link_libraries(Utilities PUBLIC project_options fltk)
@@ -76,6 +77,12 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     target_link_libraries(FlyCamCheck PRIVATE Utilities)
     add_test(NAME FlyCamCheck COMMAND FlyCamCheck)
     set_tests_properties(FlyCamCheck PROPERTIES TIMEOUT 30 LABELS integration)
+
+    add_executable(HeadLookCheck tests/HeadLookCheck.cpp)
+    target_include_directories(HeadLookCheck PRIVATE src/Utilities)
+    target_link_libraries(HeadLookCheck PRIVATE Utilities)
+    add_test(NAME HeadLookCheck COMMAND HeadLookCheck)
+    set_tests_properties(HeadLookCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
     add_executable(TwoFingerGestureCheck tests/TwoFingerGestureCheck.cpp)
     target_include_directories(TwoFingerGestureCheck PRIVATE src/Utilities)
