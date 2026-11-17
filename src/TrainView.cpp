@@ -168,13 +168,16 @@ static void touchpadMoves(void *data, float dx, float dy, float scale)
 #include "TrainExample/TrainExample.H"
 #endif
 
-// Field of view of the world camera, in degrees.
-static const float worldFieldOfView = 40.0f;
+// The field of view the World, Train, Chase and Fly cameras start with, in
+// degrees; the FOV slider changes all of them (TrainView::setFieldOfView).
+static const float startFieldOfView = 70.0f;
+// The World camera's start: this far away with a 40 degree view frames the
+// island; a wider view starts as much closer.
+static const float worldStartDistance = 250.0f;
+static const float worldStartFieldOfView = 40.0f;
 // The lowest the observer camera can fly. Tracks may dive below the floor at
 // y = 0 (into the sea, say), so the camera can follow them well under it.
 static const float flyLowest = -200.0f;
-// The observer camera's starting field of view; the "fly FOV" slider changes it.
-static const float flyFieldOfView = 90.0f;
 
 //************************************************************************
 //
@@ -185,12 +188,12 @@ TrainView::TrainView(int x, int y, int w, int h, const char *l) : Fl_Gl_Window(x
 {
     tw = 0;
     selectedCube = -1;
-    flyCamPlaced = false;
     mouseCaptured = false;
+    m_fieldOfView = startFieldOfView;
     mode(FL_RGB | FL_ALPHA | FL_DOUBLE | FL_STENCIL);
 
     resetArcball();
-    flyCam.setup(this, flyFieldOfView);
+    flyCam.setup(this, m_fieldOfView);
     flyCam.setGround(flyLowest - FlyCam::minHeight); // the eye stays minHeight above it
     Fl::add_system_handler(touchpadWheel, this);
     Fl::add_system_handler(flyKeys, this);
@@ -214,7 +217,58 @@ void TrainView::resetArcball()
     // Set up the camera to look at the world
     // these parameters might seem magical, and they kindof are
     // a little trial and error goes a long way
-    arcball.setup(this, worldFieldOfView, 250, .2f, .4f, 0);
+    const float halfAngle = 3.14159265f / 360.0f;
+    const float distance = worldStartDistance * tanf(worldStartFieldOfView * halfAngle) /
+                           tanf(m_fieldOfView * halfAngle);
+    arcball.setup(this, m_fieldOfView, distance, .2f, .4f, 0);
+}
+
+//************************************************************************
+//
+// * The FOV slider: one field of view for every perspective camera (the Top
+//   camera is orthographic)
+//========================================================================
+void TrainView::setFieldOfView(float degrees)
+//========================================================================
+{
+    m_fieldOfView = degrees;
+    arcball.setFieldOfView(degrees);
+    flyCam.setFieldOfView(degrees);
+    damage(1);
+}
+
+//************************************************************************
+//
+// * Start the observer camera exactly where the last frame was seen from,
+//   whichever camera drew it, so switching to Fly does not jump. The view
+//   keeps its direction; only a banked train view loses its roll, since Fly
+//   keeps the horizon level.
+//========================================================================
+void TrainView::placeFlyCamAtCurrentView()
+//========================================================================
+{
+    if (!m_editCameraValid)
+    {
+        placeFlyCamAtWorldView();
+        return;
+    }
+    if (m_editCameraOrthographic)
+    {
+        // The Top view has no eye point: look straight down from the height
+        // at which the same width of ground fills the view.
+        const float aspect = h() > 0 ? static_cast<float>(w()) / static_cast<float>(h()) : 1.0f;
+        const float halfHeight = aspect >= 1.0f ? 110.0f / aspect : 110.0f;
+        const float height = halfHeight / tanf(m_fieldOfView * 3.14159265f / 360.0f);
+        flyCam.setPose(0.0f, height, 0.0f, 0.0f, -89.0f);
+    }
+    else
+    {
+        GLfloat view[16];
+        for (int i = 0; i < 16; ++i)
+            view[i] = static_cast<GLfloat>(m_editCamera.view[i]);
+        flyCam.setFromViewMatrix(view);
+    }
+    damage(1);
 }
 
 //************************************************************************
@@ -228,8 +282,7 @@ void TrainView::placeFlyCamAtWorldView()
     arcball.setProjection();
     GLfloat view[16];
     glGetFloatv(GL_MODELVIEW_MATRIX, view);
-    flyCam.setFromViewMatrix(view, worldFieldOfView);
-    flyCamPlaced = true;
+    flyCam.setFromViewMatrix(view); // the same field of view: no correction
     damage(1);
 }
 
@@ -281,8 +334,7 @@ void TrainView::cameraChanged()
         flyCam.stop();
         return;
     }
-    if (!flyCamPlaced)
-        placeFlyCamAtWorldView();
+    placeFlyCamAtCurrentView();
     // Take keyboard focus from the camera button so WASD works at once.
     Fl::focus(this);
 }
@@ -749,6 +801,7 @@ void TrainView::drawEditOverlay()
     m_editCamera.viewport[1] = 0;
     m_editCamera.viewport[2] = w();
     m_editCamera.viewport[3] = h();
+    m_editCameraOrthographic = tw->topCam->value() != 0;
     m_editCameraValid = true;
 
     tw->syncTransform();
@@ -1128,7 +1181,7 @@ void TrainView::setProjection()
                 const Pnt3f look = position + up * 1.0f;
                 glMatrixMode(GL_PROJECTION);
                 glLoadIdentity();
-                gluPerspective(60.0, aspect, 0.5, 1000.0);
+                gluPerspective(m_fieldOfView, aspect, 0.5, 1000.0);
                 glMatrixMode(GL_MODELVIEW);
                 glLoadIdentity();
                 gluLookAt(eye.x, eye.y, eye.z, look.x, look.y, look.z, 0.0, 1.0, 0.0);
@@ -1138,9 +1191,9 @@ void TrainView::setProjection()
 
         glMatrixMode(GL_PROJECTION);
         glLoadIdentity();
-        // a wide view, tipped down a little: on a climb the rider still sees
-        // the land below and not only the sky
-        gluPerspective(72.0, aspect, 0.5, 1000.0);
+        // tipped down a little: on a climb the rider still sees the land
+        // below and not only the sky
+        gluPerspective(m_fieldOfView, aspect, 0.5, 1000.0);
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
         const Pnt3f target = eye + forward * 15.0f + up * -3.6f;

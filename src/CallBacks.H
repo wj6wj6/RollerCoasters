@@ -34,7 +34,7 @@ void cameraCB(Fl_Widget *, TrainWindow *tw);
 // The observer camera speed slider moved
 void flySpeedCB(Fl_Widget *, TrainWindow *tw);
 // The observer camera field of view slider moved
-void flyFovCB(Fl_Widget *, TrainWindow *tw);
+void fovCB(Fl_Widget *, TrainWindow *tw);
 
 // Callback that adds a new point to the spline
 // idea: add the point AFTER the selected point

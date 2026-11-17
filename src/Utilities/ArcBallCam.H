@@ -123,6 +123,16 @@ class ArcBallCam
     ~ArcBallCam();
 
   public:
+    // Change the field of view (degrees) without moving the camera.
+    void setFieldOfView(float degrees)
+    {
+        fieldOfView = degrees;
+    }
+    float fieldOfViewDegrees() const
+    {
+        return fieldOfView;
+    }
+
     // you must call setup before doing anything!
     void setup(Fl_Gl_Window *wind,
                float fieldOfView = 40.0, // field of view, in degrees

@@ -85,9 +85,9 @@ void flySpeedCB(Fl_Widget *, TrainWindow *tw)
 //
 // * The observer camera field of view slider moved
 //===========================================================================
-void flyFovCB(Fl_Widget *, TrainWindow *tw)
+void fovCB(Fl_Widget *, TrainWindow *tw)
 {
-    tw->trainView->flyCam.setFieldOfView(static_cast<float>(tw->flyFov->value()));
+    tw->trainView->setFieldOfView(static_cast<float>(tw->fovSlider->value()));
 }
 
 //***************************************************************************
@@ -206,9 +206,9 @@ void loadCB(Fl_Widget *, TrainWindow *tw)
 }
 //***************************************************************************
 //
-// * Replace the track with the demo ride and ride it: the scenery and the
-//   shader effects on, seen from the train, starting where the ride comes
-//   ashore so the island is the first thing in view
+// * Replace the track with the demo ride, ready to go (Run starts it): the
+//   scenery and the shader effects on, seen from the train, starting where
+//   the ride comes ashore so the island is the first thing in view
 //===========================================================================
 void grandTourCB(Fl_Widget *, TrainWindow *tw)
 //===========================================================================
@@ -228,7 +228,6 @@ void grandTourCB(Fl_Widget *, TrainWindow *tw)
     tw->speed->value(1.0);
     tw->trainCam->setonly();
     tw->trainView->cameraChanged();
-    tw->runButton->value(1);
     tw->damageMe();
 }
 

@@ -122,8 +122,8 @@ class TrainWindow : public Fl_Double_Window
     Fl_Button *ssaoButton;      // screen space ambient occlusion
     // how fast the observer camera flies, in world units per second
     Fl_Value_Slider *flySpeed;
-    // the observer camera's field of view, in degrees
-    Fl_Value_Slider *flyFov;
+    // the field of view of every perspective camera, in degrees
+    Fl_Value_Slider *fovSlider;
 
     // we have other widgets as part of the sample solution
     // this is not for 559 students to know about

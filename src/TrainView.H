@@ -120,11 +120,16 @@ class TrainView : public Fl_Gl_Window
     float animationTime() const;
 
     // Call when the camera buttons change: entering the observer (fly) camera
-    // places it at the world view the first time; leaving it stops any motion.
+    // places it where the last frame was seen from; leaving it stops any motion.
     void cameraChanged();
 
-    // Move the observer camera to where the world camera is looking from.
+    // Move the observer camera to where the world camera is looking from (Home).
     void placeFlyCamAtWorldView();
+    // Move the observer camera to where the last frame was seen from.
+    void placeFlyCamAtCurrentView();
+
+    // The FOV slider: the field of view of every perspective camera.
+    void setFieldOfView(float degrees);
 
     // Spectator-style mouse look in the observer camera: the cursor is hidden
     // and held at the view centre while captured. Esc or losing focus frees it.
@@ -142,11 +147,11 @@ class TrainView : public Fl_Gl_Window
     void drawFlyOverlay();
 
   public:
-    ArcBallCam arcball; // keep an ArcBall for the UI
-    FlyCam flyCam;      // free-moving observer camera
-    bool flyCamPlaced;  // has the observer camera been placed yet?
-    bool mouseCaptured; // does the mouse steer the observer camera?
-    int selectedCube;   // simple - just remember which cube is selected
+    ArcBallCam arcball;  // keep an ArcBall for the UI
+    FlyCam flyCam;       // free-moving observer camera
+    float m_fieldOfView; // degrees, the World, Train, Chase and Fly cameras
+    bool mouseCaptured;  // does the mouse steer the observer camera?
+    int selectedCube;    // simple - just remember which cube is selected
 
     TrainWindow *tw;               // The parent of this display window
     CTrack *m_pTrack;              // The track of the entire scene
@@ -161,7 +166,8 @@ class TrainView : public Fl_Gl_Window
     // Control point editing state.
     TransformGizmo::Camera m_editCamera = {}; // the camera of the last frame drawn
     bool m_editCameraValid = false;
-    float m_gizmoSize = 1.0f; // length of the handles in world units
+    bool m_editCameraOrthographic = false; // the last frame was the Top view
+    float m_gizmoSize = 1.0f;              // length of the handles in world units
     EditMode m_editMode = EDIT_IDLE;
     TransformGizmo::Handle m_editHandle = TransformGizmo::NONE;
     TransformGizmo::Handle m_hoverHandle = TransformGizmo::NONE;

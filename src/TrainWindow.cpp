@@ -170,10 +170,10 @@ TrainWindow::TrainWindow(const int x, const int y)
         flyCam->value(0);
         UiTheme::styleToggle(flyCam);
         flyCam->callback((Fl_Callback *)cameraCB, this);
-        flyCam->tooltip("Observer camera (spectator style), starts at the World view\n"
+        flyCam->tooltip("Observer camera (spectator style), starts from the current view\n"
                         "Click the view: the mouse looks around; Esc frees the mouse\n"
                         "Move: W/A/S/D (level), Space up, Shift down, hold Ctrl to go faster\n"
-                        "Speed: mouse wheel, +/- keys or the fly speed slider\n"
+                        "Speed: mouse wheel, +/- keys or the Fly slider below\n"
                         "Also: right drag or arrow keys look; E/Q up/down\n"
                         "Touchpad: two fingers look, spread / pinch fly, Alt + two fingers slide\n"
                         "Lost? F: face the train; Home: back to the World view\n"
@@ -191,13 +191,14 @@ TrainWindow::TrainWindow(const int x, const int y)
         flySpeed->callback((Fl_Callback *)flySpeedCB, this);
 
         pty += rowH + gap;
-        flyFov = new Fl_Value_Slider(sliderX, pty, sliderW, rowH, "FOV");
-        UiTheme::styleSlider(flyFov);
-        flyFov->range(FlyCam::minFieldOfView, FlyCam::maxFieldOfView);
-        flyFov->step(1);
-        flyFov->value(trainView->flyCam.fieldOfViewDegrees());
-        flyFov->tooltip("Field of view of the Fly camera, in degrees");
-        flyFov->callback((Fl_Callback *)flyFovCB, this);
+        fovSlider = new Fl_Value_Slider(sliderX, pty, sliderW, rowH, "FOV");
+        UiTheme::styleSlider(fovSlider);
+        fovSlider->range(FlyCam::minFieldOfView, FlyCam::maxFieldOfView);
+        fovSlider->step(1);
+        fovSlider->value(trainView->m_fieldOfView);
+        fovSlider->tooltip("Field of view of the World, Train, Chase and Fly cameras, in degrees\n"
+                           "(Top is a flat orthographic view)");
+        fovSlider->callback((Fl_Callback *)fovCB, this);
 
         pty += rowH + bottomPad;
         camGroup->end();
@@ -385,8 +386,8 @@ TrainWindow::TrainWindow(const int x, const int y)
     // keep the water, clouds and plants moving even when the train is stopped
     Fl::add_timeout(1.0 / 30.0, animateEffectsCB, this);
 
-    // The program opens on the demo: riding the Grand Tour, in a window wide
-    // enough to enjoy the view.
+    // The program opens on the demo: the Grand Tour seen from the train, in
+    // a window wide enough to enjoy the view. Run starts the ride.
     resize(x, y, 1180, kPanelHeight);
     grandTourCB(nullptr, this);
 }
