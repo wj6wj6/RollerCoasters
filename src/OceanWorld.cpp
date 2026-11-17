@@ -59,7 +59,7 @@ const float kPlantAbove = 9.0f;
 enum Block
 {
     AIR = 0,
-    ISLAND, // under the grass island: solid but drawn by GrassGround
+    ISLAND, // under the island: solid but drawn by LandWorld
     SAND,
     STONE,
     CAVE_ROCK,
@@ -108,19 +108,72 @@ bool isCoral(int block)
     return block >= CORAL_PINK && block <= CORAL_RED;
 }
 
-// The demo ride. It leaves the island to the east and dives through ring
-// gates into the reef, turns south through the kelp forest and a rock arch,
-// runs west through the ruins, past the jellyfish and the wreck, north
-// through a lamp-lit portal into the crystal tunnel, and climbs out through
-// more rings back onto the island. It stays a few units above the sea bed;
-// everything in its way is carved out, whichever spline type draws it.
-const float kDemoTrack[][3] = {
-    {30, 6, -20},      {72, 6, -8},      {108, 2, 4},     {140, -12, 14},   {172, -27, 2},
-    {204, -33, -14},   {232, -34, 22},   {236, -34, 78},  {214, -34, 128},  {170, -33, 166},
-    {112, -34, 188},   {50, -35, 188},   {-12, -35, 188}, {-74, -34, 190},  {-132, -33, 196},
-    {-180, -32, 168},  {-205, -31, 112}, {-208, -30, 48}, {-206, -30, -18}, {-196, -25, -78},
-    {-168, -14, -134}, {-126, -1, -146}, {-84, 10, -152}, {-44, 12, -112},  {-10, 9, -62}};
+// The demo ride, the "Grand Tour". The first 25 points are the underwater
+// part: it leaves the island to the east and dives through ring gates into
+// the reef, turns south through the kelp forest and a rock arch, runs west
+// through the ruins, past the jellyfish and the wreck, north through a
+// lamp-lit portal into the crystal tunnel, and climbs out through more rings
+// back onto the island. It stays a few units above the sea bed; everything in
+// its way is carved out, whichever spline type draws it.
+//
+// The rest is the land part (LandWorld builds the island around it): a
+// spiral up the snow mountain on a ledge, a dive past the floating island
+// into the badlands canyon, low over the water past the waterfall, out
+// through the canyon wall, over a lava river and up across the volcano's
+// crater, over a bridge above the outgoing track, through the mine tunnel
+// in the crags and down into the meadow.
+const float kDemoTrack[][3] = {{30, 6, -20},
+                               {72, 6, -8},
+                               {108, 2, 4},
+                               {140, -12, 14},
+                               {172, -27, 2},
+                               {204, -33, -14},
+                               {232, -34, 22},
+                               {236, -34, 78},
+                               {214, -34, 128},
+                               {170, -33, 166},
+                               {112, -34, 188},
+                               {50, -35, 188},
+                               {-12, -35, 188},
+                               {-74, -34, 190},
+                               {-132, -33, 196},
+                               {-180, -32, 168},
+                               {-205, -31, 112},
+                               {-208, -30, 48},
+                               {-206, -30, -18},
+                               {-196, -25, -78},
+                               {-168, -14, -134},
+                               {-126, -1, -146},
+                               {-84, 10, -152},
+                               {-44, 12, -112},
+                               {-10, 9, -62},
+                               // land
+                               {-20, 14, -34},
+                               {-50, 24, -18},
+                               {-84, 32, -2},
+                               {-91, 42, 28},
+                               {-73, 52, 47},
+                               {-52, 62, 48},
+                               {-37, 70, 32},
+                               {-28, 74, 6},
+                               {-2, 70, -12},
+                               {20, 52, 4},
+                               {22, 26, 30},
+                               {14, 9, 58},
+                               {8, 6, 82},
+                               {32, 9, 93},
+                               {62, 14, 95},
+                               {92, 34, 86},
+                               {86, 56, 64},
+                               {60, 58, 58},
+                               {72, 46, 24},
+                               {90, 34, -8},
+                               {84, 30, -46},
+                               {56, 26, -88},
+                               {26, 18, -74},
+                               {14, 10, -46}};
 const int kDemoCount = static_cast<int>(sizeof(kDemoTrack) / sizeof(kDemoTrack[0]));
+const int kLandStart = 24; // the control point where the ride comes back ashore
 
 // Control points the scenery is placed around.
 const int kReefArchPoint = 5;
@@ -738,7 +791,7 @@ void ridePoint(float u, int type, float out[3])
 }
 
 // Closely spaced points along the ride for all three spline types: x, y, z.
-std::vector<float> rideSamples()
+std::vector<float> sampleRide()
 {
     const int steps = 64;
     std::vector<float> xyz;
@@ -1512,7 +1565,7 @@ float plantGlow(int plant)
 // Builds the whole world into the grid: no OpenGL here, so tests can use it.
 void buildWorld(Grid &g)
 {
-    const std::vector<float> ride = rideSamples();
+    const std::vector<float> ride = sampleRide();
     Clearance clear;
     clear.add(ride);
 
@@ -2068,6 +2121,16 @@ std::vector<float> OceanWorld::demoTrack()
         for (int k = 0; k < 3; ++k)
             xyz.push_back(kDemoTrack[i][k]);
     return xyz;
+}
+
+std::vector<float> OceanWorld::rideSamples()
+{
+    return sampleRide();
+}
+
+int OceanWorld::landStart()
+{
+    return kLandStart;
 }
 
 void OceanWorld::shadowBounds(float lo[3], float hi[3])

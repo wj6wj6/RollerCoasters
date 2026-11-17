@@ -142,12 +142,22 @@ TrainWindow::TrainWindow(const int x, const int y)
                           "Reset: Shift + double left click (or double right click)\n"
                           "Zoom: spread fingers to zoom in; pinch to zoom out (no Ctrl needed)\n"
                           "Also: Ctrl + scroll up to zoom in; Ctrl + scroll down to zoom out");
-        trainCam = new Fl_Button(col2, pty, colW, rowH, "Train");
+        // four cameras share the row
+        const int camW = (innerW - 3 * gap) / 4;
+        worldCam->resize(innerX, pty, camW, rowH);
+        trainCam = new Fl_Button(innerX + camW + gap, pty, camW, rowH, "Train");
         trainCam->type(FL_RADIO_BUTTON);
         trainCam->value(0);
         UiTheme::styleToggle(trainCam);
         trainCam->callback((Fl_Callback *)damageCB, this);
-        topCam = new Fl_Button(col3, pty, col3W, rowH, "Top");
+        chaseCam = new Fl_Button(innerX + 2 * (camW + gap), pty, camW, rowH, "Chase");
+        chaseCam->type(FL_RADIO_BUTTON);
+        chaseCam->value(0);
+        UiTheme::styleToggle(chaseCam);
+        chaseCam->callback((Fl_Callback *)damageCB, this);
+        chaseCam->tooltip("Follows behind the train: see the riders against the scenery");
+        const int cam4 = innerX + 3 * (camW + gap);
+        topCam = new Fl_Button(cam4, pty, innerX + innerW - cam4, rowH, "Top");
         topCam->type(FL_RADIO_BUTTON);
         topCam->value(0);
         UiTheme::styleToggle(topCam);
@@ -176,11 +186,15 @@ TrainWindow::TrainWindow(const int x, const int y)
 
         pty += browserH + gap;
 
-        // add and delete points
-        Fl_Button *ap = new Fl_Button(innerX, pty, halfW, rowH, "Add Point");
+        // show the control points for editing; add and delete points
+        editButton = new Fl_Button(innerX, pty, colW, rowH, "Edit");
+        togglify(editButton);
+        editButton->tooltip("Show the control points and their move handles.\n"
+                            "Off for the Grand Tour: the scenery is built around that ride.");
+        Fl_Button *ap = new Fl_Button(col2, pty, colW, rowH, "Add Pt");
         UiTheme::styleButton(ap);
         ap->callback((Fl_Callback *)addPointCB, this);
-        Fl_Button *dp = new Fl_Button(half2, pty, half2W, rowH, "Delete Point");
+        Fl_Button *dp = new Fl_Button(col3, pty, col3W, rowH, "Del Pt");
         UiTheme::styleButton(dp);
         dp->callback((Fl_Callback *)deletePointCB, this);
 
@@ -285,26 +299,30 @@ TrainWindow::TrainWindow(const int x, const int y)
         lightCard->end();
         pty += cardGap;
 
-        // ---- WORLD: water, weather and the underwater demo ride
+        // ---- WORLD: water, weather, the scenery and the demo ride
         const int oceanH = 26;
         Fl_Group *worldCard = UiTheme::beginCard(cardX, pty, cardW,
                                                  titleH + rowH + gap + oceanH + bottomPad, "World");
         pty += titleH;
 
-        waterButton = new Fl_Button(innerX, pty, halfW, rowH, "Water");
+        waterButton = new Fl_Button(innerX, pty, colW, rowH, "Water");
         togglify(waterButton, 1);
         waterButton->tooltip("Ocean with reflections, refraction and foam (needs Light+)");
-        rainButton = new Fl_Button(half2, pty, half2W, rowH, "Rain");
+        rainButton = new Fl_Button(col2, pty, colW, rowH, "Rain");
         togglify(rainButton);
         rainButton->tooltip("Rain: wet reflective ground, rain streaks and ripples on the water "
                             "(needs Light+)");
+        sceneryButton = new Fl_Button(col3, pty, col3W, rowH, "Scenery");
+        togglify(sceneryButton, 1);
+        sceneryButton->tooltip("The island's mountains, canyon, volcano and village.\n"
+                               "Off: level grass, for editing a track of your own.");
 
         pty += rowH + gap;
-        Fl_Button *ocean = new Fl_Button(innerX, pty, innerW, oceanH, "Ocean Ride");
+        Fl_Button *ocean = new Fl_Button(innerX, pty, innerW, oceanH, "Grand Tour");
         UiTheme::styleAccentButton(ocean);
-        ocean->callback((Fl_Callback *)oceanRideCB, this);
-        ocean->tooltip("Load a ride that dives under the sea: reef, kelp, ruins, a wreck\n"
-                       "and a crystal tunnel. Watch it from the Train view.");
+        ocean->callback((Fl_Callback *)grandTourCB, this);
+        ocean->tooltip("Ride the whole island: up the snow mountain, through the canyon,\n"
+                       "over the volcano's crater, through the mine and under the sea.");
 
         pty += oceanH + bottomPad;
         worldCard->end();
@@ -329,6 +347,11 @@ TrainWindow::TrainWindow(const int x, const int y)
 
     // keep the water, clouds and leaves moving even when the train is stopped
     Fl::add_timeout(1.0 / 30.0, animateEffectsCB, this);
+
+    // The program opens on the demo: riding the Grand Tour, in a window wide
+    // enough to enjoy the view.
+    resize(x, y, 1180, 690);
+    grandTourCB(nullptr, this);
 }
 
 //************************************************************************

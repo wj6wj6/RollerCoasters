@@ -11,7 +11,7 @@ flowchart LR
     View --> Track
     View --> Rails[TrackRenderer / 鐵軌、枕木與弧長表]
     Rails --> Track
-    View --> Train[TrainModel / 三節車廂、乘客與車燈]
+    View --> Train[TrainModel / 三節車廂、方塊人乘客與車燈]
     Train --> Track
     View --> Gizmo[TransformGizmo / 控制點移動把手的挑選、拖曳與繪製]
     View --> Camera[ArcBallCam / 相機與手勢平滑]
@@ -27,11 +27,13 @@ flowchart LR
     Frame --> Lighting[AdvancedLighting / shadow map、逐像素光照、頭燈]
     Frame --> Post[PostEffects / 天空、波浪水面與 SSR、雨與濕地反射、SSAO、Bloom、god rays、ACES]
     Frame -->|drawGround / drawUnderwater / drawObjects| View
-    View --> Ground[GrassGround / 草方塊地面]
+    View --> Land[LandWorld / 方塊島嶼：雪山、峽谷、火山、村莊、木棧橋]
+    Land --> LandTex[LandTextures / 島嶼方塊與植物貼圖]
+    Land -->|rideSamples| Ocean
     View --> Ocean[OceanWorld / 方塊海床、珊瑚、遺跡、沉船、水晶隧道、海洋生物]
-    Ground --> Pixel[PixelArt / 16×16 程序貼圖]
+    LandTex --> Pixel[PixelArt / 16×16 程序貼圖]
     Ocean --> Pixel
-    Callbacks -->|Ocean Ride| Ocean
+    Callbacks -->|Grand Tour| Ocean
 ```
 
 `TrainWindow` 持有場景狀態與 widget；`TrainView` 讀取場景與 UI 選項並繪圖。
@@ -56,7 +58,7 @@ flowchart LR
 `Water` 開啟時另外畫 `OceanWorld`：海床是 128×14×128 的方塊格，建好後編成 display list。
 建置時先算 Minecraft 式的光照：天光沿開放的柱子直灌而下、每往旁邊一格少一級，水晶自己發光，
 角落再加 ambient occlusion，結果放進 texture unit 1 的座標（x 發光、y 擺動、z 水晶光、w 天光），所以隧道深處自然變暗。
-岩拱、閘門與隧道是沿著 `Ocean Ride` 的三種 spline 挖出來的，植物另外避開軌道周圍的淨空帶，
+岩拱、閘門與隧道是沿著 `Grand Tour` 的三種 spline 挖出來的，植物另外避開軌道周圍的淨空帶，
 `OceanWorld::rideObstructions()` 與測試 `OceanRideClearanceCheck` 用正式的 `CTrack` 取樣檢查列車不會碰到方塊或植物。
 魚群、鯊魚、海龜、魟魚、鯨魚與水母每格以方塊即時畫出，大型生物只在景物高度上限之上活動。
 牠們的位置是時間的函數，不需保存狀態：沿軌道的魚群取軌道曲線上方的位置（軌道周圍已挖空，必定是開放水域），
@@ -65,6 +67,17 @@ flowchart LR
 鏡頭在水下時改走水下流程：不畫反射，水面改從下方畫（Snell 窗），加上漂浮微粒與氣泡，
 再以半解析度沿視線 ray march shadow map 算出光束，最後全解析度套上水霧。
 caustics、吸收係數與水體顏色放在 `UnderwaterOptics.h`，三個 shader 共用；水下光束 pass 同時算出頭燈的光錐。
+
+`Grand Tour` 的控制點定義在 `OceanWorld`（前 25 點是海底段，其後是陸地段），`OceanWorld::rideSamples()` 把整圈以三種 spline 取樣。
+`LandWorld` 用這些取樣點建島：先由雜訊與幾個地形函式（雪山、火山與火山口、岩山、惡地台地與峽谷）算出每一格的高度與生態，
+填入方塊後放上熔岩湖與熔岩河、溪流與瀑布、村莊、池塘與漂浮島，再沿路線挖出淨空管（比列車需要的空間大），
+挖剩的薄頂會移除、軌道正下方鋪碎石，有頂的路段在牆上嵌燈籠或水晶，最後才種樹與花草（只種在淨空帶之外）。
+光照烘焙與 `OceanWorld` 相同（天光、發光方塊、ambient occlusion）；熔岩與燈籠的暖光寫進頂點顏色與發光量，水晶的冷光用 shader 既有的方塊光。
+`LandWorld::rideObstructions()` 與測試 `LandRideClearanceCheck` 用正式的 `CTrack` 取樣，檢查三種 spline 下列車都不會碰到方塊或植物。
+會動的東西（瀑布水流、風車、動物、雲、熱氣球）每格以方塊即時畫出；`drawSupports()` 依目前軌道每 9 單位立一座木棧橋，
+從軌道往下找到地面，下方有另一段軌道或熔岩時不立。山體也畫進 shadow map，所以會投影。
+`Scenery` 關閉時 `LandWorld` 改建平坦的編輯用島；固定管線（`Light+` 關閉）的平面陰影只在這個模式使用。
+`Train`／`Chase` 相機由 `TrainView::setProjection()` 從軌道座標系算出。
 
 軌道格式首行為控制點數，其後每行是位置 `x y z` 與可選方向 `x y z`。
 載入後 `trainU` 歸零。個人資料與來源程式分開保存；應以複本驗證讀取與還原。

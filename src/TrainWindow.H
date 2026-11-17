@@ -91,6 +91,7 @@ class TrainWindow : public Fl_Double_Window
     // which viewpoint are we drawing from
     Fl_Button *worldCam;
     Fl_Button *trainCam;
+    Fl_Button *chaseCam; // behind the train, looking over it
     Fl_Button *topCam;
 
     // the type of the spline (use its value to determine)
@@ -114,6 +115,8 @@ class TrainWindow : public Fl_Double_Window
     Fl_Value_Slider *timeOfDay; // moves the sun, 0 to 24 hours
     Fl_Button *waterButton;     // reflective ocean around the island
     Fl_Button *rainButton;      // rain: wet ground, streaks and ripples
+    Fl_Button *sceneryButton;   // the island's scenery, or level grass
+    Fl_Button *editButton;      // show the control points for editing
     Fl_Button *bloomButton;     // bloom and god rays
     Fl_Button *ssaoButton;      // screen space ambient occlusion
 

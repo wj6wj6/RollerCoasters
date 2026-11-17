@@ -9,6 +9,7 @@
 
 #include <math.h>
 #include <chrono>
+#include <vector>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -38,6 +39,8 @@ class TrainViewScene : public SceneCallbacks
     {
         if (!shadowPass)
             setupObjects();
+        else
+            m_view->drawGround(true); // the mountains cast shadows too
         m_view->drawStuff(shadowPass);
     }
     void drawUnderwater(bool shadowPass) override
@@ -80,11 +83,43 @@ void trainUpVector(const Pnt3f &forward, Pnt3f &up)
 
 //************************************************************************
 //
-// * The 200 x 200 grass island (5 x 5 blocks), one block deep
+// * The 200 x 200 island: the scenery, or level grass for editing a track
 //========================================================================
-void TrainView::drawGround()
+bool TrainView::sceneryOn() const
 {
-    m_ground.draw(200.0f, 40, -5.0f);
+    return tw->sceneryButton->value() != 0;
+}
+
+void TrainView::drawGround(bool shadowPass)
+{
+    m_land.draw(!sceneryOn(), shadowPass, secondsSinceStart());
+}
+
+//************************************************************************
+//
+// * Trestles under the track, one every 9 units along it
+//========================================================================
+void TrainView::drawSupports(bool shadowPass)
+{
+    const TrackSplineType splineType = static_cast<TrackSplineType>(tw->splineBrowser->value());
+    const float period = static_cast<float>(m_pTrack->points.size());
+    std::vector<float> rail;
+    Pnt3f last = m_pTrack->evaluatePosition(0.0f, splineType);
+    float travelled = 9.0f;
+    for (float u = 0.0f; u < period; u += 0.02f)
+    {
+        const Pnt3f p = m_pTrack->evaluatePosition(u, splineType);
+        const float dx = p.x - last.x, dy = p.y - last.y, dz = p.z - last.z;
+        travelled += sqrtf(dx * dx + dy * dy + dz * dz);
+        last = p;
+        if (travelled < 9.0f)
+            continue;
+        travelled = 0.0f;
+        rail.push_back(p.x);
+        rail.push_back(p.y);
+        rail.push_back(p.z);
+    }
+    m_land.drawSupports(rail, shadowPass);
 }
 
 //************************************************************************
@@ -155,12 +190,23 @@ void TrainView::fillLightingFrame(LightingFrame &frame)
     frame.rain = m_rain;
     frame.wetness = m_wetness;
 
-    // The trees stand near the edge of the ground; start with a box that
-    // holds them and grow it to include every control point.
-    float lo[3] = {-92.0f, 0.0f, -92.0f};
-    float hi[3] = {92.0f, 24.0f, 92.0f};
+    // Start with a box that holds the island (the scenery's peaks, or the
+    // editor island's trees) and grow it to include every control point.
+    float lo[3] = {-102.0f, 0.0f, -102.0f};
+    float hi[3] = {102.0f, 24.0f, 102.0f};
+    if (sceneryOn())
+        LandWorld::shadowBounds(lo, hi);
     if (tw->waterButton->value())
-        OceanWorld::shadowBounds(lo, hi); // the islet, ruins and wreck too
+    {
+        // the islet, ruins and wreck too
+        float seaLo[3], seaHi[3];
+        OceanWorld::shadowBounds(seaLo, seaHi);
+        for (int k = 0; k < 3; ++k)
+        {
+            lo[k] = fminf(lo[k], seaLo[k]);
+            hi[k] = fmaxf(hi[k], seaHi[k]);
+        }
+    }
     for (size_t i = 0; i < m_pTrack->points.size(); ++i)
     {
         const Pnt3f &p = m_pTrack->points[i].pos;

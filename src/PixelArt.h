@@ -2,7 +2,7 @@
      File:        PixelArt.h
 
      Comment:     Helpers for the 16 x 16 block textures that are drawn in
-                  code (GrassGround, OceanWorld): a repeatable per-texel
+                  code (LandWorld, OceanWorld): a repeatable per-texel
                   hash and an uploader that keeps the pixels crisp up close
                   and mip-maps them far away.
 

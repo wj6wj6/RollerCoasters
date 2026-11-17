@@ -44,6 +44,11 @@ void resetCB(Fl_Widget *, TrainWindow *tw)
     tw->m_Track.resetPoints();
     tw->trainView->selectedCube = -1;
     tw->m_Track.trainU = 0;
+    // a track of one's own is edited on the level island, seen from outside
+    tw->sceneryButton->value(0);
+    tw->editButton->value(1);
+    tw->runButton->value(0);
+    tw->worldCam->setonly();
     tw->damageMe();
 }
 
@@ -172,20 +177,28 @@ void loadCB(Fl_Widget *, TrainWindow *tw)
 }
 //***************************************************************************
 //
-// * Replace the track with the underwater demo ride and show it with the
-//   shader effects
+// * Replace the track with the demo ride and ride it: the scenery and the
+//   shader effects on, seen from the train, starting where the ride comes
+//   ashore so the island is the first thing in view
 //===========================================================================
-void oceanRideCB(Fl_Widget *, TrainWindow *tw)
+void grandTourCB(Fl_Widget *, TrainWindow *tw)
 //===========================================================================
 {
     const std::vector<float> xyz = OceanWorld::demoTrack();
     tw->m_Track.points.clear();
     for (size_t i = 0; i + 2 < xyz.size(); i += 3)
         tw->m_Track.points.push_back(ControlPoint(Pnt3f(xyz[i], xyz[i + 1], xyz[i + 2])));
-    tw->m_Track.trainU = 0;
+    tw->m_Track.trainU = static_cast<float>(OceanWorld::landStart()) - 1.3f;
     tw->trainView->selectedCube = -1;
     tw->lightingButton->value(1);
     tw->waterButton->value(1);
+    tw->sceneryButton->value(1);
+    tw->editButton->value(0);
+    tw->splineBrowser->select(3);
+    tw->arcLength->value(1);
+    tw->speed->value(1.0);
+    tw->trainCam->setonly();
+    tw->runButton->value(1);
     tw->damageMe();
 }
 

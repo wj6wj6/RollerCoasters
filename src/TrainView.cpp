@@ -284,8 +284,8 @@ int TrainView::handle(int event)
 //========================================================================
 bool TrainView::canEdit() const
 {
-    // the control points are hidden while riding the train
-    return !tw->trainCam->value();
+    // the control points are shown with Edit on, and hidden while riding the train
+    return tw->editButton->value() && !tw->trainCam->value() && !tw->chaseCam->value();
 }
 
 bool TrainView::hasSelection() const
@@ -530,9 +530,11 @@ void TrainView::drawEditOverlay()
 
     // one line of text in the top left corner, as a 3D view has
     char text[160] = "";
-    const char *camera = tw->topCam->value()
-                             ? "Top Orthographic"
-                             : (tw->trainCam->value() ? "Train Camera" : "User Perspective");
+    const char *camera =
+        tw->topCam->value() ? "Top Orthographic"
+                            : (tw->trainCam->value()
+                                   ? "Train Camera"
+                                   : (tw->chaseCam->value() ? "Chase Camera" : "User Perspective"));
     if (!selected)
         snprintf(text, sizeof(text), "%s", camera);
     else
@@ -607,7 +609,7 @@ void TrainView::draw()
     if (!context_valid())
     {
         m_trackRenderer.releaseTextures();
-        m_ground.releaseTextures();
+        m_land.releaseResources();
         m_ocean.releaseResources();
         lighting.invalidate();
         effects.invalidate();
@@ -701,21 +703,21 @@ void TrainView::draw()
         return;
     }
 
+    // the island is lit like everything else: its cliffs need the shading
     setupFloor();
-    glDisable(GL_LIGHTING);
     drawGround();
 
     //*********************************************************************
     // now draw the object and we need to do it twice
     // once for real, and then once for shadows
     //*********************************************************************
-    glEnable(GL_LIGHTING);
     setupObjects();
 
     drawStuff();
 
-    // this time drawing is for shadows (except for top view)
-    if (tw->shadowButton->value() && !tw->topCam->value())
+    // this time drawing is for shadows (except for top view). They are
+    // flattened onto y = 0, which is only right on the level editor island.
+    if (tw->shadowButton->value() && !tw->topCam->value() && !sceneryOn())
     {
         setupShadows();
         drawStuff(true);
@@ -776,15 +778,21 @@ void TrainView::setProjection()
             forward = m_pTrack->evaluateTangent(m_pTrack->trainU, splineType);
             Pnt3f side;
             makeTrackFrame(forward, side, up);
-            eye = position + up * 2.2f + forward * 3.0f;
+            eye = position + up * 3.0f + forward * 3.0f;
+            // the chase camera rides behind and above the last car and looks
+            // over the train
+            if (tw->chaseCam->value())
+                eye = position + up * 8.0f + forward * -23.0f;
         }
 
         glMatrixMode(GL_PROJECTION);
         glLoadIdentity();
-        gluPerspective(60.0, aspect, 0.5, 1000.0);
+        // a wide view, tipped down a little: on a climb the rider still sees
+        // the land below and not only the sky
+        gluPerspective(72.0, aspect, 0.5, 1000.0);
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
-        const Pnt3f target = eye + forward * 15.0f;
+        const Pnt3f target = eye + forward * 15.0f + up * -3.6f;
         gluLookAt(eye.x, eye.y, eye.z, target.x, target.y, target.z, up.x, up.y, up.z);
     }
 }
@@ -801,65 +809,6 @@ void TrainView::setProjection()
 // if you have other objects in the world, make sure to draw them
 //########################################################################
 
-static void drawTreeCone(float radius, float height)
-{
-    const int segments = 12;
-    glBegin(GL_TRIANGLES);
-    for (int i = 0; i < segments; ++i)
-    {
-        const float a0 = 6.2831853f * i / segments;
-        const float a1 = 6.2831853f * (i + 1) / segments;
-        const float mid = (a0 + a1) * 0.5f;
-        const float nx = cosf(mid);
-        const float nz = sinf(mid);
-        const float normalLength = sqrtf(1.0f + (radius / height) * (radius / height));
-        glNormal3f(nx / normalLength, (radius / height) / normalLength, nz / normalLength);
-        glVertex3f(radius * cosf(a0), 0.0f, radius * sinf(a0));
-        glVertex3f(0.0f, height, 0.0f);
-        glVertex3f(radius * cosf(a1), 0.0f, radius * sinf(a1));
-    }
-    glEnd();
-}
-
-static void drawTree(float x, float z, bool doingShadows)
-{
-    const int trunkSegments = 10;
-    const float trunkRadius = 1.1f;
-    const float trunkHeight = 7.0f;
-    glPushAttrib(GL_CURRENT_BIT);
-    glPushMatrix();
-    glTranslatef(x, 0.0f, z);
-    if (!doingShadows)
-        glColor3ub(105, 65, 35);
-    glBegin(GL_QUADS);
-    for (int i = 0; i < trunkSegments; ++i)
-    {
-        const float a0 = 6.2831853f * i / trunkSegments;
-        const float a1 = 6.2831853f * (i + 1) / trunkSegments;
-        const float nx = cosf((a0 + a1) * 0.5f);
-        const float nz = sinf((a0 + a1) * 0.5f);
-        glNormal3f(nx, 0.0f, nz);
-        glVertex3f(trunkRadius * cosf(a0), 0.0f, trunkRadius * sinf(a0));
-        glVertex3f(trunkRadius * cosf(a0), trunkHeight, trunkRadius * sinf(a0));
-        glVertex3f(trunkRadius * cosf(a1), trunkHeight, trunkRadius * sinf(a1));
-        glVertex3f(trunkRadius * cosf(a1), 0.0f, trunkRadius * sinf(a1));
-    }
-    glEnd();
-
-    if (!doingShadows)
-        glColor3ub(35, 125, 55);
-    glPushMatrix();
-    glTranslatef(0.0f, 4.0f, 0.0f);
-    drawTreeCone(5.0f, 11.0f);
-    glPopMatrix();
-    glPushMatrix();
-    glTranslatef(0.0f, 9.0f, 0.0f);
-    drawTreeCone(3.8f, 9.0f);
-    glPopMatrix();
-    glPopMatrix();
-    glPopAttrib();
-}
-
 //========================================================================
 void TrainView::drawStuff(bool doingShadows)
 {
@@ -867,8 +816,8 @@ void TrainView::drawStuff(bool doingShadows)
     // don't draw the control points if you're driving
     // (otherwise you get sea-sick as you drive through them)
     // they are editing aids rather than part of the scene, so they cast no
-    // shadows; the selected one is orange
-    if (!tw->trainCam->value() && !doingShadows)
+    // shadows; the selected one is orange. Hidden until Edit is switched on.
+    if (canEdit() && !doingShadows)
     {
         for (size_t i = 0; i < m_pTrack->points.size(); ++i)
         {
@@ -891,12 +840,9 @@ void TrainView::drawStuff(bool doingShadows)
     drawTrack(this, doingShadows);
 #endif
 
-    // A small ring of trees gives the track a visible setting beyond the ground.
-    drawTree(-82.0f, -68.0f, doingShadows);
-    drawTree(-78.0f, 70.0f, doingShadows);
-    drawTree(82.0f, -70.0f, doingShadows);
-    drawTree(78.0f, 68.0f, doingShadows);
-    drawTree(0.0f, 88.0f, doingShadows);
+    // wooden trestles where the track is high above the scenery
+    if (sceneryOn() && m_pTrack->points.size() >= 4)
+        drawSupports(doingShadows);
 
     // draw the train: three coupled cars with riders (TrainModel)
     if (!tw->trainCam->value() && m_pTrack->points.size() >= 4)

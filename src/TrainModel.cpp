@@ -75,39 +75,69 @@ void boxPair(float x0, float y0, float z0, float x1, float y1, float z1)
     box(-x1, y0, z0, -x0, y1, z1);
 }
 
-// A rider: legs, body, a square head with hair, and both arms up, waving.
+// A rider in the block-figure style of sandbox games: the head, the body,
+// each arm and each leg is one box, with a face of square pixels. Seated,
+// so the legs point forward, and both arms are up, waving.
 void drawRider(float x, float z, int who, float time)
 {
-    const int shirts[4][3] = {{214, 60, 60}, {250, 196, 50}, {70, 170, 90}, {240, 240, 240}};
-    const int hairs[4][3] = {{60, 40, 28}, {30, 30, 34}, {190, 140, 60}, {120, 60, 30}};
-    const int *shirt = shirts[who % 4];
-    const int *hair = hairs[(who / 2 + who) % 4];
+    const int shirts[6][3] = {{38, 170, 176}, {214, 60, 60},  {250, 196, 50},
+                              {90, 170, 80},  {150, 90, 200}, {240, 240, 240}};
+    const int trousers[4][3] = {{58, 60, 150}, {70, 70, 80}, {120, 84, 50}, {40, 100, 120}};
+    const int hairs[4][3] = {{70, 46, 30}, {30, 30, 34}, {214, 170, 80}, {150, 70, 40}};
+    const int skins[3][3] = {{224, 172, 136}, {246, 206, 172}, {160, 108, 76}};
+    const int *shirt = shirts[who % 6];
+    const int *leg = trousers[(who / 2 + who) % 4];
+    const int *hair = hairs[(who * 3 + 1) % 4];
+    const int *skin = skins[(who * 5 + who / 3) % 3];
+    const float unit = 0.07f; // one pixel of the figure
 
-    colour(50, 60, 110);
-    box(x - 0.3f, 1.3f, z - 0.05f, x + 0.3f, 1.5f, z + 0.6f); // legs along the seat
+    // legs: two boxes along the seat, with shoes
+    for (int side = -1; side <= 1; side += 2)
+    {
+        const float lx = x + 0.14f * static_cast<float>(side);
+        colour(leg[0], leg[1], leg[2]);
+        box(lx - 0.13f, 1.3f, z - 0.05f, lx + 0.13f, 1.56f, z + 0.6f);
+        colour(70, 70, 76);
+        box(lx - 0.13f, 1.3f, z + 0.6f, lx + 0.13f, 1.56f, z + 0.74f);
+    }
+    // body
     colour(shirt[0], shirt[1], shirt[2]);
-    box(x - 0.32f, 1.5f, z - 0.2f, x + 0.32f, 2.2f, z + 0.15f);
-    colour(236, 188, 150);
-    box(x - 0.25f, 2.2f, z - 0.27f, x + 0.25f, 2.7f, z + 0.23f);
+    box(x - 0.28f, 1.5f, z - 0.2f, x + 0.28f, 2.3f, z + 0.08f);
+    // head: a cube, hair over the top, back and sides
+    const float hy = 2.3f, hz = z - 0.34f; // bottom and back of the head
+    colour(skin[0], skin[1], skin[2]);
+    box(x - 0.28f, hy, hz, x + 0.28f, hy + 0.56f, hz + 0.56f);
     colour(hair[0], hair[1], hair[2]);
-    box(x - 0.27f, 2.62f, z - 0.3f, x + 0.27f, 2.8f, z + 0.25f);
-    box(x - 0.27f, 2.3f, z - 0.32f, x + 0.27f, 2.7f, z - 0.25f);
-    // eyes, so the face reads from the front
-    colour(40, 40, 50);
-    box(x - 0.17f, 2.42f, z + 0.23f, x - 0.07f, 2.52f, z + 0.245f);
-    box(x + 0.07f, 2.42f, z + 0.23f, x + 0.17f, 2.52f, z + 0.245f);
+    box(x - 0.295f, hy + 0.42f, hz - 0.015f, x + 0.295f, hy + 0.575f, hz + 0.575f);
+    box(x - 0.295f, hy + 0.14f, hz - 0.015f, x + 0.295f, hy + 0.42f, hz + 0.3f);
+    // the face, one pixel deep: white eyes with dark pupils and a mouth
+    const float face = hz + 0.56f;
+    for (int side = -1; side <= 1; side += 2)
+    {
+        const float s = static_cast<float>(side);
+        const float inner = x + s * unit, outer = x + s * 3.0f * unit, mid = x + s * 2.0f * unit;
+        colour(250, 250, 250);
+        box(fminf(mid, outer), hy + 3.0f * unit, face, fmaxf(mid, outer), hy + 4.0f * unit,
+            face + 0.012f);
+        colour(60, 50, 120);
+        box(fminf(inner, mid), hy + 3.0f * unit, face, fmaxf(inner, mid), hy + 4.0f * unit,
+            face + 0.012f);
+    }
+    colour(120, 60, 50);
+    box(x - unit, hy + unit, face, x + unit, hy + 2.0f * unit, face + 0.012f);
 
+    // arms: one box each, sleeve and hand, up in the air and waving
     for (int side = -1; side <= 1; side += 2)
     {
         const float s = static_cast<float>(side);
         const float wave = sinf(time * 6.0f + static_cast<float>(who) * 1.7f + s) * 14.0f;
         glPushMatrix();
-        glTranslatef(x + 0.4f * s, 2.1f, z);
-        glRotatef(-18.0f * s + wave, 0.0f, 0.0f, 1.0f);
+        glTranslatef(x + 0.4f * s, 2.16f, z - 0.06f);
+        glRotatef(-16.0f * s + wave, 0.0f, 0.0f, 1.0f);
         colour(shirt[0], shirt[1], shirt[2]);
-        box(-0.09f, 0.0f, -0.1f, 0.09f, 0.35f, 0.1f);
-        colour(236, 188, 150);
-        box(-0.08f, 0.35f, -0.09f, 0.08f, 0.8f, 0.09f);
+        box(-0.12f, -0.12f, -0.12f, 0.12f, 0.3f, 0.12f);
+        colour(skin[0], skin[1], skin[2]);
+        box(-0.12f, 0.3f, -0.12f, 0.12f, 0.72f, 0.12f);
         glPopMatrix();
     }
 }

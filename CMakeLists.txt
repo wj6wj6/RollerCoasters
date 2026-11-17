@@ -50,7 +50,8 @@ target_link_libraries(Utilities PUBLIC project_options fltk)
 
 add_executable(RollerCoasters
     src/AdvancedLighting.h src/AdvancedLighting.cpp
-    src/GrassGround.h src/GrassGround.cpp
+    src/LandTextures.h src/LandTextures.cpp
+    src/LandWorld.h src/LandWorld.cpp
     src/MatrixMath.h
     src/OceanWorld.h src/OceanWorld.cpp
     src/PixelArt.h src/PixelArt.cpp
@@ -113,6 +114,14 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     target_link_libraries(OceanRideClearanceCheck PRIVATE Utilities glad)
     add_test(NAME OceanRideClearanceCheck COMMAND OceanRideClearanceCheck)
     set_tests_properties(OceanRideClearanceCheck PROPERTIES TIMEOUT 30 LABELS integration)
+
+    add_executable(LandRideClearanceCheck tests/LandRideClearanceCheck.cpp
+        src/LandWorld.cpp src/LandTextures.cpp src/OceanWorld.cpp src/PixelArt.cpp
+        src/Track.cpp src/ControlPoint.cpp)
+    target_include_directories(LandRideClearanceCheck PRIVATE src)
+    target_link_libraries(LandRideClearanceCheck PRIVATE Utilities glad)
+    add_test(NAME LandRideClearanceCheck COMMAND LandRideClearanceCheck)
+    set_tests_properties(LandRideClearanceCheck PROPERTIES TIMEOUT 30 LABELS integration)
 
     add_test(NAME VersionCheck COMMAND RollerCoasters --version)
     set_tests_properties(VersionCheck PROPERTIES TIMEOUT 10

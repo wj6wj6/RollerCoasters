@@ -50,7 +50,7 @@ class CTrack;
 #include "Utilities/ArcBallCam.H"
 #include "AdvancedLighting.h"
 #include "PostEffects.h"
-#include "GrassGround.h"
+#include "LandWorld.h"
 #include "OceanWorld.h"
 #include "TransformGizmo.h"
 #include "TrackRenderer.H"
@@ -106,9 +106,12 @@ class TrainView : public Fl_Gl_Window
     void drawAdvanced();
     void fillLightingFrame(LightingFrame &frame);
 
-    // the grass island everything stands on, and the sea floor around it
+    // the island everything stands on (the scenery, or the level editor
+    // island), the trestles under the track and the sea floor around it
     // (TrainViewEffects.cpp)
-    void drawGround();
+    bool sceneryOn() const;
+    void drawGround(bool shadowPass = false);
+    void drawSupports(bool shadowPass);
     void drawUnderwater(bool shadowPass);
 
     // seconds since the program started: drives everything that moves by
@@ -126,7 +129,7 @@ class TrainView : public Fl_Gl_Window
 
     AdvancedLighting lighting; // shadow maps, per-pixel light, headlight
     PostEffects effects;       // sky, water, SSAO, bloom, god rays
-    GrassGround m_ground;      // grass blocks with dirt sides
+    LandWorld m_land;          // the island: mountains, canyon, volcano, village
     OceanWorld m_ocean;        // blocky sea floor, reef, ruins, wreck and tunnel
 
     // Control point editing state.

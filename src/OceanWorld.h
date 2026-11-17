@@ -31,9 +31,10 @@
 
                   demoTrack() returns a ride that dives off the island,
                   passes the reef, the kelp, the ruins and the wreck, runs
-                  through the tunnel and climbs back out. Blocks are carved
-                  away around that ride and plants keep clear of it, for
-                  all three spline types (see rideObstructions()).
+                  through the tunnel and climbs back out, and then tours
+                  the island (LandWorld). Blocks are carved away around
+                  that ride and plants keep clear of it, for all three
+                  spline types (see rideObstructions()).
 
 *************************************************************************/
 #pragma once
@@ -59,7 +60,16 @@ class OceanWorld
     static void shadowBounds(float lo[3], float hi[3]);
 
     // Control points of the demo ride: x, y, z for each point, in order.
+    // The underwater part comes first, then the part on the island.
     static std::vector<float> demoTrack();
+
+    // The control point where the demo ride comes back ashore.
+    static int landStart();
+
+    // Closely spaced points along the demo ride, x, y, z for each: the whole
+    // loop as a linear, a cardinal and a B-spline curve, one after another
+    // (a third of the points each). LandWorld shapes the island around them.
+    static std::vector<float> rideSamples();
 
     // Height of the water surface.
     static float waterLevel();
