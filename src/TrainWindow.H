@@ -81,6 +81,7 @@ class TrainWindow : public Fl_Double_Window
     Fl_Button *worldCam;
     Fl_Button *trainCam;
     Fl_Button *topCam;
+    Fl_Button *flyCam; // free-moving observer camera
 
     // the type of the spline (use its value to determine)
     Fl_Browser *splineBrowser;
@@ -90,6 +91,11 @@ class TrainWindow : public Fl_Double_Window
     // if we're animating it, how fast should it go?
     Fl_Value_Slider *speed;
     Fl_Button *arcLength; // do we use arc length for speed?
+
+    // how fast the observer camera flies, in world units per second
+    Fl_Value_Slider *flySpeed;
+    // the observer camera's field of view, in degrees
+    Fl_Value_Slider *flyFov;
 
     // we have other widgets as part of the sample solution
     // this is not for 559 students to know about

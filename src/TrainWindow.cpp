@@ -81,26 +81,38 @@ TrainWindow::TrainWindow(const int x, const int y)
         // camera buttons - in a radio button group
         Fl_Group *camGroup = new Fl_Group(600, pty, 195, 20);
         camGroup->begin();
-        worldCam = new Fl_Button(605, pty, 60, 20, "World");
+        worldCam = new Fl_Button(605, pty, 45, 20, "World");
         worldCam->type(FL_RADIO_BUTTON);        // radio button
         worldCam->value(1);                     // turned on
         worldCam->selection_color((Fl_Color)3); // yellow when pressed
-        worldCam->callback((Fl_Callback *)damageCB, this);
+        worldCam->callback((Fl_Callback *)cameraCB, this);
         worldCam->tooltip("Rotate: two-finger scroll, Shift + left drag, or right drag\n"
                           "Pan: Alt + two-finger scroll (or Alt + right drag)\n"
                           "Reset: Shift + double left click (or double right click)\n"
                           "Zoom: spread fingers to zoom in; pinch to zoom out (no Ctrl needed)\n"
                           "Also: Ctrl + scroll up to zoom in; Ctrl + scroll down to zoom out");
-        trainCam = new Fl_Button(670, pty, 60, 20, "Train");
+        trainCam = new Fl_Button(652, pty, 45, 20, "Train");
         trainCam->type(FL_RADIO_BUTTON);
         trainCam->value(0);
         trainCam->selection_color((Fl_Color)3);
-        trainCam->callback((Fl_Callback *)damageCB, this);
-        topCam = new Fl_Button(735, pty, 60, 20, "Top");
+        trainCam->callback((Fl_Callback *)cameraCB, this);
+        topCam = new Fl_Button(699, pty, 45, 20, "Top");
         topCam->type(FL_RADIO_BUTTON);
         topCam->value(0);
         topCam->selection_color((Fl_Color)3);
-        topCam->callback((Fl_Callback *)damageCB, this);
+        topCam->callback((Fl_Callback *)cameraCB, this);
+        flyCam = new Fl_Button(746, pty, 45, 20, "Fly");
+        flyCam->type(FL_RADIO_BUTTON);
+        flyCam->value(0);
+        flyCam->selection_color((Fl_Color)3);
+        flyCam->callback((Fl_Callback *)cameraCB, this);
+        flyCam->tooltip("Observer camera (spectator style), starts at the World view\n"
+                        "Click the view: the mouse looks around; Esc frees the mouse\n"
+                        "Move: W/A/S/D (level), Space up, Shift down, hold Ctrl to go faster\n"
+                        "Speed: mouse wheel, +/- keys or the fly speed slider\n"
+                        "Also: right drag or arrow keys look; E/Q up/down\n"
+                        "Touchpad: two fingers look, spread / pinch fly, Alt + two fingers slide\n"
+                        "Lost? F: face the train; R: back to the World view");
         camGroup->end();
 
         pty += 30;
@@ -141,6 +153,27 @@ TrainWindow::TrainWindow(const int x, const int y)
         rz->callback((Fl_Callback *)rpzCB, this);
         Fl_Button *rzp = new Fl_Button(700, pty, 30, 20, "R-Z");
         rzp->callback((Fl_Callback *)rmzCB, this);
+
+        pty += 30;
+
+        // observer camera speed (world units per second)
+        flySpeed = new Fl_Value_Slider(675, pty, 120, 20, "fly speed");
+        flySpeed->range(FlyCam::minSpeed, FlyCam::maxSpeed);
+        flySpeed->step(1);
+        flySpeed->value(trainView->flyCam.speed());
+        flySpeed->align(FL_ALIGN_LEFT);
+        flySpeed->type(FL_HORIZONTAL);
+        flySpeed->callback((Fl_Callback *)flySpeedCB, this);
+
+        pty += 25;
+        flyFov = new Fl_Value_Slider(675, pty, 120, 20, "fly FOV");
+        flyFov->range(FlyCam::minFieldOfView, FlyCam::maxFieldOfView);
+        flyFov->step(1);
+        flyFov->value(trainView->flyCam.fieldOfViewDegrees());
+        flyFov->align(FL_ALIGN_LEFT);
+        flyFov->type(FL_HORIZONTAL);
+        flyFov->tooltip("Field of view of the Fly camera, in degrees");
+        flyFov->callback((Fl_Callback *)flyFovCB, this);
 
         pty += 30;
 

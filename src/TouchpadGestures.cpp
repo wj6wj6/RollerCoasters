@@ -646,7 +646,7 @@ void TouchpadGestures::endRawGesture()
     // Keep turning briefly after a flick, like the system's scroll inertia.
     const float idle =
         std::chrono::duration<float>(std::chrono::steady_clock::now() - raw->lastFrame).count();
-    if (idle < .05f && std::hypot(raw->velocityX, raw->velocityY) > 150)
+    if (inertia && idle < .05f && std::hypot(raw->velocityX, raw->velocityY) > 150)
     {
         raw->lastFrame = std::chrono::steady_clock::now();
         Fl::add_timeout(kTickSeconds, coast, this);
