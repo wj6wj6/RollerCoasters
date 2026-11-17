@@ -1931,19 +1931,9 @@ float waterHeight(const Grid &g, int bx, int j, int bz)
 void addWaterFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
 {
     const float top = waterHeight(g, bx, j, bz);
-    // Where it meets the sea it takes the sea's colour, falling water is
-    // lighter and streaked, and where a fall lands the pool is white water.
-    auto falling = [&g](int x, int y, int z) {
-        return g.get(x, y, z) == WATER && g.level[Grid::index(x, y, z)] == WaterFlow::FALLING;
-    };
-    int texture = LandTextures::WATER;
-    if (j <= kSeaLayer)
-        texture = LandTextures::SEA_WATER;
-    else if (falling(bx, j, bz))
-        texture = LandTextures::FALL_WATER;
-    else if (falling(bx, j + 1, bz) || falling(bx + 1, j + 1, bz) || falling(bx - 1, j + 1, bz) ||
-             falling(bx, j + 1, bz + 1) || falling(bx, j + 1, bz - 1))
-        texture = LandTextures::FOAM;
+    // Where it meets the sea it takes the sea's colour; everywhere else,
+    // falling or still, it is the same water.
+    const int texture = j <= kSeaLayer ? LandTextures::SEA_WATER : LandTextures::WATER;
     std::vector<Vertex> &out = batches[static_cast<size_t>(texture)];
     for (const Face &f : kFaces)
     {

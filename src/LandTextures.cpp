@@ -504,45 +504,6 @@ Image makeWater(bool sea)
     return p;
 }
 
-// Falling water: lighter than still water, with long pale streaks down it.
-// Still like the rest (nothing scrolls); see-through as water is.
-Image makeFallingWater()
-{
-    Image p = PixelArt::blank();
-    for (int x = 0; x < S; ++x)
-    {
-        const unsigned int column = hash(x, 0, 177u);
-        const int start = static_cast<int>(column % 16u);
-        const int length = 4 + static_cast<int>((column >> 8) % 8u);
-        for (int y = 0; y < S; ++y)
-        {
-            const int s = shadeOf(x, y, 178u, 5);
-            const bool streak = ((y - start + 16) % 16) < length && column % 3u != 0;
-            if (streak)
-                set(p, x, y, 150 + s, 190 + s, 250, 170);
-            else
-                set(p, x, y, 86 + s, 120 + s, 236, 156);
-        }
-    }
-    return p;
-}
-
-// White water: foam with a little blue showing through.
-Image makeFoam()
-{
-    Image p = PixelArt::blank();
-    for (int y = 0; y < S; ++y)
-        for (int x = 0; x < S; ++x)
-        {
-            const int s = shadeOf(x, y, 179u, 8);
-            if (hash(x / 2, y / 2, 180u) % 4u == 0)
-                set(p, x, y, 150 + s, 196 + s, 240, 180);
-            else
-                set(p, x, y, 226 + s, 240 + s, 250, 210);
-        }
-    return p;
-}
-
 void stroke(Image &p, int x0, int y0, int x1, int y1, int r, int g, int b)
 {
     const int dx = x1 - x0, dy = y1 - y0;
@@ -755,10 +716,6 @@ Image make(int texture)
         return makeWater(false);
     case SEA_WATER:
         return makeWater(true);
-    case FALL_WATER:
-        return makeFallingWater();
-    case FOAM:
-        return makeFoam();
     case TALL_GRASS:
         return makeBlades(84, 150, 52, 5, 261u);
     case FERN:
@@ -784,7 +741,7 @@ bool repeatsVertically(int texture)
 {
     // tops tile both ways; sides clamp so their top row stays on top,
     // except the ones stretched over several blocks
-    return texture == FALL_WATER || texture == GRASS_TOP || texture == SAND || texture == OAK_SIDE;
+    return texture == GRASS_TOP || texture == SAND || texture == OAK_SIDE;
 }
 
 } // namespace LandTextures
