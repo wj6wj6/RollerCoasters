@@ -95,17 +95,23 @@ class TrainView : public Fl_Gl_Window
     // Where the train is now (the track centre without a train).
     Pnt3f trainPosition() const;
 
+    // Field of view of the current camera (World, Train or Fly), in degrees.
+    // Each camera keeps its own; the top view is orthographic and ignores it.
+    float fieldOfView() const;
+    void setFieldOfView(float degrees);
+
     // Orientation aids for the observer camera: ground out to the horizon, and
     // an overlay with a centre crosshair.
     void drawFlyHorizon();
     void drawFlyOverlay();
 
   public:
-    ArcBallCam arcball; // keep an ArcBall for the UI
-    FlyCam flyCam;      // free-moving observer camera
-    bool flyCamPlaced;  // has the observer camera been placed yet?
-    bool mouseCaptured; // does the mouse steer the observer camera?
-    int selectedCube;   // simple - just remember which cube is selected
+    ArcBallCam arcball;     // keep an ArcBall for the UI
+    FlyCam flyCam;          // free-moving observer camera
+    bool flyCamPlaced;      // has the observer camera been placed yet?
+    bool mouseCaptured;     // does the mouse steer the observer camera?
+    float trainFieldOfView; // the train camera's field of view, in degrees
+    int selectedCube;       // simple - just remember which cube is selected
 
     TrainWindow *tw;               // The parent of this display window
     CTrack *m_pTrack;              // The track of the entire scene

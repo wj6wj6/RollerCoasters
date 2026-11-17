@@ -94,8 +94,8 @@ class TrainWindow : public Fl_Double_Window
 
     // how fast the observer camera flies, in world units per second
     Fl_Value_Slider *flySpeed;
-    // the observer camera's field of view, in degrees
-    Fl_Value_Slider *flyFov;
+    // the current camera's field of view, in degrees
+    Fl_Value_Slider *fov;
 
     // we have other widgets as part of the sample solution
     // this is not for 559 students to know about

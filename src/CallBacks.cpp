@@ -76,11 +76,11 @@ void flySpeedCB(Fl_Widget *, TrainWindow *tw)
 
 //***************************************************************************
 //
-// * The observer camera field of view slider moved
+// * The field of view slider moved: it sets the current camera's
 //===========================================================================
-void flyFovCB(Fl_Widget *, TrainWindow *tw)
+void fovCB(Fl_Widget *, TrainWindow *tw)
 {
-    tw->trainView->flyCam.setFieldOfView(static_cast<float>(tw->flyFov->value()));
+    tw->trainView->setFieldOfView(static_cast<float>(tw->fov->value()));
 }
 
 //***************************************************************************

@@ -166,14 +166,15 @@ TrainWindow::TrainWindow(const int x, const int y)
         flySpeed->callback((Fl_Callback *)flySpeedCB, this);
 
         pty += 25;
-        flyFov = new Fl_Value_Slider(675, pty, 120, 20, "fly FOV");
-        flyFov->range(FlyCam::minFieldOfView, FlyCam::maxFieldOfView);
-        flyFov->step(1);
-        flyFov->value(trainView->flyCam.fieldOfViewDegrees());
-        flyFov->align(FL_ALIGN_LEFT);
-        flyFov->type(FL_HORIZONTAL);
-        flyFov->tooltip("Field of view of the Fly camera, in degrees");
-        flyFov->callback((Fl_Callback *)flyFovCB, this);
+        fov = new Fl_Value_Slider(675, pty, 120, 20, "FOV");
+        fov->range(FlyCam::minFieldOfView, FlyCam::maxFieldOfView);
+        fov->step(1);
+        fov->value(trainView->arcball.fieldOfViewDegrees()); // the World view starts selected
+        fov->align(FL_ALIGN_LEFT);
+        fov->type(FL_HORIZONTAL);
+        fov->tooltip("Field of view of the current camera, in degrees\n"
+                     "World, Train and Fly each keep their own (Top has none)");
+        fov->callback((Fl_Callback *)fovCB, this);
 
         pty += 30;
 

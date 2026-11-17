@@ -169,6 +169,16 @@ class ArcBallCam
     // of not doing the load identity
     void setProjection(bool doClear = true);
 
+    // Vertical field of view, in degrees
+    void setFieldOfView(float degrees)
+    {
+        fieldOfView = degrees;
+    }
+    float fieldOfViewDegrees() const
+    {
+        return fieldOfView;
+    }
+
     // Reset to a basic configuration
     void reset();
 

@@ -159,8 +159,10 @@ static const float worldFieldOfView = 40.0f;
 // The lowest the observer camera can fly. Tracks may dive below the floor at
 // y = 0 (into the sea, say), so the camera can follow them well under it.
 static const float flyLowest = -200.0f;
-// The observer camera's starting field of view; the "fly FOV" slider changes it.
+// The observer camera's starting field of view; the FOV slider changes it.
 static const float flyFieldOfView = 90.0f;
+// The train camera's starting field of view.
+static const float trainFieldOfViewDefault = 60.0f;
 
 // Scenery positions (x, z).
 static const float treePositions[][2] = {
@@ -177,6 +179,7 @@ TrainView::TrainView(int x, int y, int w, int h, const char *l) : Fl_Gl_Window(x
     tw = 0;
     selectedCube = -1;
     flyCamPlaced = false;
+    trainFieldOfView = trainFieldOfViewDefault;
     mouseCaptured = false;
     mode(FL_RGB | FL_ALPHA | FL_DOUBLE | FL_STENCIL);
 
@@ -219,7 +222,7 @@ void TrainView::placeFlyCamAtWorldView()
     arcball.setProjection();
     GLfloat view[16];
     glGetFloatv(GL_MODELVIEW_MATRIX, view);
-    flyCam.setFromViewMatrix(view, worldFieldOfView);
+    flyCam.setFromViewMatrix(view, arcball.fieldOfViewDegrees());
     flyCamPlaced = true;
     damage(1);
 }
@@ -266,6 +269,15 @@ void TrainView::cameraChanged()
     // A first-person view that keeps spinning after a flick is disorienting.
     touchpad.inertia = !tw->flyCam->value();
     setInputMethodEnabled(!tw->flyCam->value());
+    // The FOV slider shows the current camera's field of view; the top view is
+    // orthographic and has none.
+    if (tw->topCam->value())
+        tw->fov->deactivate();
+    else
+    {
+        tw->fov->activate();
+        tw->fov->value(fieldOfView());
+    }
     if (!tw->flyCam->value())
     {
         setMouseCaptured(false);
@@ -276,6 +288,35 @@ void TrainView::cameraChanged()
         placeFlyCamAtWorldView();
     // Take keyboard focus from the camera button so WASD works at once.
     Fl::focus(this);
+}
+
+//========================================================================
+float TrainView::fieldOfView() const
+//========================================================================
+{
+    if (tw->worldCam->value())
+        return arcball.fieldOfViewDegrees();
+    if (tw->flyCam->value())
+        return flyCam.fieldOfViewDegrees();
+    return trainFieldOfView;
+}
+
+//========================================================================
+void TrainView::setFieldOfView(float degrees)
+//========================================================================
+{
+    // Every perspective camera shares the Fly camera's limits.
+    if (degrees < FlyCam::minFieldOfView)
+        degrees = FlyCam::minFieldOfView;
+    if (degrees > FlyCam::maxFieldOfView)
+        degrees = FlyCam::maxFieldOfView;
+    if (tw->worldCam->value())
+        arcball.setFieldOfView(degrees);
+    else if (tw->flyCam->value())
+        flyCam.setFieldOfView(degrees);
+    else if (tw->trainCam->value())
+        trainFieldOfView = degrees;
+    damage(1);
 }
 
 //========================================================================
@@ -729,7 +770,7 @@ void TrainView::setProjection()
 
         glMatrixMode(GL_PROJECTION);
         glLoadIdentity();
-        gluPerspective(60.0, aspect, 0.5, 1000.0);
+        gluPerspective(trainFieldOfView, aspect, 0.5, 1000.0);
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
         const Pnt3f target = eye + forward * 15.0f;
