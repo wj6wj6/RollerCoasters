@@ -37,7 +37,7 @@ enum Action
     UNDO,
     GRAB,
     TILT,
-    DUPLICATE,
+    DUPLICATE_POINT,
     REMOVE
 };
 

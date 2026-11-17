@@ -711,7 +711,7 @@ bool TrainView::editKey(int key)
             return false;
         beginEdit(EDIT_ROTATE, TransformGizmo::NONE, Fl::event_x(), Fl::event_y());
         return true;
-    case EditKeys::DUPLICATE: {
+    case EditKeys::DUPLICATE_POINT: {
         if (!m_editCameraValid)
             return false;
         // the new point goes in after the selected one; pick it up at once

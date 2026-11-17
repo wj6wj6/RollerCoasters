@@ -41,7 +41,8 @@ int main()
     // World and Top: as before.
     expect(forKey('g', 0, false) == EditKeys::GRAB, "World: G moves");
     expect(forKey('r', 0, false) == EditKeys::TILT, "World: R tilts");
-    expect(forKey('d', FL_SHIFT, false) == EditKeys::DUPLICATE, "World: Shift + D duplicates");
+    expect(forKey('d', FL_SHIFT, false) == EditKeys::DUPLICATE_POINT,
+           "World: Shift + D duplicates");
     expect(forKey('d', 0, false) == EditKeys::NONE, "World: D alone does nothing");
     expect(forKey('x', 0, false) == EditKeys::REMOVE, "World: X removes");
     expect(forKey(FL_Delete, 0, false) == EditKeys::REMOVE, "World: Delete removes");
@@ -51,7 +52,7 @@ int main()
     // Fly: the editing commands that do not clash.
     expect(forKey('g', 0, true) == EditKeys::GRAB, "Fly: G moves");
     expect(forKey('r', 0, true) == EditKeys::TILT, "Fly: R tilts");
-    expect(forKey('d', FL_ALT, true) == EditKeys::DUPLICATE, "Fly: Alt + D duplicates");
+    expect(forKey('d', FL_ALT, true) == EditKeys::DUPLICATE_POINT, "Fly: Alt + D duplicates");
     expect(forKey(FL_Delete, 0, true) == EditKeys::REMOVE, "Fly: Delete removes");
     expect(forKey('z', FL_CTRL, true) == EditKeys::UNDO, "Fly: Ctrl + Z undoes");
     expect(forKey('x', 0, true) == EditKeys::NONE, "Fly: X does not remove a point");
