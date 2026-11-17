@@ -13,8 +13,14 @@
 
 namespace
 {
-const int kCars = 3;
-const float kCarSpacing = 6.4f; // along the track, centre to centre
+// A steam locomotive and five wooden carts, one rider in each, so nobody's
+// arms reach a neighbour or the walls.
+const int kCarts = 5;
+const int kVehicles = 1 + kCarts;
+// Along the track, centre to centre: the locomotive's back is 2 units behind
+// its centre, a cart is 3.4 long, the couplings 0.6.
+const float kEngineToCart = 4.3f;
+const float kCartToCart = 4.0f;
 
 bool gShadowPass = false;
 
@@ -142,91 +148,160 @@ void drawRider(float x, float z, int who, float time)
     }
 }
 
-// One car. `first` gets the pointed nose and head lamps, `last` the tail lamps.
-void drawCar(int index, bool first, bool last, float time)
+// Wheels on both sides at z, with a bright hub.
+void wheelPair(float z, float radius, int r, int g, int b)
 {
-    // running gear: axles, wheels with bright hubs, guide wheels under the rail
-    colour(38, 40, 46);
-    box(-1.1f, 0.38f, -2.0f, 1.1f, 0.62f, 2.0f); // chassis
-    box(-1.45f, 0.3f, 1.3f, 1.45f, 0.44f, 1.5f); // axles
-    box(-1.45f, 0.3f, -1.5f, 1.45f, 0.44f, -1.3f);
+    colour(26, 26, 30);
+    boxPair(0.98f, 0.04f, z - radius, 1.28f, 0.04f + 2.0f * radius, z + radius);
+    colour(r, g, b);
+    boxPair(1.28f, 0.04f + radius * 0.6f, z - radius * 0.35f, 1.34f, 0.04f + radius * 1.4f,
+            z + radius * 0.35f);
+}
+
+// A wooden mine cart, 3.4 long and 2.4 wide, with one rider. `last` gets the
+// tail lamps.
+void drawCart(int index, bool last, float time)
+{
+    // running gear: a dark bogie, wheels with iron hubs, guide wheels under the rail
+    colour(52, 54, 60);
+    box(-0.9f, 0.34f, -1.3f, 0.9f, 0.62f, 1.3f);
     for (int end = -1; end <= 1; end += 2)
     {
-        const float z = 1.4f * static_cast<float>(end);
-        colour(24, 24, 28);
-        boxPair(1.05f, 0.02f, z - 0.36f, 1.4f, 0.72f, z + 0.36f);
-        colour(196, 200, 208);
-        boxPair(1.4f, 0.24f, z - 0.13f, 1.46f, 0.5f, z + 0.13f);
-        colour(230, 150, 40);
-        boxPair(1.16f, -0.26f, z - 0.16f, 1.34f, 0.0f, z + 0.16f);
+        const float z = 1.0f * static_cast<float>(end);
+        wheelPair(z, 0.32f, 170, 174, 182);
+        colour(140, 144, 152);
+        boxPair(1.08f, -0.26f, z - 0.14f, 1.26f, 0.02f, z + 0.14f);
     }
 
-    // the tub: floor, sides with a gold stripe, front and back
-    const int body[3][3] = {{24, 118, 172}, {28, 150, 160}, {40, 96, 180}};
-    const int *paint = body[index % 3];
-    colour(paint[0], paint[1], paint[2]);
-    box(-1.5f, 0.62f, -2.5f, 1.5f, 0.86f, 2.5f);
-    boxPair(1.32f, 0.86f, -2.5f, 1.5f, 1.72f, 2.5f);
-    box(-1.5f, 0.86f, -2.5f, 1.5f, 2.0f, -2.3f);
-    box(-1.5f, 0.86f, 2.3f, 1.5f, 1.5f, 2.5f);
-    colour(246, 204, 70);
-    boxPair(1.5f, 1.3f, -2.5f, 1.54f, 1.46f, 2.5f);
-    box(-1.5f, 2.0f, -2.52f, 1.5f, 2.1f, -2.28f); // trim on the back
-    colour(paint[0] + 40, paint[1] + 40, paint[2] + 40);
-    boxPair(1.32f, 1.72f, -2.5f, 1.5f, 1.8f, 2.5f); // lighter rim
-
-    // two rows of seats with head rests, and a yellow lap bar for each
-    for (int row = 0; row < 2; ++row)
+    // the floor, then walls of three planks each between dark corner posts
+    colour(96, 62, 34);
+    box(-1.2f, 0.62f, -1.7f, 1.2f, 0.82f, 1.7f);
+    const int planks[3][3] = {{168, 112, 60}, {184, 126, 70}, {156, 102, 54}};
+    for (int k = 0; k < 3; ++k)
     {
-        const float z = row == 0 ? 0.55f : -1.55f;
-        colour(46, 48, 58);
-        box(-1.25f, 0.86f, z - 0.25f, 1.25f, 1.3f, z + 0.75f);
-        box(-1.25f, 1.3f, z - 0.45f, 1.25f, 2.25f, z - 0.2f);
-        colour(70, 74, 90);
-        boxPair(0.3f, 2.25f, z - 0.45f, 1.0f, 2.6f, z - 0.2f);
-        colour(250, 208, 40);
-        box(-1.3f, 1.62f, z + 0.5f, 1.3f, 1.74f, z + 0.62f);
-        boxPair(1.2f, 0.9f, z + 0.5f, 1.3f, 1.74f, z + 0.62f);
-        drawRider(-0.65f, z, index * 4 + row * 2, time);
-        drawRider(0.65f, z, index * 4 + row * 2 + 1, time);
+        const int *p = planks[(k + index) % 3];
+        const float y0 = 0.82f + 0.36f * static_cast<float>(k);
+        const float y1 = y0 + 0.34f; // a dark seam between the planks
+        colour(p[0], p[1], p[2]);
+        boxPair(1.04f, y0, -1.56f, 1.2f, y1, 1.56f); // sides
+        box(-1.04f, y0, 1.54f, 1.04f, y1, 1.7f);     // front
+        box(-1.04f, y0, -1.7f, 1.04f, y1, -1.54f);   // back
+        colour(p[0] - 50, p[1] - 40, p[2] - 26);
+        boxPair(1.05f, y1, -1.56f, 1.19f, y1 + 0.02f, 1.56f);
     }
+    colour(84, 52, 28);
+    for (int end = -1; end <= 1; end += 2)
+        boxPair(1.0f, 0.62f, 1.46f * static_cast<float>(end) - 0.24f, 1.26f, 2.02f,
+                1.46f * static_cast<float>(end) + 0.24f); // corner posts
+    // a dark rim round the top
+    boxPair(1.02f, 1.9f, -1.74f, 1.28f, 2.04f, 1.74f);
+    box(-1.28f, 1.9f, 1.5f, 1.28f, 2.04f, 1.76f);
+    box(-1.28f, 1.9f, -1.76f, 1.28f, 2.04f, -1.5f);
+    // iron bands down the middle of the sides and a plate on the front
+    colour(120, 124, 132);
+    boxPair(1.2f, 0.7f, -0.12f, 1.24f, 1.92f, 0.12f);
+    box(-0.36f, 1.08f, 1.7f, 0.36f, 1.6f, 1.74f);
+    colour(222, 176, 64);
+    box(-0.22f, 1.18f, 1.72f, 0.22f, 1.5f, 1.76f);
+
+    // a seat at the back, the rider in the middle and an iron lap bar
+    // The seat is raised so the rider's body and waving arms show above the
+    // walls, as on a ride; the arms stay well inside them.
+    colour(70, 46, 28);
+    box(-0.8f, 0.82f, -1.5f, 0.8f, 1.6f, -0.6f);
+    glPushMatrix();
+    glTranslatef(0.0f, 0.3f, 0.0f);
+    drawRider(0.0f, -0.65f, index + 1, time);
+    glPopMatrix();
+    colour(150, 154, 162);
+    box(-1.04f, 1.58f, 0.3f, 1.04f, 1.7f, 0.42f);
 
     // coupling to the car behind
     if (!last)
     {
         colour(60, 62, 70);
-        box(-0.14f, 0.44f, -3.3f, 0.14f, 0.62f, -2.5f);
-    }
-
-    if (first)
-    {
-        // a stepped, pointed nose with a gold crest and two head lamps
-        colour(paint[0], paint[1], paint[2]);
-        box(-1.5f, 0.62f, 2.5f, 1.5f, 1.5f, 3.0f);
-        box(-1.2f, 0.62f, 3.0f, 1.2f, 1.28f, 3.5f);
-        box(-0.8f, 0.62f, 3.5f, 0.8f, 1.06f, 3.95f);
-        colour(246, 204, 70);
-        box(-0.22f, 1.5f, 2.5f, 0.22f, 1.62f, 3.0f);
-        box(-0.16f, 1.28f, 3.0f, 0.16f, 1.4f, 3.5f);
-        box(-0.1f, 1.06f, 3.5f, 0.1f, 1.18f, 3.95f);
-        colour(255, 246, 200);
-        glow(1.4f);
-        boxPair(0.72f, 0.92f, 3.5f, 1.08f, 1.2f, 3.58f);
-        glow(0.0f);
+        box(-0.12f, 0.42f, -2.3f, 0.12f, 0.58f, -1.7f);
     }
     else
     {
-        // the cars behind have a plain rounded-off front
-        colour(paint[0], paint[1], paint[2]);
-        box(-1.3f, 0.62f, 2.5f, 1.3f, 1.3f, 2.75f);
-    }
-    if (last)
-    {
         colour(255, 60, 50);
         glow(1.2f);
-        boxPair(0.8f, 1.5f, -2.58f, 1.2f, 1.8f, -2.5f);
+        boxPair(0.6f, 1.3f, -1.78f, 0.95f, 1.6f, -1.7f);
         glow(0.0f);
     }
+}
+
+// The steam locomotive: a red boiler with brass bands and dome, a black
+// smokebox with the head lamp, a chimney, three driving wheels a side with
+// their rod, and a green cab with a grey roof and the driver. 5 long, from
+// z = -2 (the back of the cab) to z = 3 (the buffer beam).
+void drawLocomotive(float time)
+{
+    // frame and running gear
+    colour(30, 30, 34);
+    box(-1.0f, 0.34f, -2.0f, 1.0f, 0.72f, 3.0f);
+    colour(184, 36, 34);
+    boxPair(0.86f, 0.62f, -2.0f, 1.32f, 0.9f, 3.0f); // running boards
+    for (int k = 0; k < 3; ++k)
+        wheelPair(-1.2f + 1.6f * static_cast<float>(k), 0.42f, 196, 44, 40);
+    colour(150, 154, 162);
+    boxPair(1.34f, 0.38f, -1.3f, 1.4f, 0.5f, 2.1f); // coupling rod
+    colour(140, 144, 152);
+    boxPair(1.08f, -0.26f, -0.15f, 1.26f, 0.02f, 0.15f); // guide wheels
+    // cowcatcher and buffer beam
+    colour(60, 62, 68);
+    box(-1.1f, 0.18f, 3.0f, 1.1f, 0.6f, 3.3f);
+    colour(184, 36, 34);
+    box(-1.32f, 0.6f, 2.96f, 1.32f, 0.92f, 3.12f);
+    colour(30, 30, 34);
+    boxPair(0.7f, 0.66f, 3.12f, 1.0f, 0.86f, 3.3f); // buffers
+
+    // boiler with brass bands, dome and a black smokebox at the front
+    colour(196, 40, 36);
+    box(-0.9f, 0.9f, 0.0f, 0.9f, 2.3f, 2.6f);
+    colour(232, 182, 60);
+    for (int k = 0; k < 3; ++k)
+    {
+        const float z = 0.5f + 0.85f * static_cast<float>(k);
+        box(-0.95f, 0.88f, z, 0.95f, 2.35f, z + 0.14f);
+    }
+    box(-0.34f, 2.3f, 1.0f, 0.34f, 2.72f, 1.6f); // dome
+    colour(36, 36, 40);
+    box(-1.0f, 0.88f, 2.6f, 1.0f, 2.42f, 3.0f);
+    box(-0.3f, 2.4f, 2.1f, 0.3f, 3.4f, 2.6f);     // chimney
+    box(-0.42f, 3.3f, 1.98f, 0.42f, 3.6f, 2.72f); // and its lip
+    // the head lamp in a brass frame
+    colour(232, 182, 60);
+    box(-0.44f, 1.3f, 3.0f, 0.44f, 2.12f, 3.06f);
+    colour(255, 246, 200);
+    glow(1.5f);
+    box(-0.3f, 1.44f, 3.04f, 0.3f, 1.98f, 3.1f);
+    glow(0.0f);
+
+    // the cab: green walls with windows, open at the back, a grey roof
+    colour(48, 128, 60);
+    boxPair(1.0f, 0.9f, -2.0f, 1.26f, 1.7f, 0.0f);   // lower sides
+    boxPair(1.0f, 1.7f, -2.0f, 1.26f, 2.72f, -1.7f); // back posts
+    boxPair(1.0f, 1.7f, -0.3f, 1.26f, 2.72f, 0.0f);  // front posts
+    box(-1.26f, 0.9f, -0.22f, 1.26f, 2.72f, 0.0f);   // front wall
+    colour(232, 182, 60);
+    boxPair(1.26f, 0.9f, -2.0f, 1.3f, 1.04f, 0.0f); // brass trim
+    colour(44, 52, 60);
+    boxPair(0.34f, 1.98f, 0.0f, 0.82f, 2.46f, 0.03f); // front windows
+    colour(122, 126, 134);
+    box(-1.48f, 2.72f, -2.3f, 1.48f, 2.9f, 0.24f); // roof
+    box(-1.0f, 2.9f, -2.3f, 1.0f, 3.0f, 0.24f);
+    colour(70, 46, 28);
+    box(-0.7f, 0.9f, -1.9f, 0.7f, 1.3f, -1.1f); // the driver's seat
+    // the driver sits low, so the head and hands stay under the roof
+    glPushMatrix();
+    glTranslatef(0.0f, -0.42f, 0.0f);
+    drawRider(0.0f, -1.2f, 0, time);
+    glPopMatrix();
+
+    // coupling to the first cart
+    colour(60, 62, 70);
+    box(-0.12f, 0.42f, -2.6f, 0.12f, 0.58f, -2.0f);
 }
 
 // The track parameter `distance` further back along the track from u.
@@ -259,6 +334,17 @@ float stepBack(const CTrack &track, float u, float distance, TrackSplineType spl
 }
 } // namespace
 
+float TrainModel::length()
+{
+    return kEngineToCart + static_cast<float>(kCarts - 1) * kCartToCart;
+}
+
+float TrainModel::parameterBehind(const CTrack &track, float u, float distance,
+                                  TrackSplineType splineType)
+{
+    return stepBack(track, u, distance, splineType);
+}
+
 void TrainModel::draw(const CTrack &track, TrackSplineType splineType, bool shadowPass, float time)
 {
     if (track.points.size() < 4)
@@ -267,10 +353,10 @@ void TrainModel::draw(const CTrack &track, TrackSplineType splineType, bool shad
     glPushAttrib(GL_CURRENT_BIT);
     glow(0.0f);
     float u = track.trainU;
-    for (int car = 0; car < kCars; ++car)
+    for (int car = 0; car < kVehicles; ++car)
     {
         if (car > 0)
-            u = stepBack(track, u, kCarSpacing, splineType);
+            u = stepBack(track, u, car == 1 ? kEngineToCart : kCartToCart, splineType);
         const Pnt3f position = track.evaluatePosition(u, splineType);
         Pnt3f forward = track.evaluateTangent(u, splineType);
         Pnt3f side;
@@ -281,7 +367,10 @@ void TrainModel::draw(const CTrack &track, TrackSplineType splineType, bool shad
                                    position.x, position.y, position.z, 1.0f};
         glPushMatrix();
         glMultMatrixf(frame);
-        drawCar(car, car == 0, car == kCars - 1, time);
+        if (car == 0)
+            drawLocomotive(time);
+        else
+            drawCart(car - 1, car == kVehicles - 1, time);
         glPopMatrix();
     }
     glow(0.0f);

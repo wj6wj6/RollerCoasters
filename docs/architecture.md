@@ -11,7 +11,7 @@ flowchart LR
     View --> Track
     View --> Rails[TrackRenderer / 鐵軌、枕木與弧長表]
     Rails --> Track
-    View --> Train[TrainModel / 三節車廂、方塊人乘客與車燈]
+    View --> Train[TrainModel / 蒸汽火車頭、五節礦車、方塊人乘客與車燈]
     Train --> Track
     View --> Gizmo[TransformGizmo / 控制點移動把手的挑選、拖曳與繪製]
     View --> Keys[EditKeys / 按鍵對應的編輯指令，依是否在 Fly 相機]
@@ -87,7 +87,7 @@ caustics、吸收係數與水體顏色放在 `UnderwaterOptics.h`，三個 shade
 會動的東西（瀑布水流、風車、動物、雲、熱氣球）每格以方塊即時畫出；`drawSupports()` 依目前軌道每 9 單位立一座木棧橋，
 從軌道往下找到地面，下方有另一段軌道或熔岩時不立。山體也畫進 shadow map，所以會投影。
 `Scenery` 關閉時 `LandWorld` 改建平坦的編輯用島；固定管線（`Light+` 關閉）的平面陰影只在這個模式使用。
-`Train`／`Chase` 相機由 `TrainView::setProjection()` 從軌道座標系算出。
+`Train`／`Chase` 相機由 `TrainView::setProjection()` 從軌道座標系算出；`Chase` 用 `TrainModel::parameterBehind()` 沿軌道往回取最後一節礦車後方的點，抬高後看向火車頭，所以會留在為軌道挖出的空間裡。
 
 軌道格式首行為控制點數，其後每行是位置 `x y z` 與可選方向 `x y z`。
 載入後 `trainU` 歸零。個人資料與來源程式分開保存；應以複本驗證讀取與還原。

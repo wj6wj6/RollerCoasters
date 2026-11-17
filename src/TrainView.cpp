@@ -1114,10 +1114,26 @@ void TrainView::setProjection()
             Pnt3f side;
             makeTrackFrame(forward, side, up);
             eye = position + up * 3.0f + forward * 3.0f;
-            // the chase camera rides behind and above the last car and looks
-            // over the train
+            // The chase camera rides above the track a little way behind the
+            // last cart and looks along the train. Following the track keeps
+            // it inside the room carved for the ride, out of the rock.
             if (tw->chaseCam->value())
-                eye = position + up * 8.0f + forward * -23.0f;
+            {
+                const float behind = TrainModel::parameterBehind(
+                    *m_pTrack, m_pTrack->trainU, TrainModel::length() + 9.0f, splineType);
+                Pnt3f backForward = m_pTrack->evaluateTangent(behind, splineType);
+                Pnt3f backSide, backUp;
+                makeTrackFrame(backForward, backSide, backUp);
+                eye = m_pTrack->evaluatePosition(behind, splineType) + backUp * 6.5f;
+                const Pnt3f look = position + up * 1.0f;
+                glMatrixMode(GL_PROJECTION);
+                glLoadIdentity();
+                gluPerspective(60.0, aspect, 0.5, 1000.0);
+                glMatrixMode(GL_MODELVIEW);
+                glLoadIdentity();
+                gluLookAt(eye.x, eye.y, eye.z, look.x, look.y, look.z, 0.0, 1.0, 0.0);
+                return;
+            }
         }
 
         glMatrixMode(GL_PROJECTION);
