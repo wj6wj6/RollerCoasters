@@ -19,8 +19,8 @@ Frustum::Frustum(const float m[16])
     auto row = [&](int i, int k) { return m[k * 4 + i]; };
     for (int p = 0; p < 6; ++p)
     {
-        const int axis = p / 2;                  // x, y, z
-        const float sign = p % 2 ? -1.0f : 1.0f; // left / right, ...
+        const int axis = p / 2;                         // x, y, z
+        const float sign = (p % 2 != 0) ? -1.0f : 1.0f; // left / right, ...
         for (int k = 0; k < 4; ++k)
             m_plane[p][k] = row(3, k) + sign * row(axis, k);
     }
