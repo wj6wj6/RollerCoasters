@@ -45,13 +45,22 @@ enum Tint
     FOLIAGE,
     BIRCH,
     SPRUCE,
-    MANGROVE
+    MANGROVE,
+    // for a block that stands in for another, named after "@" in the table:
+    // the picture is made grey first, so it takes the colour whatever it was
+    AUTUMN,
+    CHERRY,
+    LIME,
+    WATER,
+    SEA
 };
 
 void tintColour(int which, int &r, int &g, int &b)
 {
-    static const int colours[6][3] = {{255, 255, 255}, {145, 189, 89}, {119, 171, 47},
-                                      {128, 167, 85},  {97, 153, 97},  {146, 198, 72}};
+    static const int colours[11][3] = {{255, 255, 255}, {145, 189, 89},  {119, 171, 47},
+                                       {128, 167, 85},  {97, 153, 97},   {146, 198, 72},
+                                       {232, 132, 44},  {246, 172, 208}, {150, 204, 84},
+                                       {63, 118, 228},  {52, 140, 190}};
     r = colours[which][0];
     g = colours[which][1];
     b = colours[which][2];
@@ -59,9 +68,12 @@ void tintColour(int which, int &r, int &g, int &b)
 
 // One of the island's textures: its name in this program's own layout, and
 // the block pictures of a resource pack that stand for it, best first,
-// '|' between them (newer names, then the older packs' names). Empty: no
+// '|' between them (newer names, then the older packs' names, then blocks
+// that can stand in, "@" and the colour they are given), so that with a
+// full pack every block on the island is one of the pack's. Empty: no
 // block picture fits, the built-in one stays unless a pack of this
-// program's own layout has it.
+// program's own layout has it. The bamboo is put together from the
+// pack's bamboo pictures (bambooPicture()).
 struct Source
 {
     int texture;
@@ -83,8 +95,8 @@ const Source kSources[] = {
     {T::GRAVEL, "gravel", "gravel", NONE},
     {T::SNOW, "snow", "snow", NONE},
     {T::SNOW_SIDE, "snow_side", "grass_block_snow|grass_side_snowed", NONE},
-    {T::BASALT, "basalt", "basalt_side|blackstone", NONE},
-    {T::MAGMA, "magma", "magma", NONE},
+    {T::BASALT, "basalt", "basalt_side|blackstone|andesite|stone_andesite", NONE},
+    {T::MAGMA, "magma", "magma|netherrack", NONE},
     {T::LAVA, "lava", "lava_still", NONE},
     {T::CLAY_RED, "clay_red", "red_terracotta|hardened_clay_stained_red", NONE},
     {T::CLAY_ORANGE, "clay_orange", "orange_terracotta|hardened_clay_stained_orange", NONE},
@@ -102,14 +114,14 @@ const Source kSources[] = {
     {T::LEAVES_OAK, "leaves_oak", "oak_leaves|leaves_oak", FOLIAGE},
     {T::LEAVES_BIRCH, "leaves_birch", "birch_leaves|leaves_birch", BIRCH},
     {T::LEAVES_SPRUCE, "leaves_spruce", "spruce_leaves|leaves_spruce", SPRUCE},
-    {T::LEAVES_CHERRY, "leaves_cherry", "cherry_leaves", NONE},
-    {T::LEAVES_AUTUMN, "leaves_autumn", "", NONE},
+    {T::LEAVES_CHERRY, "leaves_cherry", "cherry_leaves|oak_leaves@cherry|leaves_oak@cherry", NONE},
+    {T::LEAVES_AUTUMN, "leaves_autumn", "oak_leaves@autumn|leaves_oak@autumn", NONE},
     {T::PLANKS, "planks", "oak_planks|planks_oak", NONE},
     {T::ROOF, "roof", "bricks|brick", NONE},
-    {T::WINDOW, "window", "", NONE},
-    {T::DOOR, "door", "", NONE},
+    {T::WINDOW, "window", "yellow_stained_glass|glass_yellow|glass", NONE},
+    {T::DOOR, "door", "oak_door_bottom|door_wood_lower", NONE},
     {T::LANTERN, "lantern", "glowstone", NONE},
-    {T::CRYSTAL, "crystal", "", NONE},
+    {T::CRYSTAL, "crystal", "sea_lantern|amethyst_block|glowstone", NONE},
     {T::ORE_COAL, "ore_coal", "coal_ore", NONE},
     {T::ORE_IRON, "ore_iron", "iron_ore", NONE},
     {T::ORE_GOLD, "ore_gold", "gold_ore", NONE},
@@ -121,36 +133,62 @@ const Source kSources[] = {
     {T::HAY_SIDE, "hay_side", "hay_block_side", NONE},
     {T::HAY_TOP, "hay_top", "hay_block_top", NONE},
     {T::FARMLAND, "farmland", "farmland|farmland_dry", NONE},
-    // the water is drawn as see-through blocks in this program's own colours
-    {T::WATER, "water", "", NONE},
-    {T::SEA_WATER, "sea_water", "", NONE},
+    // the pack's water, tinted, as see-through as the built-in water
+    {T::WATER, "water", "water_still@water", NONE},
+    {T::SEA_WATER, "sea_water", "water_still@sea", NONE},
     {T::TALL_GRASS, "tall_grass", "short_grass|grass|tallgrass", GRASS},
     {T::FERN, "fern", "fern", GRASS},
     {T::POPPY, "poppy", "poppy|flower_rose", NONE},
     {T::DANDELION, "dandelion", "dandelion|flower_dandelion", NONE},
-    {T::CORNFLOWER, "cornflower", "cornflower", NONE},
+    {T::CORNFLOWER, "cornflower", "cornflower|blue_orchid|flower_blue_orchid", NONE},
     {T::TULIP, "tulip", "red_tulip|flower_tulip_red", NONE},
     {T::DEAD_BUSH, "dead_bush", "dead_bush|deadbush", NONE},
     {T::WHEAT, "wheat", "wheat_stage7|wheat_stage_7", NONE},
-    {T::PETALS, "petals", "", NONE},
+    {T::PETALS, "petals", "pink_petals|pink_tulip|flower_tulip_pink", NONE},
     {T::OXEYE, "oxeye", "oxeye_daisy|flower_oxeye_daisy", NONE},
     {T::ALLIUM, "allium", "allium|flower_allium", NONE},
     {T::TULIP_ORANGE, "tulip_orange", "orange_tulip|flower_tulip_orange", NONE},
-    // the stalks are drawn from a strip in the middle of the picture
     {T::BAMBOO, "bamboo", "", NONE},
     {T::BAMBOO_TOP, "bamboo_top", "", NONE},
     {T::VINES, "vines", "vine", FOLIAGE},
-    {T::ICE, "ice", "packed_ice|ice_packed", NONE},
+    {T::ICE, "ice", "packed_ice|ice_packed|ice", NONE},
     {T::PUMPKIN_FACE, "pumpkin_face", "jack_o_lantern|pumpkin_face_on", NONE},
     {T::PUMPKIN_TOP, "pumpkin_top", "pumpkin_top", NONE},
-    {T::MUD, "mud", "mud", NONE},
-    {T::MANGROVE_SIDE, "mangrove_side", "mangrove_log", NONE},
-    {T::MANGROVE_TOP, "mangrove_top", "mangrove_log_top", NONE},
-    {T::LEAVES_MANGROVE, "leaves_mangrove", "mangrove_leaves", MANGROVE},
-    {T::LEAVES_BAMBOO, "leaves_bamboo", "azalea_leaves|jungle_leaves|leaves_jungle", NONE},
+    {T::MUD, "mud", "mud|coarse_dirt|dirt", NONE},
+    {T::MANGROVE_SIDE, "mangrove_side", "mangrove_log|jungle_log|log_jungle", NONE},
+    {T::MANGROVE_TOP, "mangrove_top", "mangrove_log_top|jungle_log_top|log_jungle_top", NONE},
+    {T::LEAVES_MANGROVE, "leaves_mangrove",
+     "mangrove_leaves|jungle_leaves@mangrove|oak_leaves@mangrove|leaves_oak@mangrove", MANGROVE},
+    {T::LEAVES_BAMBOO, "leaves_bamboo", "azalea_leaves|oak_leaves@lime|leaves_oak@lime", NONE},
 };
 static_assert(sizeof(kSources) / sizeof(kSources[0]) == LandTextures::TEXTURE_COUNT,
               "every island texture needs a row");
+
+// A block picture's name and the colour it stands in with ("oak_leaves@autumn"),
+// or NONE.
+void candidate(const std::string &entry, std::string &name, int &colour)
+{
+    static const char *const names[] = {"",       "grass",    "foliage", "birch",
+                                        "spruce", "mangrove", "autumn",  "cherry",
+                                        "lime",   "water",    "sea"};
+    const size_t at = entry.find('@');
+    name = entry.substr(0, at);
+    colour = NONE;
+    if (at != std::string::npos)
+        for (int k = 1; k < 11; ++k)
+            if (entry.compare(at + 1, std::string::npos, names[k]) == 0)
+                colour = k;
+}
+
+// Greys a picture by its brightness, keeping its see-through parts.
+void desaturate(PixelArt::Image &image)
+{
+    for (size_t i = 0; i + 3 < image.size(); i += 4)
+    {
+        const int grey = (image[i] * 77 + image[i + 1] * 150 + image[i + 2] * 29) / 256;
+        image[i] = image[i + 1] = image[i + 2] = static_cast<unsigned char>(grey);
+    }
+}
 
 const Source *sourceOf(int texture)
 {
@@ -378,11 +416,72 @@ bool Pack::provides(int texture) const
         return false;
     if (hasFile(std::string("textures/") + s->native + ".png"))
         return true;
-    for (const std::string &block : split(s->blocks))
+    std::vector<std::string> blocks = split(s->blocks);
+    if (texture == T::BAMBOO || texture == T::BAMBOO_TOP)
+        blocks = {"bamboo_block", "bamboo_stalk"};
+    for (const std::string &entry : blocks)
+    {
+        std::string name;
+        int colour;
+        candidate(entry, name, colour);
         for (const char *folder : kBlockFolders)
-            if (hasFile(folder + block + ".png"))
+            if (hasFile(folder + name + ".png"))
                 return true;
+    }
     return false;
+}
+
+bool Pack::blockPicture(const std::string &name, PixelArt::Image &out) const
+{
+    for (const char *folder : kBlockFolders)
+        if (picture(folder + name + ".png", out))
+            return true;
+    return false;
+}
+
+bool Pack::bambooPicture(bool top, PixelArt::Image &out) const
+{
+    // The stalks are drawn from the strip in the middle of the picture
+    // (columns 13 to 18 of 32), a top's leaves from its upper half: the
+    // pack's bamboo block (or stalk) is squeezed into the strip, its leaves
+    // spread over the upper half round it.
+    PixelArt::Image stalk, leaves;
+    if (!blockPicture("bamboo_block", stalk) && !blockPicture("bamboo_stalk", stalk))
+        return false;
+    const bool hasLeaves =
+        blockPicture(top ? "bamboo_large_leaves" : "bamboo_small_leaves", leaves);
+    const int side = PixelArt::sizeOf(stalk) < 16 ? 16 : PixelArt::sizeOf(stalk);
+    const int stalkSide = PixelArt::sizeOf(stalk);
+    const int c0 = 13 * side / 32, c1 = 19 * side / 32, from = top ? side / 2 : 0;
+    out = PixelArt::blank(side);
+    for (int y = from; y < side; ++y)
+        for (int x = c0; x < c1; ++x)
+        {
+            const size_t i = static_cast<size_t>((y * side + x) * 4);
+            const size_t j = static_cast<size_t>(
+                ((y * stalkSide / side) * stalkSide + (x - c0) * stalkSide / (c1 - c0)) * 4);
+            for (int c = 0; c < 3; ++c)
+                out[i + static_cast<size_t>(c)] = stalk[j + static_cast<size_t>(c)];
+            out[i + 3] = 255;
+        }
+    if (hasLeaves)
+    {
+        const int leafSide = PixelArt::sizeOf(leaves);
+        for (int y = 0; y < side / 2; ++y)
+            for (int x = 0; x < side; ++x)
+            {
+                if (!top && x >= c0 && x < c1)
+                    continue; // a stalk's own strip stays stalk
+                const size_t j = static_cast<size_t>(
+                    (((y * 2) * leafSide / side) * leafSide + x * leafSide / side) * 4);
+                if (leaves[j + 3] < 128)
+                    continue;
+                const size_t i = static_cast<size_t>((y * side + x) * 4);
+                for (int c = 0; c < 4; ++c)
+                    out[i + static_cast<size_t>(c)] = leaves[j + static_cast<size_t>(c)];
+            }
+    }
+    return true;
 }
 
 bool Pack::readFile(const std::string &relative, ZipArchive::Bytes &out) const
@@ -420,14 +519,22 @@ bool Pack::landTexture(int texture, PixelArt::Image &out) const
         return false;
     // this program's own layout first: taken as it is
     bool tinted = false;
+    int standIn = NONE; // the colour a block standing in for another takes
     if (!picture(std::string("textures/") + s->native + ".png", out))
     {
+        if (texture == T::BAMBOO || texture == T::BAMBOO_TOP)
+            return bambooPicture(texture == T::BAMBOO_TOP, out);
         bool found = false;
-        for (const std::string &block : split(s->blocks))
+        for (const std::string &entry : split(s->blocks))
             for (const char *folder : kBlockFolders)
+            {
+                std::string block;
+                int colour;
+                candidate(entry, block, colour);
                 if (!found && picture(folder + block + ".png", out))
                 {
                     found = true;
+                    standIn = colour;
                     // the grass side's green fringe is a grey overlay, tinted
                     PixelArt::Image fringe;
                     if (texture == T::GRASS_SIDE &&
@@ -439,17 +546,37 @@ bool Pack::landTexture(int texture, PixelArt::Image &out) const
                         overlay(out, fringe);
                     }
                 }
+            }
         if (!found)
             return false;
         tinted = s->tint != NONE;
     }
-    if (tinted && isGrey(out))
+    if (standIn != NONE)
+    {
+        desaturate(out);
+        int r, g, b;
+        tintColour(standIn, r, g, b);
+        tint(out, r, g, b);
+    }
+    else if (tinted && isGrey(out))
     {
         int r, g, b;
         tintColour(s->tint, r, g, b);
         tint(out, r, g, b);
     }
-    if (!isPlant(texture))
+    if (texture == T::WATER || texture == T::SEA_WATER)
+    {
+        // as see-through as the built-in water, whatever the pack's is
+        const PixelArt::Image own = LandTextures::make(texture);
+        long alpha = 0;
+        for (size_t i = 3; i < own.size(); i += 4)
+            alpha += own[i];
+        const unsigned char a =
+            static_cast<unsigned char>(alpha / static_cast<long>(own.size() / 4));
+        for (size_t i = 3; i < out.size(); i += 4)
+            out[i] = a;
+    }
+    else if (!isPlant(texture))
         fillHoles(out, isLeaves(texture) ? 0.55f : 1.0f);
     return true;
 }
