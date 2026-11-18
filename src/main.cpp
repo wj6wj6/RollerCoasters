@@ -24,13 +24,39 @@
 
 #include "stdio.h"
 #include <cstring>
+#include <cwchar>
 #include "TrainWindow.H"
+
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
 
 #pragma warning(push)
 #pragma warning(disable : 4312)
 #pragma warning(disable : 4311)
 #include <FL/Fl.H>
 #pragma warning(pop)
+
+// Load and Save default to TrackFiles\ beside the exe, however it was started
+// (Visual Studio, a double click, a terminal elsewhere). The build creates the
+// folder; it is made again here in case it was deleted.
+static void useExeFolderForTrackFiles()
+{
+    wchar_t path[MAX_PATH] = {};
+    const DWORD length = GetModuleFileNameW(nullptr, path, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH)
+        return;
+    wchar_t *slash = wcsrchr(path, L'\\');
+    if (!slash)
+        return;
+    *slash = L'\0';
+    if (SetCurrentDirectoryW(path))
+        CreateDirectoryW(L"TrackFiles", nullptr);
+}
 
 int main(int argc, char **argv)
 {
@@ -45,6 +71,7 @@ int main(int argc, char **argv)
         return 2;
     }
     printf("CS559 Train Assignment\n");
+    useExeFolderForTrackFiles();
 
     TrainWindow tw;
     tw.show();

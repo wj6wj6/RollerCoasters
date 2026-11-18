@@ -66,7 +66,7 @@ pwsh -File scripts/check.ps1 -Stage all -Compiler clang -Config Release
 - 控制面板在視窗右側，外觀仿 3D 建模軟體的屬性編輯器：深灰面板、圓角灰色按鈕，開啟或選取的項目是藍色。由上到下六個面板：
   `Ride`（Run、前後步進、ArcLength、Speed）、`Camera`（World／Train／Chase／Top／Fly、Fly 速度與 FOV）、
   `Track`（Spline Type、Edit、Add／Delete Point、Load／Save／Reset、R±X／R±Z）、`Transform`（選取控制點的 X／Y／Z，可直接輸入）、
-  `Lighting`（Light+、Shadows、Headlight、Bloom、SSAO、Time）、`World`（Water、Rain、Scenery、Grand Tour）。Load／Save 讀寫軌道文字檔。
+  `Lighting`（Light+、Shadows、Headlight、Bloom、SSAO、Time）、`World`（Water、Rain、Scenery、Grand Tour）。Load／Save 讀寫軌道文字檔，預設位置是 exe 旁邊的 `TrackFiles\`（build 與安裝時建立，程式啟動時會切到 exe 所在資料夾，不論從 Visual Studio、雙擊或終端機啟動都一樣）。
 - 編輯控制點（先開啟 `Edit`，World 與 Top 相機）：`Edit` 關閉時控制點不顯示也不能選取。左鍵點選，選到的控制點變橘色並出現移動把手。
   - 拖紅／綠／藍箭頭沿 X／Y／Z 軸移動，拖小方塊在該平面內移動，直接拖控制點則平行於畫面移動。
   - 鍵盤操作與 3D 建模軟體相同：`G` 移動、`R` 傾斜（改變控制點的上方向），之後按 `X`／`Y`／`Z` 鎖定軸，`Shift` + `X`／`Y`／`Z` 鎖定另外兩軸的平面；
