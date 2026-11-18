@@ -31,6 +31,7 @@ flowchart LR
     Touchpad -->|Train 模式| Head
     Touchpad -->|Update 計時| Timer
     Track <-->|readPoints / writePoints| File[使用者軌道文字檔]
+    Callbacks -->|Load / Save / Open pack| Dialogs[FileDialogs / 系統的開啟、另存新檔視窗與檔案總管]
     View --> GL[GLAD / OpenGL / GLU]
     View --> Effects[TrainViewEffects / 讀取光影 widget]
     Effects --> Frame[renderAdvancedFrame]
@@ -54,7 +55,9 @@ flowchart LR
     Callbacks -->|Grand Tour| Ocean
 ```
 
-材質包：`World` 面板的 `Textures` 選單由 `TrainWindow::listTexturePacks()` 列出 `TexturePack::findAll()` 在搜尋資料夾（exe 旁的 `texturepacks/`，建置與安裝時建立；以及工作資料夾的 `texturepacks/` 與 `data/texturepacks/`，`main()` 啟動時已切到 exe 的資料夾）找到的 `.zip` 與資料夾。選定後 `texturePackCB()` 以 `TexturePack::Pack::open()` 開啟（zip 由 `ZipArchive` 讀目錄、自己的 DEFLATE 解碼器解壓；包在一層資料夾裡時以 `pack.mcmeta` 等標記找根目錄），交給 `TrainView::setTexturePack()` → `LandWorld::setTexturePack()`。下一次 `draw()` 對每種貼圖先問材質包（本程式格式 `textures/<名稱>.png`，再依對照表找資源包的 `block/`、`blocks/` 圖片；PNG 由 FLTK 解碼，取動畫第一格、縮成 2 的次方、灰階的草與樹葉染色、實心方塊補滿透明處），沒有就用 `LandTextures::make()`，再以 `PixelArt::uploadInto()` 寫進原本的貼圖名稱。顯示清單綁定的是貼圖名稱，所以換材質包不必重建島嶼或顯示清單。
+檔案：Load、Save 與 `Open pack...` 經 `FileDialogs` 開系統自己的檔案視窗（`Fl_Native_File_Chooser`，Windows 上是檔案總管的「開啟」與「另存新檔」），`Open texturepacks folder` 以 `ShellExecuteW` 用檔案總管打開資料夾。
+
+材質包：`World` 面板的 `Textures` 按鈕（`Fl_Menu_Button`，每次按下都重新列出）由 `TrainWindow::listTexturePacks()` 列出 `TexturePack::findAll()` 在搜尋資料夾（exe 旁的 `texturepacks/`，建置與安裝時建立；以及工作資料夾的 `texturepacks/` 與 `data/texturepacks/`，`main()` 啟動時已切到 exe 的資料夾）找到的 `.zip` 與資料夾。選定後 `texturePackCB()` 以 `TexturePack::Pack::open()` 開啟（zip 由 `ZipArchive` 讀目錄、自己的 DEFLATE 解碼器解壓；包在一層資料夾裡時以 `pack.mcmeta` 等標記找根目錄），交給 `TrainView::setTexturePack()` → `LandWorld::setTexturePack()`。下一次 `draw()` 對每種貼圖先問材質包（本程式格式 `textures/<名稱>.png`，再依對照表找資源包的 `block/`、`blocks/` 圖片；PNG 由 FLTK 解碼，取動畫第一格、縮成 2 的次方、灰階的草與樹葉染色、實心方塊補滿透明處），沒有就用 `LandTextures::make()`，再以 `PixelArt::uploadInto()` 寫進原本的貼圖名稱。顯示清單綁定的是貼圖名稱，所以換材質包不必重建島嶼或顯示清單。
 
 `TrainWindow` 持有場景狀態與 widget；`TrainView` 讀取場景與 UI 選項並繪圖。
 `TrackRenderer` 建立累積弧長表，依弧長等距擺放枕木，並以程式產生的像素材質畫方塊風鐵軌；`makeTrackFrame()` 也放在這裡，供列車與相機共用。
