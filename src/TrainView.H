@@ -123,6 +123,16 @@ class TrainView : public Fl_Gl_Window
     // the wheel's distance ahead, middle selects (the system wheel handler in
     // TrainView.cpp asks these).
     bool flyBuilding() const;
+    bool wheelSetsDepth() const; // building, or carrying a point (G)
+
+    // G in Fly picks up the point at the crosshair (or the selected one) to
+    // carry along with the view until G again or a left click; the wheel sets
+    // its distance, Esc puts it back.
+    void beginCarry();
+    void updateCarry();
+    void endCarry(bool keep);
+    bool carryEvent(int event);
+    void flyAxes(float right[3], float up[3], float forward[3]) const;
     // the control point at the Fly crosshair, or -1
     int crosshairPoint() const;
     static constexpr float kCrosshairReach = 18.0f; // pixels
@@ -218,15 +228,18 @@ class TrainView : public Fl_Gl_Window
     EditMode m_editMode = EDIT_IDLE;
     TransformGizmo::Handle m_editHandle = TransformGizmo::NONE;
     TransformGizmo::Handle m_hoverHandle = TransformGizmo::NONE;
-    int m_editStartX = 0, m_editStartY = 0; // mouse when the edit began
-    ControlPoint m_editStart;               // the point when the edit began
-    TrackHistory::Snapshot m_editBefore;    // the track when the edit began (undo)
-    bool m_editJoinsInsert = false;         // dragging a point just added: one undo step
-    bool m_placing = false;                 // adding a point: waiting for a click on the track
-    bool m_placeHit = false;                // ... and the mouse is over the track
-    float m_placeU = 0.0f;                  // where on the track (track parameter)
-    Pnt3f m_placeSpot;                      // ... and where that is in the world
-    float m_placeDepth = 30.0f;             // Fly: a new point goes this far ahead of the eye
+    int m_editStartX = 0, m_editStartY = 0;      // mouse when the edit began
+    ControlPoint m_editStart;                    // the point when the edit began
+    TrackHistory::Snapshot m_editBefore;         // the track when the edit began (undo)
+    bool m_editJoinsInsert = false;              // dragging a point just added: one undo step
+    bool m_placing = false;                      // adding a point: waiting for a click on the track
+    bool m_placeHit = false;                     // ... and the mouse is over the track
+    float m_placeU = 0.0f;                       // where on the track (track parameter)
+    Pnt3f m_placeSpot;                           // ... and where that is in the world
+    float m_placeDepth = 30.0f;                  // Fly: a new point goes this far ahead of the eye
+    bool m_carrying = false;                     // a point picked up with G in Fly
+    float m_carryOffset[3] = {0.0f, 0.0f, 0.0f}; // ... where in the view (right, up, ahead)
+    TrackHistory::Snapshot m_carryBefore;        // ... and the track before (undo)
     static constexpr float kPlaceDepthMin = 2.0f;
     static constexpr float kPlaceDepthMax = 1500.0f;
 
