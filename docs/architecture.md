@@ -41,7 +41,7 @@ flowchart LR
     Land --> LandTex[LandTextures / 島嶼方塊與植物貼圖]
     Land -->|rideSamples| Ocean
     View --> Ocean[OceanWorld / 方塊海床、珊瑚、遺跡、沉船、水晶隧道、海洋生物]
-    LandTex --> Pixel[PixelArt / 16×16 程序貼圖]
+    LandTex --> Pixel[PixelArt / 程序貼圖（方塊 32×32）]
     Ocean --> Pixel
     Callbacks -->|Grand Tour| Ocean
 ```
@@ -89,6 +89,7 @@ caustics、吸收係數與水體顏色放在 `UnderwaterOptics.h`，三個 shade
 `LandWorld` 用這些取樣點建島：先由雜訊與幾個地形函式（雪山、火山與火山口、岩山、惡地台地與峽谷）算出每一格的高度與生態，
 填入方塊後放上熔岩湖與熔岩河（河岸與火山口邊緣的地表依離熔岩的距離轉為岩漿塊）、村莊、池塘、雪山北麓的瀑布峽谷（崖頂溪流、水潭與流到北岸的河，只放水源）與漂浮島，再沿路線挖出淨空管（比列車需要的空間大），在瀑布旁地面最平坦、高度接近瀑布頂且整棟都在列車淨空外的位置蓋一座有尖塔的城堡（窗戶與燈籠夜晚會亮），水潭上架一座兩端都搭在峽谷岩壁上的木橋，
 挖剩的薄頂會移除、軌道正下方鋪碎石，有頂的路段在牆上嵌燈籠或水晶。接著 `WaterFlow` 依方塊遊戲的規則讓水從所有水源流開（先往下；旁邊每格水位加一、最多 7；方向權重初始 999，4 格內找得到落差就取最短路徑長度，只往最小權重流；海平面以下由大海吸收），結果寫回每格的水位，水面高度依水位畫出，海面那一層（`kSeaLayer`）用海水色，其餘（含下落的水）都用同一張靜態水貼圖。網格在島外多一圈空格子（`kHalf` = 41，`onIsland()` 判斷），水能從島邊落到海面。水的位置都選在不會靠近軌道的地方，`LandWorld::waterNearRide()` 與 `LandRideClearanceCheck` 確認軌道左右 6、下方 6 到上方 10 單位內沒有水；`WaterFlowCheck` 單獨測試流動規則。最後才種樹與花草（只種在淨空帶之外）。
+方塊貼圖由 `LandTextures` 在程式裡逐格畫成 32×32（不讀圖檔）：石頭、圓石、礫石、樹葉用平鋪的雜訊與不規則格子做出塊狀，再依格子邊界加深色輪廓、左上亮邊、右下陰影，明暗分成幾個固定階層，保持像素感；海底的方塊（沙、石、石磚、木板、珊瑚、金塊等）也用同一組函式，只換顏色，海底植物維持 16×16。
 光照烘焙與 `OceanWorld` 相同（天光、發光方塊、ambient occlusion）；熔岩與燈籠的暖光寫進頂點顏色與發光量，水晶的冷光用 shader 既有的方塊光。
 `LandWorld::rideObstructions()` 與測試 `LandRideClearanceCheck` 用正式的 `CTrack` 取樣，檢查三種 spline 下列車都不會碰到方塊或植物。
 水方塊是半透明的靜態水：不遮擋旁邊的面、不擋天光也不算 ambient occlusion，網格另外編成一個 display list，由 `TrainView::drawStuff()` 在最後畫上：先只寫入水的深度，再在最近的水面上以 alpha 混合畫顏色，所以只看得到水體正面，方塊之間的內部平面與背面不會透出（不進 shadow map，目標的 alpha 保持不變）；挖軌道時被切斷而懸空的水會移除。會動的東西（風車、動物、雲、熱氣球）每格以方塊即時畫出；`TrainView::drawSupports()` 以目前 spline（含 B-spline）每約 1 單位取一點、控制點不變時沿用，交給 `LandWorld::drawSupports()` 每 9 單位規劃一座木棧橋（同一條路線只規劃一次）：

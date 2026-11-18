@@ -18,6 +18,8 @@
 #include <vector>
 
 #include "OceanWorld.h"
+
+#include "LandTextures.h"
 #include "PixelArt.h"
 
 namespace
@@ -183,214 +185,12 @@ const float kPortalGate = 15.55f;
 const float kExitGates[3] = {20.55f, 21.0f, 21.45f};
 
 // ---------------------------------------------------------------------
-// Pixel art. Every texture is 16 x 16 and drawn here, texel by texel.
+// Pixel art. The blocks share the island's 32 x 32 textures (LandTextures);
+// the plants are 16 x 16 and drawn here, texel by texel.
 // ---------------------------------------------------------------------
 int shadeOf(int x, int y, unsigned int seed, int range)
 {
     return static_cast<int>(hash(x, y, seed) % static_cast<unsigned int>(2 * range + 1)) - range;
-}
-
-Image makeSand()
-{
-    Image p = PixelArt::blank();
-    for (int y = 0; y < S; ++y)
-        for (int x = 0; x < S; ++x)
-        {
-            const unsigned int h = hash(x, y, 21u);
-            const int s = shadeOf(x, y, 22u, 8);
-            if (h % 13u == 0)
-                set(p, x, y, 198 + s, 186 + s, 150 + s); // dark grain
-            else if (h % 19u == 0)
-                set(p, x, y, 238, 230, 206); // shell fragment
-            else
-                set(p, x, y, 226 + s, 216 + s, 180 + s);
-        }
-    return p;
-}
-
-Image makeStone()
-{
-    Image p = PixelArt::blank();
-    for (int y = 0; y < S; ++y)
-        for (int x = 0; x < S; ++x)
-        {
-            const unsigned int h = hash(x, y, 31u);
-            const int s = shadeOf(x, y, 32u, 9);
-            int v = 124 + s;
-            if (h % 7u == 0)
-                v -= 22;
-            else if (h % 11u == 0)
-                v += 18;
-            set(p, x, y, v, v + 5, v + 11);
-        }
-    // A few short cracks.
-    for (int k = 0; k < 3; ++k)
-    {
-        int x = static_cast<int>(hash(k, 0, 33u) % 16u);
-        int y = static_cast<int>(hash(k, 1, 33u) % 16u);
-        for (int step = 0; step < 6; ++step)
-        {
-            set(p, x, y, 86, 90, 98);
-            x = (x + 1) % S;
-            y = (y + static_cast<int>(hash(k, step, 34u) % 3u) - 1 + S) % S;
-        }
-    }
-    return p;
-}
-
-Image makeCaveRock()
-{
-    Image p = PixelArt::blank();
-    for (int y = 0; y < S; ++y)
-        for (int x = 0; x < S; ++x)
-        {
-            const unsigned int h = hash(x, y, 41u);
-            const int s = shadeOf(x, y, 42u, 7);
-            const bool blotch = (hash(x / 3, y / 3, 43u) % 4u) == 0;
-            if (h % 37u == 0)
-                set(p, x, y, 120, 96, 160); // mineral speck
-            else if (blotch)
-                set(p, x, y, 52 + s, 58 + s, 72 + s);
-            else
-                set(p, x, y, 70 + s, 77 + s, 92 + s);
-        }
-    return p;
-}
-
-Image makeBricks()
-{
-    Image p = PixelArt::blank();
-    for (int y = 0; y < S; ++y)
-    {
-        const int row = y / 4;
-        const int offset = (row % 2) * 4;
-        for (int x = 0; x < S; ++x)
-        {
-            const int bx = (x + offset) % 8;
-            const int brick = (x + offset) / 8 + row * 3;
-            const int s = shadeOf(x, y, 51u, 6);
-            const int tint = static_cast<int>(hash(brick, row, 52u) % 15u) - 7;
-            const bool moss =
-                y < 3 + static_cast<int>(hash(x, 0, 53u) % 5u) && hash(x, y, 54u) % 3u != 0;
-            if (y % 4 == 3 || bx == 7)
-                set(p, x, y, 88 + s, 96 + s, 90 + s); // mortar
-            else if (moss)
-                set(p, x, y, 74 + s, 124 + s, 82 + s); // algae growing down from the top
-            else
-                set(p, x, y, 146 + s + tint, 154 + s + tint, 144 + s + tint);
-        }
-    }
-    return p;
-}
-
-Image makePillar()
-{
-    Image p = PixelArt::blank();
-    for (int y = 0; y < S; ++y)
-        for (int x = 0; x < S; ++x)
-        {
-            const int s = shadeOf(x, y, 61u, 5);
-            int r = 206, g = 198, b = 168;
-            if (y < 2 || y > 13)
-            {
-                r = 184;
-                g = 176;
-                b = 146; // carved band
-            }
-            else if (x % 4 == 0)
-            {
-                r = 168;
-                g = 160;
-                b = 132; // flute shadow
-            }
-            else if (x % 4 == 3)
-            {
-                r += 10;
-                g += 10;
-                b += 8;
-            }
-            if (y > 9 && hash(x, y, 62u) % 4u == 0)
-            {
-                r = 120;
-                g = 150;
-                b = 110; // algae near the foot
-            }
-            set(p, x, y, r + s, g + s, b + s);
-        }
-    return p;
-}
-
-Image makePlanks()
-{
-    Image p = PixelArt::blank();
-    for (int y = 0; y < S; ++y)
-        for (int x = 0; x < S; ++x)
-        {
-            const int board = y / 4;
-            const int s = shadeOf(x, y, 71u, 6);
-            const int tint = static_cast<int>(hash(board, 0, 72u) % 17u) - 8;
-            if (y % 4 == 3)
-                set(p, x, y, 62 + s, 42 + s, 28 + s); // seam
-            else if ((x == 1 || x == 14) && y % 4 == 1)
-                set(p, x, y, 58, 60, 64); // nail
-            else if (hash(x, y, 73u) % 23u == 0)
-                set(p, x, y, 88 + s, 100 + s, 80 + s); // weed
-            else if (hash(x / 3, y, 74u) % 5u == 0)
-                set(p, x, y, 96 + s + tint, 66 + s + tint, 40 + s); // grain
-            else
-                set(p, x, y, 116 + s + tint, 82 + s + tint, 50 + s);
-        }
-    return p;
-}
-
-Image makeLog()
-{
-    Image p = PixelArt::blank();
-    for (int y = 0; y < S; ++y)
-        for (int x = 0; x < S; ++x)
-        {
-            const int s = shadeOf(x, y, 81u, 6);
-            if (x % 3 == 0 || hash(x, y / 2, 82u) % 6u == 0)
-                set(p, x, y, 68 + s, 46 + s, 30 + s);
-            else
-                set(p, x, y, 90 + s, 64 + s, 42 + s);
-        }
-    return p;
-}
-
-Image makeCoralBlock(int r, int g, int b, unsigned int seed)
-{
-    Image p = PixelArt::blank();
-    for (int y = 0; y < S; ++y)
-        for (int x = 0; x < S; ++x)
-        {
-            const unsigned int h = hash(x, y, seed);
-            const int s = shadeOf(x, y, seed + 1u, 10);
-            if (h % 6u == 0)
-                set(p, x, y, r * 6 / 10 + s, g * 6 / 10 + s, b * 6 / 10 + s); // pore
-            else if (h % 9u == 0)
-                set(p, x, y, r + 30, g + 30, b + 30); // bump
-            else
-                set(p, x, y, r + s, g + s, b + s);
-        }
-    return p;
-}
-
-Image makeCrystal()
-{
-    Image p = PixelArt::blank();
-    for (int y = 0; y < S; ++y)
-        for (int x = 0; x < S; ++x)
-        {
-            const int s = shadeOf(x, y, 91u, 6);
-            if ((x + y) % 6 == 0)
-                set(p, x, y, 200, 250, 255); // bright facet edge
-            else if ((x - y + 16) % 7 == 0)
-                set(p, x, y, 40 + s, 140 + s, 190 + s);
-            else
-                set(p, x, y, 80 + s, 205 + s, 238 + s);
-        }
-    return p;
 }
 
 // Line of texels, for the plant shapes.
@@ -536,88 +336,6 @@ Image makeStarfish()
                 else
                     set(p, x, y, 226, 104, 58);
             }
-        }
-    return p;
-}
-
-// A lamp block: pale glowing panes in a darker frame.
-Image makeLantern()
-{
-    Image p = PixelArt::blank();
-    for (int y = 0; y < S; ++y)
-        for (int x = 0; x < S; ++x)
-        {
-            const int s = shadeOf(x, y, 141u, 6);
-            const bool frame = x == 0 || y == 0 || x == S - 1 || y == S - 1;
-            const bool bar = x == 7 || x == 8 || y == 7 || y == 8;
-            const bool core =
-                (x > 2 && x < 6 && y > 2 && y < 6) || (x > 9 && x < 13 && y > 2 && y < 6) ||
-                (x > 2 && x < 6 && y > 9 && y < 13) || (x > 9 && x < 13 && y > 9 && y < 13);
-            if (frame)
-                set(p, x, y, 96 + s, 150 + s, 160 + s);
-            else if (bar)
-                set(p, x, y, 150 + s, 205 + s, 205 + s);
-            else if (core)
-                set(p, x, y, 255, 255, 240);
-            else
-                set(p, x, y, 205 + s, 244 + s, 232 + s);
-        }
-    return p;
-}
-
-Image makeGold()
-{
-    Image p = PixelArt::blank();
-    for (int y = 0; y < S; ++y)
-        for (int x = 0; x < S; ++x)
-        {
-            const unsigned int h = hash(x, y, 151u);
-            const int s = shadeOf(x, y, 152u, 8);
-            if ((x + 2 * y) % 9 == 0 || h % 17u == 0)
-                set(p, x, y, 255, 246, 170); // glint
-            else if (h % 5u == 0)
-                set(p, x, y, 204 + s, 150 + s, 30 + s);
-            else
-                set(p, x, y, 246 + s, 200 + s, 52 + s);
-        }
-    return p;
-}
-
-Image makeMarble()
-{
-    Image p = PixelArt::blank();
-    for (int y = 0; y < S; ++y)
-        for (int x = 0; x < S; ++x)
-        {
-            const int s = shadeOf(x, y, 161u, 5);
-            const bool edge = x == 0 || y == 0 || x == S - 1 || y == S - 1;
-            const bool vein =
-                (x + 3 * y + static_cast<int>(hash(x / 4, y / 4, 162u) % 3u)) % 13 == 0;
-            if (edge)
-                set(p, x, y, 196 + s, 204 + s, 212 + s);
-            else if (vein)
-                set(p, x, y, 206 + s, 214 + s, 224 + s);
-            else
-                set(p, x, y, 236 + s, 240 + s, 244 + s);
-        }
-    return p;
-}
-
-Image makeLapis()
-{
-    Image p = PixelArt::blank();
-    for (int y = 0; y < S; ++y)
-        for (int x = 0; x < S; ++x)
-        {
-            const unsigned int h = hash(x, y, 171u);
-            const int s = shadeOf(x, y, 172u, 8);
-            const bool edge = x == 0 || y == 0 || x == S - 1 || y == S - 1;
-            if (edge)
-                set(p, x, y, 22 + s, 58 + s, 150 + s);
-            else if (h % 13u == 0)
-                set(p, x, y, 120, 170, 250); // pale fleck
-            else
-                set(p, x, y, 36 + s, 92 + s, 206 + s);
         }
     return p;
 }
@@ -2221,36 +1939,23 @@ void OceanWorld::build()
     buildWorld(g);
 
     m_textures.assign(kTextureCount, 0);
-    const Image images[kTextureCount] = {PixelArt::blank(), // AIR (unused)
-                                         PixelArt::blank(), // ISLAND (never drawn)
-                                         makeSand(),
-                                         makeStone(),
-                                         makeCaveRock(),
-                                         makeBricks(),
-                                         makePillar(),
-                                         makePlanks(),
-                                         makeLog(),
-                                         makeCoralBlock(226, 96, 140, 501u),
-                                         makeCoralBlock(236, 142, 62, 511u),
-                                         makeCoralBlock(146, 92, 204, 521u),
-                                         makeCoralBlock(232, 204, 70, 531u),
-                                         makeCoralBlock(214, 62, 58, 541u),
-                                         makeCrystal(),
-                                         makeLantern(),
-                                         makeGold(),
-                                         makeMarble(),
-                                         makeLapis(),
-                                         PixelArt::blank(), // NO_PLANT
-                                         makeSeagrass(),
-                                         makeKelp(),
-                                         makeFanCoral(214, 72, 104),
-                                         makeFanCoral(226, 170, 52),
-                                         makeFanCoral(150, 96, 214),
-                                         makeTubeCoral(),
-                                         makeAnemone(),
-                                         makeGlowBud(),
-                                         makeCrystalSpike(),
-                                         makeStarfish()};
+    const Image images[kTextureCount] = {
+        PixelArt::blank(), // AIR (unused)
+        PixelArt::blank(), // ISLAND (never drawn)
+        // the blocks share the island's 32 x 32 style
+        LandTextures::sand(226, 216, 180, 21u), LandTextures::stone(122, 127, 134, 31u),
+        LandTextures::stone(68, 75, 90, 41u), // cave rock
+        LandTextures::stoneBricks(146, 154, 144, true, 51u), LandTextures::pillar(),
+        LandTextures::planks(116, 82, 50, true), // wet, nailed
+        LandTextures::bark(92, 66, 44, 81u), LandTextures::coral(226, 96, 140, 501u),
+        LandTextures::coral(236, 142, 62, 511u), LandTextures::coral(146, 92, 204, 521u),
+        LandTextures::coral(232, 204, 70, 531u), LandTextures::coral(214, 62, 58, 541u),
+        LandTextures::crystal(), LandTextures::lantern(), LandTextures::gold(),
+        LandTextures::marble(), LandTextures::lapis(),
+        PixelArt::blank(), // NO_PLANT
+        makeSeagrass(), makeKelp(), makeFanCoral(214, 72, 104), makeFanCoral(226, 170, 52),
+        makeFanCoral(150, 96, 214), makeTubeCoral(), makeAnemone(), makeGlowBud(),
+        makeCrystalSpike(), makeStarfish()};
     for (int t = 0; t < kTextureCount; ++t)
         if (t != AIR && t != ISLAND && t != plantTexture(NO_PLANT))
             m_textures[static_cast<size_t>(t)] =

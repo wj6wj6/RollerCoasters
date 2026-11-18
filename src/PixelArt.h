@@ -1,10 +1,10 @@
 /************************************************************************
      File:        PixelArt.h
 
-     Comment:     Helpers for the 16 x 16 block textures that are drawn in
-                  code (LandWorld, OceanWorld): a repeatable per-texel
-                  hash and an uploader that keeps the pixels crisp up close
-                  and mip-maps them far away.
+     Comment:     Helpers for the square block textures that are drawn in
+                  code (blocks at 32 x 32, the sea floor's plants at 16 x 16): a
+                  repeatable per-texel hash and an uploader that keeps the
+                  pixels crisp up close and mip-maps them far away.
 
 *************************************************************************/
 #pragma once
@@ -14,18 +14,23 @@
 namespace PixelArt
 {
 
-const int kSize = 16;
+const int kSize = 16;     // the sea floor's textures
+const int kFineSize = 32; // the island's textures
 
-// RGBA, kSize x kSize, row 0 at the top of the block.
+// RGBA, size x size (a power of two), row 0 at the top of the block.
 typedef std::vector<unsigned char> Image;
 
 // Small integer hash so every texel gets a repeatable random value.
 unsigned int hash(int x, int y, unsigned int seed);
 
 // A fully transparent image.
-Image blank();
+Image blank(int size = kSize);
 
-// Writes one texel; the colour is clamped to 0..255.
+// The width (and height) of an image.
+int sizeOf(const Image &pixels);
+
+// Writes one texel; the colour is clamped to 0..255. Outside the image it
+// does nothing.
 void set(Image &pixels, int x, int y, int r, int g, int b, int a = 255);
 
 // Uploads with box-filtered mip levels: nearest when close so the pixels stay

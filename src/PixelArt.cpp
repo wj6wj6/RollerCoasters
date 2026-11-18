@@ -23,16 +23,25 @@ unsigned int hash(int x, int y, unsigned int seed)
     return h ^ (h >> 16);
 }
 
-Image blank()
+Image blank(int size)
 {
-    return Image(static_cast<size_t>(kSize * kSize * 4), 0);
+    return Image(static_cast<size_t>(size * size * 4), 0);
+}
+
+int sizeOf(const Image &pixels)
+{
+    int size = 1;
+    while (static_cast<size_t>(size * size * 4) < pixels.size())
+        size *= 2;
+    return size;
 }
 
 void set(Image &pixels, int x, int y, int r, int g, int b, int a)
 {
-    if (x < 0 || y < 0 || x >= kSize || y >= kSize)
+    const int size = sizeOf(pixels);
+    if (x < 0 || y < 0 || x >= size || y >= size)
         return;
-    const size_t i = static_cast<size_t>((y * kSize + x) * 4);
+    const size_t i = static_cast<size_t>((y * size + x) * 4);
     pixels[i + 0] = static_cast<unsigned char>(r < 0 ? 0 : (r > 255 ? 255 : r));
     pixels[i + 1] = static_cast<unsigned char>(g < 0 ? 0 : (g > 255 ? 255 : g));
     pixels[i + 2] = static_cast<unsigned char>(b < 0 ? 0 : (b > 255 ? 255 : b));
@@ -46,7 +55,7 @@ unsigned int upload(Image pixels, bool repeatT)
     glBindTexture(GL_TEXTURE_2D, texture);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
-    int size = kSize;
+    int size = sizeOf(pixels);
     int level = 0;
     while (true)
     {

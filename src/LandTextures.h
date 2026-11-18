@@ -1,7 +1,7 @@
 /************************************************************************
      File:        LandTextures.h
 
-     Comment:     The 16 x 16 pixel textures of the island's blocks and
+     Comment:     The 32 x 32 pixel textures of the island's blocks and
                   plants (LandWorld), drawn in code like the others, so
                   there are no image files to load.
 
@@ -82,5 +82,19 @@ PixelArt::Image make(int texture);
 
 // Does this texture tile vertically as well?
 bool repeatsVertically(int texture);
+
+// The same style for the sea floor's blocks (OceanWorld), in its colours.
+PixelArt::Image sand(int r, int g, int b, unsigned int seed);
+PixelArt::Image stone(int r, int g, int b, unsigned int seed);
+PixelArt::Image planks(int r, int g, int b, bool nails);
+PixelArt::Image bark(int r, int g, int b, unsigned int seed);
+PixelArt::Image crystal();
+PixelArt::Image lantern();
+PixelArt::Image stoneBricks(int r, int g, int b, bool algae, unsigned int seed);
+PixelArt::Image coral(int r, int g, int b, unsigned int seed);
+PixelArt::Image gold();
+PixelArt::Image lapis();
+PixelArt::Image marble();
+PixelArt::Image pillar();
 
 } // namespace LandTextures

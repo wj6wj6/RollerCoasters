@@ -23,7 +23,9 @@
                   baked into the vertices: sky light fades inside the
                   tunnel and under overhangs, crystals light their
                   surroundings, and corners get ambient occlusion. All
-                  textures are 16 x 16 pixel art generated in code.
+                  textures are pixel art generated in code: the blocks
+                  32 x 32 in the island's style (LandTextures), the
+                  plants 16 x 16.
 
                   The extra lighting data goes to the shader through
                   texture unit 1's coordinate (see AdvancedLighting):
