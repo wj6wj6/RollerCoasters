@@ -39,12 +39,18 @@ const float kFlatHalf = 100.0f;
 // The highest layer of blocks that touches the sea (the sea is at y = -1;
 // layer 0 spans 0 to 2.5): water in it is coloured like the sea.
 const int kSeaLayer = 0;
-// Blocks each side of the origin: the island reaches at most
-// WorldShape::kIslandReach (278 units, 111 blocks), and two more rings of
-// open air round it, over the sea, for water running off the island to
-// fall through.
-const int kHalf = 113;
-const int kSizeXZ = 2 * kHalf;
+// The grid's columns: the main island reaches at most
+// WorldShape::kIslandReach (278 units, 111 blocks) from the middle, the
+// north-east land (WorldShape.h) out to x = 525, z = -525; two more rings of
+// open air round them, over the sea, for water running off the land to
+// fall through. Blocks x from kMinBX up to (not including) kMaxBX, and z.
+const int kMinBX = -113, kMaxBX = 212;
+const int kMinBZ = -212, kMaxBZ = 113;
+const int kSizeX = kMaxBX - kMinBX;
+const int kSizeZ = kMaxBZ - kMinBZ;
+// The grid's extent in world units, x and z.
+const float kGridLo[2] = {static_cast<float>(kMinBX) * 2.5f, static_cast<float>(kMinBZ) * 2.5f};
+const float kGridHi[2] = {static_cast<float>(kMaxBX) * 2.5f, static_cast<float>(kMaxBZ) * 2.5f};
 const int kMinY = -2; // block layer j spans y = 2.5 j .. 2.5 j + 2.5
 const int kMaxY = 90; // the jagged peaks top out near y = 220
 const int kSizeY = kMaxY - kMinY + 1;
@@ -109,6 +115,9 @@ enum Block
     WATER,
     ICE,    // packed ice: the ice spikes
     JACK_O, // a carved pumpkin lantern, lit
+    MUD,    // the mangrove swamp's ground
+    MANGROVE_LOG,
+    LEAVES_MANGROVE,
     BLOCK_COUNT
 };
 
@@ -127,6 +136,9 @@ enum Plant
     OXEYE,
     ALLIUM,
     TULIP_ORANGE,
+    BAMBOO,     // a stalk; they stack into tall canes
+    BAMBOO_TOP, // the leafy top of a cane
+    VINES,      // hanging under the mangroves' crowns
     PLANT_COUNT
 };
 
@@ -136,7 +148,9 @@ enum Biome
     ALPINE,
     VOLCANO,
     MESA,
-    CRAG
+    CRAG,
+    BAMBOO_JUNGLE, // the north-east land's hills
+    MANGROVE       // the north-east land's swamp, facing the strait
 };
 
 // The texture of one face of a block: 0 top, 1 bottom, 2 side.
@@ -235,6 +249,12 @@ int textureOf(int block, int face)
         return T::ICE;
     case JACK_O:
         return face == 0 || face == 1 ? T::PUMPKIN_TOP : T::PUMPKIN_FACE;
+    case MUD:
+        return T::MUD;
+    case MANGROVE_LOG:
+        return face == 2 ? T::MANGROVE_SIDE : T::MANGROVE_TOP;
+    case LEAVES_MANGROVE:
+        return T::LEAVES_MANGROVE;
     default:
         return T::STONE;
     }
@@ -249,7 +269,8 @@ int plantTexture(int plant)
 bool isGrowth(int block)
 {
     return (block >= OAK_LOG && block <= LEAVES_AUTUMN) || block == CACTUS ||
-           block == MUSHROOM_CAP || block == MUSHROOM_STEM;
+           block == MUSHROOM_CAP || block == MUSHROOM_STEM || block == MANGROVE_LOG ||
+           block == LEAVES_MANGROVE;
 }
 
 // How strongly a block shines by itself.
@@ -514,8 +535,32 @@ Site firstSite(float x, float z, float coast)
 // knolls and hollows on the meadows, mountains and crags that the first
 // layout was too small to hold (the badlands keep their level steps, the
 // volcano its smooth cone).
+// The north-east land at world position (x, z): mangrove swamp at sea
+// level on the side facing the strait, rising to bamboo-clad hills to the
+// north-east.
+Site northEastSite(float x, float z)
+{
+    Site site;
+    const float coast = WorldShape::inlandNorthEast(x, z);
+    const float dx = x - WorldShape::kNorthEastX, dz = z - WorldShape::kNorthEastZ;
+    // how far towards the north-east: -1 at the strait, +1 on the far shore
+    const float along = (dx - dz) * 0.7071f / WorldShape::kNorthEastRadius;
+    const float hills =
+        fbm(x * 0.012f, z * 0.012f, 711u) * 0.7f + valueNoise(x * 0.045f, z * 0.045f, 713u) * 0.3f;
+    const float swamp = 0.4f + (valueNoise(x * 0.05f, z * 0.05f, 715u) - 0.5f) * 3.0f;
+    const float high = 4.0f + ramp(4.0f, 45.0f, coast) * (10.0f + hills * 42.0f);
+    const float t = ramp(-0.35f, 0.05f, along); // 0 swamp, 1 hills
+    site.height = swamp + (high - swamp) * t;
+    site.biome = t < 0.5f ? MANGROVE : BAMBOO_JUNGLE;
+    if (coast < 6.0f)
+        site.height = fminf(site.height, 1.5f + coast * 0.3f); // a low shore
+    return site;
+}
+
 Site siteAt(float x, float z)
 {
+    if (WorldShape::inlandNorthEast(x, z) > WorldShape::inlandMain(x, z))
+        return northEastSite(x, z);
     const float coast = WorldShape::inland(x, z) / kScale;
     Site site = firstSite(x / kScale, z / kScale, coast);
     site.height = WorldShape::lifted(site.height);
@@ -540,16 +585,16 @@ struct Grid
     std::vector<unsigned char> biome;  // per column
 
     Grid()
-        : block(static_cast<size_t>(kSizeXZ * kSizeY * kSizeXZ), AIR),
-          plant(block.size(), NO_PLANT), sky(block.size(), 0), warm(block.size(), 0),
-          cool(block.size(), 0), carved(block.size(), 0), level(block.size(), 0),
-          biome(static_cast<size_t>(kSizeXZ * kSizeXZ), MEADOW)
+        : block(static_cast<size_t>(kSizeX) * kSizeY * kSizeZ, AIR), plant(block.size(), NO_PLANT),
+          sky(block.size(), 0), warm(block.size(), 0), cool(block.size(), 0),
+          carved(block.size(), 0), level(block.size(), 0),
+          biome(static_cast<size_t>(kSizeX) * kSizeZ, MEADOW)
     {
     }
 
     static bool insideColumn(int bx, int bz)
     {
-        return bx >= -kHalf && bx < kHalf && bz >= -kHalf && bz < kHalf;
+        return bx >= kMinBX && bx < kMaxBX && bz >= kMinBZ && bz < kMaxBZ;
     }
     static bool inside(int bx, int j, int bz)
     {
@@ -557,13 +602,13 @@ struct Grid
     }
     static size_t index(int bx, int j, int bz)
     {
-        return (static_cast<size_t>(bx + kHalf) * kSizeY + static_cast<size_t>(j - kMinY)) *
-                   kSizeXZ +
-               static_cast<size_t>(bz + kHalf);
+        return (static_cast<size_t>(bx - kMinBX) * kSizeY + static_cast<size_t>(j - kMinY)) *
+                   kSizeZ +
+               static_cast<size_t>(bz - kMinBZ);
     }
     static size_t column(int bx, int bz)
     {
-        return static_cast<size_t>(bx + kHalf) * kSizeXZ + static_cast<size_t>(bz + kHalf);
+        return static_cast<size_t>(bx - kMinBX) * kSizeZ + static_cast<size_t>(bz - kMinBZ);
     }
     int get(int bx, int j, int bz) const
     {
@@ -627,7 +672,7 @@ struct Clearance
     std::vector<float> nearLow, nearHigh; // room for a tree's crown
 
     Clearance()
-        : low(static_cast<size_t>(kSizeXZ * kSizeXZ), 1.0e9f), high(low.size(), -1.0e9f),
+        : low(static_cast<size_t>(kSizeX) * kSizeZ, 1.0e9f), high(low.size(), -1.0e9f),
           nearLow(low.size(), 1.0e9f), nearHigh(low.size(), -1.0e9f)
     {
     }
@@ -637,8 +682,8 @@ struct Clearance
         for (size_t i = 0; i + 2 < ride.size(); i += 3)
         {
             const float x = ride[i], y = ride[i + 1], z = ride[i + 2];
-            if (fabsf(x) > WorldShape::kIslandReach + wide ||
-                fabsf(z) > WorldShape::kIslandReach + wide)
+            if (x < kGridLo[0] - wide || x > kGridHi[0] + wide || z < kGridLo[1] - wide ||
+                z > kGridHi[1] + wide)
                 continue;
             for (int bx = blockOf(x - wide); bx <= blockOf(x + wide); ++bx)
                 for (int bz = blockOf(z - wide); bz <= blockOf(z + wide); ++bz)
@@ -738,9 +783,9 @@ int stoneOrOre(int bx, int j, int bz, bool rich)
 
 void buildTerrain(Grid &g)
 {
-    std::vector<int> tops(static_cast<size_t>(kSizeXZ * kSizeXZ), 0);
-    for (int bx = -kHalf; bx < kHalf; ++bx)
-        for (int bz = -kHalf; bz < kHalf; ++bz)
+    std::vector<int> tops(static_cast<size_t>(kSizeX) * kSizeZ, 0);
+    for (int bx = kMinBX; bx < kMaxBX; ++bx)
+        for (int bz = kMinBZ; bz < kMaxBZ; ++bz)
         {
             const Site site = siteAt(centerOf(bx), centerOf(bz));
             int top = static_cast<int>(floorf(site.height / kBlock + 0.5f)) - 1;
@@ -749,8 +794,8 @@ void buildTerrain(Grid &g)
             g.biome[Grid::column(bx, bz)] = static_cast<unsigned char>(site.biome);
         }
 
-    for (int bx = -kHalf; bx < kHalf; ++bx)
-        for (int bz = -kHalf; bz < kHalf; ++bz)
+    for (int bx = kMinBX; bx < kMaxBX; ++bx)
+        for (int bz = kMinBZ; bz < kMaxBZ; ++bz)
         {
             if (!onIsland(bx, bz))
                 continue; // the ring over the sea stays open
@@ -818,6 +863,15 @@ void buildTerrain(Grid &g)
                     else
                         b = stoneOrOre(bx, j, bz, true);
                     break;
+                case MANGROVE:
+                    b = depth < 3 ? MUD : (depth < 5 ? DIRT : STONE);
+                    break;
+                case BAMBOO_JUNGLE:
+                    if (steep >= 4 && depth == 0)
+                        b = MOSSY;
+                    else
+                        b = depth == 0 ? GRASS : (depth < 3 ? DIRT : stoneOrOre(bx, j, bz, false));
+                    break;
                 default:
                     if (topY <= 2.5f && coast < 14.0f)
                         b = depth < 3 ? SAND : STONE; // the beach
@@ -833,8 +887,8 @@ void buildTerrain(Grid &g)
 // The lava lake in the crater.
 void buildLavaLake(Grid &g)
 {
-    for (int bx = -kHalf; bx < kHalf; ++bx)
-        for (int bz = -kHalf; bz < kHalf; ++bz)
+    for (int bx = kMinBX; bx < kMaxBX; ++bx)
+        for (int bz = kMinBZ; bz < kMaxBZ; ++bz)
         {
             const float dx = centerOf(bx) / kScale - kVolcanoX;
             const float dz = centerOf(bz) / kScale - kVolcanoZ;
@@ -1034,7 +1088,7 @@ const float kWaterAbove = 10.0f;
 std::vector<unsigned char> waterZone(const std::vector<float> &ride)
 {
     const float reach = kWaterReach;
-    std::vector<unsigned char> zone(static_cast<size_t>(kSizeXZ * kSizeY * kSizeXZ), 0);
+    std::vector<unsigned char> zone(static_cast<size_t>(kSizeX) * kSizeY * kSizeZ, 0);
     for (size_t i = 0; i + 2 < ride.size(); i += 3)
     {
         const float x = ride[i], y = ride[i + 1], z = ride[i + 2];
@@ -1064,13 +1118,13 @@ std::vector<unsigned char> waterZone(const std::vector<float> &ride)
 // are placed so it never gets there; see waterZone.)
 void spreadWater(Grid &g)
 {
-    WaterFlow::Field field(kSizeXZ, kSizeY, kSizeXZ);
-    for (int bx = -kHalf; bx < kHalf; ++bx)
-        for (int bz = -kHalf; bz < kHalf; ++bz)
+    WaterFlow::Field field(kSizeX, kSizeY, kSizeZ);
+    for (int bx = kMinBX; bx < kMaxBX; ++bx)
+        for (int bz = kMinBZ; bz < kMaxBZ; ++bz)
             for (int j = kMinY; j <= kMaxY; ++j)
             {
                 const size_t i = Grid::index(bx, j, bz);
-                const int x = bx + kHalf, y = j - kMinY, z = bz + kHalf;
+                const int x = bx - kMinBX, y = j - kMinY, z = bz - kMinBZ;
                 const int b = g.block[i];
                 if (b == WATER)
                     field.addSource(x, y, z);
@@ -1080,11 +1134,11 @@ void spreadWater(Grid &g)
                     field.setCell(x, y, z, WaterFlow::SINK);
             }
     field.spread();
-    for (int bx = -kHalf; bx < kHalf; ++bx)
-        for (int bz = -kHalf; bz < kHalf; ++bz)
+    for (int bx = kMinBX; bx < kMaxBX; ++bx)
+        for (int bz = kMinBZ; bz < kMaxBZ; ++bz)
             for (int j = kMinY; j <= kMaxY; ++j)
             {
-                const int x = bx + kHalf, y = j - kMinY, z = bz + kHalf;
+                const int x = bx - kMinBX, y = j - kMinY, z = bz - kMinBZ;
                 if (field.cell(x, y, z) != WaterFlow::WATER)
                     continue;
                 const size_t i = Grid::index(bx, j, bz);
@@ -1292,8 +1346,8 @@ bool roomForBuilding(const Clearance &clear, int x0, int x1, int j0, int j1, int
 void buildVillage(Grid &g, Extras &extras, const Clearance &clear)
 {
     // level the green, blending into the meadow around it
-    for (int bx = -kHalf; bx < kHalf; ++bx)
-        for (int bz = -kHalf; bz < kHalf; ++bz)
+    for (int bx = kMinBX; bx < kMaxBX; ++bx)
+        for (int bz = kMinBZ; bz < kMaxBZ; ++bz)
         {
             const float dx = centerOf(bx) - kVillageX, dz = centerOf(bz) - kVillageZ;
             const float d = sqrtf(dx * dx + dz * dz);
@@ -1720,8 +1774,8 @@ void carveRide(Grid &g, const std::vector<float> &ride)
     for (size_t i = 0; i + 2 < ride.size(); i += 3)
     {
         const float x = ride[i], y = ride[i + 1], z = ride[i + 2];
-        if (fabsf(x) > WorldShape::kIslandReach + kCarveRadius ||
-            fabsf(z) > WorldShape::kIslandReach + kCarveRadius)
+        if (x < kGridLo[0] - kCarveRadius || x > kGridHi[0] + kCarveRadius ||
+            z < kGridLo[1] - kCarveRadius || z > kGridHi[1] + kCarveRadius)
             continue;
         const int jLow = blockOf(y - kCarveBelow);
         const int jHigh = blockOf(y + kCarveAbove);
@@ -1747,8 +1801,8 @@ void carveRide(Grid &g, const std::vector<float> &ride)
             }
     }
     // A thin roof left over a cutting would hang in the air: take it off.
-    for (int bx = -kHalf; bx < kHalf; ++bx)
-        for (int bz = -kHalf; bz < kHalf; ++bz)
+    for (int bx = kMinBX; bx < kMaxBX; ++bx)
+        for (int bz = kMinBZ; bz < kMaxBZ; ++bz)
             for (int j = kMinY; j < kMaxY; ++j)
             {
                 if (!g.carved[Grid::index(bx, j, bz)] || g.get(bx, j + 1, bz) == AIR)
@@ -1961,8 +2015,8 @@ void buildLake(Grid &g, const Clearance &clear, Extras &extras)
 {
     const int radius = 10;
     int bestX = 0, bestZ = 0, bestLevel = 0, bestScore = 1 << 30;
-    for (int bx = -kHalf + radius + 4; bx < kHalf - radius - 4; bx += 4)
-        for (int bz = -kHalf + radius + 4; bz < kHalf - radius - 4; bz += 4)
+    for (int bx = kMinBX + radius + 4; bx < kMaxBX - radius - 4; bx += 4)
+        for (int bz = kMinBZ + radius + 4; bz < kMaxBZ - radius - 4; bz += 4)
         {
             const float vx = centerOf(bx) - kVillageX, vz = centerOf(bz) - kVillageZ;
             if (vx * vx + vz * vz < (kVillageRadius + 40.0f) * (kVillageRadius + 40.0f))
@@ -2041,8 +2095,8 @@ void buildLake(Grid &g, const Clearance &clear, Extras &extras)
 void buildGiantTree(Grid &g, const Clearance &clear, Extras &extras)
 {
     int bestX = 0, bestZ = 0, bestTop = 0, bestScore = 1 << 30;
-    for (int bx = -kHalf + 12; bx < kHalf - 12; bx += 3)
-        for (int bz = -kHalf + 12; bz < kHalf - 12; bz += 3)
+    for (int bx = kMinBX + 12; bx < kMaxBX - 12; bx += 3)
+        for (int bz = kMinBZ + 12; bz < kMaxBZ - 12; bz += 3)
         {
             const float vx = centerOf(bx) - kVillageX, vz = centerOf(bz) - kVillageZ;
             if (vx * vx + vz * vz < (kVillageRadius + 20.0f) * (kVillageRadius + 20.0f))
@@ -2148,8 +2202,8 @@ void buildFarms(Grid &g, const Clearance &clear)
 void buildIceSpikes(Grid &g, const Clearance &clear)
 {
     std::vector<Placed> spike;
-    for (int bx = -kHalf + 2; bx < kHalf - 2; ++bx)
-        for (int bz = -kHalf + 2; bz < kHalf - 2; ++bz)
+    for (int bx = kMinBX + 2; bx < kMaxBX - 2; ++bx)
+        for (int bz = kMinBZ + 2; bz < kMaxBZ - 2; ++bz)
         {
             if (g.biome[Grid::column(bx, bz)] != ALPINE || hash(bx, bz, 481u) % 70u != 0)
                 continue;
@@ -2180,8 +2234,8 @@ void buildIceSpikes(Grid &g, const Clearance &clear)
 void buildHoodoos(Grid &g, const Clearance &clear)
 {
     std::vector<Placed> pillar;
-    for (int bx = -kHalf + 2; bx < kHalf - 2; ++bx)
-        for (int bz = -kHalf + 2; bz < kHalf - 2; ++bz)
+    for (int bx = kMinBX + 2; bx < kMaxBX - 2; ++bx)
+        for (int bz = kMinBZ + 2; bz < kMaxBZ - 2; ++bz)
         {
             if (g.biome[Grid::column(bx, bz)] != MESA || hash(bx, bz, 491u) % 90u != 0)
                 continue;
@@ -2211,13 +2265,158 @@ void buildHoodoos(Grid &g, const Clearance &clear)
         }
 }
 
+// The mangrove swamp's water: pools of still water in the mud at sea
+// level, but none in the room kept free of water round the ride.
+void buildSwampWater(Grid &g, const std::vector<unsigned char> &zone)
+{
+    for (int bx = kMinBX; bx < kMaxBX; ++bx)
+        for (int bz = kMinBZ; bz < kMaxBZ; ++bz)
+        {
+            if (g.biome[Grid::column(bx, bz)] != MANGROVE)
+                continue;
+            const float cx = centerOf(bx), cz = centerOf(bz);
+            const int top = g.top(bx, bz);
+            if (g.get(bx, top, bz) != MUD)
+                continue;
+            const bool pool = WorldShape::inlandNorthEast(cx, cz) >= 4.0f &&
+                              valueNoise(cx * 0.06f, cz * 0.06f, 721u) >= 0.48f && top <= 1 &&
+                              !zone[Grid::index(bx, 0, bz)] && !zone[Grid::index(bx, -1, bz)];
+            if (!pool)
+            {
+                // the mud round the pools comes up to their surface, so the
+                // still water has nowhere to run
+                for (int j = top + 1; j <= 0; ++j)
+                    if (!g.carved[Grid::index(bx, j, bz)])
+                        g.put(bx, j, bz, MUD);
+                continue;
+            }
+            g.clearAbove(bx, -1, bz);
+            g.put(bx, -1, bz, MUD);
+            g.put(bx, 0, bz, WATER);
+        }
+}
+
+// A mangrove: a trunk raised on arching roots, a broad crown and vines
+// hanging from its edge.
+void mangrove(Grid &g, const Clearance &clear, int bx, int base, int bz, unsigned int h)
+{
+    std::vector<Placed> tree;
+    const int lift = 3, trunk = 5 + static_cast<int>(h % 3u);
+    const int dirs[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+    for (const int *d : dirs)
+    {
+        // a root from the mud two blocks out, arching up into the trunk
+        tree.push_back(Placed{bx + d[0] * 2, base, bz + d[1] * 2, MANGROVE_LOG});
+        tree.push_back(Placed{bx + d[0] * 2, base + 1, bz + d[1] * 2, MANGROVE_LOG});
+        tree.push_back(Placed{bx + d[0], base + 2, bz + d[1], MANGROVE_LOG});
+    }
+    for (int k = lift; k < lift + trunk; ++k)
+        tree.push_back(Placed{bx, base + k, bz, MANGROVE_LOG});
+    const int crown = base + lift + trunk - 2;
+    for (int dx = -4; dx <= 4; ++dx)
+        for (int dz = -4; dz <= 4; ++dz)
+            for (int dy = 0; dy <= 3; ++dy)
+            {
+                const float r =
+                    sqrtf(static_cast<float>(dx * dx + dz * dz)) + static_cast<float>(dy) * 0.9f;
+                if (r > 4.2f + (lattice(bx + dx * 5 + dy, bz + dz, 731u) - 0.5f) * 1.5f)
+                    continue;
+                if (dx == 0 && dz == 0 && dy < 2)
+                    continue;
+                tree.push_back(Placed{bx + dx, crown + dy, bz + dz, LEAVES_MANGROVE});
+            }
+    if (!commit(g, clear, tree))
+        return;
+    // vines hanging down from the crown's underside
+    for (int dx = -4; dx <= 4; ++dx)
+        for (int dz = -4; dz <= 4; ++dz)
+        {
+            if (g.get(bx + dx, crown, bz + dz) != LEAVES_MANGROVE ||
+                hash(bx + dx, bz + dz, 733u) % 3u != 0)
+                continue;
+            const int length = 2 + static_cast<int>(hash(bx + dx, bz + dz, 735u) % 5u);
+            for (int k = 1; k <= length; ++k)
+            {
+                const int j = crown - k;
+                const size_t cell = Grid::index(bx + dx, j, bz + dz);
+                if (!Grid::inside(bx + dx, j, bz + dz) || g.block[cell] != AIR || g.carved[cell] ||
+                    clear.blocks(bx + dx, j, bz + dz))
+                    break;
+                g.plant[cell] = VINES;
+            }
+        }
+}
+
+// A bamboo cane: stalks stacked up, a leafy top; only where every cell is
+// open and clear of the train.
+void bambooCane(Grid &g, const Clearance &clear, int bx, int base, int bz, int height)
+{
+    for (int k = 0; k < height; ++k)
+    {
+        const size_t cell = Grid::index(bx, base + k, bz);
+        if (!Grid::inside(bx, base + k, bz) || g.block[cell] != AIR || g.carved[cell] ||
+            g.plant[cell] != NO_PLANT || clear.blocks(bx, base + k, bz))
+            return;
+    }
+    for (int k = 0; k < height; ++k)
+        g.plant[Grid::index(bx, base + k, bz)] = k == height - 1 ? BAMBOO_TOP : BAMBOO;
+}
+
+// The north-east land's growth: mangroves standing in the swamp, and on
+// the hills a bamboo jungle, dense in thickets, with a few tall broadleaf
+// trees hung with vines.
+void plantNorthEast(Grid &g, const Clearance &clear)
+{
+    for (int bx = kMinBX + 5; bx < kMaxBX - 5; ++bx)
+        for (int bz = kMinBZ + 5; bz < kMaxBZ - 5; ++bz)
+        {
+            const int biome = g.biome[Grid::column(bx, bz)];
+            if (biome != MANGROVE && biome != BAMBOO_JUNGLE)
+                continue;
+            const int top = g.top(bx, bz);
+            const int ground = g.get(bx, top, bz);
+            const unsigned int h = hash(bx, bz, 741u);
+            const float cx = centerOf(bx), cz = centerOf(bz);
+            if (biome == MANGROVE)
+            {
+                if ((ground == MUD || ground == WATER) && h % 21u == 0 && top + 14 < kMaxY &&
+                    !crowded(g, bx, top + 1, bz, 5))
+                    mangrove(g, clear, bx, top + 1, bz, h >> 4);
+                continue;
+            }
+            if (ground != GRASS || top + 20 > kMaxY)
+                continue;
+            const float thicket = valueNoise(cx * 0.04f, cz * 0.04f, 743u);
+            if (thicket > 0.38f && h % 3u != 0)
+                bambooCane(g, clear, bx, top + 1, bz, 8 + static_cast<int>((h >> 8) % 9u));
+            else if (h % 61u == 0 && !crowded(g, bx, top + 1, bz, 3))
+            {
+                std::vector<Placed> tree;
+                roundTree(tree, bx, top + 1, bz, OAK_LOG, LEAVES_OAK, 9, true);
+                if (commit(g, clear, tree))
+                    for (int dx = -3; dx <= 3; ++dx)
+                        for (int dz = -3; dz <= 3; ++dz)
+                            for (int k = 1; k <= 4; ++k)
+                            {
+                                const int j = top + 8 - k;
+                                const size_t cell = Grid::index(bx + dx, j, bz + dz);
+                                if (abs(dx) + abs(dz) < 3 || hash(bx + dx, bz + dz, 745u) % 3u ||
+                                    !Grid::inside(bx + dx, j, bz + dz) || g.block[cell] != AIR ||
+                                    clear.blocks(bx + dx, j, bz + dz))
+                                    break;
+                                g.plant[cell] = VINES;
+                            }
+            }
+        }
+}
+
 void plantTrees(Grid &g, const Clearance &clear, const Extras &extras)
 {
     // the windmill's hub, or nowhere when there is none
     const float millHub[2] = {extras.hasMill ? extras.mill[0] : 1.0e6f, extras.mill[2]};
     std::vector<Placed> blocks;
-    for (int bx = -kHalf + 1; bx < kHalf - 1; ++bx)
-        for (int bz = -kHalf + 1; bz < kHalf - 1; ++bz)
+    for (int bx = kMinBX + 1; bx < kMaxBX - 1; ++bx)
+        for (int bz = kMinBZ + 1; bz < kMaxBZ - 1; ++bz)
         {
             const int top = g.top(bx, bz);
             if (top < kMinY || top + 12 > kMaxY)
@@ -2240,6 +2439,8 @@ void plantTrees(Grid &g, const Clearance &clear, const Extras &extras)
                     for (int k = 0; k < 2 + static_cast<int>((h >> 8) % 2u); ++k)
                         blocks.push_back(Placed{bx, base + k, bz, CACTUS});
             }
+            else if (biome == BAMBOO_JUNGLE || biome == MANGROVE)
+                continue; // plantNorthEast()
             else if (ground == GRASS || ground == SNOWY_DIRT)
             {
                 if (!clear.roomForTree(bx, top, bz))
@@ -2322,8 +2523,8 @@ void plantTrees(Grid &g, const Clearance &clear, const Extras &extras)
 // Flowers, grass and bushes on open ground. Needs the sky light.
 void plantFlowers(Grid &g, const Clearance &clear, const Extras &extras)
 {
-    for (int bx = -kHalf; bx < kHalf; ++bx)
-        for (int bz = -kHalf; bz < kHalf; ++bz)
+    for (int bx = kMinBX; bx < kMaxBX; ++bx)
+        for (int bz = kMinBZ; bz < kMaxBZ; ++bz)
             for (int j = kMinY; j < kMaxY; ++j)
             {
                 const int ground = g.get(bx, j, bz);
@@ -2458,8 +2659,8 @@ void flood(const Grid &g, std::vector<unsigned char> &light, std::deque<Cell> &q
 void spreadSky(Grid &g)
 {
     std::deque<Cell> queue;
-    for (int bx = -kHalf; bx < kHalf; ++bx)
-        for (int bz = -kHalf; bz < kHalf; ++bz)
+    for (int bx = kMinBX; bx < kMaxBX; ++bx)
+        for (int bz = kMinBZ; bz < kMaxBZ; ++bz)
             for (int j = kMaxY; j >= kMinY && !g.opaque(bx, j, bz); --j)
             {
                 g.sky[Grid::index(bx, j, bz)] = 15;
@@ -2467,9 +2668,11 @@ void spreadSky(Grid &g)
             }
     // light also comes in from the open sides of the island
     for (int j = kMinY; j <= kMaxY; ++j)
-        for (int k = -kHalf; k < kHalf; ++k)
+        for (int k = 0; k < kSizeX || k < kSizeZ; ++k)
         {
-            const int edges[4][2] = {{-kHalf, k}, {kHalf - 1, k}, {k, -kHalf}, {k, kHalf - 1}};
+            const int x = kMinBX + (k < kSizeX ? k : kSizeX - 1);
+            const int z = kMinBZ + (k < kSizeZ ? k : kSizeZ - 1);
+            const int edges[4][2] = {{kMinBX, z}, {kMaxBX - 1, z}, {x, kMinBZ}, {x, kMaxBZ - 1}};
             for (const int *e : edges)
                 if (!g.opaque(e[0], j, e[1]) && g.sky[Grid::index(e[0], j, e[1])] < 14)
                 {
@@ -2483,8 +2686,8 @@ void spreadSky(Grid &g)
 void spreadGlow(Grid &g)
 {
     std::deque<Cell> warm, cool;
-    for (int bx = -kHalf; bx < kHalf; ++bx)
-        for (int bz = -kHalf; bz < kHalf; ++bz)
+    for (int bx = kMinBX; bx < kMaxBX; ++bx)
+        for (int bz = kMinBZ; bz < kMaxBZ; ++bz)
             for (int j = kMinY; j <= kMaxY; ++j)
             {
                 const int block = g.block[Grid::index(bx, j, bz)];
@@ -2540,8 +2743,8 @@ float glowFactor(float level)
 void crustLava(Grid &g)
 {
     std::vector<int> crust;
-    for (int bx = -kHalf; bx < kHalf; ++bx)
-        for (int bz = -kHalf; bz < kHalf; ++bz)
+    for (int bx = kMinBX; bx < kMaxBX; ++bx)
+        for (int bz = kMinBZ; bz < kMaxBZ; ++bz)
         {
             const int top = g.top(bx, bz);
             if (top < kMinY)
@@ -2605,10 +2808,12 @@ void buildScenery(Grid &g, Extras &extras)
     buildGiantTree(g, clear, extras);
     buildIceSpikes(g, clear);
     buildHoodoos(g, clear);
+    buildSwampWater(g, waterZone(ride));
     // after the carving, so the water flows round the ride's room
     spreadWater(g);
 
     plantTrees(g, clear, extras);
+    plantNorthEast(g, clear);
     spreadSky(g);
     plantFlowers(g, clear, extras);
     spreadGlow(g);
@@ -2620,8 +2825,8 @@ void buildScenery(Grid &g, Extras &extras)
 void buildFlat(Grid &g)
 {
     const Clearance clear;
-    for (int bx = -kHalf; bx < kHalf; ++bx)
-        for (int bz = -kHalf; bz < kHalf; ++bz)
+    for (int bx = kMinBX; bx < kMaxBX; ++bx)
+        for (int bz = kMinBZ; bz < kMaxBZ; ++bz)
             if (onFlatIsland(bx, bz))
             {
                 g.put(bx, -2, bz, DIRT);
@@ -2643,8 +2848,8 @@ void buildFlat(Grid &g)
     }
     spreadSky(g);
     // grass and flowers outside the middle, where the track is edited
-    for (int bx = -kHalf; bx < kHalf; ++bx)
-        for (int bz = -kHalf; bz < kHalf; ++bz)
+    for (int bx = kMinBX; bx < kMaxBX; ++bx)
+        for (int bz = kMinBZ; bz < kMaxBZ; ++bz)
         {
             const float cx = centerOf(bx), cz = centerOf(bz);
             if (!onFlatIsland(bx, bz) || cx * cx + cz * cz < 68.0f * 68.0f ||
@@ -2857,7 +3062,10 @@ void addPlant(const Grid &g, int bx, int j, int bz, Batches &batches)
 {
     const size_t i = Grid::index(bx, j, bz);
     const int plant = g.plant[i];
-    const unsigned int h = hash(bx, bz * 13 + j, 411u);
+    // bamboo and vines stack into columns: a whole cell tall, in the same
+    // place in every cell of the column and still, so they join up
+    const bool stacked = plant == BAMBOO || plant == BAMBOO_TOP || plant == VINES;
+    const unsigned int h = stacked ? hash(bx, bz * 13, 411u) : hash(bx, bz * 13 + j, 411u);
     const float tint = 0.86f + 0.14f * static_cast<float>(h % 100u) / 100.0f;
     std::vector<Vertex> &out = batches[static_cast<size_t>(plantTexture(plant))];
 
@@ -2871,14 +3079,15 @@ void addPlant(const Grid &g, int bx, int j, int bz, Batches &batches)
     v.extra[3] = skyFactor(static_cast<float>(g.sky[i]));
 
     const bool crop = plant == WHEAT;
-    const float size = crop ? 2.3f : (plant == TALL_GRASS || plant == FERN ? 1.9f : 1.6f);
+    const float size =
+        stacked ? kBlock : (crop ? 2.3f : (plant == TALL_GRASS || plant == FERN ? 1.9f : 1.6f));
     const float half = size * 0.5f;
     const float cx = static_cast<float>(bx) * kBlock + 1.25f +
                      (crop ? 0.0f : (static_cast<float>((h >> 8) % 100u) / 100.0f - 0.5f) * 0.9f);
     const float cz = static_cast<float>(bz) * kBlock + 1.25f +
                      (crop ? 0.0f : (static_cast<float>((h >> 16) % 100u) / 100.0f - 0.5f) * 0.9f);
     const float y0 = static_cast<float>(j) * kBlock;
-    const float sway = plant == DEAD_BUSH ? 0.0f : 0.09f;
+    const float sway = plant == DEAD_BUSH || stacked ? 0.0f : 0.09f;
     for (int q = 0; q < 2; ++q)
     {
         const float sx = q == 0 ? half : -half;
@@ -3093,12 +3302,12 @@ void LandWorld::releaseResources()
 
 void LandWorld::shadowBounds(float lo[3], float hi[3])
 {
-    lo[0] = -WorldShape::kIslandReach;
+    lo[0] = kGridLo[0];
     lo[1] = static_cast<float>(kMinY) * kBlock;
-    lo[2] = -WorldShape::kIslandReach;
-    hi[0] = WorldShape::kIslandReach;
+    lo[2] = kGridLo[1];
+    hi[0] = kGridHi[0];
     hi[1] = static_cast<float>(kMaxY + 1) * kBlock;
-    hi[2] = WorldShape::kIslandReach;
+    hi[2] = kGridHi[1];
 }
 
 int LandWorld::rideObstructions(const std::vector<float> &path)
@@ -3178,15 +3387,15 @@ LandWorld::Scene &LandWorld::scene(bool flat)
     else
         buildScenery(s.grid, s.extras);
 
-    for (int cx = -kHalf; cx < kHalf; cx += kChunk)
-        for (int cz = -kHalf; cz < kHalf; cz += kChunk)
+    for (int cx = kMinBX; cx < kMaxBX; cx += kChunk)
+        for (int cz = kMinBZ; cz < kMaxBZ; cz += kChunk)
         {
             Batches solids(LandTextures::TEXTURE_COUNT);
             Batches plants(LandTextures::TEXTURE_COUNT);
             Batches water(LandTextures::TEXTURE_COUNT);
             int low = kMaxY + 1, high = kMinY - 1;
-            for (int bx = cx; bx < cx + kChunk && bx < kHalf; ++bx)
-                for (int bz = cz; bz < cz + kChunk && bz < kHalf; ++bz)
+            for (int bx = cx; bx < cx + kChunk && bx < kMaxBX; ++bx)
+                for (int bz = cz; bz < cz + kChunk && bz < kMaxBZ; ++bz)
                     for (int j = kMinY; j <= kMaxY; ++j)
                     {
                         const size_t cell = Grid::index(bx, j, bz);

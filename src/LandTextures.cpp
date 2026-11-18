@@ -1026,6 +1026,88 @@ Image makePumpkinTop()
     return p;
 }
 
+// A bamboo stalk the full height of the cell, so stalks stack into tall
+// canes: light on its left edge, shaded on its right, with a ring at each
+// node and now and then a small leaf.
+Image makeBamboo(bool top)
+{
+    Image p = PixelArt::blank(S);
+    const int from = top ? 16 : 0;
+    for (int y = from; y < S; ++y)
+        for (int x = 13; x <= 18; ++x)
+        {
+            const int s = shadeOf(x, y, 301u, 4);
+            const bool node = y % 16 == 7 || y % 16 == 8;
+            const int edge = x == 13 ? 26 : (x >= 17 ? -24 : 0);
+            if (node)
+                set(p, x, y, 150 + edge / 2 + s, 186 + s, 92 + s);
+            else
+                set(p, x, y, 104 + edge + s, 162 + edge + s, 58 + edge / 2 + s);
+        }
+    // leaves: a spray of blades at the top, a single one lower down
+    auto blade = [&](int x0, int y0, int dx, int dy, int length) {
+        for (int k = 0; k < length; ++k)
+        {
+            const int s = shadeOf(x0 + dx * k, y0, 303u, 10);
+            set(p, x0 + dx * k / 2, y0 + dy * k / 3, 70 + s, 148 + s, 50 + s);
+            set(p, x0 + dx * k / 2, y0 + dy * k / 3 + 1, 52 + s, 118 + s, 40 + s);
+        }
+    };
+    if (top)
+        for (int i = 0; i < 6; ++i)
+            blade(15, 16 - i * 2, i % 2 == 0 ? 1 : -1, -1, 14 + i % 3 * 3);
+    else
+        blade(18, 9, 1, 1, 10);
+    return p;
+}
+
+// Vines hanging in strands of small leaves, longer and shorter.
+Image makeVines()
+{
+    Image p = PixelArt::blank(S);
+    for (int k = 0; k < 6; ++k)
+    {
+        const int x = 2 + k * 5 + static_cast<int>(hash(k, 0, 311u) % 3u);
+        const int length = 18 + static_cast<int>(hash(k, 1, 311u) % 15u);
+        for (int y = 0; y < length && y < S; ++y)
+        {
+            const int s = shadeOf(x, y, 313u, 12);
+            const int wobble = (y / 4 + k) % 2;
+            set(p, x + wobble, y, 64 + s, 128 + s, 44 + s);
+            if (y % 3 == 0)
+                set(p, x + wobble + (k % 2 == 0 ? 1 : -1), y, 92 + s, 160 + s, 60 + s);
+        }
+    }
+    return p;
+}
+
+// Mud: dark wet earth with clumps and a few glossy specks.
+Image makeMud()
+{
+    Image p = PixelArt::blank(S);
+    for (int y = 0; y < S; ++y)
+        for (int x = 0; x < S; ++x)
+        {
+            const int tone = stepped((fbm(x, y, 4, 321u) - 0.5f) * 26.0f, 5);
+            const unsigned int h = hash(x / 2, y, 322u);
+            int r = 82 + tone, g = 64 + tone, b = 56 + tone;
+            if (h % 13u == 0)
+            {
+                r += 34;
+                g += 32;
+                b += 34; // a wet glint
+            }
+            else if (h % 7u == 0)
+            {
+                r -= 16;
+                g -= 14;
+                b -= 12;
+            }
+            set(p, x, y, r, g, b);
+        }
+    return p;
+}
+
 } // namespace
 
 namespace LandTextures
@@ -1165,6 +1247,20 @@ Image make(int texture)
         return makePumpkinFace();
     case PUMPKIN_TOP:
         return makePumpkinTop();
+    case BAMBOO:
+        return makeBamboo(false);
+    case BAMBOO_TOP:
+        return makeBamboo(true);
+    case VINES:
+        return makeVines();
+    case MUD:
+        return makeMud();
+    case MANGROVE_SIDE:
+        return makeLogSide(112, 58, 46, 331u);
+    case MANGROVE_TOP:
+        return makeLogTop(104, 54, 42, 168, 92, 70);
+    case LEAVES_MANGROVE:
+        return makeLeaves(62, 116, 40, 333u);
     default:
         return PixelArt::blank(S);
     }

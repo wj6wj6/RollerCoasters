@@ -78,10 +78,17 @@ enum Texture
     OXEYE,  // white daisies
     ALLIUM, // round purple heads
     TULIP_ORANGE,
+    BAMBOO,     // a stalk, the whole height of the cell: they stack
+    BAMBOO_TOP, // the leafy top of a stalk
+    VINES,      // hanging from the mangroves' crowns
     // more blocks (after the plants, which keep their order)
     ICE,          // packed ice of the ice spikes
     PUMPKIN_FACE, // a carved pumpkin lantern's face, lit
     PUMPKIN_TOP,
+    MUD, // the mangrove swamp's ground
+    MANGROVE_SIDE,
+    MANGROVE_TOP,
+    LEAVES_MANGROVE,
     TEXTURE_COUNT
 };
 

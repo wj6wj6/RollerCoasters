@@ -41,7 +41,22 @@ float smoothNoise(float x, float z, unsigned int seed)
 namespace WorldShape
 {
 
+float inlandNorthEast(float x, float z)
+{
+    const float dx = x - kNorthEastX, dz = z - kNorthEastZ;
+    float d = kNorthEastRadius - sqrtf(dx * dx + dz * dz * 1.15f);
+    d += (smoothNoise(x * 0.008f, z * 0.008f, 705u) - 0.5f) * 2.0f * 30.0f;
+    d += (smoothNoise(x * 0.035f, z * 0.035f, 707u) - 0.5f) * 2.0f * 7.0f;
+    return d;
+}
+
 float inland(float x, float z)
+{
+    const float home = inlandMain(x, z), ne = inlandNorthEast(x, z);
+    return home > ne ? home : ne;
+}
+
+float inlandMain(float x, float z)
 {
     // the rounded square: |x|^4 + |z|^4 = half^4 on its edge
     const float ax = fabsf(x) / kIslandHalf, az = fabsf(z) / kIslandHalf;
