@@ -16,6 +16,9 @@ flowchart LR
     View --> Gizmo[TransformGizmo / 控制點移動把手的挑選、拖曳與繪製]
     View --> Keys[EditKeys / 按鍵對應的編輯指令，依是否在 Fly 相機]
     View --> Insert[TrackInsert / 在點擊的軌道位置新增控制點]
+    Callbacks --> History[TrackHistory / 控制點的上一步與下一步]
+    View --> History
+    History --> Track
     Insert --> Track
     View --> Camera[ArcBallCam / 相機與手勢平滑]
     View --> Fly[FlyCam / 觀察者自由相機]
@@ -61,6 +64,9 @@ flowchart LR
 左鍵點下時 `TrackInsert::insertAt()` 把新點插在 u 前後兩點之間，位置解成「軌道仍經過點擊處」（Linear／Cardinal 直接放在該處，
 B-spline 以 `(6S - P前 - P後) / 4` 反解），方向由前後兩點內插，`trainU` 依被切開的段重新對應，接著選取新點並進入拖曳。
 這些都是純數學，由 `TrackInsertCheck` 測試。
+上一步／下一步由 `TrainWindow` 持有的 `TrackHistory` 負責：每次修改控制點前存一份整條軌道（點、`trainU`、選取）的快照，
+新增、刪除、`Load`、`Reset`、`Grand Tour`、R±X／Z、`Transform` 欄位在 `CallBacks`／`TrainWindow` 記錄；拖曳與 `G`／`R` 在 `beginEdit()` 先拍快照，
+`endEdit()` 只在控制點真的改變時才存入，新增後的拖曳併入新增那一步。快照比逐筆記錄差異簡單，也不會因索引改變而錯位；由 `TrackHistoryCheck` 測試。
 哪個鍵是哪個編輯指令由 `EditKeys::forKey()` 決定：Fly 相機下避開所有飛行鍵（新增改 `Alt` + `D`、刪除只留 `Delete`），
 所以 Fly 模式的 `handle()` 先問 `editKey()`、再交給 `FlyCam`，飛行鍵不會被編輯搶走，`Home` 取代 `R` 回到 World 視角。編輯開始時 `FlyCam` 停止並解除滑鼠鎖定；編輯中 `editEvent()` 只吃按下，按鍵放開（`FL_KEYUP`）仍交給 `FlyCam`。掃描碼 system handler 也送出 `G`、`R` 與 `Home`，並以 `GetKeyState` 補上修飾鍵狀態，兩條路徑的鍵位一致。`EditKeysCheck` 測試這張對照表與正式 `FlyCam` 不衝突。
 `ArcBallCam` 用 FLTK timeout 分攤滑鼠滾輪的整格縮放（左右傾斜為旋轉）；觸控板的細小位移則立即套用。FLTK 1.3 會把滾輪訊息捨入為整格，因此 `TrainView.cpp` 以 system handler 直接讀取 Windows `WM_MOUSEWHEEL`／`WM_MOUSEHWHEEL` 的原始位移。

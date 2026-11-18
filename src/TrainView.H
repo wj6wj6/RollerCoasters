@@ -55,6 +55,7 @@ class CTrack;
 #include "LandWorld.h"
 #include "OceanWorld.h"
 #include "TransformGizmo.h"
+#include "TrackHistory.h"
 #include "Utilities/FlyCam.H"
 #include "Utilities/HeadLook.H"
 #include "TrackRenderer.H"
@@ -102,7 +103,8 @@ class TrainView : public Fl_Gl_Window
     void endEdit(bool keep);
     bool editEvent(int event);
     bool editKey(int key);
-    void undoEdit();
+    // ends a move, tilt or point placing in progress, keeping what was done
+    void finishEdits();
     void drawEditOverlay();
 
     // Adding a point (Add Pt, Shift + D, Alt + D in Fly): the mouse shows
@@ -205,13 +207,12 @@ class TrainView : public Fl_Gl_Window
     TransformGizmo::Handle m_hoverHandle = TransformGizmo::NONE;
     int m_editStartX = 0, m_editStartY = 0; // mouse when the edit began
     ControlPoint m_editStart;               // the point when the edit began
-    bool m_undoValid = false;
-    int m_undoIndex = -1;
-    ControlPoint m_undoPoint;
-    bool m_placing = false;  // adding a point: waiting for a click on the track
-    bool m_placeHit = false; // ... and the mouse is over the track
-    float m_placeU = 0.0f;   // where on the track (track parameter)
-    Pnt3f m_placeSpot;       // ... and where that is in the world
+    TrackHistory::Snapshot m_editBefore;    // the track when the edit began (undo)
+    bool m_editJoinsInsert = false;         // dragging a point just added: one undo step
+    bool m_placing = false;                 // adding a point: waiting for a click on the track
+    bool m_placeHit = false;                // ... and the mouse is over the track
+    float m_placeU = 0.0f;                  // where on the track (track parameter)
+    Pnt3f m_placeSpot;                      // ... and where that is in the world
 
     // Weather, eased towards the Rain button (TrainViewEffects.cpp).
     float m_rain = 0.0f;         // 0 dry sky, 1 pouring

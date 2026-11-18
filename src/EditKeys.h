@@ -15,7 +15,9 @@
                     tilt              R                  R
                     add a point       Shift + D          Alt + D
                     remove            Delete or X        Delete
-                    undo / redo       Ctrl + Z           Ctrl + Z
+                    undo              Ctrl + Z           Ctrl + Z
+                    redo              Ctrl + Y or        Ctrl + Y or
+                                      Ctrl + Shift + Z   Ctrl + Shift + Z
                     cameras           numpad 1 / 7 / 0   numpad 1 / 7 / 0
 
                   In Fly, Shift + D would sink and slide the camera and
@@ -35,6 +37,7 @@ enum Action
     CAMERA_TOP,
     CAMERA_TRAIN,
     UNDO,
+    REDO,
     GRAB,
     TILT,
     ADD_POINT,

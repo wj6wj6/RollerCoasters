@@ -41,6 +41,7 @@
 void resetCB(Fl_Widget *, TrainWindow *tw)
 //===========================================================================
 {
+    tw->recordHistory();
     tw->m_Track.resetPoints();
     tw->trainView->selectedCube = -1;
     tw->m_Track.trainU = 0;
@@ -104,6 +105,20 @@ void addPointCB(Fl_Widget *, TrainWindow *tw)
 
 //***************************************************************************
 //
+// * Undo and Redo: step back and forward through the changes to the points
+//===========================================================================
+void undoCB(Fl_Widget *, TrainWindow *tw)
+{
+    tw->undoEdit();
+}
+
+void redoCB(Fl_Widget *, TrainWindow *tw)
+{
+    tw->redoEdit();
+}
+
+//***************************************************************************
+//
 // * Callback that deletes a point from the spline
 //===========================================================================
 void deletePointCB(Fl_Widget *, TrainWindow *tw)
@@ -111,6 +126,7 @@ void deletePointCB(Fl_Widget *, TrainWindow *tw)
 {
     if (tw->m_Track.points.size() > 4)
     {
+        tw->recordHistory();
         if (tw->trainView->selectedCube >= 0)
         {
             tw->m_Track.points.erase(tw->m_Track.points.begin() + tw->trainView->selectedCube);
@@ -173,6 +189,7 @@ void loadCB(Fl_Widget *, TrainWindow *tw)
     const char *fname = fl_file_chooser("Pick a Track File", "*.txt", "TrackFiles/track.txt");
     if (fname)
     {
+        tw->recordHistory();
         tw->m_Track.readPoints(fname);
         tw->damageMe();
     }
@@ -187,6 +204,7 @@ void grandTourCB(Fl_Widget *, TrainWindow *tw)
 //===========================================================================
 {
     const std::vector<float> xyz = OceanWorld::demoTrack();
+    tw->recordHistory();
     tw->m_Track.points.clear();
     for (size_t i = 0; i + 2 < xyz.size(); i += 3)
         tw->m_Track.points.push_back(ControlPoint(Pnt3f(xyz[i], xyz[i + 1], xyz[i + 2])));
@@ -227,6 +245,7 @@ void rollx(TrainWindow *tw, float dir)
     int s = tw->trainView->selectedCube;
     if (s >= 0)
     {
+        tw->recordHistory();
         Pnt3f old = tw->m_Track.points[s].orient;
         float si = sinf(((float)M_PI_4) * dir);
         float co = cosf(((float)M_PI_4) * dir);
@@ -265,6 +284,7 @@ void rollz(TrainWindow *tw, float dir)
     int s = tw->trainView->selectedCube;
     if (s >= 0)
     {
+        tw->recordHistory();
 
         Pnt3f old = tw->m_Track.points[s].orient;
 

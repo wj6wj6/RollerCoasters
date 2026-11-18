@@ -45,6 +45,10 @@ int main()
     expect(forKey('d', 0, false) == EditKeys::NONE, "World: D alone does nothing");
     expect(forKey('x', 0, false) == EditKeys::REMOVE, "World: X removes");
     expect(forKey(FL_Delete, 0, false) == EditKeys::REMOVE, "World: Delete removes");
+    expect(forKey('y', FL_CTRL, false) == EditKeys::REDO, "World: Ctrl + Y redoes");
+    expect(forKey('z', FL_CTRL | FL_SHIFT, false) == EditKeys::REDO,
+           "World: Ctrl + Shift + Z redoes");
+    expect(forKey('y', 0, false) == EditKeys::NONE, "World: Y alone does nothing");
     expect(forKey('z', FL_CTRL, false) == EditKeys::UNDO, "World: Ctrl + Z undoes");
     expect(forKey(FL_KP + '7', 0, false) == EditKeys::CAMERA_TOP, "World: numpad 7 is Top");
 
@@ -54,6 +58,8 @@ int main()
     expect(forKey('d', FL_ALT, true) == EditKeys::ADD_POINT, "Fly: Alt + D adds a point");
     expect(forKey(FL_Delete, 0, true) == EditKeys::REMOVE, "Fly: Delete removes");
     expect(forKey('z', FL_CTRL, true) == EditKeys::UNDO, "Fly: Ctrl + Z undoes");
+    expect(forKey('y', FL_CTRL, true) == EditKeys::REDO, "Fly: Ctrl + Y redoes");
+    expect(forKey('z', FL_CTRL | FL_SHIFT, true) == EditKeys::REDO, "Fly: Ctrl + Shift + Z redoes");
     expect(forKey('x', 0, true) == EditKeys::NONE, "Fly: X does not remove a point");
     expect(forKey('d', FL_SHIFT, true) == EditKeys::NONE,
            "Fly: Shift + D flies (sink and right), it does not add a point");
@@ -79,12 +85,12 @@ int main()
     Fl_Gl_Window window(400, 300);
     FlyCam camera;
     camera.setup(&window, 90);
-    const int editing[] = {'g', 'r', FL_Delete, 'z', FL_KP + '1', FL_KP + '7', FL_KP + '0'};
+    const int editing[] = {'g', 'r', FL_Delete, 'z', 'y', FL_KP + '1', FL_KP + '7', FL_KP + '0'};
     bool untouched = true;
     for (int key : editing)
         if (flyTakes(camera, key, 0))
             untouched = false;
-    expect(untouched, "FlyCam does not use G, R, Delete, Z or the numpad camera keys");
+    expect(untouched, "FlyCam does not use G, R, Delete, Z, Y or the numpad camera keys");
     expect(flyTakes(camera, 'w', 0), "FlyCam still takes W (the check can see a used key)");
 
     // Key releases always reach FlyCam: a release of a held key stops the camera.

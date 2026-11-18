@@ -663,7 +663,8 @@ int TrainView::handle(int event)
 //   right click or Esc puts the point back; X / Y / Z keep to that axis and
 //   Shift + X / Y / Z to the other two. Ctrl snaps to whole units (5 degrees
 //   when tilting). Shift + D (or Add Pt) adds a point where the track is
-//   then clicked, Delete or X removes, Ctrl + Z takes back the last change.
+//   then clicked, Delete or X removes, Ctrl + Z undoes and Ctrl + Y or
+//   Ctrl + Shift + Z redoes (TrackHistory.h).
 //   Numpad 1 / 7 / 0 switch to the world, top and train cameras. In Fly,
 //   Alt + D adds and only Delete removes, so the flying keys are left alone
 //   (EditKeys.h).
@@ -684,9 +685,7 @@ void TrainView::beginEdit(EditMode mode, TransformGizmo::Handle handle, int mous
     if (!hasSelection())
         return;
     m_editStart = m_pTrack->points[static_cast<size_t>(selectedCube)];
-    m_undoPoint = m_editStart;
-    m_undoIndex = selectedCube;
-    m_undoValid = true;
+    m_editBefore = TrackHistory::capture(*m_pTrack, selectedCube);
     m_editMode = mode;
     m_editHandle = handle;
     // In Fly the camera holds still while a point is moved or tilted, so the
@@ -761,23 +760,31 @@ void TrainView::endEdit(bool keep)
 {
     if (!keep && hasSelection())
         m_pTrack->points[static_cast<size_t>(selectedCube)] = m_editStart;
+    // a point that really moved or tilted is one step for Ctrl + Z; a click
+    // that only selected it is not, nor the drag that places a new point
+    // (adding it was the step)
+    if (keep && hasSelection() && !m_editJoinsInsert)
+    {
+        const ControlPoint &now = m_pTrack->points[static_cast<size_t>(selectedCube)];
+        const ControlPoint &was = m_editStart;
+        if (now.pos.x != was.pos.x || now.pos.y != was.pos.y || now.pos.z != was.pos.z ||
+            now.orient.x != was.orient.x || now.orient.y != was.orient.y ||
+            now.orient.z != was.orient.z)
+            tw->pushHistory(m_editBefore);
+    }
+    m_editJoinsInsert = false;
     m_editMode = EDIT_IDLE;
     m_editHandle = TransformGizmo::NONE;
     m_hoverHandle = TransformGizmo::NONE;
     damage(1);
 }
 
-void TrainView::undoEdit()
+void TrainView::finishEdits()
 {
-    if (!m_undoValid || m_undoIndex < 0 || m_undoIndex >= static_cast<int>(m_pTrack->points.size()))
-        return;
-    // swap, so a second Ctrl + Z brings the change back
-    ControlPoint &point = m_pTrack->points[static_cast<size_t>(m_undoIndex)];
-    const ControlPoint current = point;
-    point = m_undoPoint;
-    m_undoPoint = current;
-    selectedCube = m_undoIndex;
-    damage(1);
+    if (m_editMode != EDIT_IDLE)
+        endEdit(true);
+    if (m_placing)
+        endPlacePoint();
 }
 
 // Add Pt, Shift + D (Alt + D in Fly): wait for a click on the track.
@@ -854,14 +861,16 @@ bool TrainView::placeEvent(int event)
         if (!m_placeHit)
             return false; // off the track: orbit or pick a point as usual
         const TrackSplineType splineType = static_cast<TrackSplineType>(tw->splineBrowser->value());
+        const TrackHistory::Snapshot before = TrackHistory::capture(*m_pTrack, selectedCube);
         const int index = TrackInsert::insertAt(*m_pTrack, m_placeU, splineType);
         endPlacePoint();
         if (index < 0)
             return true;
+        tw->pushHistory(before);
         // select the new point and keep it under the mouse while the button is held
-        m_undoValid = false; // the indices have changed
         selectedCube = index;
         beginEdit(EDIT_DRAG, TransformGizmo::VIEW, mx, my);
+        m_editJoinsInsert = true;
         tw->damageMe();
         return true;
     }
@@ -956,7 +965,12 @@ bool TrainView::editKey(int key)
         return false;
     if (action == EditKeys::UNDO)
     {
-        undoEdit();
+        tw->undoEdit();
+        return true;
+    }
+    if (action == EditKeys::REDO)
+    {
+        tw->redoEdit();
         return true;
     }
     if (action == EditKeys::ADD_POINT)
@@ -981,7 +995,6 @@ bool TrainView::editKey(int key)
         beginEdit(EDIT_ROTATE, TransformGizmo::NONE, Fl::event_x(), Fl::event_y());
         return true;
     case EditKeys::REMOVE:
-        m_undoValid = false; // the indices are about to change
         deletePointCB(nullptr, tw);
         return true;
     default:

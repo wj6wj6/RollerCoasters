@@ -24,7 +24,9 @@ EditKeys::Action EditKeys::forKey(int key, int state, bool fly)
     if (key == FL_KP + '0')
         return CAMERA_TRAIN;
     if (key == 'z' && (state & FL_CTRL) != 0)
-        return UNDO;
+        return (state & FL_SHIFT) != 0 ? REDO : UNDO;
+    if (key == 'y' && (state & FL_CTRL) != 0)
+        return REDO;
     if (key == 'g')
         return GRAB;
     if (key == 'r')
