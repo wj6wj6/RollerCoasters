@@ -157,6 +157,14 @@ class TrainView : public Fl_Gl_Window
     void drawFlyHorizon();
     void drawFlyOverlay();
 
+    // While the island and the sea floor are built (at start, and when
+    // Scenery is switched): false, after drawing a loading screen with how
+    // far they have got instead of the scene (TrainViewEffects.cpp).
+    bool worldReady();
+    void drawLoadingScreen(float done, const char *stage);
+    static void redrawSoon(void *view);
+    unsigned int m_loadingTexture = 0; // the dirt behind the loading screen
+
   public:
     ArcBallCam arcball; // keep an ArcBall for the UI
     FlyCam flyCam;      // free-moving observer camera

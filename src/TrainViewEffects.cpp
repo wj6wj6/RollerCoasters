@@ -8,6 +8,7 @@
 *************************************************************************/
 
 #include <math.h>
+#include <stdio.h>
 #include <chrono>
 #include <vector>
 
@@ -16,6 +17,11 @@
 #endif
 #include <glad/glad.h>
 
+#include <FL/Fl.H>
+#include <FL/gl.h>
+
+#include "LandTextures.h"
+#include "PixelArt.h"
 #include "TrainView.H"
 #include "TrainWindow.H"
 #include "Utilities/3DUtils.h"
@@ -282,4 +288,116 @@ void TrainView::fillLightingFrame(LightingFrame &frame)
         frame.trainUp[1] = up.y;
         frame.trainUp[2] = up.z;
     }
+}
+
+//************************************************************************
+//
+// * Build the world without holding up the window
+//========================================================================
+bool TrainView::worldReady()
+{
+    // The sea floor builds alongside the island, so it is there when Water
+    // is turned on; it is waited for only when it is drawn.
+    const bool oceanReady = m_ocean.prepare();
+    const bool needOcean = tw->waterButton->value() && tw->lightingButton->value();
+    const bool flat = !sceneryOn();
+    // about two frames' worth of display lists at a time, so the bar moves
+    const bool landReady = m_land.prepare(flat, 0.03f);
+    if (landReady && (oceanReady || !needOcean))
+        return true;
+
+    float done = m_land.progress(flat);
+    const char *stage = done < 0.7f ? "Generating terrain" : "Building terrain";
+    if (needOcean)
+    {
+        done = 0.85f * done + 0.15f * m_ocean.progress();
+        if (landReady)
+            stage = "Building the sea floor";
+    }
+    drawLoadingScreen(done, stage);
+    if (!Fl::has_timeout(redrawSoon, this))
+        Fl::add_timeout(1.0 / 30.0, redrawSoon, this);
+    return false;
+}
+
+void TrainView::redrawSoon(void *view)
+{
+    static_cast<TrainView *>(view)->redraw();
+}
+
+//************************************************************************
+//
+// * A loading screen like a sandbox game's: dark dirt, the stage and a bar
+//========================================================================
+void TrainView::drawLoadingScreen(float done, const char *stage)
+{
+    glUseProgram(0);
+    glViewport(0, 0, w(), h());
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+
+    glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_TEXTURE_BIT);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_BLEND);
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    const float width = static_cast<float>(w()), height = static_cast<float>(h());
+    glOrtho(0.0, static_cast<double>(width), 0.0, static_cast<double>(height), -1.0, 1.0);
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+
+    // the dirt, darkened, in tiles of 64 pixels
+    if (m_loadingTexture == 0)
+        m_loadingTexture = PixelArt::upload(LandTextures::make(LandTextures::DIRT), true);
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, m_loadingTexture);
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+    const float tile = 64.0f;
+    glColor3f(0.25f, 0.25f, 0.25f);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0.0f, 0.0f);
+    glVertex2f(0.0f, 0.0f);
+    glTexCoord2f(width / tile, 0.0f);
+    glVertex2f(width, 0.0f);
+    glTexCoord2f(width / tile, height / tile);
+    glVertex2f(width, height);
+    glTexCoord2f(0.0f, height / tile);
+    glVertex2f(0.0f, height);
+    glEnd();
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glDisable(GL_TEXTURE_2D);
+
+    // the stage, with a shadow, over a grey bar that fills with green
+    const float middleX = width * 0.5f, middleY = height * 0.5f;
+    gl_font(FL_HELVETICA_BOLD, 20);
+    const float textWidth = static_cast<float>(gl_width(stage));
+    glColor3f(0.25f, 0.25f, 0.25f);
+    gl_draw(stage, middleX - textWidth * 0.5f + 2.0f, middleY + 18.0f);
+    glColor3f(1.0f, 1.0f, 1.0f);
+    gl_draw(stage, middleX - textWidth * 0.5f, middleY + 20.0f);
+
+    const float barWidth = fminf(400.0f, width * 0.6f), barHeight = 6.0f;
+    const float left = middleX - barWidth * 0.5f, top = middleY - 10.0f;
+    const float filled = fmaxf(0.0f, fminf(1.0f, done));
+    glColor3ub(128, 128, 128);
+    glRectf(left, top - barHeight, left + barWidth, top);
+    glColor3ub(128, 255, 128);
+    glRectf(left, top - barHeight, left + barWidth * filled, top);
+
+    char percent[16];
+    snprintf(percent, sizeof(percent), "%d%%", static_cast<int>(filled * 100.0f));
+    gl_font(FL_HELVETICA, 14);
+    const float percentWidth = static_cast<float>(gl_width(percent));
+    glColor3f(0.8f, 0.8f, 0.8f);
+    gl_draw(percent, middleX - percentWidth * 0.5f, top - barHeight - 22.0f);
+
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    glPopAttrib();
 }

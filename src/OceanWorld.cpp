@@ -14,11 +14,15 @@
 #include <math.h>
 #include <stdlib.h>
 
-#include <deque>
+#include <atomic>
+#include <chrono>
+#include <memory>
+#include <thread>
 #include <vector>
 
 #include "OceanWorld.h"
 
+#include "CellQueue.h"
 #include "Frustum.h"
 
 #include "LandTextures.h"
@@ -1291,12 +1295,11 @@ struct Cell
 };
 const int kDirs[6][3] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
 
-void flood(const Grid &g, std::vector<unsigned char> &light, std::deque<Cell> &queue)
+void flood(const Grid &g, std::vector<unsigned char> &light, CellQueue<Cell> &queue)
 {
     while (!queue.empty())
     {
-        const Cell c = queue.front();
-        queue.pop_front();
+        const Cell c = queue.pop_front();
         const int level = light[Grid::index(c.bx, c.j, c.bz)] - 1;
         if (level <= 0)
             continue;
@@ -1317,7 +1320,7 @@ void flood(const Grid &g, std::vector<unsigned char> &light, std::deque<Cell> &q
 
 void spreadSky(Grid &g)
 {
-    std::deque<Cell> queue;
+    CellQueue<Cell> queue;
     for (int bx = -kHalf; bx < kHalf; ++bx)
         for (int bz = -kHalf; bz < kHalf; ++bz)
             for (int j = kMaxY; j >= kMinY && !g.solid(bx, j, bz); --j)
@@ -1332,7 +1335,7 @@ void spreadSky(Grid &g)
 // same way.
 void spreadGlow(Grid &g)
 {
-    std::deque<Cell> queue;
+    CellQueue<Cell> queue;
     for (int bx = -kHalf; bx < kHalf; ++bx)
         for (int bz = -kHalf; bz < kHalf; ++bz)
             for (int j = kMinY; j <= kMaxY; ++j)
@@ -1948,7 +1951,30 @@ void drawJellyfish(float time, float seed, const unsigned char colour[3])
 
 } // namespace
 
+// The blocks and their meshes, made on a thread of their own so the window
+// keeps drawing meanwhile; prepare() turns them into display lists.
+struct OceanWorld::Build
+{
+    std::thread worker;
+    std::atomic<bool> done{false};
+    std::atomic<int> permille{0};
+    std::vector<Chunk> chunks; // the boxes; the lists are made from the meshes below
+    std::vector<Batches> solids, plants;
+    Batches beyond = Batches(kTextureCount);
+
+    ~Build()
+    {
+        if (worker.joinable())
+            worker.join();
+    }
+    void run();
+};
+
 OceanWorld::OceanWorld() : m_built(false), m_farList(0)
+{
+}
+
+OceanWorld::~OceanWorld()
 {
 }
 
@@ -1969,6 +1995,7 @@ float OceanWorld::waterLevel()
 
 void OceanWorld::releaseResources()
 {
+    m_build.reset(); // the meshes are made again with the lists
     m_built = false;
     m_chunks.clear();
     m_farList = 0;
@@ -2066,10 +2093,67 @@ int OceanWorld::rideObstructions(const std::vector<float> &path)
     return count;
 }
 
-void OceanWorld::build()
+void OceanWorld::Build::run()
 {
     Grid g;
     buildWorld(g);
+    permille = 700;
+
+    // In chunks of 16 x 16 columns, each with the box round its blocks, so
+    // only the chunks in view are drawn.
+    const int chunkSize = 16;
+    for (int cx = -kHalf; cx < kHalf; cx += chunkSize)
+        for (int cz = -kHalf; cz < kHalf; cz += chunkSize)
+        {
+            Batches solid(kTextureCount);
+            Batches plant(kTextureCount);
+            int low = kMaxY + 1, high = kMinY - 1;
+            for (int bx = cx; bx < cx + chunkSize && bx < kHalf; ++bx)
+                for (int bz = cz; bz < cz + chunkSize && bz < kHalf; ++bz)
+                    for (int j = kMinY; j <= kMaxY; ++j)
+                    {
+                        const int b = g.get(bx, j, bz);
+                        const bool isPlant =
+                            b == AIR && g.plant[Grid::index(bx, j, bz)] != NO_PLANT;
+                        if ((b == AIR || b == ISLAND) && !isPlant)
+                            continue;
+                        low = j < low ? j : low;
+                        high = j > high ? j : high;
+                        if (isPlant)
+                            addPlant(g, bx, j, bz, plant);
+                        else
+                            addBlockFaces(g, bx, j, bz, solid);
+                    }
+            if (high < low)
+                continue;
+            Chunk chunk;
+            chunk.lo[0] = static_cast<float>(cx) * kBlock;
+            chunk.lo[1] = static_cast<float>(low) * kBlock;
+            chunk.lo[2] = static_cast<float>(cz) * kBlock;
+            chunk.hi[0] = static_cast<float>(cx + chunkSize) * kBlock;
+            chunk.hi[1] = static_cast<float>(high + 1) * kBlock + 2.0f; // kelp sways
+            chunk.hi[2] = static_cast<float>(cz + chunkSize) * kBlock;
+            chunks.push_back(chunk);
+            solids.push_back(std::move(solid));
+            plants.push_back(std::move(plant));
+        }
+    addFarFloor(beyond);
+    permille = 1000;
+    done = true;
+}
+
+bool OceanWorld::prepare()
+{
+    if (m_built)
+        return true;
+    if (!m_build)
+    {
+        m_build.reset(new Build);
+        m_build->worker = std::thread(&Build::run, m_build.get());
+    }
+    if (!m_build->done)
+        return false;
+    m_build->worker.join();
 
     m_textures.assign(kTextureCount, 0);
     const Image images[kTextureCount] = {
@@ -2095,54 +2179,30 @@ void OceanWorld::build()
             m_textures[static_cast<size_t>(t)] =
                 PixelArt::upload(images[t], t == plantTexture(KELP) || t == SAND);
 
-    // In chunks of 16 x 16 columns, each with the box round its blocks, so
-    // only the chunks in view are drawn.
-    const int chunkSize = 16;
-    for (int cx = -kHalf; cx < kHalf; cx += chunkSize)
-        for (int cz = -kHalf; cz < kHalf; cz += chunkSize)
-        {
-            Batches solids(kTextureCount);
-            Batches plants(kTextureCount);
-            int low = kMaxY + 1, high = kMinY - 1;
-            for (int bx = cx; bx < cx + chunkSize && bx < kHalf; ++bx)
-                for (int bz = cz; bz < cz + chunkSize && bz < kHalf; ++bz)
-                    for (int j = kMinY; j <= kMaxY; ++j)
-                    {
-                        const int b = g.get(bx, j, bz);
-                        const bool plant = b == AIR && g.plant[Grid::index(bx, j, bz)] != NO_PLANT;
-                        if ((b == AIR || b == ISLAND) && !plant)
-                            continue;
-                        low = j < low ? j : low;
-                        high = j > high ? j : high;
-                        if (plant)
-                            addPlant(g, bx, j, bz, plants);
-                        else
-                            addBlockFaces(g, bx, j, bz, solids);
-                    }
-            if (high < low)
-                continue;
-            Chunk chunk;
-            chunk.lo[0] = static_cast<float>(cx) * kBlock;
-            chunk.lo[1] = static_cast<float>(low) * kBlock;
-            chunk.lo[2] = static_cast<float>(cz) * kBlock;
-            chunk.hi[0] = static_cast<float>(cx + chunkSize) * kBlock;
-            chunk.hi[1] = static_cast<float>(high + 1) * kBlock + 2.0f; // kelp sways
-            chunk.hi[2] = static_cast<float>(cz + chunkSize) * kBlock;
-            chunk.solid = compileList(solids, m_textures);
-            chunk.plant = compileList(plants, m_textures);
-            m_chunks.push_back(chunk);
-        }
-    Batches beyond(kTextureCount);
-    addFarFloor(beyond);
-    m_farList = compileList(beyond, m_textures);
+    m_chunks = m_build->chunks;
+    for (size_t i = 0; i < m_chunks.size(); ++i)
+    {
+        m_chunks[i].solid = compileList(m_build->solids[i], m_textures);
+        m_chunks[i].plant = compileList(m_build->plants[i], m_textures);
+    }
+    m_farList = compileList(m_build->beyond, m_textures);
+    m_build.reset(); // the meshes are in the lists now
     m_built = true;
+    return true;
+}
+
+float OceanWorld::progress() const
+{
+    if (m_built)
+        return 1.0f;
+    return m_build ? static_cast<float>(m_build->permille.load()) / 1000.0f : 0.0f;
 }
 
 void OceanWorld::draw(bool shadowPass, float time)
 {
     glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_TEXTURE_BIT);
-    if (!m_built)
-        build();
+    while (!prepare())
+        std::this_thread::sleep_for(std::chrono::milliseconds(1)); // a caller that cannot wait
     glEnable(GL_TEXTURE_2D);
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
     const Frustum view = Frustum::current();
