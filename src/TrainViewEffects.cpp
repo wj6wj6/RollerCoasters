@@ -85,7 +85,7 @@ void trainUpVector(const Pnt3f &forward, Pnt3f &up)
 //
 // * The 200 x 200 island: the scenery, or level grass for editing a track
 //========================================================================
-// Half the width the top view shows: the whole scenery island, or the
+// Half the shorter side of the Top view: the whole scenery island, or the
 // editor's island.
 float TrainView::topViewHalf() const
 {
