@@ -19,6 +19,7 @@
 #include "TrainView.H"
 #include "TrainWindow.H"
 #include "Utilities/3DUtils.h"
+#include "WorldShape.h"
 
 namespace
 {
@@ -85,11 +86,28 @@ void trainUpVector(const Pnt3f &forward, Pnt3f &up)
 //
 // * The 200 x 200 island: the scenery, or level grass for editing a track
 //========================================================================
-// Half the shorter side of the Top view: the whole scenery island, or the
-// editor's island.
+// The Top view frames the whole scenery, both the main island and the
+// north-east land across the strait, or the editor's island. The scenery
+// spans the same range along x as along -z (the north-east land is on the
+// diagonal), from the main island's far shore to the land grid's edge.
+namespace
+{
+const float kSceneryLow = -WorldShape::kIslandReach;
+const float kSceneryHigh = WorldShape::kNorthEastX + WorldShape::kNorthEastRadius + 20.0f;
+} // namespace
+
+// Half the shorter side of the Top view.
 float TrainView::topViewHalf() const
 {
-    return sceneryOn() ? 290.0f : 110.0f;
+    return sceneryOn() ? (kSceneryHigh - kSceneryLow) * 0.5f : 110.0f;
+}
+
+// The ground the Top view centres on.
+void TrainView::topViewCentre(float &x, float &z) const
+{
+    const float middle = sceneryOn() ? (kSceneryHigh + kSceneryLow) * 0.5f : 0.0f;
+    x = middle;
+    z = -middle;
 }
 
 bool TrainView::sceneryOn() const

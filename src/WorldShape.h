@@ -31,9 +31,19 @@ const float kCoastWander = 24.0f; // how far the shore wanders in or out
 // No land lies further than this from the middle along x or z.
 const float kIslandReach = kIslandHalf + kCoastWander + 4.0f;
 
+// The north-east land across a strait from the main island, where the
+// sea has room (the ride's undersea part keeps to the other sides): a
+// rounded blob whose shore wanders like the main island's.
+const float kNorthEastX = 360.0f, kNorthEastZ = -360.0f;
+const float kNorthEastRadius = 150.0f;
+
 // Distance from the shore at (x, z): positive on land, negative at sea.
-// Roughly in world units near the coast.
+// Roughly in world units near the coast. Either land counts.
 float inland(float x, float z);
+
+// The same for the main island alone, and for the north-east land alone.
+float inlandMain(float x, float z);
+float inlandNorthEast(float x, float z);
 
 // A distance of the first layout, scaled.
 inline float scaled(float v)

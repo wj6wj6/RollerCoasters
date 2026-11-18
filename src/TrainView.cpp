@@ -299,7 +299,9 @@ void TrainView::placeFlyCamAtCurrentView()
         const float half = topViewHalf();
         const float halfHeight = aspect >= 1.0f ? half : half / aspect;
         const float height = halfHeight / tanf(m_fieldOfView * 3.14159265f / 360.0f);
-        flyCam.setPose(0.0f, height, 0.0f, 0.0f, -89.0f);
+        float centreX, centreZ;
+        topViewCentre(centreX, centreZ);
+        flyCam.setPose(centreX, height, centreZ, 0.0f, -89.0f);
     }
     else
     {
@@ -1277,6 +1279,10 @@ void TrainView::setProjection()
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
         glRotatef(-90, 1, 0, 0);
+        // centred on the scenery, which reaches further to the north-east
+        float centreX, centreZ;
+        topViewCentre(centreX, centreZ);
+        glTranslatef(-centreX, 0.0f, -centreZ);
     }
     else
     {

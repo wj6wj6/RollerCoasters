@@ -130,7 +130,8 @@ bool isCoral(int block)
 // into the badlands canyon, low over the water past the waterfall, out
 // through the canyon wall, over a lava river and up across the volcano's
 // crater, over a bridge above the outgoing track, through the mine tunnel
-// in the crags and down into the meadow.
+// in the crags and down into the meadow, then out to the north-east land
+// (WorldShape.h) and back.
 const float kDemoTrack[][3] = {{30, 6, -20},
                                {72, 6, -8},
                                {108, 2, 4},
@@ -174,13 +175,34 @@ const float kDemoTrack[][3] = {{30, 6, -20},
                                {62, 14, 95},
                                {92, 34, 86},
                                {86, 56, 64},
-                               {60, 58, 58},
+                               // the crater's turn spread over two points,
+                               // so no bend is sharper than a right angle
+                               {62, 58, 62},
+                               {52, 54, 44},
                                {72, 46, 24},
                                {90, 34, -8},
                                {84, 30, -46},
                                {56, 26, -88},
-                               {26, 18, -74},
-                               {14, 10, -46}};
+                               // the north-east land: on from the crags out
+                               // over the main island's north coast and across
+                               // the sea to its far side, over the bamboo
+                               // hills, low over the mangrove swamp, back over
+                               // the strait on a long trestle and down through
+                               // the crags
+                               {44, 14.7f, -110},
+                               {68, 13.3f, -136},
+                               {94, 13.3f, -164},
+                               {120, 16, -182},
+                               {148, 21.3f, -188},
+                               {176, 20, -172},
+                               {184, 13.3f, -144},
+                               {168, 6.7f, -116},
+                               {144, 4, -102},
+                               {120, 5.3f, -106},
+                               {96, 12, -98},
+                               {72, 14.7f, -82},
+                               {44, 12, -48},
+                               {28, 8, -34}};
 const int kDemoCount = static_cast<int>(sizeof(kDemoTrack) / sizeof(kDemoTrack[0]));
 
 // A control point of the ride in the world: the first layout's, scaled out
@@ -910,7 +932,8 @@ void buildReefs(Grid &g)
 // under the surface and the ride passes well above it.
 void buildShallowReef(Grid &g)
 {
-    const int warm[5] = {CORAL_PINK, CORAL_RED, CORAL_ORANGE, CORAL_VIOLET, CORAL_YELLOW};
+    // no yellow here: under the night's blue light it turns lime green
+    const int warm[5] = {CORAL_PINK, CORAL_RED, CORAL_ORANGE, CORAL_VIOLET, CORAL_RED};
     for (int bx = -kHalf; bx < kHalf; ++bx)
         for (int bz = -kHalf; bz < kHalf; ++bz)
         {
@@ -1356,8 +1379,12 @@ float glowFactor(float level)
 }
 
 // How strongly a block or plant shines by itself.
+// Coral glows softly, so the reef shines in its colours under the night
+// sky (by day the sun drowns it out).
 float blockGlow(int block)
 {
+    if (isCoral(block))
+        return 0.06f;
     return block == CRYSTAL ? 1.0f : (block == LANTERN ? 1.3f : (block == GOLD ? 0.18f : 0.0f));
 }
 
