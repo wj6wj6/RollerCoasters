@@ -137,7 +137,7 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     set_tests_properties(GizmoDragCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
     add_executable(OceanRideClearanceCheck tests/OceanRideClearanceCheck.cpp
-        src/OceanWorld.cpp src/PixelArt.cpp src/Track.cpp src/ControlPoint.cpp)
+        src/OceanWorld.cpp src/LandTextures.cpp src/PixelArt.cpp src/Track.cpp src/ControlPoint.cpp)
     target_include_directories(OceanRideClearanceCheck PRIVATE src)
     target_link_libraries(OceanRideClearanceCheck PRIVATE Utilities glad)
     add_test(NAME OceanRideClearanceCheck COMMAND OceanRideClearanceCheck)
