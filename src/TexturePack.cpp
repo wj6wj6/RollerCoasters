@@ -512,6 +512,60 @@ bool Pack::picture(const std::string &relative, PixelArt::Image &out) const
     return true;
 }
 
+bool Pack::standIn(const std::string &blocks, Use use, PixelArt::Image &out) const
+{
+    for (const std::string &entry : split(blocks.c_str()))
+    {
+        std::string block;
+        int colour;
+        candidate(entry, block, colour);
+        for (const char *folder : kBlockFolders)
+        {
+            if (!picture(folder + block + ".png", out))
+                continue;
+            // a grass side's green fringe is a grey overlay, tinted
+            PixelArt::Image fringe;
+            if (picture(std::string(folder) + block + "_overlay.png", fringe))
+            {
+                int r, g, b;
+                tintColour(GRASS, r, g, b);
+                tint(fringe, r, g, b);
+                overlay(out, fringe);
+            }
+            int r, g, b;
+            if (colour != NONE)
+            {
+                desaturate(out);
+                tintColour(colour, r, g, b);
+                tint(out, r, g, b);
+            }
+            else if (use == Use::GRASS && isGrey(out))
+            {
+                tintColour(GRASS, r, g, b);
+                tint(out, r, g, b);
+            }
+            if (use != Use::PLANT)
+                fillHoles(out, 1.0f);
+            return true;
+        }
+    }
+    return false;
+}
+
+bool Pack::hasAny(const std::string &blocks) const
+{
+    for (const std::string &entry : split(blocks.c_str()))
+    {
+        std::string block;
+        int colour;
+        candidate(entry, block, colour);
+        for (const char *folder : kBlockFolders)
+            if (hasFile(folder + block + ".png"))
+                return true;
+    }
+    return false;
+}
+
 bool Pack::landTexture(int texture, PixelArt::Image &out) const
 {
     const Source *s = sourceOf(texture);

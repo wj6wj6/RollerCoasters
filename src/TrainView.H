@@ -84,9 +84,11 @@ class TrainView : public Fl_Gl_Window
     void setProjection();
 
     // Reset the Arc ball control
-    // Swaps the island's textures for a texture pack's (nullptr: built in).
+    // Swaps the island's and the sea floor's textures for a texture pack's
+    // (nullptr: built in).
     void setTexturePack(std::shared_ptr<const TexturePack::Pack> pack)
     {
+        m_ocean.setTexturePack(pack);
         m_land.setTexturePack(std::move(pack));
     }
     void resetArcball();

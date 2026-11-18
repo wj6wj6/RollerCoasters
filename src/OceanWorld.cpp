@@ -15,6 +15,7 @@
 #include <stdlib.h>
 
 #include <deque>
+#include <utility>
 #include <vector>
 
 #include "OceanWorld.h"
@@ -24,6 +25,7 @@
 #include "LandTextures.h"
 #include "WorldShape.h"
 #include "PixelArt.h"
+#include "TexturePack.h"
 
 namespace
 {
@@ -2066,34 +2068,196 @@ int OceanWorld::rideObstructions(const std::vector<float> &path)
     return count;
 }
 
+namespace
+{
+// The built-in picture of each texture slot.
+Image builtInPicture(int t)
+{
+    switch (t)
+    {
+    case SAND:
+        return LandTextures::sand(226, 216, 180, 21u);
+    case STONE:
+        return LandTextures::stone(122, 127, 134, 31u);
+    case CAVE_ROCK:
+        return LandTextures::stone(68, 75, 90, 41u);
+    case BRICK:
+        return LandTextures::stoneBricks(146, 154, 144, true, 51u);
+    case PILLAR:
+        return LandTextures::pillar();
+    case PLANKS:
+        return LandTextures::planks(116, 82, 50, true); // wet, nailed
+    case LOG:
+        return LandTextures::bark(92, 66, 44, 81u);
+    case CORAL_PINK:
+        return LandTextures::coral(226, 96, 140, 501u);
+    case CORAL_ORANGE:
+        return LandTextures::coral(236, 142, 62, 511u);
+    case CORAL_VIOLET:
+        return LandTextures::coral(146, 92, 204, 521u);
+    case CORAL_YELLOW:
+        return LandTextures::coral(232, 204, 70, 531u);
+    case CORAL_RED:
+        return LandTextures::coral(214, 62, 58, 541u);
+    case CRYSTAL:
+        return LandTextures::crystal();
+    case LANTERN:
+        return LandTextures::lantern();
+    case GOLD:
+        return LandTextures::gold();
+    case MARBLE:
+        return LandTextures::marble();
+    case LAPIS:
+        return LandTextures::lapis();
+    case GRASS:
+        return LandTextures::make(LandTextures::GRASS_SIDE);
+    case GRASS_TOP:
+        return LandTextures::make(LandTextures::GRASS_TOP);
+    default:
+        break;
+    }
+    switch (t - BLOCK_COUNT)
+    {
+    case SEAGRASS:
+        return makeSeagrass();
+    case KELP:
+        return makeKelp();
+    case FAN_CORAL:
+        return makeFanCoral(214, 72, 104);
+    case FAN_CORAL_GOLD:
+        return makeFanCoral(226, 170, 52);
+    case FAN_CORAL_VIOLET:
+        return makeFanCoral(150, 96, 214);
+    case TUBE_CORAL:
+        return makeTubeCoral();
+    case ANEMONE:
+        return makeAnemone();
+    case GLOW_BUD:
+        return makeGlowBud();
+    case CRYSTAL_SPIKE:
+        return makeCrystalSpike();
+    case STARFISH:
+        return makeStarfish();
+    default:
+        return PixelArt::blank();
+    }
+}
+
+// The block pictures of a texture pack that stand for each texture slot,
+// best first, as in TexturePack.cpp's table ("name@colour" for a block that
+// stands in, tinted). Empty: the built-in picture stays.
+const char *packBlocks(int t, TexturePack::Pack::Use &use)
+{
+    using Use = TexturePack::Pack::Use;
+    use = Use::SOLID;
+    switch (t)
+    {
+    case SAND:
+        return "sand";
+    case STONE:
+        return "stone";
+    case CAVE_ROCK:
+        return "deepslate|cobbled_deepslate|andesite|stone_andesite";
+    case BRICK:
+        return "mossy_stone_bricks|stonebrick_mossy|stone_bricks|stonebrick";
+    case PILLAR:
+        return "quartz_pillar|quartz_block_lines|chiseled_quartz_block";
+    case PLANKS:
+        return "dark_oak_planks|planks_big_oak|oak_planks|planks_oak";
+    case LOG:
+        return "oak_log|log_oak";
+    case CORAL_PINK:
+        return "brain_coral_block";
+    case CORAL_ORANGE:
+        return "horn_coral_block@autumn|fire_coral_block@autumn";
+    case CORAL_VIOLET:
+        return "bubble_coral_block";
+    case CORAL_YELLOW:
+        return "horn_coral_block";
+    case CORAL_RED:
+        return "fire_coral_block";
+    case CRYSTAL:
+        return "sea_lantern|prismarine_bricks|amethyst_block";
+    case LANTERN:
+        return "glowstone|sea_lantern";
+    case GOLD:
+        return "gold_block";
+    case MARBLE:
+        return "quartz_block_side|quartz_block|diorite|stone_diorite";
+    case LAPIS:
+        return "lapis_block";
+    case GRASS:
+        return "grass_block_side|grass_side";
+    case GRASS_TOP:
+        use = Use::GRASS;
+        return "grass_block_top|grass_top";
+    default:
+        break;
+    }
+    use = Use::PLANT;
+    switch (t - BLOCK_COUNT)
+    {
+    case SEAGRASS:
+        return "seagrass|tall_seagrass_bottom";
+    case KELP:
+        return "kelp_plant|kelp";
+    case FAN_CORAL:
+        return "brain_coral_fan|brain_coral";
+    case FAN_CORAL_GOLD:
+        return "horn_coral_fan|horn_coral";
+    case FAN_CORAL_VIOLET:
+        return "bubble_coral_fan|bubble_coral";
+    case TUBE_CORAL:
+        return "tube_coral|tube_coral_fan";
+    case ANEMONE:
+        return "fire_coral|fire_coral_fan";
+    case GLOW_BUD:
+        return "sea_pickle|glow_lichen";
+    case CRYSTAL_SPIKE:
+        return "amethyst_cluster|large_amethyst_bud";
+    default:
+        return ""; // the starfish: no block game has one
+    }
+}
+} // namespace
+
+void OceanWorld::setTexturePack(std::shared_ptr<const TexturePack::Pack> pack)
+{
+    m_pack = std::move(pack);
+    m_texturesStale = true;
+}
+
+// Puts each slot's picture (the pack's, or the built-in one) into its
+// texture: new names when fresh, otherwise into the names the display
+// lists already bind, so nothing has to be built again.
+void OceanWorld::uploadTextures(bool fresh)
+{
+    if (fresh)
+        m_textures.assign(kTextureCount, 0);
+    for (int t = 0; t < kTextureCount; ++t)
+    {
+        if (t == AIR || t == ISLAND || t == plantTexture(NO_PLANT))
+            continue;
+        Image picture;
+        TexturePack::Pack::Use use;
+        const char *blocks = packBlocks(t, use);
+        if (!(m_pack && *blocks != '\0' && m_pack->standIn(blocks, use, picture)))
+            picture = builtInPicture(t);
+        const bool repeat = t == plantTexture(KELP) || t == SAND;
+        if (fresh)
+            m_textures[static_cast<size_t>(t)] = PixelArt::upload(picture, repeat);
+        else
+            PixelArt::uploadInto(m_textures[static_cast<size_t>(t)], picture, repeat);
+    }
+    m_texturesStale = false;
+}
+
 void OceanWorld::build()
 {
     Grid g;
     buildWorld(g);
 
-    m_textures.assign(kTextureCount, 0);
-    const Image images[kTextureCount] = {
-        PixelArt::blank(), // AIR (unused)
-        PixelArt::blank(), // ISLAND (never drawn)
-        // the blocks share the island's 32 x 32 style
-        LandTextures::sand(226, 216, 180, 21u), LandTextures::stone(122, 127, 134, 31u),
-        LandTextures::stone(68, 75, 90, 41u), // cave rock
-        LandTextures::stoneBricks(146, 154, 144, true, 51u), LandTextures::pillar(),
-        LandTextures::planks(116, 82, 50, true), // wet, nailed
-        LandTextures::bark(92, 66, 44, 81u), LandTextures::coral(226, 96, 140, 501u),
-        LandTextures::coral(236, 142, 62, 511u), LandTextures::coral(146, 92, 204, 521u),
-        LandTextures::coral(232, 204, 70, 531u), LandTextures::coral(214, 62, 58, 541u),
-        LandTextures::crystal(), LandTextures::lantern(), LandTextures::gold(),
-        LandTextures::marble(), LandTextures::lapis(), LandTextures::make(LandTextures::GRASS_SIDE),
-        LandTextures::make(LandTextures::GRASS_TOP),
-        PixelArt::blank(), // NO_PLANT
-        makeSeagrass(), makeKelp(), makeFanCoral(214, 72, 104), makeFanCoral(226, 170, 52),
-        makeFanCoral(150, 96, 214), makeTubeCoral(), makeAnemone(), makeGlowBud(),
-        makeCrystalSpike(), makeStarfish()};
-    for (int t = 0; t < kTextureCount; ++t)
-        if (t != AIR && t != ISLAND && t != plantTexture(NO_PLANT))
-            m_textures[static_cast<size_t>(t)] =
-                PixelArt::upload(images[t], t == plantTexture(KELP) || t == SAND);
+    uploadTextures(true);
 
     // In chunks of 16 x 16 columns, each with the box round its blocks, so
     // only the chunks in view are drawn.
@@ -2143,6 +2307,8 @@ void OceanWorld::draw(bool shadowPass, float time)
     glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_TEXTURE_BIT);
     if (!m_built)
         build();
+    else if (m_texturesStale)
+        uploadTextures(false);
     glEnable(GL_TEXTURE_2D);
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
     const Frustum view = Frustum::current();

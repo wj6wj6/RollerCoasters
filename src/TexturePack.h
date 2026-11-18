@@ -71,7 +71,8 @@ class Pack
     {
         return m_name;
     }
-    // How many of the island's textures the pack replaces.
+    // How many of the island's textures the pack replaces (the sea floor's
+    // are not counted).
     int coverage() const
     {
         return m_coverage;
@@ -82,6 +83,24 @@ class Pack
 
     // Does the pack have a picture for this texture (without reading it)?
     bool provides(int texture) const;
+
+    // How a picture from standIn() is used: a solid block (filled where it
+    // is see-through), a plant (cut out), or a grassy solid block (tinted
+    // green where the pack's is grey).
+    enum class Use
+    {
+        SOLID,
+        PLANT,
+        GRASS
+    };
+    // For textures outside the island's table (the sea floor's): the first
+    // of `blocks` the pack has, '|' between the names, best first, and a
+    // block standing in for another named with the colour it takes after
+    // '@' ("horn_coral_block@autumn"), as in TexturePack.cpp's table.
+    // False when it has none of them.
+    bool standIn(const std::string &blocks, Use use, PixelArt::Image &out) const;
+    // Does the pack have any of `blocks` (without reading them)?
+    bool hasAny(const std::string &blocks) const;
 
   private:
     bool readFile(const std::string &relative, ZipArchive::Bytes &out) const;
