@@ -25,6 +25,7 @@
 #include "TrainWindow.H"
 #include "TrainView.H"
 #include "CallBacks.H"
+#include "OceanWorld.h"
 
 #pragma warning(push)
 #pragma warning(disable : 4312)
@@ -43,6 +44,12 @@ void resetCB(Fl_Widget *, TrainWindow *tw)
     tw->m_Track.resetPoints();
     tw->trainView->selectedCube = -1;
     tw->m_Track.trainU = 0;
+    // a track of one's own is edited on the level island, seen from outside
+    tw->sceneryButton->value(0);
+    tw->editButton->value(1);
+    tw->runButton->value(0);
+    tw->worldCam->setonly();
+    tw->trainView->cameraChanged();
     tw->damageMe();
 }
 
@@ -78,9 +85,9 @@ void flySpeedCB(Fl_Widget *, TrainWindow *tw)
 //
 // * The observer camera field of view slider moved
 //===========================================================================
-void flyFovCB(Fl_Widget *, TrainWindow *tw)
+void fovCB(Fl_Widget *, TrainWindow *tw)
 {
-    tw->trainView->flyCam.setFieldOfView(static_cast<float>(tw->flyFov->value()));
+    tw->trainView->setFieldOfView(static_cast<float>(tw->fovSlider->value()));
 }
 
 //***************************************************************************
@@ -197,6 +204,35 @@ void loadCB(Fl_Widget *, TrainWindow *tw)
         tw->damageMe();
     }
 }
+//***************************************************************************
+//
+// * Replace the track with the demo ride, ready to go (Run starts it): the
+//   scenery and the shader effects on, seen from the train, starting where
+//   the ride comes ashore so the island is the first thing in view
+//===========================================================================
+void grandTourCB(Fl_Widget *, TrainWindow *tw)
+//===========================================================================
+{
+    const std::vector<float> xyz = OceanWorld::demoTrack();
+    tw->m_Track.points.clear();
+    for (size_t i = 0; i + 2 < xyz.size(); i += 3)
+        tw->m_Track.points.push_back(ControlPoint(Pnt3f(xyz[i], xyz[i + 1], xyz[i + 2])));
+    tw->m_Track.trainU = static_cast<float>(OceanWorld::landStart()) - 1.3f;
+    tw->trainView->selectedCube = -1;
+    tw->lightingButton->value(1);
+    tw->waterButton->value(1);
+    tw->sceneryButton->value(1);
+    tw->editButton->value(0);
+    tw->splineBrowser->select(3);
+    tw->arcLength->value(1);
+    tw->speed->value(1.8); // the world is larger: a little faster round it
+    tw->trainCam->setonly();
+    // the World camera frames the whole scenery island when switched to
+    tw->trainView->resetArcball();
+    tw->trainView->cameraChanged();
+    tw->damageMe();
+}
+
 //***************************************************************************
 //
 // * Save the control points

@@ -51,18 +51,41 @@ add_library(Utilities
 target_link_libraries(Utilities PUBLIC project_options fltk)
 
 add_executable(RollerCoasters
+    src/AdvancedLighting.h src/AdvancedLighting.cpp
+    src/Frustum.h src/Frustum.cpp
+    src/LandTextures.h src/LandTextures.cpp
+    src/LandWorld.h src/LandWorld.cpp
+    src/MatrixMath.h
+    src/OceanWorld.h src/OceanWorld.cpp
+    src/PixelArt.h src/PixelArt.cpp
+    src/PostEffects.h src/PostEffects.cpp
+    src/TrainModel.h src/TrainModel.cpp
+    src/TrainViewEffects.cpp
+    src/TransformGizmo.h src/TransformGizmo.cpp
+    src/UnderwaterOptics.h
+    src/WaterFlow.h src/WaterFlow.cpp
+    src/WorldShape.h src/WorldShape.cpp
     src/CallBacks.H src/CallBacks.cpp
+    src/EditKeys.h src/EditKeys.cpp
     src/ControlPoint.H src/ControlPoint.cpp
     src/main.cpp src/Object.H
     src/Track.H src/Track.cpp
     src/TouchpadGestures.H src/TouchpadGestures.cpp
     src/TrackRenderer.H src/TrackRenderer.cpp
     src/TrainView.H src/TrainView.cpp
-    src/TrainWindow.H src/TrainWindow.cpp)
+    src/TrainWindow.H src/TrainWindow.cpp
+    src/UiTheme.h src/UiTheme.cpp)
 target_include_directories(RollerCoasters SYSTEM PRIVATE
     "${PROJECT_SOURCE_DIR}/include/glm-0.9.8.5/glm")
 # hid: HidP_* parse the raw precision touchpad reports.
 target_link_libraries(RollerCoasters PRIVATE Utilities glad hid imm32)
+# Load/Save read and write TrackFiles\ beside the exe (main() moves there), so
+# the build makes the folder and Visual Studio debugs from the exe's folder.
+add_custom_command(TARGET RollerCoasters POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:RollerCoasters>/TrackFiles"
+    VERBATIM)
+set_target_properties(RollerCoasters PROPERTIES
+    VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:RollerCoasters>")
 
 if(ROLLERCOASTERS_BUILD_TESTS)
     enable_testing()
@@ -77,6 +100,18 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     target_link_libraries(FlyCamCheck PRIVATE Utilities)
     add_test(NAME FlyCamCheck COMMAND FlyCamCheck)
     set_tests_properties(FlyCamCheck PROPERTIES TIMEOUT 30 LABELS integration)
+
+    add_executable(WaterFlowCheck tests/WaterFlowCheck.cpp src/WaterFlow.cpp)
+    target_include_directories(WaterFlowCheck PRIVATE src)
+    target_link_libraries(WaterFlowCheck PRIVATE project_options)
+    add_test(NAME WaterFlowCheck COMMAND WaterFlowCheck)
+    set_tests_properties(WaterFlowCheck PROPERTIES TIMEOUT 10 LABELS integration)
+
+    add_executable(EditKeysCheck tests/EditKeysCheck.cpp src/EditKeys.cpp)
+    target_include_directories(EditKeysCheck PRIVATE src src/Utilities)
+    target_link_libraries(EditKeysCheck PRIVATE Utilities)
+    add_test(NAME EditKeysCheck COMMAND EditKeysCheck)
+    set_tests_properties(EditKeysCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
     add_executable(HeadLookCheck tests/HeadLookCheck.cpp)
     target_include_directories(HeadLookCheck PRIVATE src/Utilities)
@@ -104,6 +139,34 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     add_test(NAME TrackSpacingCheck COMMAND TrackSpacingCheck)
     set_tests_properties(TrackSpacingCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
+    add_executable(GizmoDragCheck tests/GizmoDragCheck.cpp src/TransformGizmo.cpp)
+    target_include_directories(GizmoDragCheck PRIVATE src)
+    target_link_libraries(GizmoDragCheck PRIVATE glad)
+    add_test(NAME GizmoDragCheck COMMAND GizmoDragCheck)
+    set_tests_properties(GizmoDragCheck PROPERTIES TIMEOUT 10 LABELS integration)
+
+    add_executable(OceanRideClearanceCheck tests/OceanRideClearanceCheck.cpp
+        src/OceanWorld.cpp src/Frustum.cpp src/LandTextures.cpp src/PixelArt.cpp src/WorldShape.cpp
+        src/Track.cpp src/ControlPoint.cpp)
+    target_include_directories(OceanRideClearanceCheck PRIVATE src)
+    target_link_libraries(OceanRideClearanceCheck PRIVATE Utilities glad)
+    add_test(NAME OceanRideClearanceCheck COMMAND OceanRideClearanceCheck)
+    set_tests_properties(OceanRideClearanceCheck PROPERTIES TIMEOUT 30 LABELS integration)
+
+    add_executable(LandRideClearanceCheck tests/LandRideClearanceCheck.cpp
+        src/LandWorld.cpp src/Frustum.cpp src/LandTextures.cpp src/OceanWorld.cpp src/PixelArt.cpp
+        src/WaterFlow.cpp src/WorldShape.cpp src/Track.cpp src/ControlPoint.cpp)
+    target_include_directories(LandRideClearanceCheck PRIVATE src)
+    target_link_libraries(LandRideClearanceCheck PRIVATE Utilities glad)
+    add_test(NAME LandRideClearanceCheck COMMAND LandRideClearanceCheck)
+    set_tests_properties(LandRideClearanceCheck PROPERTIES TIMEOUT 30 LABELS integration)
+
+    add_executable(FrustumCheck tests/FrustumCheck.cpp src/Frustum.cpp)
+    target_include_directories(FrustumCheck PRIVATE src)
+    target_link_libraries(FrustumCheck PRIVATE project_options glad)
+    add_test(NAME FrustumCheck COMMAND FrustumCheck)
+    set_tests_properties(FrustumCheck PROPERTIES TIMEOUT 10 LABELS integration)
+
     add_test(NAME VersionCheck COMMAND RollerCoasters --version)
     set_tests_properties(VersionCheck PROPERTIES TIMEOUT 10
         PASS_REGULAR_EXPRESSION "RollerCoasters ${PROJECT_VERSION}" LABELS smoke)
@@ -112,3 +175,4 @@ endif()
 install(TARGETS RollerCoasters RUNTIME DESTINATION .)
 install(FILES README.md CONTRIBUTING.md AGENTS.md DESTINATION .)
 install(DIRECTORY docs/ DESTINATION docs)
+install(DIRECTORY DESTINATION TrackFiles)

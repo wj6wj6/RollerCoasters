@@ -34,7 +34,7 @@ void cameraCB(Fl_Widget *, TrainWindow *tw);
 // The observer camera speed slider moved
 void flySpeedCB(Fl_Widget *, TrainWindow *tw);
 // The observer camera field of view slider moved
-void flyFovCB(Fl_Widget *, TrainWindow *tw);
+void fovCB(Fl_Widget *, TrainWindow *tw);
 
 // Callback that adds a new point to the spline
 // idea: add the point AFTER the selected point
@@ -53,6 +53,9 @@ void runButtonCB(TrainWindow *tw);
 // For load and save buttons
 void loadCB(Fl_Widget *, TrainWindow *tw);
 void saveCB(Fl_Widget *, TrainWindow *tw);
+
+// Load the demo ride over the island and under the sea (see OceanWorld) and ride it
+void grandTourCB(Fl_Widget *, TrainWindow *tw);
 
 // roll the control points
 // Rotate the selected control point  about x axis by one more degree

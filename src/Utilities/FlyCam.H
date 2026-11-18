@@ -114,8 +114,10 @@ class FlyCam
         return fieldOfView;
     }
 
-    // The FLTK key for a flying key given by its physical position (a set 1
-    // scan code from Windows), or 0. Reading keys this way keeps WASD working
+    // The FLTK key for a key used in Fly given by its physical position (a set
+    // 1 scan code from Windows), or 0: the flying keys, F (face the train),
+    // Home (back to the World view, handled by TrainView) and G / R (move and
+    // tilt the selected control point, also TrainView). Reading keys this way keeps WASD working
     // with any keyboard layout and while a Chinese input method such as Zhuyin
     // is on: it turns letter keys into VK_PROCESSKEY, and FLTK never sees them.
     static int keyForScanCode(unsigned scan, bool extended);
@@ -152,10 +154,10 @@ class FlyCam
     static constexpr float scrollSeconds = .15f;        // wheel travel per notch, in seconds
     static constexpr float slideSecondsPerPixel = .01f; // touchpad slide per pixel
     static constexpr float turnDegreesPerSecond = 90.0f;
-    static constexpr float turnSeconds = .35f;   // lookAt() duration
-    static constexpr float minHeight = 1.0f;     // eye height above setGround()
-    static constexpr float maxHeight = 400.0f;   // highest the camera can go
-    static constexpr float maxDistance = 400.0f; // |x| and |z| limit
+    static constexpr float turnSeconds = .35f;    // lookAt() duration
+    static constexpr float minHeight = 1.0f;      // eye height above setGround()
+    static constexpr float maxHeight = 600.0f;    // highest the camera can go
+    static constexpr float maxDistance = 1000.0f; // |x| and |z| limit
 
   private:
     enum Key

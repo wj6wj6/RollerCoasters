@@ -32,6 +32,7 @@
 #include <FL/Fl_Double_Window.H>
 #include <FL/Fl_Button.H>
 #include <FL/Fl_Group.H>
+#include <FL/Fl_Value_Input.H>
 #include <FL/Fl_Value_Slider.H>
 #include <FL/Fl_Browser.H>
 #pragma warning(pop)
@@ -62,8 +63,18 @@ class TrainWindow : public Fl_Double_Window
     // it should handle forward and backwards
     void advanceTrain(float dir = 1);
 
-    // simple helper function to set up a button
+    // simple helper function to set up a button: makes it a toggle and gives
+    // it the panel's on/off colours (see UiTheme.h)
     void togglify(Fl_Button *, int state = 0);
+
+    // shows the selected control point in the Transform panel's fields
+    void syncTransform();
+
+    // timer that redraws the view so the water and leaves keep moving
+    static void animateEffectsCB(void *data);
+
+    // a Transform field was edited
+    static void transformCB(Fl_Widget *widget, void *data);
 
   public:
     // keep track of the stuff in the world
@@ -80,11 +91,17 @@ class TrainWindow : public Fl_Double_Window
     // which viewpoint are we drawing from
     Fl_Button *worldCam;
     Fl_Button *trainCam;
+    Fl_Button *chaseCam; // behind the train, looking over it
     Fl_Button *topCam;
     Fl_Button *flyCam; // free-moving observer camera
 
     // the type of the spline (use its value to determine)
     Fl_Browser *splineBrowser;
+
+    // position of the selected control point (Transform panel)
+    Fl_Value_Input *pointX;
+    Fl_Value_Input *pointY;
+    Fl_Value_Input *pointZ;
 
     // are we animating the train?
     Fl_Button *runButton;
@@ -92,10 +109,21 @@ class TrainWindow : public Fl_Double_Window
     Fl_Value_Slider *speed;
     Fl_Button *arcLength; // do we use arc length for speed?
 
+    // shader lighting and effects (see AdvancedLighting.h and PostEffects.h)
+    Fl_Button *lightingButton;  // per-pixel lighting + shadow maps
+    Fl_Button *shadowButton;    // draw shadows at all
+    Fl_Button *headlightButton; // spotlight on the train's nose
+    Fl_Value_Slider *timeOfDay; // moves the sun, 0 to 24 hours
+    Fl_Button *waterButton;     // reflective ocean around the island
+    Fl_Button *rainButton;      // rain: wet ground, streaks and ripples
+    Fl_Button *sceneryButton;   // the island's scenery, or level grass
+    Fl_Button *editButton;      // show the control points for editing
+    Fl_Button *bloomButton;     // bloom and god rays
+    Fl_Button *ssaoButton;      // screen space ambient occlusion
     // how fast the observer camera flies, in world units per second
     Fl_Value_Slider *flySpeed;
-    // the observer camera's field of view, in degrees
-    Fl_Value_Slider *flyFov;
+    // the field of view of every perspective camera, in degrees
+    Fl_Value_Slider *fovSlider;
 
     // we have other widgets as part of the sample solution
     // this is not for 559 students to know about

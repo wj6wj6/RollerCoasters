@@ -41,7 +41,11 @@
 #include "TrainWindow.H"
 #include "Utilities/3DUtils.h"
 #include "TrackRenderer.H"
+#include "CallBacks.H"
+#include "TrainModel.h"
+#include "EditKeys.h"
 #include <FL/x.H>
+#include <FL/gl.h>
 
 // Touchpads send wheel deltas smaller than one notch. A burst that contains any
 // such delta stays precise for a moment, so a stray whole notch is not smoothed.
@@ -146,6 +150,16 @@ static int flyKeys(void *event, void *data)
         return 1;
     }
     Fl::e_keysym = key;
+    // FLTK never saw this message, so take the modifiers from the keyboard:
+    // editing commands such as Ctrl + snapping read them.
+    int state = Fl::e_state & ~(FL_SHIFT | FL_CTRL | FL_ALT);
+    if (GetKeyState(VK_SHIFT) < 0)
+        state |= FL_SHIFT;
+    if (GetKeyState(VK_CONTROL) < 0)
+        state |= FL_CTRL;
+    if (GetKeyState(VK_MENU) < 0)
+        state |= FL_ALT;
+    Fl::e_state = state;
     view->handle(message->message == WM_KEYDOWN ? FL_KEYDOWN : FL_KEYUP);
     return 1;
 }
@@ -186,18 +200,19 @@ static void touchpadMoves(void *data, float dx, float dy, float scale)
 #include "TrainExample/TrainExample.H"
 #endif
 
-// Field of view of the world camera, in degrees.
-static const float worldFieldOfView = 40.0f;
+// The field of view the World, Train, Chase and Fly cameras start with, in
+// degrees; the FOV slider changes all of them (TrainView::setFieldOfView).
+static const float startFieldOfView = 70.0f;
+// The World camera's start: this far away with a 40 degree view frames the
+// editor's island; a wider view starts as much closer. The scenery island is
+// WorldShape::kScale times wider, so the camera starts that much further out
+// (a little more, for the mountains in front).
+static const float worldStartDistance = 250.0f;
+static const float sceneryStartDistance = 750.0f;
+static const float worldStartFieldOfView = 40.0f;
 // The lowest the observer camera can fly. Tracks may dive below the floor at
 // y = 0 (into the sea, say), so the camera can follow them well under it.
 static const float flyLowest = -200.0f;
-// The observer camera's starting field of view; the "fly FOV" slider changes it.
-static const float flyFieldOfView = 90.0f;
-
-// Scenery positions (x, z).
-static const float treePositions[][2] = {
-    {-82.0f, -68.0f}, {-78.0f, 70.0f}, {82.0f, -70.0f}, {78.0f, 68.0f}, {0.0f, 88.0f}};
-static const int treeCount = (int)(sizeof(treePositions) / sizeof(treePositions[0]));
 
 //************************************************************************
 //
@@ -208,15 +223,15 @@ TrainView::TrainView(int x, int y, int w, int h, const char *l) : Fl_Gl_Window(x
 {
     tw = 0;
     selectedCube = -1;
-    flyCamPlaced = false;
     mouseCaptured = false;
+    m_fieldOfView = startFieldOfView;
     headDragging = false;
     headDragX = 0;
     headDragY = 0;
     mode(FL_RGB | FL_ALPHA | FL_DOUBLE | FL_STENCIL);
 
     resetArcball();
-    flyCam.setup(this, flyFieldOfView);
+    flyCam.setup(this, m_fieldOfView);
     flyCam.setGround(flyLowest - FlyCam::minHeight); // the eye stays minHeight above it
     Fl::add_system_handler(touchpadWheel, this);
     Fl::add_system_handler(flyKeys, this);
@@ -240,7 +255,60 @@ void TrainView::resetArcball()
     // Set up the camera to look at the world
     // these parameters might seem magical, and they kindof are
     // a little trial and error goes a long way
-    arcball.setup(this, worldFieldOfView, 250, .2f, .4f, 0);
+    const float halfAngle = 3.14159265f / 360.0f;
+    const float start = tw && sceneryOn() ? sceneryStartDistance : worldStartDistance;
+    const float distance =
+        start * tanf(worldStartFieldOfView * halfAngle) / tanf(m_fieldOfView * halfAngle);
+    arcball.setup(this, m_fieldOfView, distance, .2f, .4f, 0);
+}
+
+//************************************************************************
+//
+// * The FOV slider: one field of view for every perspective camera (the Top
+//   camera is orthographic)
+//========================================================================
+void TrainView::setFieldOfView(float degrees)
+//========================================================================
+{
+    m_fieldOfView = degrees;
+    arcball.setFieldOfView(degrees);
+    flyCam.setFieldOfView(degrees);
+    damage(1);
+}
+
+//************************************************************************
+//
+// * Start the observer camera exactly where the last frame not drawn by Fly
+//   was seen from (World, Train or Chase), so switching to Fly does not
+//   jump. The view keeps its direction; only a banked train view loses its
+//   roll, since Fly keeps the horizon level.
+//========================================================================
+void TrainView::placeFlyCamAtCurrentView()
+//========================================================================
+{
+    if (!m_flyHandoverValid)
+    {
+        placeFlyCamAtWorldView();
+        return;
+    }
+    if (m_flyHandoverTop)
+    {
+        // The Top view has no eye point: look straight down from the height
+        // at which the same width of ground fills the view.
+        const float aspect = h() > 0 ? static_cast<float>(w()) / static_cast<float>(h()) : 1.0f;
+        const float half = topViewHalf();
+        const float halfHeight = aspect >= 1.0f ? half : half / aspect;
+        const float height = halfHeight / tanf(m_fieldOfView * 3.14159265f / 360.0f);
+        flyCam.setPose(0.0f, height, 0.0f, 0.0f, -89.0f);
+    }
+    else
+    {
+        GLfloat view[16];
+        for (int i = 0; i < 16; ++i)
+            view[i] = static_cast<GLfloat>(m_flyHandover[i]);
+        flyCam.setFromViewMatrix(view);
+    }
+    damage(1);
 }
 
 //************************************************************************
@@ -254,8 +322,7 @@ void TrainView::placeFlyCamAtWorldView()
     arcball.setProjection();
     GLfloat view[16];
     glGetFloatv(GL_MODELVIEW_MATRIX, view);
-    flyCam.setFromViewMatrix(view, worldFieldOfView);
-    flyCamPlaced = true;
+    flyCam.setFromViewMatrix(view); // the same field of view: no correction
     damage(1);
 }
 
@@ -310,8 +377,7 @@ void TrainView::cameraChanged()
         flyCam.stop();
         return;
     }
-    if (!flyCamPlaced)
-        placeFlyCamAtWorldView();
+    placeFlyCamAtCurrentView();
     // Take keyboard focus from the camera button so WASD works at once.
     Fl::focus(this);
 }
@@ -405,6 +471,10 @@ int TrainView::handleTrainLook(int event)
 //========================================================================
 int TrainView::handle(int event)
 {
+    // an edit in progress sees every event before the camera does
+    if (m_editMode != EDIT_IDLE && editEvent(event))
+        return 1;
+
     // see if the ArcBall will handle the event - if it does,
     // then we're done
     // note: the arcball only gets the event if we're in world view
@@ -451,14 +521,19 @@ int TrainView::handle(int event)
             setMouseCaptured(false);
             return 1;
         }
+        // Editing commands first: none of them is a flying key (see
+        // EditKeys.h), so G, R, Alt + D, Delete and Ctrl + Z still work here.
+        if (event == FL_KEYBOARD && editKey(Fl::event_key()))
+            return 1;
         const float speedBefore = flyCam.speed();
         const int used = flyCam.handle(event);
         if (flyCam.speed() != speedBefore)
             tw->flySpeed->value(flyCam.speed());
         if (used)
             return 1;
-        // R puts the observer back at the world camera's viewpoint.
-        if (event == FL_KEYBOARD && Fl::event_key() == 'r')
+        // Home puts the observer back at the world camera's viewpoint (R
+        // tilts the selected control point).
+        if (event == FL_KEYBOARD && Fl::event_key() == FL_Home)
         {
             placeFlyCamAtWorldView();
             return 1;
@@ -483,9 +558,27 @@ int TrainView::handle(int event)
         // if the left button be pushed is left mouse button
         if (last_push == FL_LEFT_MOUSE)
         {
+            const int mx = Fl::event_x();
+            const int my = Fl::event_y();
+            // a handle of the selected point wins over picking another point
+            if (canEdit() && hasSelection() && m_editCameraValid)
+            {
+                const Pnt3f &p = m_pTrack->points[static_cast<size_t>(selectedCube)].pos;
+                const float position[3] = {p.x, p.y, p.z};
+                const TransformGizmo::Handle handle =
+                    TransformGizmo::pick(m_editCamera, position, m_gizmoSize, mx, my);
+                if (handle != TransformGizmo::NONE)
+                {
+                    beginEdit(EDIT_DRAG, handle, mx, my);
+                    return 1;
+                }
+            }
             doPick();
-            // Dragging empty space orbits (Alt pans), so one finger is enough on a touchpad.
-            if (selectedCube < 0 && tw->worldCam->value())
+            // dragging a point by its body moves it parallel to the screen;
+            // dragging empty space orbits (Alt pans), so one finger is enough on a touchpad
+            if (canEdit() && hasSelection() && m_editCameraValid)
+                beginEdit(EDIT_DRAG, TransformGizmo::VIEW, mx, my);
+            else if (selectedCube < 0 && tw->worldCam->value())
                 arcball.beginDrag((Fl::event_state() & FL_ALT) != 0);
             // In the observer camera a click on empty space captures the mouse
             // for spectator-style mouse look (Esc frees it).
@@ -502,28 +595,21 @@ int TrainView::handle(int event)
         last_push = 0;
         return 1;
 
-    // Mouse button drag event
-    case FL_DRAG:
-
-        // Compute the new control point position
-        if ((last_push == FL_LEFT_MOUSE) && (selectedCube >= 0))
+    // highlight the handle under the mouse
+    case FL_MOVE:
+        if (canEdit() && hasSelection() && m_editCameraValid)
         {
-            ControlPoint *cp = &m_pTrack->points[selectedCube];
-
-            double r1x, r1y, r1z, r2x, r2y, r2z;
-            getMouseLine(r1x, r1y, r1z, r2x, r2y, r2z);
-
-            double rx, ry, rz;
-            mousePoleGo(r1x, r1y, r1z, r2x, r2y, r2z, static_cast<double>(cp->pos.x),
-                        static_cast<double>(cp->pos.y), static_cast<double>(cp->pos.z), rx, ry, rz,
-                        (Fl::event_state() & FL_CTRL) != 0);
-
-            cp->pos.x = (float)rx;
-            cp->pos.y = (float)ry;
-            cp->pos.z = (float)rz;
-            damage(1);
+            const Pnt3f &p = m_pTrack->points[static_cast<size_t>(selectedCube)].pos;
+            const float position[3] = {p.x, p.y, p.z};
+            const TransformGizmo::Handle handle = TransformGizmo::pick(
+                m_editCamera, position, m_gizmoSize, Fl::event_x(), Fl::event_y());
+            if (handle != m_hoverHandle)
+            {
+                m_hoverHandle = handle;
+                damage(1);
+            }
         }
-        break;
+        return 1;
 
     // in order to get keyboard events, we need to accept focus
     case FL_FOCUS:
@@ -537,6 +623,8 @@ int TrainView::handle(int event)
 
     case FL_KEYBOARD:
         int k = Fl::event_key();
+        if (editKey(k))
+            return 1;
         if (k == 'p')
         {
             // Print out the selected control point information
@@ -556,6 +644,353 @@ int TrainView::handle(int event)
     }
 
     return Fl_Gl_Window::handle(event);
+}
+
+//************************************************************************
+//
+// * Control point editing
+//
+//   Left click selects a point. On the selected point: drag an arrow to
+//   move along that axis, a square to move in that plane, the point itself
+//   to move parallel to the screen. From the keyboard, as in a 3D modelling
+//   program: G moves and R tilts until a left click or Enter accepts, or a
+//   right click or Esc puts the point back; X / Y / Z keep to that axis and
+//   Shift + X / Y / Z to the other two. Ctrl snaps to whole units (5 degrees
+//   when tilting). Shift + D duplicates, Delete or X removes, Ctrl + Z takes
+//   back the last change. Numpad 1 / 7 / 0 switch to the world, top and train
+//   cameras. In Fly, Alt + D duplicates and only Delete removes, so the
+//   flying keys are left alone (EditKeys.h).
+//========================================================================
+bool TrainView::canEdit() const
+{
+    // the control points are shown with Edit on, and hidden while riding the train
+    return tw->editButton->value() && !tw->trainCam->value() && !tw->chaseCam->value();
+}
+
+bool TrainView::hasSelection() const
+{
+    return selectedCube >= 0 && selectedCube < static_cast<int>(m_pTrack->points.size());
+}
+
+void TrainView::beginEdit(EditMode mode, TransformGizmo::Handle handle, int mouseX, int mouseY)
+{
+    if (!hasSelection())
+        return;
+    m_editStart = m_pTrack->points[static_cast<size_t>(selectedCube)];
+    m_undoPoint = m_editStart;
+    m_undoIndex = selectedCube;
+    m_undoValid = true;
+    m_editMode = mode;
+    m_editHandle = handle;
+    // In Fly the camera holds still while a point is moved or tilted, so the
+    // point follows the mouse and Shift can lock a plane (it sinks the camera
+    // otherwise). Keys still held fly again once the edit ends.
+    if (tw->flyCam->value())
+    {
+        flyCam.stop();
+        setMouseCaptured(false);
+    }
+    m_editStartX = mouseX;
+    m_editStartY = mouseY;
+    damage(1);
+}
+
+void TrainView::updateEdit(int mouseX, int mouseY)
+{
+    if (!hasSelection() || !m_editCameraValid)
+        return;
+    ControlPoint &point = m_pTrack->points[static_cast<size_t>(selectedCube)];
+    const bool snap = (Fl::event_state() & FL_CTRL) != 0;
+    const float start[3] = {m_editStart.pos.x, m_editStart.pos.y, m_editStart.pos.z};
+
+    if (m_editMode == EDIT_ROTATE)
+    {
+        // The angle the mouse has swept around the point on screen turns the
+        // point's up direction about the chosen axis, or about the line of
+        // sight when none is chosen.
+        float cx = 0.0f, cy = 0.0f;
+        if (!TransformGizmo::project(m_editCamera, start, cx, cy))
+            return;
+        const float before =
+            atan2f(static_cast<float>(m_editStartY) - cy, static_cast<float>(m_editStartX) - cx);
+        const float now = atan2f(static_cast<float>(mouseY) - cy, static_cast<float>(mouseX) - cx);
+        float angle = now - before;
+        if (snap)
+        {
+            const float step = 5.0f * 3.14159265f / 180.0f;
+            angle = floorf(angle / step + 0.5f) * step;
+        }
+        float axis[3] = {0.0f, 0.0f, 0.0f};
+        TransformGizmo::viewDirection(m_editCamera, start, axis);
+        if (m_editHandle >= TransformGizmo::AXIS_X && m_editHandle <= TransformGizmo::AXIS_Z)
+        {
+            // turn the way the mouse goes whichever side the axis is seen from
+            const int index = m_editHandle - TransformGizmo::AXIS_X;
+            const float towards = axis[index];
+            axis[0] = axis[1] = axis[2] = 0.0f;
+            axis[index] = towards >= 0.0f ? 1.0f : -1.0f;
+        }
+        const float up[3] = {m_editStart.orient.x, m_editStart.orient.y, m_editStart.orient.z};
+        float turned[3] = {0.0f, 0.0f, 0.0f};
+        TransformGizmo::rotate(up, axis, angle, turned);
+        point.orient = Pnt3f(turned[0], turned[1], turned[2]);
+        point.orient.normalize();
+    }
+    else
+    {
+        float moved[3] = {0.0f, 0.0f, 0.0f};
+        if (!TransformGizmo::drag(m_editHandle, m_editCamera, start, m_editStartX, m_editStartY,
+                                  mouseX, mouseY, moved))
+            return;
+        if (snap)
+            for (int k = 0; k < 3; ++k)
+                moved[k] = start[k] + floorf(moved[k] - start[k] + 0.5f);
+        point.pos = Pnt3f(moved[0], moved[1], moved[2]);
+    }
+    damage(1);
+}
+
+void TrainView::endEdit(bool keep)
+{
+    if (!keep && hasSelection())
+        m_pTrack->points[static_cast<size_t>(selectedCube)] = m_editStart;
+    m_editMode = EDIT_IDLE;
+    m_editHandle = TransformGizmo::NONE;
+    m_hoverHandle = TransformGizmo::NONE;
+    damage(1);
+}
+
+void TrainView::undoEdit()
+{
+    if (!m_undoValid || m_undoIndex < 0 || m_undoIndex >= static_cast<int>(m_pTrack->points.size()))
+        return;
+    // swap, so a second Ctrl + Z brings the change back
+    ControlPoint &point = m_pTrack->points[static_cast<size_t>(m_undoIndex)];
+    const ControlPoint current = point;
+    point = m_undoPoint;
+    m_undoPoint = current;
+    selectedCube = m_undoIndex;
+    damage(1);
+}
+
+// Events while a point is being moved or tilted. True if the event was used.
+bool TrainView::editEvent(int event)
+{
+    if (!hasSelection() || !canEdit())
+    {
+        endEdit(false);
+        return false;
+    }
+    const bool held = m_editMode == EDIT_DRAG;
+    switch (event)
+    {
+    case FL_DRAG:
+    case FL_MOVE:
+        updateEdit(Fl::event_x(), Fl::event_y());
+        return true;
+    case FL_PUSH:
+        if (held)
+            return true;
+        // left click accepts, any other button puts the point back
+        endEdit(Fl::event_button() == FL_LEFT_MOUSE);
+        return true;
+    case FL_RELEASE:
+        if (held)
+            endEdit(true);
+        return true;
+    case FL_KEYBOARD: {
+        const int key = Fl::event_key();
+        if (key == FL_Escape)
+        {
+            endEdit(false);
+            return true;
+        }
+        if (key == FL_Enter || key == FL_KP_Enter)
+        {
+            endEdit(true);
+            return true;
+        }
+        if (!held && (key == 'x' || key == 'y' || key == 'z'))
+        {
+            // start over from where the point was, held to the new axis
+            const int axis = key - 'x';
+            const bool plane = (Fl::event_state() & FL_SHIFT) != 0 && m_editMode == EDIT_GRAB;
+            const TransformGizmo::Handle wanted = static_cast<TransformGizmo::Handle>(
+                (plane ? TransformGizmo::PLANE_YZ : TransformGizmo::AXIS_X) + axis);
+            const TransformGizmo::Handle free =
+                m_editMode == EDIT_GRAB ? TransformGizmo::VIEW : TransformGizmo::NONE;
+            m_pTrack->points[static_cast<size_t>(selectedCube)] = m_editStart;
+            m_editHandle = m_editHandle == wanted ? free : wanted;
+            updateEdit(Fl::event_x(), Fl::event_y());
+            damage(1);
+        }
+        return true; // no other key does anything in the middle of an edit
+    }
+    default:
+        return false;
+    }
+}
+
+// Keys when no edit is in progress. True if the key was used. Which key is
+// which command, in Fly and in the other cameras, is in EditKeys.h.
+bool TrainView::editKey(int key)
+{
+    const EditKeys::Action action =
+        EditKeys::forKey(key, Fl::event_state(), tw->flyCam->value() != 0);
+    if (action == EditKeys::CAMERA_WORLD || action == EditKeys::CAMERA_TOP ||
+        action == EditKeys::CAMERA_TRAIN)
+    {
+        Fl_Button *camera = action == EditKeys::CAMERA_WORLD
+                                ? tw->worldCam
+                                : (action == EditKeys::CAMERA_TOP ? tw->topCam : tw->trainCam);
+        camera->setonly();
+        cameraChanged();
+        tw->damageMe();
+        return true;
+    }
+    if (action == EditKeys::NONE || !canEdit())
+        return false;
+    if (action == EditKeys::UNDO)
+    {
+        undoEdit();
+        return true;
+    }
+    if (!hasSelection())
+        return false;
+
+    switch (action)
+    {
+    case EditKeys::GRAB:
+        if (!m_editCameraValid)
+            return false;
+        beginEdit(EDIT_GRAB, TransformGizmo::VIEW, Fl::event_x(), Fl::event_y());
+        return true;
+    case EditKeys::TILT:
+        if (!m_editCameraValid)
+            return false;
+        beginEdit(EDIT_ROTATE, TransformGizmo::NONE, Fl::event_x(), Fl::event_y());
+        return true;
+    case EditKeys::DUPLICATE_POINT: {
+        if (!m_editCameraValid)
+            return false;
+        // the new point goes in after the selected one; pick it up at once
+        const size_t before = m_pTrack->points.size();
+        addPointCB(nullptr, tw);
+        if (m_pTrack->points.size() > before)
+        {
+            selectedCube = (selectedCube + 1) % static_cast<int>(m_pTrack->points.size());
+            beginEdit(EDIT_GRAB, TransformGizmo::VIEW, Fl::event_x(), Fl::event_y());
+        }
+        return true;
+    }
+    case EditKeys::REMOVE:
+        m_undoValid = false; // the indices are about to change
+        deletePointCB(nullptr, tw);
+        return true;
+    default:
+        return false;
+    }
+}
+
+// Remembers the camera for the mouse maths, then draws the handles on the
+// selected point and a line of text saying what is going on.
+void TrainView::drawEditOverlay()
+{
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glUseProgram(0);
+    glViewport(0, 0, w(), h());
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    setProjection();
+    glGetDoublev(GL_MODELVIEW_MATRIX, m_editCamera.view);
+    glGetDoublev(GL_PROJECTION_MATRIX, m_editCamera.projection);
+    m_editCamera.viewport[0] = 0;
+    m_editCamera.viewport[1] = 0;
+    m_editCamera.viewport[2] = w();
+    m_editCamera.viewport[3] = h();
+    m_editCameraOrthographic = tw->topCam->value() != 0;
+    m_editCameraValid = true;
+
+    // Remember the last frame a camera other than Fly drew, for switching to
+    // Fly. Which camera drew it follows setProjection(): World first, then
+    // Fly. While the Fly button is held down both it and the old camera's
+    // button are on, and a redraw then may already be a Fly frame (from the
+    // old Fly pose); those must not count.
+    const bool drawnByFly = !tw->worldCam->value() && tw->flyCam->value();
+    if (!drawnByFly)
+    {
+        for (int i = 0; i < 16; ++i)
+            m_flyHandover[i] = m_editCamera.view[i];
+        m_flyHandoverTop = !tw->worldCam->value() && tw->topCam->value();
+        m_flyHandoverValid = true;
+    }
+
+    tw->syncTransform();
+
+    const bool selected = canEdit() && hasSelection();
+    if (selected)
+    {
+        const ControlPoint &point = m_pTrack->points[static_cast<size_t>(selectedCube)];
+        const float position[3] = {point.pos.x, point.pos.y, point.pos.z};
+        m_gizmoSize = TransformGizmo::worldSize(m_editCamera, position, 90.0f);
+        const bool modal = m_editMode == EDIT_GRAB || m_editMode == EDIT_ROTATE;
+        TransformGizmo::draw(position, m_gizmoSize,
+                             m_editMode == EDIT_IDLE ? m_hoverHandle : m_editHandle, modal);
+    }
+
+    // one line of text in the top left corner, as a 3D view has
+    char text[160] = "";
+    const char *camera =
+        tw->topCam->value()
+            ? "Top Orthographic"
+            : (tw->trainCam->value()
+                   ? "Train Camera"
+                   : (tw->chaseCam->value()
+                          ? "Chase Camera"
+                          : (tw->flyCam->value() ? "Fly Camera" : "User Perspective")));
+    if (!selected)
+        snprintf(text, sizeof(text), "%s", camera);
+    else
+    {
+        const ControlPoint &point = m_pTrack->points[static_cast<size_t>(selectedCube)];
+        const char *axes[8] = {"",       " along X", " along Y", " along Z",
+                               " in YZ", " in XZ",   " in XY",   ""};
+        if (m_editMode == EDIT_GRAB || m_editMode == EDIT_DRAG)
+            snprintf(text, sizeof(text), "Move%s   D: %.2f  %.2f  %.2f   [X/Y/Z] axis  [Ctrl] snap",
+                     axes[m_editHandle], static_cast<double>(point.pos.x - m_editStart.pos.x),
+                     static_cast<double>(point.pos.y - m_editStart.pos.y),
+                     static_cast<double>(point.pos.z - m_editStart.pos.z));
+        else if (m_editMode == EDIT_ROTATE)
+            snprintf(text, sizeof(text),
+                     "Tilt%s   up: %.2f  %.2f  %.2f   [X/Y/Z] axis  [Ctrl] snap",
+                     axes[m_editHandle], static_cast<double>(point.orient.x),
+                     static_cast<double>(point.orient.y), static_cast<double>(point.orient.z));
+        else
+            snprintf(text, sizeof(text), "%s  |  Point %d   %.1f  %.1f  %.1f   [G] move  [R] tilt",
+                     camera, selectedCube, static_cast<double>(point.pos.x),
+                     static_cast<double>(point.pos.y), static_cast<double>(point.pos.z));
+    }
+    glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_DEPTH_TEST);
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glOrtho(0.0, static_cast<double>(w()), 0.0, static_cast<double>(h()), -1.0, 1.0);
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+    gl_font(FL_HELVETICA, 12);
+    glColor3f(0.0f, 0.0f, 0.0f);
+    gl_draw(text, 11.0f, static_cast<float>(h() - 21));
+    glColor3f(0.92f, 0.92f, 0.92f);
+    gl_draw(text, 10.0f, static_cast<float>(h() - 20));
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    glPopAttrib();
 }
 
 //************************************************************************
@@ -582,15 +1017,30 @@ void TrainView::draw()
     // FLTK may recreate the canvas window, so (re)attach to the current one.
     touchpad.attach(fl_xid(this), touchpadAccepts, touchpadMoves, this);
 
-    // A new GL context starts without our textures; let the track rebuild them.
+    // A new GL context starts without our textures, shaders and frame
+    // buffers; let the track and the lighting rebuild them.
     if (!context_valid())
+    {
         m_trackRenderer.releaseTextures();
+        m_land.releaseResources();
+        m_ocean.releaseResources();
+        lighting.invalidate();
+        effects.invalidate();
+    }
+    const bool advanced = advancedLightingOn();
 
     // Set up the view port
     glViewport(0, 0, w(), h());
 
     // clear the window, be sure to clear the Z-Buffer too
-    glClearColor(0, 0, .3f, 0); // background should be blue
+    if (advanced)
+    {
+        float sky[3];
+        AdvancedLighting::skyColor(static_cast<float>(tw->timeOfDay->value()), sky);
+        glClearColor(sky[0], sky[1], sky[2], 0);
+    }
+    else
+        glClearColor(0, 0, .3f, 0); // background should be blue
 
     // we need to clear out the stencil buffer since we'll use
     // it for shadows
@@ -658,29 +1108,40 @@ void TrainView::draw()
     // set to opengl fixed pipeline(use opengl 1.x draw function)
     glUseProgram(0);
 
+    // Shadow maps, per-pixel lighting, water and post effects
+    if (advanced)
+    {
+        drawAdvanced();
+        drawEditOverlay();
+        if (tw->flyCam->value())
+            drawFlyOverlay();
+        return;
+    }
+
     if (tw->flyCam->value())
         drawFlyHorizon();
 
+    // the island is lit like everything else: its cliffs need the shading
     setupFloor();
-    glDisable(GL_LIGHTING);
-    drawFloor(200, 10);
+    drawGround();
 
     //*********************************************************************
     // now draw the object and we need to do it twice
     // once for real, and then once for shadows
     //*********************************************************************
-    glEnable(GL_LIGHTING);
     setupObjects();
 
     drawStuff();
 
-    // this time drawing is for shadows (except for top view)
-    if (!tw->topCam->value())
+    // this time drawing is for shadows (except for top view). They are
+    // flattened onto y = 0, which is only right on the level editor island.
+    if (tw->shadowButton->value() && !tw->topCam->value() && !sceneryOn())
     {
         setupShadows();
         drawStuff(true);
         unsetupShadows();
     }
+    drawEditOverlay();
 
     if (tw->flyCam->value())
         drawFlyOverlay();
@@ -792,22 +1253,27 @@ void TrainView::setProjection()
     // Or we use the top cam
     else if (tw->topCam->value())
     {
+        // The shorter side of the window shows the whole island, so none of
+        // it is cut off whatever the window's shape.
         float wi, he;
         if (aspect >= 1)
         {
-            wi = 110;
-            he = wi / aspect;
+            he = topViewHalf();
+            wi = he * aspect;
         }
         else
         {
-            he = 110;
-            wi = he * aspect;
+            wi = topViewHalf();
+            he = wi / aspect;
         }
 
         // Set up the top camera drop mode to be orthogonal and set
         // up proper projection matrix
+        // The view looks down from y = 230, just under the block clouds
+        // (LandWorld draws them from y = 235), which would hide the map;
+        // the snow peak and the balloons are lower.
         glMatrixMode(GL_PROJECTION);
-        glOrtho(-wi, wi, -he, he, 200, -200);
+        glOrtho(-wi, wi, -he, he, 230, -400);
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
         glRotatef(-90, 1, 0, 0);
@@ -826,7 +1292,27 @@ void TrainView::setProjection()
             forward = m_pTrack->evaluateTangent(m_pTrack->trainU, splineType);
             Pnt3f side;
             makeTrackFrame(forward, side, up);
-            eye = position + up * 2.2f + forward * 3.0f;
+            eye = position + up * 3.0f + forward * 3.0f;
+            // The chase camera rides above the track a little way behind the
+            // last cart and looks along the train. Following the track keeps
+            // it inside the room carved for the ride, out of the rock.
+            if (tw->chaseCam->value())
+            {
+                const float behind = TrainModel::parameterBehind(
+                    *m_pTrack, m_pTrack->trainU, TrainModel::length() + 9.0f, splineType);
+                Pnt3f backForward = m_pTrack->evaluateTangent(behind, splineType);
+                Pnt3f backSide, backUp;
+                makeTrackFrame(backForward, backSide, backUp);
+                eye = m_pTrack->evaluatePosition(behind, splineType) + backUp * 6.5f;
+                const Pnt3f look = position + up * 1.0f;
+                glMatrixMode(GL_PROJECTION);
+                glLoadIdentity();
+                gluPerspective(m_fieldOfView, aspect, 0.5, 3000.0);
+                glMatrixMode(GL_MODELVIEW);
+                glLoadIdentity();
+                gluLookAt(eye.x, eye.y, eye.z, look.x, look.y, look.z, 0.0, 1.0, 0.0);
+                return;
+            }
             // The rider may turn their head; the view still moves with the train.
             Pnt3f viewForward, viewUp;
             headLook.apply(forward, side, up, viewForward, viewUp);
@@ -836,10 +1322,12 @@ void TrainView::setProjection()
 
         glMatrixMode(GL_PROJECTION);
         glLoadIdentity();
-        gluPerspective(60.0, aspect, 0.5, 1000.0);
+        // tipped down a little: on a climb the rider still sees the land
+        // below and not only the sky
+        gluPerspective(m_fieldOfView, aspect, 0.5, 3000.0);
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
-        const Pnt3f target = eye + forward * 15.0f;
+        const Pnt3f target = eye + forward * 15.0f + up * -3.6f;
         gluLookAt(eye.x, eye.y, eye.z, target.x, target.y, target.z, up.x, up.y, up.z);
     }
 }
@@ -855,100 +1343,6 @@ void TrainView::setProjection()
 // TODO:
 // if you have other objects in the world, make sure to draw them
 //########################################################################
-static void drawTrainBox(float halfX, float halfY, float halfZ)
-{
-    glBegin(GL_QUADS);
-    glNormal3f(0, 0, 1);
-    glVertex3f(-halfX, -halfY, halfZ);
-    glVertex3f(halfX, -halfY, halfZ);
-    glVertex3f(halfX, halfY, halfZ);
-    glVertex3f(-halfX, halfY, halfZ);
-    glNormal3f(0, 0, -1);
-    glVertex3f(halfX, -halfY, -halfZ);
-    glVertex3f(-halfX, -halfY, -halfZ);
-    glVertex3f(-halfX, halfY, -halfZ);
-    glVertex3f(halfX, halfY, -halfZ);
-    glNormal3f(0, 1, 0);
-    glVertex3f(-halfX, halfY, halfZ);
-    glVertex3f(halfX, halfY, halfZ);
-    glVertex3f(halfX, halfY, -halfZ);
-    glVertex3f(-halfX, halfY, -halfZ);
-    glNormal3f(0, -1, 0);
-    glVertex3f(-halfX, -halfY, -halfZ);
-    glVertex3f(halfX, -halfY, -halfZ);
-    glVertex3f(halfX, -halfY, halfZ);
-    glVertex3f(-halfX, -halfY, halfZ);
-    glNormal3f(1, 0, 0);
-    glVertex3f(halfX, -halfY, halfZ);
-    glVertex3f(halfX, -halfY, -halfZ);
-    glVertex3f(halfX, halfY, -halfZ);
-    glVertex3f(halfX, halfY, halfZ);
-    glNormal3f(-1, 0, 0);
-    glVertex3f(-halfX, -halfY, -halfZ);
-    glVertex3f(-halfX, -halfY, halfZ);
-    glVertex3f(-halfX, halfY, halfZ);
-    glVertex3f(-halfX, halfY, -halfZ);
-    glEnd();
-}
-
-static void drawTreeCone(float radius, float height)
-{
-    const int segments = 12;
-    glBegin(GL_TRIANGLES);
-    for (int i = 0; i < segments; ++i)
-    {
-        const float a0 = 6.2831853f * i / segments;
-        const float a1 = 6.2831853f * (i + 1) / segments;
-        const float mid = (a0 + a1) * 0.5f;
-        const float nx = cosf(mid);
-        const float nz = sinf(mid);
-        const float normalLength = sqrtf(1.0f + (radius / height) * (radius / height));
-        glNormal3f(nx / normalLength, (radius / height) / normalLength, nz / normalLength);
-        glVertex3f(radius * cosf(a0), 0.0f, radius * sinf(a0));
-        glVertex3f(0.0f, height, 0.0f);
-        glVertex3f(radius * cosf(a1), 0.0f, radius * sinf(a1));
-    }
-    glEnd();
-}
-
-static void drawTree(float x, float z, bool doingShadows)
-{
-    const int trunkSegments = 10;
-    const float trunkRadius = 1.1f;
-    const float trunkHeight = 7.0f;
-    glPushAttrib(GL_CURRENT_BIT);
-    glPushMatrix();
-    glTranslatef(x, 0.0f, z);
-    if (!doingShadows)
-        glColor3ub(105, 65, 35);
-    glBegin(GL_QUADS);
-    for (int i = 0; i < trunkSegments; ++i)
-    {
-        const float a0 = 6.2831853f * i / trunkSegments;
-        const float a1 = 6.2831853f * (i + 1) / trunkSegments;
-        const float nx = cosf((a0 + a1) * 0.5f);
-        const float nz = sinf((a0 + a1) * 0.5f);
-        glNormal3f(nx, 0.0f, nz);
-        glVertex3f(trunkRadius * cosf(a0), 0.0f, trunkRadius * sinf(a0));
-        glVertex3f(trunkRadius * cosf(a0), trunkHeight, trunkRadius * sinf(a0));
-        glVertex3f(trunkRadius * cosf(a1), trunkHeight, trunkRadius * sinf(a1));
-        glVertex3f(trunkRadius * cosf(a1), 0.0f, trunkRadius * sinf(a1));
-    }
-    glEnd();
-
-    if (!doingShadows)
-        glColor3ub(35, 125, 55);
-    glPushMatrix();
-    glTranslatef(0.0f, 4.0f, 0.0f);
-    drawTreeCone(5.0f, 11.0f);
-    glPopMatrix();
-    glPushMatrix();
-    glTranslatef(0.0f, 9.0f, 0.0f);
-    drawTreeCone(3.8f, 9.0f);
-    glPopMatrix();
-    glPopMatrix();
-    glPopAttrib();
-}
 
 //========================================================================
 void TrainView::drawStuff(bool doingShadows)
@@ -956,17 +1350,16 @@ void TrainView::drawStuff(bool doingShadows)
     // Draw the control points
     // don't draw the control points if you're driving
     // (otherwise you get sea-sick as you drive through them)
-    if (!tw->trainCam->value())
+    // they are editing aids rather than part of the scene, so they cast no
+    // shadows; the selected one is orange. Hidden until Edit is switched on.
+    if (canEdit() && !doingShadows)
     {
         for (size_t i = 0; i < m_pTrack->points.size(); ++i)
         {
-            if (!doingShadows)
-            {
-                if (((int)i) != selectedCube)
-                    glColor3ub(240, 60, 60);
-                else
-                    glColor3ub(240, 240, 30);
-            }
+            if (((int)i) != selectedCube)
+                glColor3ub(215, 215, 215);
+            else
+                glColor3ub(255, 150, 30);
             m_pTrack->points[i].draw();
         }
     }
@@ -982,49 +1375,20 @@ void TrainView::drawStuff(bool doingShadows)
     drawTrack(this, doingShadows);
 #endif
 
-    // A small ring of trees gives the track a visible setting beyond the ground.
-    for (int i = 0; i < treeCount; ++i)
-        drawTree(treePositions[i][0], treePositions[i][1], doingShadows);
+    // wooden trestles where the track is high above the scenery
+    if (sceneryOn() && m_pTrack->points.size() >= 4)
+        drawSupports(doingShadows);
 
-    // draw the train
+    // draw the train: a locomotive and five carts with riders (TrainModel)
     if (!tw->trainCam->value() && m_pTrack->points.size() >= 4)
     {
         const TrackSplineType splineType = static_cast<TrackSplineType>(tw->splineBrowser->value());
-        const Pnt3f position = m_pTrack->evaluatePosition(m_pTrack->trainU, splineType);
-        Pnt3f forward = m_pTrack->evaluateTangent(m_pTrack->trainU, splineType);
-        Pnt3f side;
-        Pnt3f up;
-        makeTrackFrame(forward, side, up);
-
-        const GLfloat frame[16] = {side.x,     side.y,     side.z,     0.0f,      up.x,      up.y,
-                                   up.z,       0.0f,       forward.x,  forward.y, forward.z, 0.0f,
-                                   position.x, position.y, position.z, 1.0f};
-
-        glPushAttrib(GL_CURRENT_BIT);
-        glPushMatrix();
-        glMultMatrixf(frame);
-        glTranslatef(0.0f, 1.1f, 0.0f);
-        if (!doingShadows)
-            glColor3ub(35, 110, 190);
-        drawTrainBox(1.5f, 0.65f, 2.4f);
-
-        glPushMatrix();
-        glTranslatef(0.0f, 0.85f, -0.25f);
-        if (!doingShadows)
-            glColor3ub(55, 155, 220);
-        drawTrainBox(0.95f, 0.55f, 1.1f);
-        glPopMatrix();
-
-        glPushMatrix();
-        glTranslatef(0.0f, -0.05f, 2.45f);
-        if (!doingShadows)
-            glColor3ub(230, 75, 35);
-        drawTrainBox(1.15f, 0.45f, 0.35f);
-        glPopMatrix();
-
-        glPopMatrix();
-        glPopAttrib();
+        TrainModel::draw(*m_pTrack, splineType, doingShadows, animationTime());
     }
+
+    // the island's see-through water last, blended over everything behind it
+    if (!doingShadows)
+        m_land.drawWater(!sceneryOn());
 }
 
 //

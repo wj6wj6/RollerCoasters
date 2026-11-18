@@ -35,159 +35,349 @@
 #include "TrainWindow.H"
 #include "TrainView.H"
 #include "CallBacks.H"
+#include "UiTheme.h"
+
+// The panel's cards are laid out for this height; the window starts at it
+// so the cards are never squeezed (the strip below them takes any change).
+static const int kPanelHeight = 690;
 
 //************************************************************************
 //
 // * Constructor
 //========================================================================
 TrainWindow::TrainWindow(const int x, const int y)
-    : Fl_Double_Window(x, y, 800, 600, "Train and Roller Coaster")
+    : Fl_Double_Window(x, y, 800, kPanelHeight, "Train and Roller Coaster")
 //========================================================================
 {
+    // dark neon look for the control panel (see UiTheme.h); has to come
+    // before the widgets are made
+    UiTheme::apply();
+    color(UiTheme::kPanel);
+
     // make all of the widgets
     begin(); // add to this widget
     {
-        int pty = 5; // where the last widgets were drawn
+        // The panel is a column of cards. Every card has a title strip and
+        // rows of widgets on a three column grid.
+        const int panelX = 600;
+        const int cardX = panelX + 4;
+        const int cardW = 192;
+        const int innerX = cardX + 6;
+        const int innerW = cardW - 12;
+        const int rowH = 22;
+        const int gap = 4;
+        const int cardGap = 5;
+        const int titleH = UiTheme::kCardTitleHeight;
+        const int bottomPad = 6;
+        // three columns, and two halves for the rows with two widgets
+        const int colW = (innerW - 2 * gap) / 3;
+        const int col2 = innerX + colW + gap;
+        const int col3 = innerX + 2 * (colW + gap);
+        const int col3W = innerX + innerW - col3;
+        const int halfW = (innerW - gap) / 2;
+        const int half2 = innerX + halfW + gap;
+        const int half2W = innerX + innerW - half2;
+        // sliders leave room on the left for their label
+        const int sliderX = innerX + 38;
+        const int sliderW = innerW - 38;
 
-        trainView = new TrainView(5, 5, 590, 590);
+        int pty = 5; // where the next widget goes
+
+        trainView = new TrainView(5, 5, 590, kPanelHeight - 10);
         trainView->tw = this;
         trainView->m_pTrack = &m_Track;
         this->resizable(trainView);
 
         // to make resizing work better, put all the widgets in a group
-        widgets = new Fl_Group(600, 5, 190, 590);
+        widgets = new Fl_Group(panelX, 0, 200, kPanelHeight);
+        UiTheme::stylePanel(widgets);
         widgets->begin();
 
-        runButton = new Fl_Button(605, pty, 60, 20, "Run");
+        Fl_Box *title = new Fl_Box(cardX + 2, pty, 120, 20, "Roller Coaster");
+        UiTheme::styleCaption(title, UiTheme::kText, 12);
+        title->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
+        Fl_Box *subtitle = new Fl_Box(cardX + 120, pty, cardW - 122, 20, "Properties");
+        UiTheme::styleCaption(subtitle, UiTheme::kTextMuted, UiTheme::kTitleSize);
+        subtitle->labelfont(FL_HELVETICA);
+        subtitle->align(FL_ALIGN_RIGHT | FL_ALIGN_INSIDE);
+
+        pty += 20 + 2;
+
+        // ---- RIDE: run, step and speed
+        Fl_Group *rideCard =
+            UiTheme::beginCard(cardX, pty, cardW, titleH + 2 * rowH + gap + bottomPad, "Ride");
+        pty += titleH;
+
+        runButton = new Fl_Button(innerX, pty, colW, rowH, "Run");
         togglify(runButton);
 
-        Fl_Button *fb = new Fl_Button(700, pty, 25, 20, "@>>");
-        fb->callback((Fl_Callback *)forwCB, this);
-        Fl_Button *rb = new Fl_Button(670, pty, 25, 20, "@<<");
+        const int stepW = (colW - gap) / 2;
+        Fl_Button *rb = new Fl_Button(col2, pty, stepW, rowH, "@<<");
+        UiTheme::styleButton(rb);
         rb->callback((Fl_Callback *)backCB, this);
+        Fl_Button *fb = new Fl_Button(col2 + stepW + gap, pty, colW - stepW - gap, rowH, "@>>");
+        UiTheme::styleButton(fb);
+        fb->callback((Fl_Callback *)forwCB, this);
 
-        arcLength = new Fl_Button(730, pty, 65, 20, "ArcLength");
+        arcLength = new Fl_Button(col3, pty, col3W, rowH, "ArcLength");
         togglify(arcLength, 1);
 
-        pty += 25;
-        speed = new Fl_Value_Slider(655, pty, 140, 20, "speed");
+        pty += rowH + gap;
+        speed = new Fl_Value_Slider(sliderX, pty, sliderW, rowH, "Speed");
+        UiTheme::styleSlider(speed);
         speed->range(0, 10);
         speed->value(2);
-        speed->align(FL_ALIGN_LEFT);
-        speed->type(FL_HORIZONTAL);
 
-        pty += 30;
+        pty += rowH + bottomPad;
+        rideCard->end();
+        pty += cardGap;
 
-        // camera buttons - in a radio button group
-        Fl_Group *camGroup = new Fl_Group(600, pty, 195, 20);
-        camGroup->begin();
-        worldCam = new Fl_Button(605, pty, 45, 20, "World");
-        worldCam->type(FL_RADIO_BUTTON);        // radio button
-        worldCam->value(1);                     // turned on
-        worldCam->selection_color((Fl_Color)3); // yellow when pressed
+        // ---- CAMERA: the card is also the radio button group. Two rows of
+        // cameras, then the Fly camera's speed and field of view.
+        Fl_Group *camGroup = UiTheme::beginCard(cardX, pty, cardW,
+                                                titleH + 4 * rowH + 3 * gap + bottomPad, "Camera");
+        pty += titleH;
+        worldCam = new Fl_Button(innerX, pty, colW, rowH, "World");
+        worldCam->type(FL_RADIO_BUTTON); // radio button
+        worldCam->value(1);              // turned on
+        UiTheme::styleToggle(worldCam);
         worldCam->callback((Fl_Callback *)cameraCB, this);
         worldCam->tooltip("Rotate: two-finger scroll, Shift + left drag, or right drag\n"
                           "Pan: Alt + two-finger scroll (or Alt + right drag)\n"
                           "Reset: Shift + double left click (or double right click)\n"
                           "Zoom: spread fingers to zoom in; pinch to zoom out (no Ctrl needed)\n"
                           "Also: Ctrl + scroll up to zoom in; Ctrl + scroll down to zoom out");
-        trainCam = new Fl_Button(652, pty, 45, 20, "Train");
+        trainCam = new Fl_Button(col2, pty, colW, rowH, "Train");
         trainCam->type(FL_RADIO_BUTTON);
         trainCam->value(0);
-        trainCam->selection_color((Fl_Color)3);
+        UiTheme::styleToggle(trainCam);
         trainCam->callback((Fl_Callback *)cameraCB, this);
         trainCam->tooltip("Ride the train and turn your head\n"
                           "Look around: drag the view (left or right button)\n"
                           "Touchpad: two fingers look around\n"
                           "Look ahead again: double click, R or Home");
-        topCam = new Fl_Button(699, pty, 45, 20, "Top");
+        chaseCam = new Fl_Button(col3, pty, col3W, rowH, "Chase");
+        chaseCam->type(FL_RADIO_BUTTON);
+        chaseCam->value(0);
+        UiTheme::styleToggle(chaseCam);
+        chaseCam->callback((Fl_Callback *)cameraCB, this);
+        chaseCam->tooltip("Follows behind the train: see the riders against the scenery");
+
+        pty += rowH + gap;
+        topCam = new Fl_Button(innerX, pty, halfW, rowH, "Top");
         topCam->type(FL_RADIO_BUTTON);
         topCam->value(0);
-        topCam->selection_color((Fl_Color)3);
+        UiTheme::styleToggle(topCam);
         topCam->callback((Fl_Callback *)cameraCB, this);
-        flyCam = new Fl_Button(746, pty, 45, 20, "Fly");
+        flyCam = new Fl_Button(half2, pty, half2W, rowH, "Fly");
         flyCam->type(FL_RADIO_BUTTON);
         flyCam->value(0);
-        flyCam->selection_color((Fl_Color)3);
+        UiTheme::styleToggle(flyCam);
         flyCam->callback((Fl_Callback *)cameraCB, this);
-        flyCam->tooltip("Observer camera (spectator style), starts at the World view\n"
+        flyCam->tooltip("Observer camera (spectator style), starts from the current view\n"
                         "Click the view: the mouse looks around; Esc frees the mouse\n"
                         "Move: W/A/S/D (level), Space up, Shift down, hold Ctrl to go faster\n"
-                        "Speed: mouse wheel, +/- keys or the fly speed slider\n"
+                        "Speed: mouse wheel, +/- keys or the Fly slider below\n"
                         "Also: right drag or arrow keys look; E/Q up/down\n"
                         "Touchpad: two fingers look, spread / pinch fly, Alt + two fingers slide\n"
-                        "Lost? F: face the train; R: back to the World view");
-        camGroup->end();
+                        "Lost? F: face the train; Home: back to the World view\n"
+                        "Edit on: G / R move / tilt the selected point, Alt + D duplicates,\n"
+                        "Delete removes (Shift + D and X fly or do nothing here)");
 
-        pty += 30;
+        // observer camera speed (world units per second) and field of view
+        pty += rowH + gap;
+        flySpeed = new Fl_Value_Slider(sliderX, pty, sliderW, rowH, "Fly");
+        UiTheme::styleSlider(flySpeed);
+        flySpeed->range(FlyCam::minSpeed, FlyCam::maxSpeed);
+        flySpeed->step(1);
+        flySpeed->value(trainView->flyCam.speed());
+        flySpeed->tooltip("How fast the Fly camera moves, in world units per second");
+        flySpeed->callback((Fl_Callback *)flySpeedCB, this);
+
+        pty += rowH + gap;
+        fovSlider = new Fl_Value_Slider(sliderX, pty, sliderW, rowH, "FOV");
+        UiTheme::styleSlider(fovSlider);
+        fovSlider->range(FlyCam::minFieldOfView, FlyCam::maxFieldOfView);
+        fovSlider->step(1);
+        fovSlider->value(trainView->m_fieldOfView);
+        fovSlider->tooltip("Field of view of the World, Train, Chase and Fly cameras, in degrees\n"
+                           "(Top is a flat orthographic view)");
+        fovSlider->callback((Fl_Callback *)fovCB, this);
+
+        pty += rowH + bottomPad;
+        camGroup->end();
+        pty += cardGap;
+
+        // ---- TRACK: spline type and control point editing
+        const int browserLabelH = 13;
+        const int browserH = 62;
+        Fl_Group *trackCard = UiTheme::beginCard(
+            cardX, pty, cardW, titleH + browserLabelH + browserH + 3 * (gap + rowH) + bottomPad,
+            "Track");
+        pty += titleH + browserLabelH;
 
         // browser to select spline types
-        splineBrowser = new Fl_Browser(605, pty, 120, 75, "Spline Type");
+        splineBrowser = new Fl_Browser(innerX, pty, innerW, browserH, "Spline Type");
         splineBrowser->type(2); // select
+        UiTheme::styleBrowser(splineBrowser);
         splineBrowser->callback((Fl_Callback *)damageCB, this);
         splineBrowser->add("Linear");
         splineBrowser->add("Cardinal Cubic");
         splineBrowser->add("Cubic B-Spline");
         splineBrowser->select(3);
 
-        pty += 110;
+        pty += browserH + gap;
 
-        // add and delete points
-        Fl_Button *ap = new Fl_Button(605, pty, 80, 20, "Add Point");
+        // show the control points for editing; add and delete points
+        editButton = new Fl_Button(innerX, pty, colW, rowH, "Edit");
+        togglify(editButton);
+        editButton->tooltip("Show the control points and their move handles.\n"
+                            "Off for the Grand Tour: the scenery is built around that ride.");
+        Fl_Button *ap = new Fl_Button(col2, pty, colW, rowH, "Add Pt");
+        UiTheme::styleButton(ap);
         ap->callback((Fl_Callback *)addPointCB, this);
-        Fl_Button *dp = new Fl_Button(690, pty, 80, 20, "Delete Point");
+        Fl_Button *dp = new Fl_Button(col3, pty, col3W, rowH, "Del Pt");
+        UiTheme::styleButton(dp);
         dp->callback((Fl_Callback *)deletePointCB, this);
 
-        pty += 25;
-        // reset the points
-        resetButton = new Fl_Button(735, pty, 60, 20, "Reset");
-        resetButton->callback((Fl_Callback *)resetCB, this);
-        Fl_Button *loadb = new Fl_Button(605, pty, 60, 20, "Load");
+        pty += rowH + gap;
+        // load, save and reset the points
+        Fl_Button *loadb = new Fl_Button(innerX, pty, colW, rowH, "Load");
+        UiTheme::styleButton(loadb);
         loadb->callback((Fl_Callback *)loadCB, this);
-        Fl_Button *saveb = new Fl_Button(670, pty, 60, 20, "Save");
+        Fl_Button *saveb = new Fl_Button(col2, pty, colW, rowH, "Save");
+        UiTheme::styleButton(saveb);
         saveb->callback((Fl_Callback *)saveCB, this);
+        resetButton = new Fl_Button(col3, pty, col3W, rowH, "Reset");
+        UiTheme::styleButton(resetButton);
+        resetButton->callback((Fl_Callback *)resetCB, this);
 
-        pty += 25;
+        pty += rowH + gap;
         // roll the points
-        Fl_Button *rx = new Fl_Button(605, pty, 30, 20, "R+X");
+        const int rollW = (innerW - 3 * gap) / 4;
+        Fl_Button *rx = new Fl_Button(innerX, pty, rollW, rowH, "R+X");
+        UiTheme::styleButton(rx);
         rx->callback((Fl_Callback *)rpxCB, this);
-        Fl_Button *rxp = new Fl_Button(635, pty, 30, 20, "R-X");
+        Fl_Button *rxp = new Fl_Button(innerX + rollW + gap, pty, rollW, rowH, "R-X");
+        UiTheme::styleButton(rxp);
         rxp->callback((Fl_Callback *)rmxCB, this);
-        Fl_Button *rz = new Fl_Button(670, pty, 30, 20, "R+Z");
+        Fl_Button *rz = new Fl_Button(innerX + 2 * (rollW + gap), pty, rollW, rowH, "R+Z");
+        UiTheme::styleButton(rz);
         rz->callback((Fl_Callback *)rpzCB, this);
-        Fl_Button *rzp = new Fl_Button(700, pty, 30, 20, "R-Z");
+        const int roll4 = innerX + 3 * (rollW + gap);
+        Fl_Button *rzp = new Fl_Button(roll4, pty, innerX + innerW - roll4, rowH, "R-Z");
+        UiTheme::styleButton(rzp);
         rzp->callback((Fl_Callback *)rmzCB, this);
 
-        pty += 30;
+        pty += rowH + bottomPad;
+        trackCard->end();
+        pty += cardGap;
 
-        // observer camera speed (world units per second)
-        flySpeed = new Fl_Value_Slider(675, pty, 120, 20, "fly speed");
-        flySpeed->range(FlyCam::minSpeed, FlyCam::maxSpeed);
-        flySpeed->step(1);
-        flySpeed->value(trainView->flyCam.speed());
-        flySpeed->align(FL_ALIGN_LEFT);
-        flySpeed->type(FL_HORIZONTAL);
-        flySpeed->callback((Fl_Callback *)flySpeedCB, this);
+        // ---- Transform: where the selected control point is. The view also
+        // moves it with the handles drawn on it and with G / R (TrainView.cpp)
+        Fl_Group *transformCard =
+            UiTheme::beginCard(cardX, pty, cardW, titleH + rowH + bottomPad, "Transform");
+        pty += titleH;
+        {
+            const int labelW = 12;
+            const int fieldW = (innerW - 2 * gap) / 3 - labelW;
+            Fl_Value_Input **fields[3] = {&pointX, &pointY, &pointZ};
+            const char *names[3] = {"X", "Y", "Z"};
+            const Fl_Color colours[3] = {UiTheme::kAxisX, UiTheme::kAxisY, UiTheme::kAxisZ};
+            for (int axis = 0; axis < 3; ++axis)
+            {
+                const int fx = innerX + axis * (fieldW + labelW + gap) + labelW;
+                Fl_Value_Input *field = new Fl_Value_Input(fx, pty, fieldW, rowH, names[axis]);
+                UiTheme::styleNumberField(field, colours[axis]);
+                field->range(-1000.0, 1000.0);
+                field->step(0.1);
+                field->callback(transformCB, this);
+                field->tooltip("Position of the selected control point.\n"
+                               "In the view: drag an arrow or a square, or press G to move,\n"
+                               "then X / Y / Z to keep to one axis (Shift: the other two),\n"
+                               "R to tilt, Ctrl to snap, Esc or right click to cancel.");
+                field->deactivate();
+                *fields[axis] = field;
+            }
+        }
+        pty += rowH + bottomPad;
+        transformCard->end();
+        pty += cardGap;
 
-        pty += 25;
-        flyFov = new Fl_Value_Slider(675, pty, 120, 20, "fly FOV");
-        flyFov->range(FlyCam::minFieldOfView, FlyCam::maxFieldOfView);
-        flyFov->step(1);
-        flyFov->value(trainView->flyCam.fieldOfViewDegrees());
-        flyFov->align(FL_ALIGN_LEFT);
-        flyFov->type(FL_HORIZONTAL);
-        flyFov->tooltip("Field of view of the Fly camera, in degrees");
-        flyFov->callback((Fl_Callback *)flyFovCB, this);
+        // ---- LIGHTING: shader lighting and screen effects
+        Fl_Group *lightCard = UiTheme::beginCard(
+            cardX, pty, cardW, titleH + 3 * rowH + 2 * gap + bottomPad, "Lighting");
+        pty += titleH;
 
-        pty += 30;
+        lightingButton = new Fl_Button(innerX, pty, colW, rowH, "Light+");
+        togglify(lightingButton, 1);
+        lightingButton->tooltip("Per-pixel lighting with shadow mapping, sky and fog.\n"
+                                "Turn off to get the original fixed-function lighting.");
+        shadowButton = new Fl_Button(col2, pty, colW, rowH, "Shadows");
+        togglify(shadowButton, 1);
+        headlightButton = new Fl_Button(col3, pty, col3W, rowH, "Headlight");
+        togglify(headlightButton, 1);
+        headlightButton->tooltip("Spotlight on the front of the train (needs Light+).\n"
+                                 "Slide Time towards night to see it best.");
+
+        pty += rowH + gap;
+        bloomButton = new Fl_Button(innerX, pty, halfW, rowH, "Bloom");
+        togglify(bloomButton, 1);
+        bloomButton->tooltip("Bloom glow and god rays from the sun (needs Light+)");
+        ssaoButton = new Fl_Button(half2, pty, half2W, rowH, "SSAO");
+        togglify(ssaoButton, 1);
+        ssaoButton->tooltip("Screen space ambient occlusion (needs Light+)");
+
+        pty += rowH + gap;
+        timeOfDay = new Fl_Value_Slider(sliderX, pty, sliderW, rowH, "Time");
+        UiTheme::styleSlider(timeOfDay);
+        timeOfDay->range(0, 24);
+        timeOfDay->step(0.25);
+        timeOfDay->value(15);
+        timeOfDay->callback((Fl_Callback *)damageCB, this);
+        timeOfDay->tooltip("Hour of the day: moves the sun and its shadows (needs Light+)");
+
+        pty += rowH + bottomPad;
+        lightCard->end();
+        pty += cardGap;
+
+        // ---- WORLD: water, weather, the scenery and the demo ride
+        const int oceanH = 26;
+        Fl_Group *worldCard = UiTheme::beginCard(cardX, pty, cardW,
+                                                 titleH + rowH + gap + oceanH + bottomPad, "World");
+        pty += titleH;
+
+        waterButton = new Fl_Button(innerX, pty, colW, rowH, "Water");
+        togglify(waterButton, 1);
+        waterButton->tooltip("Ocean with reflections, refraction and foam (needs Light+)");
+        rainButton = new Fl_Button(col2, pty, colW, rowH, "Rain");
+        togglify(rainButton);
+        rainButton->tooltip("Rain: wet reflective ground, rain streaks and ripples on the water "
+                            "(needs Light+)");
+        sceneryButton = new Fl_Button(col3, pty, col3W, rowH, "Scenery");
+        togglify(sceneryButton, 1);
+        sceneryButton->tooltip("The island's mountains, canyon, volcano and village.\n"
+                               "Off: level grass, for editing a track of your own.");
+
+        pty += rowH + gap;
+        Fl_Button *ocean = new Fl_Button(innerX, pty, innerW, oceanH, "Grand Tour");
+        UiTheme::styleAccentButton(ocean);
+        ocean->callback((Fl_Callback *)grandTourCB, this);
+        ocean->tooltip("Ride the whole island: up the snow mountain, through the canyon,\n"
+                       "over the volcano's crater, through the mine and under the sea.");
+
+        pty += oceanH + bottomPad;
+        worldCard->end();
+        pty += cardGap;
 
         // TODO: add widgets for all of your fancier features here
 #ifdef EXAMPLE_SOLUTION
         makeExampleWidgets(this, pty);
 #endif
 
-        // we need to make a little phantom widget to have things resize correctly
-        Fl_Box *resizebox = new Fl_Box(600, 595, 200, 5);
+        // we need to make a little phantom widget to have things resize correctly:
+        // the cards keep their size and only this strip below them stretches
+        Fl_Box *resizebox = new Fl_Box(panelX, pty, 200, kPanelHeight - pty);
         widgets->resizable(resizebox);
 
         widgets->end();
@@ -196,6 +386,80 @@ TrainWindow::TrainWindow(const int x, const int y)
 
     // set up callback on idle
     Fl::add_idle((void (*)(void *))runButtonCB, this);
+
+    // keep the water, clouds and plants moving even when the train is stopped
+    Fl::add_timeout(1.0 / 30.0, animateEffectsCB, this);
+
+    // The program opens on the demo: the Grand Tour seen from the train, in
+    // a window wide enough to enjoy the view. Run starts the ride.
+    resize(x, y, 1180, kPanelHeight);
+    grandTourCB(nullptr, this);
+}
+
+//************************************************************************
+//
+// * Redraw about 30 times a second while the shader effects are on
+//========================================================================
+void TrainWindow::animateEffectsCB(void *data)
+{
+    TrainWindow *tw = static_cast<TrainWindow *>(data);
+    if (tw->lightingButton->value() && !tw->runButton->value())
+        tw->trainView->damage(1);
+    Fl::repeat_timeout(1.0 / 30.0, animateEffectsCB, data);
+}
+
+//************************************************************************
+//
+// * One of the Transform fields was edited: move the selected control point
+//========================================================================
+void TrainWindow::transformCB(Fl_Widget *, void *data)
+{
+    TrainWindow *tw = static_cast<TrainWindow *>(data);
+    const int selected = tw->trainView->selectedCube;
+    if (selected < 0 || selected >= static_cast<int>(tw->m_Track.points.size()))
+        return;
+    Pnt3f &pos = tw->m_Track.points[static_cast<size_t>(selected)].pos;
+    pos.x = static_cast<float>(tw->pointX->value());
+    pos.y = static_cast<float>(tw->pointY->value());
+    pos.z = static_cast<float>(tw->pointZ->value());
+    tw->trainView->damage(1);
+}
+
+//************************************************************************
+//
+// * Shows the selected control point in the Transform fields, greyed out
+//   when nothing is selected. A field being typed in is left alone.
+//========================================================================
+void TrainWindow::syncTransform()
+{
+    const int selected = trainView->selectedCube;
+    const bool valid = selected >= 0 && selected < static_cast<int>(m_Track.points.size());
+    Fl_Value_Input *fields[3] = {pointX, pointY, pointZ};
+    float values[3] = {0.0f, 0.0f, 0.0f};
+    if (valid)
+    {
+        const Pnt3f &pos = m_Track.points[static_cast<size_t>(selected)].pos;
+        values[0] = pos.x;
+        values[1] = pos.y;
+        values[2] = pos.z;
+    }
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        Fl_Value_Input *field = fields[axis];
+        if (valid != (field->active() != 0))
+        {
+            if (valid)
+                field->activate();
+            else
+                field->deactivate();
+        }
+        if (Fl::focus() == &field->input)
+            continue;
+        // one decimal is what the field shows
+        const double shown = floor(static_cast<double>(values[axis]) * 10.0 + 0.5) / 10.0;
+        if (field->value() != shown)
+            field->value(shown);
+    }
 }
 
 //************************************************************************
@@ -205,9 +469,9 @@ TrainWindow::TrainWindow(const int x, const int y)
 void TrainWindow::togglify(Fl_Button *b, int val)
 //========================================================================
 {
-    b->type(FL_TOGGLE_BUTTON);       // toggle
-    b->value(val);                   // turned off
-    b->selection_color((Fl_Color)3); // yellow when pressed
+    b->type(FL_TOGGLE_BUTTON); // toggle
+    b->value(val);             // turned off
+    UiTheme::styleToggle(b);   // neon cyan when on, dark when off
     b->callback((Fl_Callback *)damageCB, this);
 }
 

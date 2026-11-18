@@ -285,7 +285,13 @@ int FlyCam::keyForScanCode(unsigned scan, bool extended)
     case 0x21:
         return 'f';
     case 0x13:
-        return 'r';
+        return 'r'; // tilts the selected control point (TrainView)
+    case 0x22:
+        return 'g'; // moves the selected control point (TrainView)
+    case 0x47:
+        // Home goes back to the World view. Without the E0 prefix this is
+        // numpad 7, which TrainView reads as the Top camera through FLTK.
+        return extended ? FL_Home : 0;
     case 0x39:
         return ' ';
     case 0x2A:
@@ -477,7 +483,7 @@ void FlyCam::setProjection(bool doClear) const
     if (doClear)
         glLoadIdentity();
     const double aspect = (double)wind->w() / (double)wind->h();
-    gluPerspective(fieldOfView, aspect, .1, 2000);
+    gluPerspective(fieldOfView, aspect, .1, 3000);
 
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
