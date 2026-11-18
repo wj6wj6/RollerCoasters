@@ -1287,9 +1287,9 @@ void buildCastle(Grid &g, const Clearance &clear)
             const int floor = high + 1;
             if (high - low > 3 || floor <= 1 || floor > kMaxY - 18)
                 continue;
-            const int far = (x0 + 2 > cx ? x0 + 2 - cx : cx - x0 - 2) +
-                            (z0 + 2 > kFallLipZ ? z0 + 2 - kFallLipZ : kFallLipZ - z0 - 2);
-            const int score = (high - low) * 4 + (floor > lip ? floor - lip : lip - floor) + far;
+            const int away = (x0 + 2 > cx ? x0 + 2 - cx : cx - x0 - 2) +
+                             (z0 + 2 > kFallLipZ ? z0 + 2 - kFallLipZ : kFallLipZ - z0 - 2);
+            const int score = (high - low) * 4 + (floor > lip ? floor - lip : lip - floor) + away;
             if (score >= bestScore)
                 continue;
             // the keep is 9 high with its roof, the tower 15 with its spire
