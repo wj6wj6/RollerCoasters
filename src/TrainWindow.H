@@ -35,7 +35,7 @@
 #include <FL/Fl_Value_Input.H>
 #include <FL/Fl_Value_Slider.H>
 #include <FL/Fl_Browser.H>
-#include <FL/Fl_Choice.H>
+#include <FL/Fl_Menu_Button.H>
 #pragma warning(pop)
 
 #include <string>
@@ -121,10 +121,14 @@ class TrainWindow : public Fl_Double_Window
     Fl_Button *waterButton;     // reflective ocean around the island
     Fl_Button *rainButton;      // rain: wet ground, streaks and ripples
     Fl_Button *sceneryButton;   // the island's scenery, or level grass
-    // the island's textures: built in, a texture pack found on disk, or
-    // one opened from anywhere (the last item); see TexturePack.h
-    Fl_Choice *texturePackChoice;
+    // the island's textures: a button showing the pack in use whose list
+    // holds "Built-in", the packs found on disk (and one opened from
+    // elsewhere), "Open pack..." and "Open texturepacks folder"; see
+    // TexturePack.h
+    Fl_Menu_Button *texturePackMenu;
     std::vector<std::string> texturePackPaths; // for the items after "Built-in"
+    std::string texturePackPath;               // the pack in use, empty when built in
+    std::string texturePackLabel;              // "Textures: <name>"
     void listTexturePacks(const std::string &select = std::string());
     Fl_Button *editButton;  // show the control points for editing
     Fl_Button *bloomButton; // bloom and god rays

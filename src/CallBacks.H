@@ -57,7 +57,8 @@ void saveCB(Fl_Widget *, TrainWindow *tw);
 // Load the demo ride over the island and under the sea (see OceanWorld) and ride it
 void grandTourCB(Fl_Widget *, TrainWindow *tw);
 
-// A texture pack was picked (or "Open pack..."): load it for the island
+// The texture pack list: a pack picked (load it for the island), "Open
+// pack..." or "Open texturepacks folder"
 void texturePackCB(Fl_Widget *, TrainWindow *tw);
 
 // roll the control points
