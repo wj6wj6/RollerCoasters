@@ -8,6 +8,7 @@
 #include "TrackInsert.h"
 
 #include <cmath>
+#include <initializer_list>
 
 namespace
 {
@@ -39,6 +40,20 @@ float distanceSquared(float ax, float ay, float bx, float by)
 {
     return (ax - bx) * (ax - bx) + (ay - by) * (ay - by);
 }
+
+float distanceSquared(const Pnt3f &a, const Pnt3f &b)
+{
+    return (a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) + (a.z - b.z) * (a.z - b.z);
+}
+
+// The tilt halfway along: blended from the two points around it
+// (normalize() turns a zero vector straight up).
+Pnt3f blendedUp(const ControlPoint &before, const ControlPoint &after, float t)
+{
+    Pnt3f up = before.orient * (1.0f - t) + after.orient * t;
+    up.normalize();
+    return up;
+}
 } // namespace
 
 ControlPoint TrackInsert::pointAt(const CTrack &track, float u, TrackSplineType splineType)
@@ -63,11 +78,7 @@ ControlPoint TrackInsert::pointAt(const CTrack &track, float u, TrackSplineType 
                     (6.0f * spot.y - before.pos.y - after.pos.y) * 0.25f,
                     (6.0f * spot.z - before.pos.z - after.pos.z) * 0.25f);
 
-    // tilt blended between the two points around it (normalize() turns a
-    // zero vector straight up)
-    Pnt3f up = before.orient * (1.0f - t) + after.orient * t;
-    up.normalize();
-    return ControlPoint(pos, up);
+    return ControlPoint(pos, blendedUp(before, after, t));
 }
 
 float TrackInsert::trainAfterInsert(float trainU, float u, int count)
@@ -100,6 +111,60 @@ int TrackInsert::insertAt(CTrack &track, float u, TrackSplineType splineType)
     float t = 0.0f;
     split(u, count, segment, t);
     const ControlPoint point = pointAt(track, u, splineType);
+    track.trainU = trainAfterInsert(track.trainU, u, count);
+    const int index = segment + 1;
+    track.points.insert(track.points.begin() + index, point);
+    return index;
+}
+
+float TrackInsert::nearest(const CTrack &track, const Pnt3f &position, TrackSplineType splineType)
+{
+    const int count = static_cast<int>(track.points.size());
+    if (count < 4)
+        return 0.0f;
+    // the nearest of evenly spaced samples, then halve the step around it
+    const int steps = 48;
+    float step = 1.0f / static_cast<float>(steps);
+    float bestU = 0.0f;
+    float best = distanceSquared(track.evaluatePosition(0.0f, splineType), position);
+    for (int i = 1; i < count * steps; ++i)
+    {
+        const float u = static_cast<float>(i) * step;
+        const float d = distanceSquared(track.evaluatePosition(u, splineType), position);
+        if (d < best)
+        {
+            best = d;
+            bestU = u;
+        }
+    }
+    for (int round = 0; round < 12; ++round)
+    {
+        step *= 0.5f;
+        for (const float u : {bestU - step, bestU + step})
+        {
+            const float d = distanceSquared(track.evaluatePosition(u, splineType), position);
+            if (d < best)
+            {
+                best = d;
+                bestU = u;
+            }
+        }
+    }
+    return wrap(bestU, count);
+}
+
+int TrackInsert::insertNear(CTrack &track, const Pnt3f &position, TrackSplineType splineType)
+{
+    const int count = static_cast<int>(track.points.size());
+    if (count < 4)
+        return -1;
+    const float u = nearest(track, position, splineType);
+    int segment = 0;
+    float t = 0.0f;
+    split(u, count, segment, t);
+    const ControlPoint &before = track.points[static_cast<size_t>(segment)];
+    const ControlPoint &after = track.points[static_cast<size_t>((segment + 1) % count)];
+    const ControlPoint point(position, blendedUp(before, after, t));
     track.trainU = trainAfterInsert(track.trainU, u, count);
     const int index = segment + 1;
     track.points.insert(track.points.begin() + index, point);

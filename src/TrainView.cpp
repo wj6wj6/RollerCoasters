@@ -108,6 +108,8 @@ static int touchpadWheel(void *event, void *data)
         view->headLook.scroll(dx, dy);
         view->damage(1);
     }
+    else if (fly && view->placingInFly())
+        view->adjustPlaceDepth(dy); // adding a point: the wheel sets its distance
     else if (fly)
     {
         view->flyCam.scroll(dx, dy, state, precise);
@@ -802,17 +804,68 @@ void TrainView::beginPlacePoint()
     }
     if (m_editMode != EDIT_IDLE)
         endEdit(true);
-    setMouseCaptured(false);
     m_placing = true;
     m_placeHit = false;
+    m_placeFly = tw->flyCam->value() != 0;
+    if (m_placeFly)
+    {
+        // In Fly the new point is held at the crosshair and the wheel sets how
+        // far ahead: start on the track if it is under the crosshair, else as
+        // far as the last one. The mouse steers the view, so the crosshair aims.
+        const TrackSplineType splineType = static_cast<TrackSplineType>(tw->splineBrowser->value());
+        float u = 0.0f;
+        if (m_editCameraValid &&
+            TrackInsert::pick(*m_pTrack, splineType, m_editCamera, w() / 2, h() / 2, 14.0f, u))
+        {
+            const Pnt3f spot = m_pTrack->evaluatePosition(u, splineType);
+            float ex = 0.0f, ey = 0.0f, ez = 0.0f;
+            flyCam.position(ex, ey, ez);
+            const float dx = spot.x - ex, dy = spot.y - ey, dz = spot.z - ez;
+            m_placeDepth = sqrtf(dx * dx + dy * dy + dz * dz);
+        }
+        adjustPlaceDepth(0.0f); // keeps it within the limits
+        setMouseCaptured(true);
+    }
+    else
+        setMouseCaptured(false);
     take_focus(); // so Esc comes here even straight after the button
     tw->damageMe();
+}
+
+bool TrainView::placingInFly() const
+{
+    return m_placing && m_placeFly && tw->flyCam->value();
+}
+
+// The wheel in Fly while adding a point: up pushes the point further away.
+void TrainView::adjustPlaceDepth(float wheelDy)
+{
+    m_placeDepth *= powf(1.15f, -wheelDy);
+    if (m_placeDepth < kPlaceDepthMin)
+        m_placeDepth = kPlaceDepthMin;
+    if (m_placeDepth > kPlaceDepthMax)
+        m_placeDepth = kPlaceDepthMax;
+    damage(1);
+}
+
+// Where the point being added in Fly is now: at the crosshair, m_placeDepth
+// ahead of the eye; and the spot on the track it will be linked in at.
+void TrainView::updateFlyPlace()
+{
+    float ex = 0.0f, ey = 0.0f, ez = 0.0f, fx = 0.0f, fy = 0.0f, fz = 0.0f;
+    flyCam.position(ex, ey, ez);
+    flyCam.forward(fx, fy, fz);
+    m_placeSpot = Pnt3f(ex + fx * m_placeDepth, ey + fy * m_placeDepth, ez + fz * m_placeDepth);
+    const TrackSplineType splineType = static_cast<TrackSplineType>(tw->splineBrowser->value());
+    m_placeU = TrackInsert::nearest(*m_pTrack, m_placeSpot, splineType);
+    m_placeHit = true;
 }
 
 void TrainView::endPlacePoint()
 {
     m_placing = false;
     m_placeHit = false;
+    m_placeFly = false;
     damage(1);
 }
 
@@ -839,11 +892,14 @@ void TrainView::updatePlaceHover(int mouseX, int mouseY)
 // as usual, so the camera can still be turned and zoomed.
 bool TrainView::placeEvent(int event)
 {
-    if (!canEdit())
+    // gave up when Edit goes off or the camera changes between Fly and the rest
+    if (!canEdit() || m_placeFly != (tw->flyCam->value() != 0))
     {
         endPlacePoint();
         return false;
     }
+    if (m_placeFly)
+        return flyPlaceEvent(event);
     switch (event)
     {
     case FL_MOVE:
@@ -871,6 +927,45 @@ bool TrainView::placeEvent(int event)
         selectedCube = index;
         beginEdit(EDIT_DRAG, TransformGizmo::VIEW, mx, my);
         m_editJoinsInsert = true;
+        tw->damageMe();
+        return true;
+    }
+    case FL_KEYBOARD:
+        if (Fl::event_key() == FL_Escape)
+        {
+            endPlacePoint();
+            return true;
+        }
+        return false;
+    default:
+        return false;
+    }
+}
+
+// Adding a point in Fly: the mouse looks and the keys fly as usual, the wheel
+// sets the distance, a left click puts the point at the crosshair.
+bool TrainView::flyPlaceEvent(int event)
+{
+    switch (event)
+    {
+    case FL_MOUSEWHEEL:
+        adjustPlaceDepth(static_cast<float>(Fl::event_dy()));
+        return true;
+    case FL_PUSH: {
+        if (Fl::event_button() != FL_LEFT_MOUSE)
+        {
+            endPlacePoint();
+            return true;
+        }
+        updateFlyPlace();
+        const TrackSplineType splineType = static_cast<TrackSplineType>(tw->splineBrowser->value());
+        const TrackHistory::Snapshot before = TrackHistory::capture(*m_pTrack, selectedCube);
+        const int index = TrackInsert::insertNear(*m_pTrack, m_placeSpot, splineType);
+        endPlacePoint();
+        if (index < 0)
+            return true;
+        tw->pushHistory(before);
+        selectedCube = index; // the mouse stays captured: fly on, or press G to move it
         tw->damageMe();
         return true;
     }
@@ -1049,19 +1144,41 @@ void TrainView::drawEditOverlay()
     }
 
     // adding a point: a marker where it would go, drawn over everything
-    const bool placing = m_placing && canEdit();
+    const bool placing = m_placing && canEdit() && m_placeFly == (tw->flyCam->value() != 0);
+    if (placing && m_placeFly)
+        updateFlyPlace();
     if (placing && m_placeHit)
     {
-        glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_POINT_BIT);
+        glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_POINT_BIT | GL_LINE_BIT);
         glDisable(GL_LIGHTING);
         glDisable(GL_TEXTURE_2D);
         glDisable(GL_DEPTH_TEST);
-        glPointSize(15.0f);
+        // In Fly the dot is off the track: a line shows where it joins the
+        // track, and a nearer dot is drawn bigger, to judge the distance.
+        float dotSize = 10.0f;
+        if (m_placeFly)
+        {
+            const TrackSplineType splineType =
+                static_cast<TrackSplineType>(tw->splineBrowser->value());
+            const Pnt3f joint = m_pTrack->evaluatePosition(m_placeU, splineType);
+            glLineWidth(2.0f);
+            glColor3f(1.0f, 0.85f, 0.1f);
+            glBegin(GL_LINES);
+            glVertex3f(m_placeSpot.x, m_placeSpot.y, m_placeSpot.z);
+            glVertex3f(joint.x, joint.y, joint.z);
+            glEnd();
+            dotSize = 600.0f / m_placeDepth;
+            if (dotSize < 6.0f)
+                dotSize = 6.0f;
+            if (dotSize > 24.0f)
+                dotSize = 24.0f;
+        }
+        glPointSize(dotSize + 5.0f);
         glColor3f(0.05f, 0.05f, 0.05f);
         glBegin(GL_POINTS);
         glVertex3f(m_placeSpot.x, m_placeSpot.y, m_placeSpot.z);
         glEnd();
-        glPointSize(10.0f);
+        glPointSize(dotSize);
         glColor3f(1.0f, 0.85f, 0.1f);
         glBegin(GL_POINTS);
         glVertex3f(m_placeSpot.x, m_placeSpot.y, m_placeSpot.z);
@@ -1079,7 +1196,12 @@ void TrainView::drawEditOverlay()
                    : (tw->chaseCam->value()
                           ? "Chase Camera"
                           : (tw->flyCam->value() ? "Fly Camera" : "User Perspective")));
-    if (placing)
+    if (placing && m_placeFly)
+        snprintf(text, sizeof(text),
+                 "Add point: %.1f ahead   [Wheel] nearer / farther   [Click] put it here   "
+                 "[Esc] cancel",
+                 static_cast<double>(m_placeDepth));
+    else if (placing)
         snprintf(text, sizeof(text), "Add point: %s   [Esc] cancel",
                  m_placeHit ? "click to put it here, hold to drag it"
                             : "point at the track where it should go");

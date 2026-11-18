@@ -127,6 +127,23 @@ int main()
         expect(distance(before, after) < 1.0e-3f, "the train is in the same place after an insert");
     }
 
+    // Fly: a point put off the track, at the crosshair
+    {
+        CTrack track = makeTrack();
+        const Pnt3f onTrack = track.evaluatePosition(4.4f, TRACK_SPLINE_CARDINAL);
+        const float u = TrackInsert::nearest(track, onTrack, TRACK_SPLINE_CARDINAL);
+        expect(std::fabs(u - 4.4f) < 0.01f,
+               "the nearest spot to a point on the track is that spot");
+
+        const Pnt3f above(onTrack.x, onTrack.y + 15.0f, onTrack.z);
+        track.trainU = 5.5f;
+        const int index = TrackInsert::insertNear(track, above, TRACK_SPLINE_CARDINAL);
+        expect(index == 5 && track.points.size() == 7,
+               "a point above segment 4 goes in between points 4 and 5");
+        expect(distance(track.points[5].pos, above) < 1.0e-4f, "it is exactly where it was put");
+        expect(std::fabs(track.trainU - 6.5f) < 1.0e-5f, "the train after it moves up one");
+    }
+
     // picking the track on screen
     {
         CTrack track = makeTrack();

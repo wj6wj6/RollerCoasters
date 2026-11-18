@@ -114,6 +114,14 @@ class TrainView : public Fl_Gl_Window
     void endPlacePoint();
     void updatePlaceHover(int mouseX, int mouseY);
     bool placeEvent(int event);
+    bool flyPlaceEvent(int event);
+    void updateFlyPlace();
+
+  public:
+    // In Fly a new point waits at the crosshair; the wheel sets how far ahead
+    // (the system wheel handler in TrainView.cpp asks these).
+    bool placingInFly() const;
+    void adjustPlaceDepth(float wheelDy);
 
     // shader lighting, shadow maps and post effects (TrainViewEffects.cpp)
     bool advancedLightingOn();
@@ -213,6 +221,10 @@ class TrainView : public Fl_Gl_Window
     bool m_placeHit = false;                // ... and the mouse is over the track
     float m_placeU = 0.0f;                  // where on the track (track parameter)
     Pnt3f m_placeSpot;                      // ... and where that is in the world
+    bool m_placeFly = false;                // adding in Fly: at the crosshair, not on the track
+    float m_placeDepth = 30.0f;             // ... this far ahead of the eye
+    static constexpr float kPlaceDepthMin = 2.0f;
+    static constexpr float kPlaceDepthMax = 1500.0f;
 
     // Weather, eased towards the Rain button (TrainViewEffects.cpp).
     float m_rain = 0.0f;         // 0 dry sky, 1 pouring

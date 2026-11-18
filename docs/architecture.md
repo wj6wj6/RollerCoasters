@@ -63,6 +63,8 @@ flowchart LR
 新增控制點（`Add Pt`、`Shift` + `D`）先進入放置模式：`TrackInsert::pick()` 把軌道取樣投影到螢幕，找滑鼠附近的軌道參數 u；
 左鍵點下時 `TrackInsert::insertAt()` 把新點插在 u 前後兩點之間，位置解成「軌道仍經過點擊處」（Linear／Cardinal 直接放在該處，
 B-spline 以 `(6S - P前 - P後) / 4` 反解），方向由前後兩點內插，`trainU` 依被切開的段重新對應，接著選取新點並進入拖曳。
+Fly 相機下則改由 `flyPlaceEvent()` 處理：新點固定在準心前方 `m_placeDepth` 處，滾輪（system handler 與 `FL_MOUSEWHEEL` 兩條路徑）調整距離而不改飛行速度，
+`TrackInsert::insertNear()` 把它原地插在離它最近的軌道段前後兩點之間。
 這些都是純數學，由 `TrackInsertCheck` 測試。
 上一步／下一步由 `TrainWindow` 持有的 `TrackHistory` 負責：每次修改控制點前存一份整條軌道（點、`trainU`、選取）的快照，
 新增、刪除、`Load`、`Reset`、`Grand Tour`、R±X／Z、`Transform` 欄位在 `CallBacks`／`TrainWindow` 記錄；拖曳與 `G`／`R` 在 `beginEdit()` 先拍快照，
