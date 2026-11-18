@@ -54,7 +54,7 @@ flowchart LR
     Callbacks -->|Grand Tour| Ocean
 ```
 
-材質包：`World` 面板的 `Textures` 選單由 `TrainWindow::listTexturePacks()` 列出 `TexturePack::findAll()` 在搜尋資料夾（程式旁、工作資料夾的 `texturepacks/` 與 `data/texturepacks/`）找到的 `.zip` 與資料夾。選定後 `texturePackCB()` 以 `TexturePack::Pack::open()` 開啟（zip 由 `ZipArchive` 讀目錄、自己的 DEFLATE 解碼器解壓；包在一層資料夾裡時以 `pack.mcmeta` 等標記找根目錄），交給 `TrainView::setTexturePack()` → `LandWorld::setTexturePack()`。下一次 `draw()` 對每種貼圖先問材質包（本程式格式 `textures/<名稱>.png`，再依對照表找資源包的 `block/`、`blocks/` 圖片；PNG 由 FLTK 解碼，取動畫第一格、縮成 2 的次方、灰階的草與樹葉染色、實心方塊補滿透明處），沒有就用 `LandTextures::make()`，再以 `PixelArt::uploadInto()` 寫進原本的貼圖名稱。顯示清單綁定的是貼圖名稱，所以換材質包不必重建島嶼或顯示清單。
+材質包：`World` 面板的 `Textures` 選單由 `TrainWindow::listTexturePacks()` 列出 `TexturePack::findAll()` 在搜尋資料夾（exe 旁的 `texturepacks/`，建置與安裝時建立；以及工作資料夾的 `texturepacks/` 與 `data/texturepacks/`，`main()` 啟動時已切到 exe 的資料夾）找到的 `.zip` 與資料夾。選定後 `texturePackCB()` 以 `TexturePack::Pack::open()` 開啟（zip 由 `ZipArchive` 讀目錄、自己的 DEFLATE 解碼器解壓；包在一層資料夾裡時以 `pack.mcmeta` 等標記找根目錄），交給 `TrainView::setTexturePack()` → `LandWorld::setTexturePack()`。下一次 `draw()` 對每種貼圖先問材質包（本程式格式 `textures/<名稱>.png`，再依對照表找資源包的 `block/`、`blocks/` 圖片；PNG 由 FLTK 解碼，取動畫第一格、縮成 2 的次方、灰階的草與樹葉染色、實心方塊補滿透明處），沒有就用 `LandTextures::make()`，再以 `PixelArt::uploadInto()` 寫進原本的貼圖名稱。顯示清單綁定的是貼圖名稱，所以換材質包不必重建島嶼或顯示清單。
 
 `TrainWindow` 持有場景狀態與 widget；`TrainView` 讀取場景與 UI 選項並繪圖。
 `TrackRenderer` 建立累積弧長表，依弧長等距擺放枕木，並以程式產生的像素材質畫方塊風鐵軌；`makeTrackFrame()` 也放在這裡，供列車與相機共用。

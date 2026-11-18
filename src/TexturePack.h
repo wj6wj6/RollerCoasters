@@ -43,8 +43,10 @@ struct Found
     std::string path;
 };
 
-// Where packs are looked for: texturepacks/ beside the program, and
-// texturepacks/ and data/texturepacks/ in the working folder.
+// Where packs are looked for: texturepacks/ beside the program (the build
+// and install make it), and texturepacks/ and data/texturepacks/ in the
+// working folder, which main() makes the program's own; a folder reached
+// two ways is listed once.
 std::vector<std::string> searchFolders();
 
 // The packs in those folders: every .zip and every folder, sorted by name.

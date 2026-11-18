@@ -9,7 +9,7 @@
 
 ## 決策
 
-- 新增 `TexturePack` 模組：在執行中讀取使用者放進 `texturepacks/`（程式旁或工作資料夾，以及 `data/texturepacks/`）的資料夾或 zip，或由 `Open pack...` 選取的檔案。程式本身不附帶、不散布任何第三方材質包或其圖片，內建貼圖仍是程序繪製。
+- 新增 `TexturePack` 模組：在執行中讀取使用者放進 `texturepacks/`（exe 旁，建置與安裝時建立空資料夾；另外也找工作資料夾的 `texturepacks/` 與 `data/texturepacks/`，`main()` 啟動時已切到 exe 的資料夾，所以通常是同一處）的資料夾或 zip，或由 `Open pack...` 選取的檔案。程式本身不附帶、不散布任何第三方材質包或其圖片，內建貼圖仍是程序繪製。
 - 支援兩種格式：本程式自己的 `textures/<名稱>.png`（每種貼圖都能換），以及資源包的 `block/`（新）與 `blocks/`（舊）資料夾，以方塊名稱對照表對應到島上的貼圖。灰階的草地與樹葉依方塊遊戲的慣例染色；動畫取第一格；實心方塊補滿透明處；沒有的貼圖維持內建。
 - zip 解壓用自己寫的 DEFLATE 解碼器（`ZipArchive`，依 RFC 1951），不新增第三方程式庫，也不需要更新 `vendor-lock`。內附 FLTK 雖含 zlib 靜態庫，但沒有附 zlib 標頭，自行宣告其結構容易與版本不合。PNG 解碼用內附 FLTK 的 `Fl_PNG_Image`（記憶體版建構子）。
 - 換材質包時把新圖片寫進原本的 OpenGL 貼圖名稱（`PixelArt::uploadInto()`），顯示清單不必重建，切換是即時的。

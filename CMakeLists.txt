@@ -85,6 +85,7 @@ target_link_libraries(RollerCoasters PRIVATE Utilities glad hid imm32)
 # the build makes the folder and Visual Studio debugs from the exe's folder.
 add_custom_command(TARGET RollerCoasters POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:RollerCoasters>/TrackFiles"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:RollerCoasters>/texturepacks"
     VERBATIM)
 set_target_properties(RollerCoasters PROPERTIES
     VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:RollerCoasters>")
@@ -186,3 +187,5 @@ install(TARGETS RollerCoasters RUNTIME DESTINATION .)
 install(FILES README.md CONTRIBUTING.md AGENTS.md DESTINATION .)
 install(DIRECTORY docs/ DESTINATION docs)
 install(DIRECTORY DESTINATION TrackFiles)
+# where the user puts texture packs (TexturePack.h); none is shipped
+install(DIRECTORY DESTINATION texturepacks)

@@ -123,7 +123,7 @@ pwsh -File scripts/check.ps1 -Stage all -Compiler clang -Config Release
 
 島上的方塊與植物貼圖可以在執行中切換，像方塊遊戲換資源包一樣：`World` 面板的 `Textures` 選單選 `Built-in`（內建）或一個材質包，畫面立刻換上，不需要重新建島。
 
-- 放材質包的位置：程式旁的 `texturepacks/` 資料夾，或工作資料夾裡的 `texturepacks/`、`data/texturepacks/`。每個 `.zip` 或資料夾就是一個材質包，選單依名稱列出。放在別處的可以選 `Open pack...`，挑 `.zip` 或資料夾裡的 `pack.mcmeta`。
+- 放材質包的位置：`RollerCoasters.exe` 旁的 `texturepacks/` 資料夾（建置與安裝時會建立空的資料夾），或 exe 旁的 `data/texturepacks/`。每個 `.zip` 或資料夾就是一個材質包，選單依名稱列出（開啟程式時讀取，新放入的材質包重新開啟程式後出現）。放在別處的可以選 `Open pack...`，挑 `.zip` 或資料夾裡的 `pack.mcmeta`。
 - 讀得懂兩種格式：
   - 方塊遊戲的資源包（Java 版格式）：`assets/minecraft/textures/block/*.png`，較舊的資源包是 `textures/blocks/`；包在 zip 裡多一層資料夾也可以。依方塊名稱對應到島上的方塊（草地、泥土、石頭、圓石、沙、礫石、雪、原木與樹葉、木板、陶土、礦石、花草等），灰階的草地、樹葉、蕨類和藤蔓會照方塊遊戲的方式染成綠色；動畫材質（熔岩等）取第一格；16×、32×、64× 等解析度都可以，最大用到 256×256。
   - 本程式自己的格式：`textures/<名稱>.png`，名稱見 `src/TexturePack.cpp` 的對照表（例如 `grass_top`、`stone`、`leaves_oak`），每一種貼圖都能換，包含方塊遊戲沒有對應的（窗戶、門、水晶、秋色樹葉、竹子）。
