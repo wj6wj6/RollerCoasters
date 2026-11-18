@@ -72,7 +72,7 @@ flowchart LR
 光照 shader 是 GLSL 1.20，直接讀固定管線的 `gl_Vertex`、`gl_Normal`、`gl_Color` 與 texture unit 0，所以既有 `glBegin` 繪圖程式不需修改；
 未綁貼圖時 unit 0 的預設 texture 0 是一個白色 texel。shader 或 frame buffer 建立失敗時自動退回原本畫法。
 
-`Water` 開啟時另外畫 `OceanWorld`：海床是 128×14×128 的方塊格，建好後編成 display list。
+`Water` 開啟時另外畫 `OceanWorld`：海床是 128×14×128 的方塊格，建好後編成 display list。海床大多深於 y = −15，讓大型生物在上方游；島西側朝夕陽的方向例外，`onShelf()` 圍出一片淺礁台（海床頂在 y = −10），上面鋪一層粉紅、紅、橘為主的珊瑚塊（y = −10 到 −5），離海面約 4 單位，從岸上與列車上透過海水看得到，海洋生物的路線都不經過那裡。
 建置時先算 Minecraft 式的光照：天光沿開放的柱子直灌而下、每往旁邊一格少一級，水晶自己發光，
 角落再加 ambient occlusion，結果放進 texture unit 1 的座標（x 發光、y 擺動、z 水晶光、w 天光），所以隧道深處自然變暗。
 岩拱、閘門與隧道是沿著 `Grand Tour` 的三種 spline 挖出來的，植物另外避開軌道周圍的淨空帶，

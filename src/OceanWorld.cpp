@@ -600,10 +600,21 @@ bool keptFlat(float cx, float cz)
     return cx > -150.0f && cx < 100.0f && cz > 150.0f && cz < 285.0f;
 }
 
+// The shallow reef west of the island, towards the sunset: a shelf of sand
+// one block under the surface layer, with coral on it that shows through
+// the water from the shore and the ride. Its outline wanders with noise.
+bool onShelf(float cx, float cz)
+{
+    const float ex = (cx + 130.0f) / 28.0f;
+    const float ez = (cz - 25.0f) / 96.0f;
+    const float wobble = (valueNoise(cx * 0.05f, cz * 0.05f, 37u) - 0.5f) * 0.7f;
+    return ex * ex + ez * ez < 1.0f + wobble && cx < -108.0f;
+}
+
 bool inReef(float cx, float cz)
 {
     return (cx > 112.0f && cx < 262.0f && cz > -72.0f && cz < 62.0f) ||
-           (cx > -215.0f && cx < -105.0f && cz > -190.0f && cz < -92.0f);
+           (cx > -215.0f && cx < -105.0f && cz > -190.0f && cz < -92.0f) || onShelf(cx, cz);
 }
 
 // The top layer of the terraced sea bed at a column centre, `edge` units out
@@ -613,6 +624,8 @@ int seaBedTop(float cx, float cz, float edge)
     float depth =
         1.0f + (edge - 6.0f) / 11.0f + (valueNoise(cx * 0.025f, cz * 0.025f, 7u) - 0.5f) * 2.5f;
     depth = fmaxf(1.0f, fminf(8.0f, depth));
+    if (onShelf(cx, cz))
+        return -3; // the shallow reef's shelf: its coral fills layer -2
     return -static_cast<int>(floorf(depth + 0.5f)) - 1;
 }
 
@@ -850,6 +863,36 @@ void buildReefs(Grid &g)
                     }
                 }
             }
+        }
+}
+
+// The coral of the shallow reef: patches of one colour each, mostly the
+// warm pinks, reds and oranges that glow at sunset, with sand showing
+// between them. One layer only (y = -10 .. -5), so it stays four units
+// under the surface and the ride passes well above it.
+void buildShallowReef(Grid &g)
+{
+    const int warm[5] = {CORAL_PINK, CORAL_RED, CORAL_ORANGE, CORAL_VIOLET, CORAL_YELLOW};
+    for (int bx = -kHalf; bx < kHalf; ++bx)
+        for (int bz = -kHalf; bz < kHalf; ++bz)
+        {
+            const float cx = centerOf(bx), cz = centerOf(bz);
+            if (!onShelf(cx, cz) || g.get(bx, -3, bz) == AIR || g.get(bx, -2, bz) != AIR)
+                continue;
+            const float patch = valueNoise(cx * 0.09f, cz * 0.09f, 43u);
+            const unsigned int h = hash(bx, bz, 307u);
+            if (patch < 0.3f || h % 9u == 0)
+                continue; // sand between the patches
+            const float colour = valueNoise(cx * 0.04f, cz * 0.04f, 47u);
+            // the warm colours twice as often as violet and yellow
+            const int pick = colour < 0.28f   ? 0
+                             : colour < 0.5f  ? 1
+                             : colour < 0.68f ? 2
+                             : colour < 0.84f ? 3
+                                              : 4;
+            g.put(bx, -2, bz, warm[(pick + static_cast<int>(h % 7u == 0)) % 5]);
+            if (g.get(bx, -3, bz) == SAND && h % 4u == 0)
+                g.put(bx, -3, bz, STONE); // rock under the coral here and there
         }
 }
 
@@ -1297,6 +1340,7 @@ void buildWorld(Grid &g)
     buildTerrain(g);
     buildRocks(g);
     buildReefs(g);
+    buildShallowReef(g);
     buildClams(g);
     buildRuins(g);
     buildWreck(g);
