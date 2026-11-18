@@ -144,6 +144,25 @@ int main()
         expect(std::fabs(track.trainU - 6.5f) < 1.0e-5f, "the train after it moves up one");
     }
 
+    // removing a point (Fly left click, Del Pt)
+    {
+        CTrack track = makeTrack();
+        track.trainU = 4.5f;
+        expect(TrackInsert::removeAt(track, 2) && track.points.size() == 5, "a point is removed");
+        expect(std::fabs(track.trainU - 3.5f) < 1.0e-5f, "the train after it moves down one");
+        track.trainU = 1.5f;
+        TrackInsert::removeAt(track, 2);
+        expect(std::fabs(track.trainU - 1.25f) < 1.0e-5f,
+               "the train before the point goes to the first half of the joined segment");
+        expect(!TrackInsert::removeAt(track, 0) && track.points.size() == 4,
+               "never fewer than 4 points");
+        CTrack loop = makeTrack();
+        loop.trainU = 5.5f; // the last segment, from point 5 back to point 0
+        TrackInsert::removeAt(loop, 0);
+        expect(std::fabs(loop.trainU - 4.25f) < 1.0e-5f,
+               "removing point 0 joins the last segment with the first");
+    }
+
     // picking the track on screen
     {
         CTrack track = makeTrack();

@@ -246,3 +246,27 @@ int TrackInsert::pickPoint(const CTrack &track, const TransformGizmo::Camera &ca
     }
     return found;
 }
+
+bool TrackInsert::removeAt(CTrack &track, int index)
+{
+    const int count = static_cast<int>(track.points.size());
+    if (count <= 4 || index < 0 || index >= count)
+        return false;
+    // The segments before and after the point become one: the train on
+    // either half goes to the same half of the joined segment.
+    const int before = (index + count - 1) % count;
+    const int joined = before > index ? before - 1 : before;
+    const float train = wrap(track.trainU, count);
+    const int segment = static_cast<int>(train);
+    const float along = train - static_cast<float>(segment);
+    float moved = 0.0f;
+    if (segment == before)
+        moved = static_cast<float>(joined) + along * 0.5f;
+    else if (segment == index)
+        moved = static_cast<float>(joined) + 0.5f + along * 0.5f;
+    else
+        moved = static_cast<float>(segment > index ? segment - 1 : segment) + along;
+    track.points.erase(track.points.begin() + index);
+    track.trainU = wrap(moved, count - 1);
+    return true;
+}

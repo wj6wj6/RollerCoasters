@@ -108,8 +108,8 @@ static int touchpadWheel(void *event, void *data)
         view->headLook.scroll(dx, dy);
         view->damage(1);
     }
-    else if (fly && view->wheelSetsDepth())
-        view->adjustPlaceDepth(dy); // adding or carrying a point: the wheel sets its distance
+    else if (fly && view->flyBuilding())
+        view->adjustPlaceDepth(dy); // adding a point: the wheel sets its distance
     else if (fly)
     {
         view->flyCam.scroll(dx, dy, state, precise);
@@ -482,9 +482,6 @@ int TrainView::handle(int event)
     // so does adding a point, so a click on the track is not an orbit
     if (m_placing && placeEvent(event))
         return 1;
-    // and carrying a point at the Fly crosshair (right button held)
-    if (m_carrying && carryEvent(event))
-        return 1;
 
     // see if the ArcBall will handle the event - if it does,
     // then we're done
@@ -516,19 +513,12 @@ int TrainView::handle(int event)
                 }
                 return 1;
             }
-            // A left click selects the control point at the crosshair (or
-            // nothing, away from every point); other clicks do nothing while
-            // the mouse steers the view.
+            // With Edit on the mouse buttons build, as in Minecraft: left
+            // removes the point at the crosshair, right places a new one,
+            // middle selects (picks) it. With Edit off they do nothing.
             case FL_PUSH:
-                if (Fl::event_button() == FL_LEFT_MOUSE && canEdit())
-                {
-                    selectedCube = crosshairPoint();
-                    tw->damageMe();
-                }
-                // a right click picks up the point at the crosshair (or the
-                // selected one) to carry along with the view, until the next click
-                else if (Fl::event_button() == FL_RIGHT_MOUSE && canEdit())
-                    beginCarry();
+                if (canEdit())
+                    flyBuildClick(Fl::event_button());
                 return 1;
             case FL_RELEASE:
                 return 1;
@@ -548,6 +538,12 @@ int TrainView::handle(int event)
         // EditKeys.h), so G, R, Alt + D, Delete and Ctrl + Z still work here.
         if (event == FL_KEYBOARD && editKey(Fl::event_key()))
             return 1;
+        // building: the wheel sets how far ahead a new point goes
+        if (event == FL_MOUSEWHEEL && flyBuilding())
+        {
+            adjustPlaceDepth(static_cast<float>(Fl::event_dy()));
+            return 1;
+        }
         const float speedBefore = flyCam.speed();
         const int used = flyCam.handle(event);
         if (flyCam.speed() != speedBefore)
@@ -701,7 +697,6 @@ void TrainView::beginEdit(EditMode mode, TransformGizmo::Handle handle, int mous
 {
     if (!hasSelection())
         return;
-    endCarry(true); // G or R while carrying: put it down first
     m_editStart = m_pTrack->points[static_cast<size_t>(selectedCube)];
     m_editBefore = TrackHistory::capture(*m_pTrack, selectedCube);
     m_editMode = mode;
@@ -803,125 +798,6 @@ void TrainView::finishEdits()
         endEdit(true);
     if (m_placing)
         endPlacePoint();
-    endCarry(true);
-}
-
-// The Fly camera's right, up and forward directions.
-void TrainView::flyAxes(float right[3], float up[3], float forward[3]) const
-{
-    flyCam.forward(forward[0], forward[1], forward[2]);
-    // right = forward x world up, level; up = right x forward
-    right[0] = -forward[2];
-    right[1] = 0.0f;
-    right[2] = forward[0];
-    float length = sqrtf(right[0] * right[0] + right[2] * right[2]);
-    if (length < 1.0e-4f)
-    {
-        const float yaw = flyCam.yaw() * 3.14159265f / 180.0f;
-        right[0] = cosf(yaw);
-        right[2] = sinf(yaw);
-        length = 1.0f;
-    }
-    right[0] /= length;
-    right[2] /= length;
-    up[0] = right[1] * forward[2] - right[2] * forward[1];
-    up[1] = right[2] * forward[0] - right[0] * forward[2];
-    up[2] = right[0] * forward[1] - right[1] * forward[0];
-}
-
-// Right click in Fly: pick up the point at the crosshair (else the selected
-// one) where it is in the view, so it does not jump; it stays picked up
-// until the next click.
-void TrainView::beginCarry()
-{
-    const int aimed = crosshairPoint();
-    if (aimed >= 0)
-        selectedCube = aimed;
-    if (!hasSelection())
-        return;
-    m_carryBefore = TrackHistory::capture(*m_pTrack, selectedCube);
-    const Pnt3f &p = m_pTrack->points[static_cast<size_t>(selectedCube)].pos;
-    float ex = 0.0f, ey = 0.0f, ez = 0.0f;
-    flyCam.position(ex, ey, ez);
-    float axes[3][3];
-    flyAxes(axes[0], axes[1], axes[2]);
-    const float d[3] = {p.x - ex, p.y - ey, p.z - ez};
-    for (int k = 0; k < 3; ++k)
-        m_carryOffset[k] = d[0] * axes[k][0] + d[1] * axes[k][1] + d[2] * axes[k][2];
-    m_carrying = true;
-    tw->damageMe();
-}
-
-// Keeps the carried point where it was in the view.
-void TrainView::updateCarry()
-{
-    if (!hasSelection())
-        return;
-    float ex = 0.0f, ey = 0.0f, ez = 0.0f;
-    flyCam.position(ex, ey, ez);
-    float axes[3][3];
-    flyAxes(axes[0], axes[1], axes[2]);
-    float world[3] = {ex, ey, ez};
-    for (int k = 0; k < 3; ++k)
-        for (int i = 0; i < 3; ++i)
-            world[i] += axes[k][i] * m_carryOffset[k];
-    m_pTrack->points[static_cast<size_t>(selectedCube)].pos = Pnt3f(world[0], world[1], world[2]);
-}
-
-// A second right click puts the point down (one undo step); Esc puts it back.
-void TrainView::endCarry(bool keep)
-{
-    if (!m_carrying)
-        return;
-    m_carrying = false;
-    const int index = m_carryBefore.selected;
-    if (index < 0 || index >= static_cast<int>(m_pTrack->points.size()) ||
-        m_carryBefore.points.size() != m_pTrack->points.size())
-        return;
-    ControlPoint &point = m_pTrack->points[static_cast<size_t>(index)];
-    const ControlPoint &was = m_carryBefore.points[static_cast<size_t>(index)];
-    if (!keep)
-        point = was;
-    else if (point.pos.x != was.pos.x || point.pos.y != was.pos.y || point.pos.z != was.pos.z)
-        tw->pushHistory(m_carryBefore);
-    tw->damageMe();
-}
-
-// Events while carrying a point in Fly. The mouse still looks and the keys
-// still fly; the wheel sets the distance, a click puts it down.
-bool TrainView::carryEvent(int event)
-{
-    if (!canEdit() || !tw->flyCam->value() || !hasSelection())
-    {
-        endCarry(true);
-        return false;
-    }
-    switch (event)
-    {
-    case FL_MOUSEWHEEL:
-        adjustPlaceDepth(static_cast<float>(Fl::event_dy()));
-        return true;
-    case FL_PUSH:
-        // a second right click (or a left click) puts it down
-        if (Fl::event_button() == FL_RIGHT_MOUSE || Fl::event_button() == FL_LEFT_MOUSE)
-            endCarry(true);
-        return true;
-    case FL_RELEASE:
-        return true;
-    case FL_KEYBOARD:
-        if (Fl::event_key() == FL_Escape)
-        {
-            endCarry(false);
-            return true;
-        }
-        return false;
-    case FL_UNFOCUS:
-    case FL_HIDE:
-        endCarry(true);
-        return false;
-    default:
-        return false;
-    }
 }
 
 // The control point at the Fly crosshair, or -1.
@@ -947,60 +823,66 @@ void TrainView::beginPlacePoint()
     }
     if (m_editMode != EDIT_IDLE)
         endEdit(true);
+    take_focus(); // so Esc comes here even straight after the button
+    // In Fly, building is on whenever the mouse steers the view: right click
+    // places a point at the crosshair, so this only takes the mouse.
+    if (tw->flyCam->value())
+    {
+        setMouseCaptured(true);
+        tw->damageMe();
+        return;
+    }
+    setMouseCaptured(false);
     m_placing = true;
     m_placeHit = false;
-    m_placeFly = tw->flyCam->value() != 0;
-    if (m_placeFly)
-    {
-        // In Fly the new point is held at the crosshair and the wheel sets how
-        // far ahead: start on the track if it is under the crosshair, else as
-        // far as the last one. The mouse steers the view, so the crosshair aims.
-        const TrackSplineType splineType = static_cast<TrackSplineType>(tw->splineBrowser->value());
-        float u = 0.0f;
-        if (m_editCameraValid &&
-            TrackInsert::pick(*m_pTrack, splineType, m_editCamera, w() / 2, h() / 2, 14.0f, u))
-        {
-            const Pnt3f spot = m_pTrack->evaluatePosition(u, splineType);
-            float ex = 0.0f, ey = 0.0f, ez = 0.0f;
-            flyCam.position(ex, ey, ez);
-            const float dx = spot.x - ex, dy = spot.y - ey, dz = spot.z - ez;
-            m_placeDepth = sqrtf(dx * dx + dy * dy + dz * dz);
-        }
-        adjustPlaceDepth(0.0f); // keeps it within the limits
-        setMouseCaptured(true);
-    }
-    else
-        setMouseCaptured(false);
-    take_focus(); // so Esc comes here even straight after the button
     tw->damageMe();
 }
 
-bool TrainView::wheelSetsDepth() const
+// Fly with the mouse captured and Edit on: the mouse buttons build.
+bool TrainView::flyBuilding() const
 {
-    return (m_placing && m_placeFly && tw->flyCam->value()) || m_carrying;
+    return tw->flyCam->value() && mouseCaptured && canEdit() && m_editMode == EDIT_IDLE &&
+           !m_placing;
 }
 
-// The wheel in Fly while adding or carrying a point: up pushes it further away.
+// A mouse button while building in Fly, as in Minecraft: left removes the
+// point at the crosshair, right places a new point at the crosshair (the wheel
+// sets how far ahead), middle selects the point at the crosshair.
+void TrainView::flyBuildClick(int button)
+{
+    const int aimed = crosshairPoint();
+    if (button == FL_MIDDLE_MOUSE)
+        selectedCube = aimed;
+    else if (button == FL_LEFT_MOUSE && aimed >= 0)
+    {
+        const TrackHistory::Snapshot before = TrackHistory::capture(*m_pTrack, selectedCube);
+        if (TrackInsert::removeAt(*m_pTrack, aimed))
+        {
+            tw->pushHistory(before);
+            if (selectedCube == aimed)
+                selectedCube = -1;
+            else if (selectedCube > aimed)
+                --selectedCube;
+        }
+    }
+    else if (button == FL_RIGHT_MOUSE)
+    {
+        updateFlyPlace();
+        const TrackSplineType splineType = static_cast<TrackSplineType>(tw->splineBrowser->value());
+        const TrackHistory::Snapshot before = TrackHistory::capture(*m_pTrack, selectedCube);
+        const int index = TrackInsert::insertNear(*m_pTrack, m_placeSpot, splineType);
+        if (index >= 0)
+        {
+            tw->pushHistory(before);
+            selectedCube = index; // G moves it, R tilts it
+        }
+    }
+    tw->damageMe();
+}
+
+// The wheel while building in Fly: up pushes the new point further away.
 void TrainView::adjustPlaceDepth(float wheelDy)
 {
-    if (m_carrying)
-    {
-        // the carried point slides along the line from the eye through it
-        const float length =
-            sqrtf(m_carryOffset[0] * m_carryOffset[0] + m_carryOffset[1] * m_carryOffset[1] +
-                  m_carryOffset[2] * m_carryOffset[2]);
-        float wanted = length * powf(1.15f, -wheelDy);
-        if (wanted < kPlaceDepthMin)
-            wanted = kPlaceDepthMin;
-        if (wanted > kPlaceDepthMax)
-            wanted = kPlaceDepthMax;
-        if (length > 1.0e-4f)
-            for (float &v : m_carryOffset)
-                v *= wanted / length;
-        updateCarry();
-        damage(1);
-        return;
-    }
     m_placeDepth *= powf(1.15f, -wheelDy);
     if (m_placeDepth < kPlaceDepthMin)
         m_placeDepth = kPlaceDepthMin;
@@ -1009,8 +891,8 @@ void TrainView::adjustPlaceDepth(float wheelDy)
     damage(1);
 }
 
-// Where the point being added in Fly is now: at the crosshair, m_placeDepth
-// ahead of the eye; and the spot on the track it will be linked in at.
+// Where a point placed in Fly would go: at the crosshair, m_placeDepth ahead
+// of the eye; and the spot on the track it would be linked in at.
 void TrainView::updateFlyPlace()
 {
     float ex = 0.0f, ey = 0.0f, ez = 0.0f, fx = 0.0f, fy = 0.0f, fz = 0.0f;
@@ -1019,14 +901,12 @@ void TrainView::updateFlyPlace()
     m_placeSpot = Pnt3f(ex + fx * m_placeDepth, ey + fy * m_placeDepth, ez + fz * m_placeDepth);
     const TrackSplineType splineType = static_cast<TrackSplineType>(tw->splineBrowser->value());
     m_placeU = TrackInsert::nearest(*m_pTrack, m_placeSpot, splineType);
-    m_placeHit = true;
 }
 
 void TrainView::endPlacePoint()
 {
     m_placing = false;
     m_placeHit = false;
-    m_placeFly = false;
     damage(1);
 }
 
@@ -1053,14 +933,12 @@ void TrainView::updatePlaceHover(int mouseX, int mouseY)
 // as usual, so the camera can still be turned and zoomed.
 bool TrainView::placeEvent(int event)
 {
-    // gave up when Edit goes off or the camera changes between Fly and the rest
-    if (!canEdit() || m_placeFly != (tw->flyCam->value() != 0))
+    // gave up when Edit goes off or the camera changes to Fly
+    if (!canEdit() || tw->flyCam->value())
     {
         endPlacePoint();
         return false;
     }
-    if (m_placeFly)
-        return flyPlaceEvent(event);
     switch (event)
     {
     case FL_MOVE:
@@ -1088,45 +966,6 @@ bool TrainView::placeEvent(int event)
         selectedCube = index;
         beginEdit(EDIT_DRAG, TransformGizmo::VIEW, mx, my);
         m_editJoinsInsert = true;
-        tw->damageMe();
-        return true;
-    }
-    case FL_KEYBOARD:
-        if (Fl::event_key() == FL_Escape)
-        {
-            endPlacePoint();
-            return true;
-        }
-        return false;
-    default:
-        return false;
-    }
-}
-
-// Adding a point in Fly: the mouse looks and the keys fly as usual, the wheel
-// sets the distance, a left click puts the point at the crosshair.
-bool TrainView::flyPlaceEvent(int event)
-{
-    switch (event)
-    {
-    case FL_MOUSEWHEEL:
-        adjustPlaceDepth(static_cast<float>(Fl::event_dy()));
-        return true;
-    case FL_PUSH: {
-        if (Fl::event_button() != FL_LEFT_MOUSE)
-        {
-            endPlacePoint();
-            return true;
-        }
-        updateFlyPlace();
-        const TrackSplineType splineType = static_cast<TrackSplineType>(tw->splineBrowser->value());
-        const TrackHistory::Snapshot before = TrackHistory::capture(*m_pTrack, selectedCube);
-        const int index = TrackInsert::insertNear(*m_pTrack, m_placeSpot, splineType);
-        endPlacePoint();
-        if (index < 0)
-            return true;
-        tw->pushHistory(before);
-        selectedCube = index; // the mouse stays captured: fly on, or press G to move it
         tw->damageMe();
         return true;
     }
@@ -1305,10 +1144,43 @@ void TrainView::drawEditOverlay()
     }
 
     // adding a point: a marker where it would go, drawn over everything
-    const bool placing = m_placing && canEdit() && m_placeFly == (tw->flyCam->value() != 0);
-    if (placing && m_placeFly)
+    const bool placing = m_placing && canEdit();
+    // building in Fly: a ghost point where a right click would put one, and a
+    // white box on the point a left click would remove
+    const bool building = flyBuilding();
+    const int aimed = building ? crosshairPoint() : -1;
+    if (building)
         updateFlyPlace();
-    if (placing && m_placeHit)
+    if (aimed >= 0)
+    {
+        const Pnt3f &p = m_pTrack->points[static_cast<size_t>(aimed)].pos;
+        const float e = 2.6f; // a little larger than the point's cube
+        glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_LINE_BIT);
+        glDisable(GL_LIGHTING);
+        glDisable(GL_TEXTURE_2D);
+        glDisable(GL_DEPTH_TEST);
+        glLineWidth(2.0f);
+        glColor3f(1.0f, 1.0f, 1.0f);
+        for (int y = -1; y <= 1; y += 2)
+        {
+            glBegin(GL_LINE_LOOP);
+            glVertex3f(p.x - e, p.y + y * e, p.z - e);
+            glVertex3f(p.x + e, p.y + y * e, p.z - e);
+            glVertex3f(p.x + e, p.y + y * e, p.z + e);
+            glVertex3f(p.x - e, p.y + y * e, p.z + e);
+            glEnd();
+        }
+        glBegin(GL_LINES);
+        for (int x = -1; x <= 1; x += 2)
+            for (int z = -1; z <= 1; z += 2)
+            {
+                glVertex3f(p.x + x * e, p.y - e, p.z + z * e);
+                glVertex3f(p.x + x * e, p.y + e, p.z + z * e);
+            }
+        glEnd();
+        glPopAttrib();
+    }
+    if ((placing && m_placeHit) || building)
     {
         glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_POINT_BIT | GL_LINE_BIT);
         glDisable(GL_LIGHTING);
@@ -1317,7 +1189,7 @@ void TrainView::drawEditOverlay()
         // In Fly the dot is off the track: a line shows where it joins the
         // track, and a nearer dot is drawn bigger, to judge the distance.
         float dotSize = 10.0f;
-        if (m_placeFly)
+        if (building)
         {
             const TrackSplineType splineType =
                 static_cast<TrackSplineType>(tw->splineBrowser->value());
@@ -1357,29 +1229,19 @@ void TrainView::drawEditOverlay()
                    : (tw->chaseCam->value()
                           ? "Chase Camera"
                           : (tw->flyCam->value() ? "Fly Camera" : "User Perspective")));
-    if (placing && m_placeFly)
+    if (building && aimed >= 0)
         snprintf(text, sizeof(text),
-                 "Add point: %.1f ahead   [Wheel] nearer / farther   [Click] put it here   "
-                 "[Esc] cancel",
+                 "Point %d   [Left] remove   [Middle] select   [Right] place a point %.1f ahead   "
+                 "[Wheel] distance",
+                 aimed, static_cast<double>(m_placeDepth));
+    else if (building)
+        snprintf(text, sizeof(text),
+                 "%s  |  [Right] place a point %.1f ahead   [Wheel] nearer / farther", camera,
                  static_cast<double>(m_placeDepth));
     else if (placing)
         snprintf(text, sizeof(text), "Add point: %s   [Esc] cancel",
                  m_placeHit ? "click to put it here, hold to drag it"
                             : "point at the track where it should go");
-    else if (m_carrying && hasSelection())
-    {
-        const float distance =
-            sqrtf(m_carryOffset[0] * m_carryOffset[0] + m_carryOffset[1] * m_carryOffset[1] +
-                  m_carryOffset[2] * m_carryOffset[2]);
-        snprintf(text, sizeof(text),
-                 "Carry point %d: %.1f away   [Wheel] nearer / farther   [Click] put down   "
-                 "[Esc] put back",
-                 selectedCube, static_cast<double>(distance));
-    }
-    else if (tw->flyCam->value() && mouseCaptured && canEdit() && m_editMode == EDIT_IDLE &&
-             crosshairPoint() >= 0 && crosshairPoint() != selectedCube)
-        snprintf(text, sizeof(text), "%s  |  [Click] select point %d   [Right click] carry it",
-                 camera, crosshairPoint());
     else if (!selected)
         snprintf(text, sizeof(text), "%s", camera);
     else
@@ -1432,9 +1294,6 @@ void TrainView::drawEditOverlay()
 //========================================================================
 void TrainView::draw()
 {
-    // a point carried in Fly follows the camera, which may have flown since
-    if (m_carrying)
-        updateCarry();
 
     //*********************************************************************
     //

@@ -114,24 +114,18 @@ class TrainView : public Fl_Gl_Window
     void endPlacePoint();
     void updatePlaceHover(int mouseX, int mouseY);
     bool placeEvent(int event);
-    bool flyPlaceEvent(int event);
+    void flyBuildClick(int button);
     void updateFlyPlace();
 
   public:
-    // In Fly a new point waits at the crosshair; the wheel sets how far ahead
-    // (the system wheel handler in TrainView.cpp asks these).
-    bool wheelSetsDepth() const; // adding or carrying a point in Fly
-    // the control point at the crosshair (left click in Fly selects it), or -1
+    // Building in Fly (mouse captured, Edit on), as in Minecraft: left click
+    // removes the point at the crosshair, right places one at the crosshair
+    // the wheel's distance ahead, middle selects (the system wheel handler in
+    // TrainView.cpp asks these).
+    bool flyBuilding() const;
+    // the control point at the Fly crosshair, or -1
     int crosshairPoint() const;
     static constexpr float kCrosshairReach = 18.0f; // pixels
-
-    // A right click in Fly picks up the point at the crosshair to carry with
-    // the view until the next click; the wheel sets its distance, Esc puts it back.
-    void beginCarry();
-    void updateCarry();
-    void endCarry(bool keep);
-    bool carryEvent(int event);
-    void flyAxes(float right[3], float up[3], float forward[3]) const;
     void adjustPlaceDepth(float wheelDy);
 
     // shader lighting, shadow maps and post effects (TrainViewEffects.cpp)
@@ -232,11 +226,7 @@ class TrainView : public Fl_Gl_Window
     bool m_placeHit = false;                // ... and the mouse is over the track
     float m_placeU = 0.0f;                  // where on the track (track parameter)
     Pnt3f m_placeSpot;                      // ... and where that is in the world
-    bool m_placeFly = false;                // adding in Fly: at the crosshair, not on the track
-    float m_placeDepth = 30.0f;             // ... this far ahead of the eye
-    bool m_carrying = false;                // a point picked up by a right click in Fly
-    float m_carryOffset[3] = {0.0f, 0.0f, 0.0f}; // ... where in the view (right, up, ahead)
-    TrackHistory::Snapshot m_carryBefore;        // ... and the track before (undo)
+    float m_placeDepth = 30.0f;             // Fly: a new point goes this far ahead of the eye
     static constexpr float kPlaceDepthMin = 2.0f;
     static constexpr float kPlaceDepthMax = 1500.0f;
 

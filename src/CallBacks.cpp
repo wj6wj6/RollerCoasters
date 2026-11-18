@@ -25,6 +25,7 @@
 #include "TrainWindow.H"
 #include "TrainView.H"
 #include "CallBacks.H"
+#include "TrackInsert.h"
 #include "OceanWorld.h"
 
 #pragma warning(push)
@@ -124,15 +125,16 @@ void redoCB(Fl_Widget *, TrainWindow *tw)
 void deletePointCB(Fl_Widget *, TrainWindow *tw)
 //===========================================================================
 {
-    if (tw->m_Track.points.size() > 4)
+    // the selected point, or the last one; the train stays about where it was
+    const int count = static_cast<int>(tw->m_Track.points.size());
+    const int selected = tw->trainView->selectedCube;
+    const int index = (selected >= 0 && selected < count) ? selected : count - 1;
+    const TrackHistory::Snapshot before = TrackHistory::capture(tw->m_Track, selected);
+    if (TrackInsert::removeAt(tw->m_Track, index))
     {
-        tw->recordHistory();
-        if (tw->trainView->selectedCube >= 0)
-        {
-            tw->m_Track.points.erase(tw->m_Track.points.begin() + tw->trainView->selectedCube);
-        }
-        else
-            tw->m_Track.points.pop_back();
+        tw->pushHistory(before);
+        if (selected == index)
+            tw->trainView->selectedCube = -1;
     }
     tw->damageMe();
 }
