@@ -646,10 +646,13 @@ void TrainWindow::listTexturePacks(const std::string &select)
     texturePackLabel = "Textures: " + chosenName;
     // a long name is shortened with "..." so the label fits on the button
     // beside its arrow (UTF-8: never cut inside a character)
-    fl_open_display();
-    fl_font(texturePackMenu->labelfont(), texturePackMenu->labelsize());
+    // (only once the window is up and text can be measured; the label at
+    // start is the short "Built-in")
+    Fl_Window *window = texturePackMenu->window();
+    if (window && window->shown())
+        fl_font(texturePackMenu->labelfont(), texturePackMenu->labelsize());
     const double room = texturePackMenu->w() - 28;
-    if (fl_width(texturePackLabel.c_str()) > room)
+    if (window && window->shown() && fl_width(texturePackLabel.c_str()) > room)
     {
         std::string cut = texturePackLabel;
         while (!cut.empty() && fl_width((cut + "...").c_str()) > room)
