@@ -4436,7 +4436,7 @@ void LandWorld::planSupports(const std::vector<float> &path)
     if (count < 4)
         return;
     const float spacing = 16.0f; // along the track, between trestles
-    const float lean = 2.0f;    // how far out a tall post's foot may go
+    const float lean = 2.0f;     // how far out a tall post's foot may go
     // Is the stretch of track far from sample n (along it) in the way of a
     // vertical post at (x, z) from y0 up to y1?
     auto blocked = [&](size_t n, float x, float z, float y0, float y1) {
