@@ -8,6 +8,8 @@
 
 ## 驗證
 
+一次跑完下列四項：`pwsh -File scripts/check-all.ps1`，貼上 `out/check-summary.md` 的表格；或在 PR 加上 `windows-ci` 標籤讓 Windows CI 執行。
+
 - [ ] Debug：`pwsh -File scripts/check.ps1 -Stage all -Config Debug`
 - [ ] Release：`pwsh -File scripts/check.ps1 -Stage all -Config Release`
 - [ ] Clang Debug：`pwsh -File scripts/check.ps1 -Stage all -Compiler clang -Config Debug`

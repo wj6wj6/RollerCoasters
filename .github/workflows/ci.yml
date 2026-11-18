@@ -1,78 +1,70 @@
-name: Windows quality
+name: Linux quality
+
+# Runs on every PR push and costs a fraction of a Windows run: format,
+# repository policy, the platform-neutral code and all CTest checks built with
+# clang on Linux, and a MinGW syntax pass over every file against the real
+# Windows SDK headers. MSVC, clang-cl, /analyze and packaging run in
+# windows.yml, which is opt-in for PRs (label windows-ci).
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/ISSUE_TEMPLATE/**'
   push:
     branches: [main]
-    tags: ['v*']
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/ISSUE_TEMPLATE/**'
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# A newer push to the same branch or PR supersedes the running checks.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  # Download and unpack the pinned toolchain once, then share it through the cache.
-  tools:
-    runs-on: windows-2022
-    timeout-minutes: 60
-    defaults:
-      run:
-        shell: pwsh
+  linux:
+    # Draft PRs are still being written; their checks start when marked ready.
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # A newer push to the same branch or PR supersedes the running check.
+    concurrency:
+      group: linux-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/cache@v4
-        with:
-          path: out/tools
-          key: native-tools-windows-x64-${{ hashFiles('tools.json', 'scripts/setup-tools.ps1') }}
-      - name: Restore native tools
-        run: ./scripts/setup-tools.ps1 -WithClang
-      - name: Format
-        run: ./scripts/check.ps1 -Stage format
-
-  quality:
-    needs: tools
-    runs-on: windows-2022
-    timeout-minutes: 30
-    defaults:
-      run:
+      - name: Install packages
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends \
+            clang ninja-build libfltk1.3-dev libglu1-mesa-dev xvfb xauth g++-mingw-w64-x86-64-posix
+          # The clang-format version pinned in tools.json, from its PyPI wheel.
+          version=$(jq -r '."clang-format".version' tools.json)
+          pipx install "clang-format==$version"
+      - name: Format, repository policy and script syntax
         shell: pwsh
-    strategy:
-      fail-fast: false
-      matrix:
-        config: [Debug, Release]
-        compiler: [msvc, clang]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache/restore@v4
-        with:
-          path: out/tools
-          key: native-tools-windows-x64-${{ hashFiles('tools.json', 'scripts/setup-tools.ps1') }}
-          fail-on-cache-miss: true
-      - name: Lint and static analysis
-        run: ./scripts/check.ps1 -Stage lint -Compiler ${{ matrix.compiler }} -Config ${{ matrix.config }}
-      - name: Compile and link
-        run: ./scripts/check.ps1 -Stage build -Compiler ${{ matrix.compiler }} -Config ${{ matrix.config }}
-      - name: Integration and smoke tests
-        run: ./scripts/check.ps1 -Stage test -Compiler ${{ matrix.compiler }} -Config ${{ matrix.config }}
-      - name: Install and verify distribution
-        run: ./scripts/check.ps1 -Stage package -Compiler ${{ matrix.compiler }} -Config ${{ matrix.config }}
+        run: ./scripts/check.ps1 -Stage quick
+      - name: Compile with clang -Wall -Werror
+        env:
+          CC: clang
+          CXX: clang++
+        run: |
+          cmake -S tests/linux -B out/build/linux -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          cmake --build out/build/linux
+      - name: CTest
+        run: xvfb-run -a ctest --test-dir out/build/linux --output-on-failure --no-tests=error --output-junit results-linux.xml
+      - name: Win32 syntax against the Windows SDK headers (MinGW)
+        run: tests/linux/win32-syntax.sh
       - name: Upload test evidence
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-${{ matrix.compiler }}-${{ matrix.config }}
+          name: test-results-linux
           path: |
-            out/build/**/results-*.xml
-            out/build/**/Testing/Temporary/LastTest.log
+            out/build/linux/results-linux.xml
+            out/build/linux/Testing/Temporary/LastTest.log
+          retention-days: 7
           if-no-files-found: ignore
-      - name: Upload verified distribution
-        uses: actions/upload-artifact@v4
-        with:
-          name: RollerCoasters-windows-x64-${{ matrix.compiler }}-${{ matrix.config }}
-          path: out/package
-          if-no-files-found: error
