@@ -90,7 +90,12 @@ class OceanWorld
     void drawSeaLife(float time);
 
     bool m_built;
-    unsigned int m_solidList;
-    unsigned int m_plantList;
+    struct Chunk
+    {
+        unsigned int solid = 0, plant = 0;
+        float lo[3], hi[3];
+    };
+    std::vector<Chunk> m_chunks; // drawn only when in view
+    unsigned int m_farList;      // the sea bed beyond the grid, always drawn
     std::vector<unsigned int> m_textures;
 };

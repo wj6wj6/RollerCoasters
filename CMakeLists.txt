@@ -52,6 +52,7 @@ target_link_libraries(Utilities PUBLIC project_options fltk)
 
 add_executable(RollerCoasters
     src/AdvancedLighting.h src/AdvancedLighting.cpp
+    src/Frustum.h src/Frustum.cpp
     src/LandTextures.h src/LandTextures.cpp
     src/LandWorld.h src/LandWorld.cpp
     src/MatrixMath.h
@@ -137,19 +138,26 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     set_tests_properties(GizmoDragCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
     add_executable(OceanRideClearanceCheck tests/OceanRideClearanceCheck.cpp
-        src/OceanWorld.cpp src/LandTextures.cpp src/PixelArt.cpp src/Track.cpp src/ControlPoint.cpp)
+        src/OceanWorld.cpp src/Frustum.cpp src/LandTextures.cpp src/PixelArt.cpp src/Track.cpp
+        src/ControlPoint.cpp)
     target_include_directories(OceanRideClearanceCheck PRIVATE src)
     target_link_libraries(OceanRideClearanceCheck PRIVATE Utilities glad)
     add_test(NAME OceanRideClearanceCheck COMMAND OceanRideClearanceCheck)
     set_tests_properties(OceanRideClearanceCheck PROPERTIES TIMEOUT 30 LABELS integration)
 
     add_executable(LandRideClearanceCheck tests/LandRideClearanceCheck.cpp
-        src/LandWorld.cpp src/LandTextures.cpp src/OceanWorld.cpp src/PixelArt.cpp src/WaterFlow.cpp
-        src/Track.cpp src/ControlPoint.cpp)
+        src/LandWorld.cpp src/Frustum.cpp src/LandTextures.cpp src/OceanWorld.cpp src/PixelArt.cpp
+        src/WaterFlow.cpp src/Track.cpp src/ControlPoint.cpp)
     target_include_directories(LandRideClearanceCheck PRIVATE src)
     target_link_libraries(LandRideClearanceCheck PRIVATE Utilities glad)
     add_test(NAME LandRideClearanceCheck COMMAND LandRideClearanceCheck)
     set_tests_properties(LandRideClearanceCheck PROPERTIES TIMEOUT 30 LABELS integration)
+
+    add_executable(FrustumCheck tests/FrustumCheck.cpp src/Frustum.cpp)
+    target_include_directories(FrustumCheck PRIVATE src)
+    target_link_libraries(FrustumCheck PRIVATE project_options glad)
+    add_test(NAME FrustumCheck COMMAND FrustumCheck)
+    set_tests_properties(FrustumCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
     add_test(NAME VersionCheck COMMAND RollerCoasters --version)
     set_tests_properties(VersionCheck PROPERTIES TIMEOUT 10

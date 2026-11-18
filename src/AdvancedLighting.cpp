@@ -117,7 +117,9 @@ float shadowAt(vec3 p, vec3 n)
         vec2 o = vec2(cos(a), sin(a)) * (r * uShadowTexel);
         lit += shadow2D(uShadowMap, vec3(c.xy + o, c.z)).r;
     }
-    return lit / 12.0;
+    // the map covers the ground round the camera: fade out towards its edge
+    float edge = max(abs(c.x - 0.5), abs(c.y - 0.5));
+    return mix(lit / 12.0, 1.0, smoothstep(0.42, 0.5, edge));
 }
 
 // wet: a film of water makes the surface smoother, so the highlight gets
@@ -602,7 +604,9 @@ void AdvancedLighting::prepare(const LightingFrame &frame)
         }
     }
 
-    // Orthographic light camera that encloses every shadow caster.
+    // Orthographic light camera. With a focus it covers the ground round
+    // the point the camera looks at; otherwise (the top view) every shadow
+    // caster.
     float center[3];
     float radius = 0.0f;
     for (int i = 0; i < 3; ++i)
@@ -612,18 +616,39 @@ void AdvancedLighting::prepare(const LightingFrame &frame)
         radius += half * half;
     }
     radius = sqrtf(radius) + 2.0f;
-
-    const float eye[3] = {center[0] + lightDir[0] * radius * 2.0f,
-                          center[1] + lightDir[1] * radius * 2.0f,
-                          center[2] + lightDir[2] * radius * 2.0f};
+    // how far back towards the light casters may stand: the whole box
+    float reach = radius * 2.0f;
     const float upY[3] = {0.0f, 1.0f, 0.0f};
     const float upZ[3] = {0.0f, 0.0f, 1.0f};
-    lookAt(eye, center, fabsf(lightDir[1]) > 0.99f ? upZ : upY, m_lightView);
+    const float *up = fabsf(lightDir[1]) > 0.99f ? upZ : upY;
+    if (frame.hasFocus && !frame.orthographic && kShadowReach < radius)
+    {
+        radius = kShadowReach;
+        for (int i = 0; i < 3; ++i)
+            center[i] = frame.focus[i];
+        // Move the centre in whole texels across the light's view, so the
+        // shadows' edges do not crawl as the camera moves.
+        float s[3], u[3];
+        const float f[3] = {-lightDir[0], -lightDir[1], -lightDir[2]};
+        cross3(f, up, s);
+        normalize3(s);
+        cross3(s, f, u);
+        const float texel = 2.0f * radius / static_cast<float>(m_shadowSize);
+        const float cs = dot3(s, center), cu = dot3(u, center);
+        const float ds = floorf(cs / texel + 0.5f) * texel - cs;
+        const float du = floorf(cu / texel + 0.5f) * texel - cu;
+        for (int i = 0; i < 3; ++i)
+            center[i] += s[i] * ds + u[i] * du;
+    }
+
+    const float eye[3] = {center[0] + lightDir[0] * reach, center[1] + lightDir[1] * reach,
+                          center[2] + lightDir[2] * reach};
+    lookAt(eye, center, up, m_lightView);
 
     // Receivers may lie far behind the casters (long evening shadows on the
     // ground), so the far plane is generous.
-    const float nearPlane = radius * 0.5f;
-    const float farPlane = radius * 3.0f + 400.0f;
+    const float nearPlane = 1.0f;
+    const float farPlane = reach * 2.0f + 400.0f;
     ortho(-radius, radius, -radius, radius, nearPlane, farPlane, m_lightProj);
 
     float bias[16];

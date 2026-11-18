@@ -34,7 +34,9 @@ flowchart LR
     View --> GL[GLAD / OpenGL / GLU]
     View --> Effects[TrainViewEffects / 讀取光影 widget]
     Effects --> Frame[renderAdvancedFrame]
-    Frame --> Lighting[AdvancedLighting / shadow map、逐像素光照、頭燈]
+    Frame --> Lighting[AdvancedLighting / 跟著鏡頭的 shadow map、逐像素光照、頭燈]
+    Land --> Cull[Frustum / 分塊視錐剔除]
+    Ocean --> Cull
     Frame --> Post[PostEffects / 天空、波浪水面與 SSR、雨與濕地反射、SSAO、Bloom、god rays、ACES]
     Frame -->|drawGround / drawUnderwater / drawObjects| View
     View --> Land[LandWorld / 方塊島嶼：雪山、峽谷、火山、村莊、木棧橋]
@@ -60,7 +62,7 @@ flowchart LR
 `Utilities` 包含相機、幾何點與 OpenGL 輔助函式。
 
 `Light+` 開啟時，`TrainView::draw()` 改呼叫 `renderAdvancedFrame()`：
-先從太陽方向把物體畫進 2048² 深度貼圖（shadow map），水面開啟時再以水平面鏡射相機畫一次反射，
+先從太陽方向把物體畫進 2048² 深度貼圖（shadow map）。陰影範圍跟著鏡頭：以鏡頭前方約 80 單位處為中心、半徑 `kShadowReach`（150 單位），中心以陰影貼圖的格點為單位移動，移動時陰影邊緣不會閃爍，範圍邊緣淡出；Top 正交視角仍涵蓋整個場景。世界再大，陰影的解析度都不變。水面開啟時再以水平面鏡射相機畫一次反射，
 接著把場景畫進 16-bit 浮點 frame buffer，依序做 SSAO、濕地反射（下雨時）、水面、雨絲、Bloom 與 god rays，最後 ACES 色調映射到視窗。
 水面是跟著鏡頭移動的細分網格：頂點 shader 疊加 Gerstner 波位移，片段 shader 用同一組波的解析法線加上多層捲動噪點；
 倒影先在螢幕空間沿反射方向對深度緩衝做光線步進（SSR），沒打中時用平面反射，再依 Schlick 菲涅耳與折射混合。
@@ -72,7 +74,7 @@ flowchart LR
 光照 shader 是 GLSL 1.20，直接讀固定管線的 `gl_Vertex`、`gl_Normal`、`gl_Color` 與 texture unit 0，所以既有 `glBegin` 繪圖程式不需修改；
 未綁貼圖時 unit 0 的預設 texture 0 是一個白色 texel。shader 或 frame buffer 建立失敗時自動退回原本畫法。
 
-`Water` 開啟時另外畫 `OceanWorld`：海床是 128×14×128 的方塊格，建好後編成 display list。海床大多深於 y = −15，讓大型生物在上方游；島西側朝夕陽的方向例外，`onShelf()` 圍出一片淺礁台（海床頂在 y = −10），上面鋪一層粉紅、紅、橘為主的珊瑚塊（y = −10 到 −5），離海面約 4 單位，從岸上與列車上透過海水看得到，海洋生物的路線都不經過那裡。
+`Water` 開啟時另外畫 `OceanWorld`：海床是 128×14×128 的方塊格，建好後以 16×16 欄為一塊各自編成 display list（島外更遠的海床另成一份，永遠畫出）。海床大多深於 y = −15，讓大型生物在上方游；島西側朝夕陽的方向例外，`onShelf()` 圍出一片淺礁台（海床頂在 y = −10），上面鋪一層粉紅、紅、橘為主的珊瑚塊（y = −10 到 −5），離海面約 4 單位，從岸上與列車上透過海水看得到，海洋生物的路線都不經過那裡。
 建置時先算 Minecraft 式的光照：天光沿開放的柱子直灌而下、每往旁邊一格少一級，水晶自己發光，
 角落再加 ambient occlusion，結果放進 texture unit 1 的座標（x 發光、y 擺動、z 水晶光、w 天光），所以隧道深處自然變暗。
 岩拱、閘門與隧道是沿著 `Grand Tour` 的三種 spline 挖出來的，植物另外避開軌道周圍的淨空帶，
@@ -92,7 +94,8 @@ caustics、吸收係數與水體顏色放在 `UnderwaterOptics.h`，三個 shade
 方塊貼圖由 `LandTextures` 在程式裡逐格畫成 32×32（不讀圖檔）：石頭、圓石、礫石、樹葉用平鋪的雜訊與不規則格子做出塊狀，再依格子邊界加深色輪廓、左上亮邊、右下陰影，明暗分成幾個固定階層，保持像素感；海底的方塊（沙、石、石磚、木板、珊瑚、金塊等）也用同一組函式，只換顏色，海底植物維持 16×16。
 光照烘焙與 `OceanWorld` 相同（天光、發光方塊、ambient occlusion）；熔岩與燈籠的暖光寫進頂點顏色與發光量，水晶的冷光用 shader 既有的方塊光。
 `LandWorld::rideObstructions()` 與測試 `LandRideClearanceCheck` 用正式的 `CTrack` 取樣，檢查三種 spline 下列車都不會碰到方塊或植物。
-水方塊是半透明的靜態水：不遮擋旁邊的面、不擋天光也不算 ambient occlusion，網格另外編成一個 display list，由 `TrainView::drawStuff()` 在最後畫上：先只寫入水的深度，再在最近的水面上以 alpha 混合畫顏色，所以只看得到水體正面，方塊之間的內部平面與背面不會透出（不進 shadow map，目標的 alpha 保持不變）；挖軌道時被切斷而懸空的水會移除。會動的東西（風車、動物、雲、熱氣球）每格以方塊即時畫出；`TrainView::drawSupports()` 以目前 spline（含 B-spline）每約 1 單位取一點、控制點不變時沿用，交給 `LandWorld::drawSupports()` 每 9 單位規劃一座木棧橋（同一條路線只規劃一次）：
+島的網格同樣以 16×16 欄為一塊，每塊有自己的方塊、植物與水的 display list 和包住實際方塊的邊界框。`Frustum` 從目前的投影 × modelview 矩陣取出六個平面，`LandWorld::draw()`、`drawWater()` 與 `OceanWorld::draw()` 只畫看得到的塊；因為用的是當下的矩陣，陰影 pass（光源視角）與水面反射 pass（鏡射視角）也自動只畫各自看得到的部分。這讓之後放大世界時，每幀的繪製量只跟畫面裡的範圍有關。`FrustumCheck` 單獨測試剔除的判斷。
+水方塊是半透明的靜態水：不遮擋旁邊的面、不擋天光也不算 ambient occlusion，網格另外編成 display list，由 `TrainView::drawStuff()` 在最後畫上：先只寫入水的深度，再在最近的水面上以 alpha 混合畫顏色，所以只看得到水體正面，方塊之間的內部平面與背面不會透出（不進 shadow map，目標的 alpha 保持不變）；挖軌道時被切斷而懸空的水會移除。會動的東西（風車、動物、雲、熱氣球）每格以方塊即時畫出；`TrainView::drawSupports()` 以目前 spline（含 B-spline）每約 1 單位取一點、控制點不變時沿用，交給 `LandWorld::drawSupports()` 每 9 單位規劃一座木棧橋（同一條路線只規劃一次）：
 左右兩根柱各自從自己的落點往下找地面（穿過水、立在熔岩裡；島外立在 `OceanWorld::seaFloor()` 的海床上），柱頂貼齊枕木底；只有被另一段軌道擋住的那一根柱不立，兩根都在時才加橫撐。山體也畫進 shadow map，所以會投影。
 `Scenery` 關閉時 `LandWorld` 改建平坦的編輯用島；固定管線（`Light+` 關閉）的平面陰影只在這個模式使用。
 `Train`／`Chase` 相機由 `TrainView::setProjection()` 從軌道座標系算出；`Chase` 用 `TrainModel::parameterBehind()` 沿軌道往回取最後一節礦車後方的點，抬高後看向火車頭，所以會留在為軌道挖出的空間裡。

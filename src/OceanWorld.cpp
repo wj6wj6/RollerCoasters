@@ -19,6 +19,8 @@
 
 #include "OceanWorld.h"
 
+#include "Frustum.h"
+
 #include "LandTextures.h"
 #include "PixelArt.h"
 
@@ -1866,7 +1868,7 @@ void drawJellyfish(float time, float seed, const unsigned char colour[3])
 
 } // namespace
 
-OceanWorld::OceanWorld() : m_built(false), m_solidList(0), m_plantList(0)
+OceanWorld::OceanWorld() : m_built(false), m_farList(0)
 {
 }
 
@@ -1888,8 +1890,8 @@ float OceanWorld::waterLevel()
 void OceanWorld::releaseResources()
 {
     m_built = false;
-    m_solidList = 0;
-    m_plantList = 0;
+    m_chunks.clear();
+    m_farList = 0;
     m_textures.clear();
 }
 
@@ -2005,22 +2007,46 @@ void OceanWorld::build()
             m_textures[static_cast<size_t>(t)] =
                 PixelArt::upload(images[t], t == plantTexture(KELP) || t == SAND);
 
-    Batches solids(kTextureCount);
-    Batches plants(kTextureCount);
-    for (int bx = -kHalf; bx < kHalf; ++bx)
-        for (int bz = -kHalf; bz < kHalf; ++bz)
-            for (int j = kMinY; j <= kMaxY; ++j)
-            {
-                const int b = g.get(bx, j, bz);
-                if (b != AIR && b != ISLAND)
-                    addBlockFaces(g, bx, j, bz, solids);
-                else if (b == AIR && g.plant[Grid::index(bx, j, bz)] != NO_PLANT)
-                    addPlant(g, bx, j, bz, plants);
-            }
-    addFarFloor(solids);
-
-    m_solidList = compileList(solids, m_textures);
-    m_plantList = compileList(plants, m_textures);
+    // In chunks of 16 x 16 columns, each with the box round its blocks, so
+    // only the chunks in view are drawn.
+    const int chunkSize = 16;
+    for (int cx = -kHalf; cx < kHalf; cx += chunkSize)
+        for (int cz = -kHalf; cz < kHalf; cz += chunkSize)
+        {
+            Batches solids(kTextureCount);
+            Batches plants(kTextureCount);
+            int low = kMaxY + 1, high = kMinY - 1;
+            for (int bx = cx; bx < cx + chunkSize && bx < kHalf; ++bx)
+                for (int bz = cz; bz < cz + chunkSize && bz < kHalf; ++bz)
+                    for (int j = kMinY; j <= kMaxY; ++j)
+                    {
+                        const int b = g.get(bx, j, bz);
+                        const bool plant = b == AIR && g.plant[Grid::index(bx, j, bz)] != NO_PLANT;
+                        if ((b == AIR || b == ISLAND) && !plant)
+                            continue;
+                        low = j < low ? j : low;
+                        high = j > high ? j : high;
+                        if (plant)
+                            addPlant(g, bx, j, bz, plants);
+                        else
+                            addBlockFaces(g, bx, j, bz, solids);
+                    }
+            if (high < low)
+                continue;
+            Chunk chunk;
+            chunk.lo[0] = static_cast<float>(cx) * kBlock;
+            chunk.lo[1] = static_cast<float>(low) * kBlock;
+            chunk.lo[2] = static_cast<float>(cz) * kBlock;
+            chunk.hi[0] = static_cast<float>(cx + chunkSize) * kBlock;
+            chunk.hi[1] = static_cast<float>(high + 1) * kBlock + 2.0f; // kelp sways
+            chunk.hi[2] = static_cast<float>(cz + chunkSize) * kBlock;
+            chunk.solid = compileList(solids, m_textures);
+            chunk.plant = compileList(plants, m_textures);
+            m_chunks.push_back(chunk);
+        }
+    Batches beyond(kTextureCount);
+    addFarFloor(beyond);
+    m_farList = compileList(beyond, m_textures);
     m_built = true;
 }
 
@@ -2031,10 +2057,16 @@ void OceanWorld::draw(bool shadowPass, float time)
         build();
     glEnable(GL_TEXTURE_2D);
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-    glCallList(m_solidList);
+    const Frustum view = Frustum::current();
+    glCallList(m_farList);
+    for (const Chunk &c : m_chunks)
+        if (view.sees(c.lo, c.hi))
+            glCallList(c.solid);
     if (!shadowPass)
     {
-        glCallList(m_plantList);
+        for (const Chunk &c : m_chunks)
+            if (view.sees(c.lo, c.hi))
+                glCallList(c.plant);
         glBindTexture(GL_TEXTURE_2D, 0);
         glDisable(GL_TEXTURE_2D);
         drawSeaLife(time);

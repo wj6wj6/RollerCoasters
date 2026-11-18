@@ -73,6 +73,7 @@ hooks 與 CI 使用同一個 PowerShell 入口與 `tools.json`。hooks 只檢查
 - `GestureMotionCheck`：正式 FLTK event loop／timer 與 `ArcBallCam`，涵蓋手勢平滑度、總旋轉量、重設、水平線、縮放、俯仰限制、觸控板細小位移立即套用、空白處拖曳旋轉、旋轉與縮放同時作用及拖曳中縮放。
 - `FlyCamCheck`：正式 FLTK event loop／timer 與 `FlyCam`，涵蓋由 World 視圖矩陣接續、視角差補償、WASD／空白鍵／Shift／QE 依實際時間移動與放開即停、Ctrl 加速、方向鍵轉向與俯仰限制、拖曳看、滑鼠看、滾輪調速、觸控板捲動／捏合／平移、速度按鍵與失去焦點時停止、地面（含 `setGround()` 降低與升高後不跳動）與場景範圍限制、視野設定與上下限、飛行按鍵的掃描碼對應，以及 `lookAt()` 走短邊平滑轉向且使用者轉頭時立即讓出。
 - `WaterFlowCheck`：水流規則（`src/WaterFlow.*`）：平地擴散 7 格、方向權重（999、落差在鄰格下方為 0、4 格內最短路徑）、只往最近落差流、超出 4 格時平均擴散、繞牆搜尋、落地後從水位 1 重新擴散、大海吸收。
+- `FrustumCheck`：分塊剔除用的視錐判斷（`src/Frustum.*`）：透視視角前方的盒子看得到，後方、遠平面外、側邊外的看不到，跨過邊界的仍算看得到；正交（陰影 pass）視角移動後跟著移動。
 - `LandRideClearanceCheck`：三種 spline 下島上的方塊與植物不碰到列車，軌道左右 6、下方 6 到上方 10 單位內沒有水。
 - `TwoFingerGestureCheck`：觸控板兩指濾波，驗證靜止不動、純捏合不轉動、純移動不縮放、兩者明顯時同時作用。
 - `TrackRoundTripCheck`：正式 `CTrack::writePoints/readPoints` 與真實暫存檔，驗證座標、方向、控制點數與載入後列車位置歸零。

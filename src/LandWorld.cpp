@@ -15,6 +15,7 @@
 #include <glad/glad.h>
 
 #include "LandWorld.h"
+#include "Frustum.h"
 #include "LandTextures.h"
 #include "OceanWorld.h"
 #include "PixelArt.h"
@@ -2381,14 +2382,25 @@ void drawBalloon(const int a[3], const int b[3])
 // ---------------------------------------------------------------------
 // LandWorld
 // ---------------------------------------------------------------------
+// The mesh is cut into chunks of kChunk x kChunk columns, each with its
+// own display lists and the box round its blocks, so only the chunks in
+// view are drawn (the camera's view, the light's in the shadow pass, the
+// mirrored one for the water's reflection).
+const int kChunk = 16;
+
+struct LandChunk
+{
+    unsigned int solid = 0, plant = 0;
+    unsigned int water = 0; // see-through, drawn last (drawWater)
+    float lo[3], hi[3];
+};
+
 struct LandWorld::Scene
 {
     Grid grid;
     Extras extras;
     bool built = false;
-    unsigned int solidList = 0;
-    unsigned int plantList = 0;
-    unsigned int waterList = 0; // see-through, drawn last (drawWater)
+    std::vector<LandChunk> chunks;
 };
 
 LandWorld::LandWorld()
@@ -2496,24 +2508,44 @@ LandWorld::Scene &LandWorld::scene(bool flat)
     else
         buildScenery(s.grid, s.extras);
 
-    Batches solids(LandTextures::TEXTURE_COUNT);
-    Batches plants(LandTextures::TEXTURE_COUNT);
-    Batches water(LandTextures::TEXTURE_COUNT);
-    for (int bx = -kHalf; bx < kHalf; ++bx)
-        for (int bz = -kHalf; bz < kHalf; ++bz)
-            for (int j = kMinY; j <= kMaxY; ++j)
-            {
-                const size_t cell = Grid::index(bx, j, bz);
-                if (s.grid.block[cell] == WATER)
-                    addWaterFaces(s.grid, bx, j, bz, water);
-                else if (s.grid.block[cell] != AIR)
-                    addBlockFaces(s.grid, bx, j, bz, solids);
-                else if (s.grid.plant[cell] != NO_PLANT)
-                    addPlant(s.grid, bx, j, bz, plants);
-            }
-    s.solidList = compileList(solids, m_textures);
-    s.plantList = compileList(plants, m_textures);
-    s.waterList = compileList(water, m_textures);
+    for (int cx = -kHalf; cx < kHalf; cx += kChunk)
+        for (int cz = -kHalf; cz < kHalf; cz += kChunk)
+        {
+            Batches solids(LandTextures::TEXTURE_COUNT);
+            Batches plants(LandTextures::TEXTURE_COUNT);
+            Batches water(LandTextures::TEXTURE_COUNT);
+            int low = kMaxY + 1, high = kMinY - 1;
+            for (int bx = cx; bx < cx + kChunk && bx < kHalf; ++bx)
+                for (int bz = cz; bz < cz + kChunk && bz < kHalf; ++bz)
+                    for (int j = kMinY; j <= kMaxY; ++j)
+                    {
+                        const size_t cell = Grid::index(bx, j, bz);
+                        const int b = s.grid.block[cell];
+                        if (b == AIR && s.grid.plant[cell] == NO_PLANT)
+                            continue;
+                        low = j < low ? j : low;
+                        high = j > high ? j : high;
+                        if (b == WATER)
+                            addWaterFaces(s.grid, bx, j, bz, water);
+                        else if (b != AIR)
+                            addBlockFaces(s.grid, bx, j, bz, solids);
+                        else
+                            addPlant(s.grid, bx, j, bz, plants);
+                    }
+            if (high < low)
+                continue; // nothing in it
+            LandChunk chunk;
+            chunk.lo[0] = static_cast<float>(cx) * kBlock;
+            chunk.lo[1] = static_cast<float>(low) * kBlock;
+            chunk.lo[2] = static_cast<float>(cz) * kBlock;
+            chunk.hi[0] = static_cast<float>(cx + kChunk) * kBlock;
+            chunk.hi[1] = static_cast<float>(high + 1) * kBlock + 1.0f; // plants sway a little
+            chunk.hi[2] = static_cast<float>(cz + kChunk) * kBlock;
+            chunk.solid = compileList(solids, m_textures);
+            chunk.plant = compileList(plants, m_textures);
+            chunk.water = compileList(water, m_textures);
+            s.chunks.push_back(chunk);
+        }
     s.built = true;
     return s;
 }
@@ -2524,13 +2556,22 @@ void LandWorld::draw(bool flat, bool shadowPass, float time)
     const Scene &s = scene(flat);
     glEnable(GL_TEXTURE_2D);
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-    glCallList(s.solidList);
+    const Frustum view = Frustum::current();
+    m_chunksDrawn = 0;
+    for (const LandChunk &c : s.chunks)
+        if (view.sees(c.lo, c.hi))
+        {
+            glCallList(c.solid);
+            ++m_chunksDrawn;
+        }
     if (!shadowPass)
     {
         // the fixed pipeline cuts the plants out here; the shader does it itself
         glEnable(GL_ALPHA_TEST);
         glAlphaFunc(GL_GREATER, 0.5f);
-        glCallList(s.plantList);
+        for (const LandChunk &c : s.chunks)
+            if (view.sees(c.lo, c.hi))
+                glCallList(c.plant);
         glDisable(GL_ALPHA_TEST);
         if (!flat)
             drawMoving(s, time);
@@ -2556,13 +2597,20 @@ void LandWorld::drawWater(bool flat)
     glEnable(GL_DEPTH_TEST);
     glDepthMask(GL_TRUE);
     glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-    glCallList(s.waterList);
+    const Frustum view = Frustum::current();
+    std::vector<unsigned int> lists;
+    for (const LandChunk &c : s.chunks)
+        if (view.sees(c.lo, c.hi))
+            lists.push_back(c.water);
+    for (unsigned int list : lists)
+        glCallList(list);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glDepthMask(GL_FALSE);
     glDepthFunc(GL_LEQUAL);
     glEnable(GL_BLEND);
     glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE);
-    glCallList(s.waterList);
+    for (unsigned int list : lists)
+        glCallList(list);
     setGlow(0.0f);
     glPopAttrib();
 }

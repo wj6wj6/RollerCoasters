@@ -69,6 +69,13 @@ class LandWorld
     // out again only when the path changes.
     void drawSupports(const std::vector<float> &path, bool shadowPass);
 
+    // How many chunks of the island the last draw() drew (the others were
+    // out of view).
+    int chunksDrawn() const
+    {
+        return m_chunksDrawn;
+    }
+
     // A box around the blocks that cast shadows.
     static void shadowBounds(float lo[3], float hi[3]);
 
@@ -103,4 +110,5 @@ class LandWorld
     std::unique_ptr<Scene> m_scenery;
     std::unique_ptr<Scene> m_flat;
     std::vector<unsigned int> m_textures;
+    int m_chunksDrawn = 0;
 };

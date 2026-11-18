@@ -1691,6 +1691,11 @@ void renderAdvancedFrame(AdvancedLighting &lighting, PostEffects &effects, Light
     if (toggles.water)
         frame.waterLevel = effects.waterLevel;
     frame.cameraUnderwater = underwater;
+    // The shadow map follows the camera: centred a little ahead of it, where
+    // most of what it sees lies.
+    frame.hasFocus = true;
+    for (int k = 0; k < 3; ++k)
+        frame.focus[k] = camera[k] - invView[8 + k] * kShadowReach * 0.55f;
 
     lighting.prepare(frame);
     if (frame.shadows)

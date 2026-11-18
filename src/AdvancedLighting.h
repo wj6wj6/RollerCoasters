@@ -61,7 +61,16 @@ struct LightingFrame
     // World space box around everything that casts a shadow.
     float casterMin[3] = {-100.0f, 0.0f, -100.0f};
     float casterMax[3] = {100.0f, 30.0f, 100.0f};
+
+    // Where the camera looks: when set, the shadow map covers the ground
+    // within kShadowReach of this point instead of the whole caster box,
+    // so its texels stay small however large the world is.
+    bool hasFocus = false;
+    float focus[3] = {0.0f, 0.0f, 0.0f};
 };
+
+// How far from the focus the shadow map reaches (world units).
+const float kShadowReach = 150.0f;
 
 // Sun, moon and sky colours for one time of day (linear colour space).
 struct SkyState
