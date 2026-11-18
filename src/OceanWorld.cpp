@@ -1356,8 +1356,12 @@ float glowFactor(float level)
 }
 
 // How strongly a block or plant shines by itself.
+// Coral glows softly, so the reef shines in its colours under the night
+// sky (by day the sun drowns it out).
 float blockGlow(int block)
 {
+    if (isCoral(block))
+        return 0.06f;
     return block == CRYSTAL ? 1.0f : (block == LANTERN ? 1.3f : (block == GOLD ? 0.18f : 0.0f));
 }
 

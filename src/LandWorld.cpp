@@ -46,7 +46,7 @@ const int kSeaLayer = 0;
 const int kHalf = 113;
 const int kSizeXZ = 2 * kHalf;
 const int kMinY = -2; // block layer j spans y = 2.5 j .. 2.5 j + 2.5
-const int kMaxY = 76; // the snow peak tops out near y = 182
+const int kMaxY = 90; // the jagged peaks top out near y = 220
 const int kSizeY = kMaxY - kMinY + 1;
 
 // Room kept free around the ride. Blocks are carved out of a tube around
@@ -107,6 +107,8 @@ enum Block
     HAY,
     FARMLAND,
     WATER,
+    ICE,    // packed ice: the ice spikes
+    JACK_O, // a carved pumpkin lantern, lit
     BLOCK_COUNT
 };
 
@@ -121,6 +123,10 @@ enum Plant
     TULIP,
     DEAD_BUSH,
     WHEAT,
+    PETALS, // fallen cherry blossom
+    OXEYE,
+    ALLIUM,
+    TULIP_ORANGE,
     PLANT_COUNT
 };
 
@@ -225,6 +231,10 @@ int textureOf(int block, int face)
         return face == 0 ? T::FARMLAND : T::DIRT;
     case WATER:
         return T::WATER;
+    case ICE:
+        return T::ICE;
+    case JACK_O:
+        return face == 0 || face == 1 ? T::PUMPKIN_TOP : T::PUMPKIN_FACE;
     default:
         return T::STONE;
     }
@@ -257,6 +267,8 @@ float blockGlow(int block)
         return 0.5f;
     case MAGMA:
         return 0.22f;
+    case JACK_O:
+        return 0.6f;
     case ORE_DIAMOND:
         return 0.1f;
     default:
@@ -419,8 +431,14 @@ Site firstSite(float x, float z, float coast)
         const float r = sqrtf(dx * dx + dz * dz) / kAlpineRadius * warp;
         if (r < 1.0f)
         {
+            // jagged peaks: sharp ridges running out from the summit, with
+            // crags along them, rather than one smooth cone
+            const float ridge = 1.0f - fabsf(valueNoise(x * 0.07f, z * 0.07f, 15u) * 2.0f - 1.0f);
+            const float crags = valueNoise(x * 0.22f, z * 0.22f, 16u) - 0.5f;
             const float h = kAlpineHeight * (1.0f - r) *
-                            (0.92f + 0.16f * valueNoise(x * 0.035f, z * 0.035f, 13u));
+                                (0.72f + 0.16f * valueNoise(x * 0.035f, z * 0.035f, 13u) +
+                                 0.34f * ridge * ridge) +
+                            crags * 9.0f * (1.0f - r);
             if (h > site.height)
             {
                 site.height = h;
@@ -682,7 +700,17 @@ struct Extras
     std::vector<Animal> animals;
     float mill[3] = {0.0f, 0.0f, 0.0f}; // hub of the windmill's sails
     bool hasMill = false;
+    // the cherry grove round the lake: its middle and how high its ground
+    // is, for the falling petals
+    float grove[3] = {0.0f, 0.0f, 0.0f};
+    bool hasGrove = false;
+    // the flower meadow round the giant oak
+    float meadow[2] = {0.0f, 0.0f};
+    bool hasMeadow = false;
 };
+
+const float kGroveRadius = 75.0f; // world units
+const float kMeadowRadius = 85.0f;
 
 // ---------------------------------------------------------------------
 // Terrain
@@ -1071,6 +1099,38 @@ void spreadWater(Grid &g)
             }
 }
 
+// A hot spring on the badlands, after the user's reference: a round pool
+// of clear water in bands of colour, yellow then orange then red, out to the
+// red sand, on a level shelf.
+void buildSpringPool(Grid &g, float x, float z, float radius)
+{
+    const int level = g.top(blockOf(x), blockOf(z));
+    const int rings[3] = {CLAY_YELLOW, CLAY_ORANGE, CLAY_RED};
+    for (int bx = blockOf(x - radius - 8.0f); bx <= blockOf(x + radius + 8.0f); ++bx)
+        for (int bz = blockOf(z - radius - 8.0f); bz <= blockOf(z + radius + 8.0f); ++bz)
+        {
+            if (!Grid::insideColumn(bx, bz))
+                continue;
+            const float dx = centerOf(bx) - x, dz = centerOf(bz) - z;
+            const float d = sqrtf(dx * dx + dz * dz) + (lattice(bx, bz, 497u) - 0.5f) * 1.5f;
+            if (d > radius + 7.5f)
+                continue;
+            g.clearAbove(bx, level, bz);
+            for (int j = kMinY; j <= level; ++j)
+                if (g.get(bx, j, bz) == AIR)
+                    g.put(bx, j, bz, CLAY_ORANGE);
+            if (d <= radius)
+            {
+                g.put(bx, level, bz, WATER);
+                g.put(bx, level - 1, bz, d < radius * 0.6f ? WATER : CLAY_WHITE);
+                g.put(bx, level - 2, bz, CLAY_WHITE);
+            }
+            else
+                g.put(bx, level, bz,
+                      d < radius + 7.0f ? rings[static_cast<int>((d - radius) / 2.5f)] : RED_SAND);
+        }
+}
+
 // A round pond flush with a level bank.
 void buildPond(Grid &g, float x, float z, float radius)
 {
@@ -1174,11 +1234,15 @@ void buildHouse(Grid &g, int x0, int z0, int x1, int z1, int floor, bool doorOnX
     {
         g.put(x1, floor, (z0 + z1) / 2, DOOR);
         g.put(x1, floor + 1, (z0 + z1) / 2, PLANKS);
+        if (g.get(x1 + 1, floor, (z0 + z1) / 2 + 1) == AIR)
+            g.put(x1 + 1, floor, (z0 + z1) / 2 + 1, JACK_O); // a pumpkin lantern by the door
     }
     else
     {
         g.put((x0 + x1) / 2, floor, z1, DOOR);
         g.put((x0 + x1) / 2, floor + 1, z1, PLANKS);
+        if (g.get((x0 + x1) / 2 + 1, floor, z1 + 1) == AIR)
+            g.put((x0 + x1) / 2 + 1, floor, z1 + 1, JACK_O);
     }
     // the roof: slabs that step in from both long sides, one block of eaves
     const bool ridgeAlongX = (x1 - x0) >= (z1 - z0);
@@ -1893,7 +1957,7 @@ bool seenFromRide(const Clearance &clear, int bx, int bz, int from, int to)
 // basin cut down to its lowest shore, sandy banks, a little island
 // with a tree in the middle and a wooden jetty. It is all still water at
 // one level below its rim, so nothing flows out of it.
-void buildLake(Grid &g, const Clearance &clear)
+void buildLake(Grid &g, const Clearance &clear, Extras &extras)
 {
     const int radius = 10;
     int bestX = 0, bestZ = 0, bestLevel = 0, bestScore = 1 << 30;
@@ -1929,6 +1993,10 @@ void buildLake(Grid &g, const Clearance &clear)
         return;
 
     const int level = bestLevel;
+    extras.grove[0] = centerOf(bestX);
+    extras.grove[1] = static_cast<float>(level + 1) * kBlock;
+    extras.grove[2] = centerOf(bestZ);
+    extras.hasGrove = true;
     for (int x = bestX - radius - 2; x <= bestX + radius + 2; ++x)
         for (int z = bestZ - radius - 2; z <= bestZ + radius + 2; ++z)
         {
@@ -1970,7 +2038,7 @@ void buildLake(Grid &g, const Clearance &clear)
 
 // A giant oak standing alone in the meadow where the train passes in sight
 // of it: a trunk three blocks thick with roots, boughs and a broad crown.
-void buildGiantTree(Grid &g, const Clearance &clear)
+void buildGiantTree(Grid &g, const Clearance &clear, Extras &extras)
 {
     int bestX = 0, bestZ = 0, bestTop = 0, bestScore = 1 << 30;
     for (int bx = -kHalf + 12; bx < kHalf - 12; bx += 3)
@@ -1995,6 +2063,9 @@ void buildGiantTree(Grid &g, const Clearance &clear)
     if (bestScore == 1 << 30)
         return;
 
+    extras.meadow[0] = centerOf(bestX);
+    extras.meadow[1] = centerOf(bestZ);
+    extras.hasMeadow = true;
     std::vector<Placed> tree;
     const int base = bestTop + 1, trunk = 16;
     for (int k = 0; k < trunk; ++k)
@@ -2072,6 +2143,74 @@ void buildFarms(Grid &g, const Clearance &clear)
     }
 }
 
+// Ice spikes on the snowfields high on the jagged peaks: tall pillars of
+// packed ice, thick at the foot and thinning to a point.
+void buildIceSpikes(Grid &g, const Clearance &clear)
+{
+    std::vector<Placed> spike;
+    for (int bx = -kHalf + 2; bx < kHalf - 2; ++bx)
+        for (int bz = -kHalf + 2; bz < kHalf - 2; ++bz)
+        {
+            if (g.biome[Grid::column(bx, bz)] != ALPINE || hash(bx, bz, 481u) % 70u != 0)
+                continue;
+            const int top = g.top(bx, bz);
+            if (g.get(bx, top, bz) != SNOW || top + 16 > kMaxY)
+                continue;
+            const int height = 5 + static_cast<int>(hash(bx, bz, 483u) % 10u);
+            const bool thick = height > 9;
+            spike.clear();
+            for (int k = 1; k <= height; ++k)
+            {
+                spike.push_back(Placed{bx, top + k, bz, ICE});
+                if (thick && k <= height / 2)
+                {
+                    spike.push_back(Placed{bx + 1, top + k, bz, ICE});
+                    spike.push_back(Placed{bx, top + k, bz + 1, ICE});
+                    spike.push_back(Placed{bx + 1, top + k, bz + 1, ICE});
+                }
+                else if (k <= height * 3 / 4 && k % 2 == 0)
+                    spike.push_back(Placed{bx + 1, top + k, bz, ICE});
+            }
+            commit(g, clear, spike);
+        }
+}
+
+// Hoodoos on the badlands: thin pillars of banded clay standing on the
+// plateaus, as wind and water leave them, each with a harder cap.
+void buildHoodoos(Grid &g, const Clearance &clear)
+{
+    std::vector<Placed> pillar;
+    for (int bx = -kHalf + 2; bx < kHalf - 2; ++bx)
+        for (int bz = -kHalf + 2; bz < kHalf - 2; ++bz)
+        {
+            if (g.biome[Grid::column(bx, bz)] != MESA || hash(bx, bz, 491u) % 90u != 0)
+                continue;
+            const int top = g.top(bx, bz);
+            const int b = g.get(bx, top, bz);
+            if (top < 4 || top + 16 > kMaxY ||
+                (b != RED_SAND && b != CLAY_RED && b != CLAY_ORANGE && b != CLAY_YELLOW &&
+                 b != CLAY_WHITE && b != CLAY_BROWN && b != CLAY_GREY))
+                continue;
+            const int height = 7 + static_cast<int>(hash(bx, bz, 493u) % 9u);
+            pillar.clear();
+            for (int k = 1; k <= height; ++k)
+            {
+                // three wide at the foot, two up the middle, one at the top
+                const int band = clayBand(top + k);
+                const int half = k <= height * 2 / 5 ? 1 : 0;
+                const int extra = k <= height * 3 / 4 ? 1 : 0;
+                for (int dx = -half; dx <= half + (half == 0 ? extra : 0); ++dx)
+                    for (int dz = -half; dz <= half + (half == 0 ? extra : 0); ++dz)
+                        pillar.push_back(Placed{bx + dx, top + k, bz + dz, band});
+            }
+            // the harder cap, a little wider than the neck
+            for (int dx = 0; dx <= 1; ++dx)
+                for (int dz = 0; dz <= 1; ++dz)
+                    pillar.push_back(Placed{bx + dx, top + height + 1, bz + dz, CLAY_BROWN});
+            commit(g, clear, pillar);
+        }
+}
+
 void plantTrees(Grid &g, const Clearance &clear, const Extras &extras)
 {
     // the windmill's hub, or nowhere when there is none
@@ -2109,6 +2248,25 @@ void plantTrees(Grid &g, const Clearance &clear, const Extras &extras)
                 const float millX = cx - millHub[0], millZ = cz - millHub[1];
                 if (millX * millX + millZ * millZ < 16.0f * 16.0f)
                     continue;
+                const float gx = cx - extras.grove[0], gz = cz - extras.grove[2];
+                const bool grove =
+                    extras.hasGrove && gx * gx + gz * gz < kGroveRadius * kGroveRadius;
+                const float mx = cx - extras.meadow[0], mz = cz - extras.meadow[1];
+                const bool flowerMeadow =
+                    extras.hasMeadow && mx * mx + mz * mz < kMeadowRadius * kMeadowRadius;
+                if (grove && biome == MEADOW)
+                {
+                    // the cherry grove: blossom trees close together
+                    if (h % 9u == 0 && !crowded(g, bx, base, bz, 3))
+                    {
+                        roundTree(blocks, bx, base, bz, OAK_LOG, LEAVES_CHERRY,
+                                  5 + static_cast<int>((h >> 8) % 2u), true);
+                        commit(g, clear, blocks);
+                    }
+                    continue;
+                }
+                if (flowerMeadow && biome == MEADOW && h % 7u != 0)
+                    continue; // the flower meadow stays open
                 const float villageX = cx - kVillageX, villageZ = cz - kVillageZ;
                 const bool village =
                     villageX * villageX + villageZ * villageZ < kVillageRadius * kVillageRadius;
@@ -2124,7 +2282,7 @@ void plantTrees(Grid &g, const Clearance &clear, const Extras &extras)
                         roundTree(blocks, bx, base, bz, biome == CRAG ? OAK_LOG : BIRCH_LOG,
                                   LEAVES_AUTUMN, 4 + static_cast<int>((h >> 8) % 2u), false);
                 }
-                else if (cz < -76.0f && cx > 4.0f && cx < 44.0f)
+                else if (cz < -76.0f * kScale && cx > 4.0f * kScale && cx < 44.0f * kScale)
                 {
                     // the mushroom shore
                     if (h % 11u == 0 && !crowded(g, bx, base, bz, 2))
@@ -2134,14 +2292,14 @@ void plantTrees(Grid &g, const Clearance &clear, const Extras &extras)
                 {
                     // woods in patches, single trees between them; cherry
                     // blossom in the middle of the island
-                    const float dx = cx - 22.0f, dz = cz + 22.0f;
-                    const bool grove = dx * dx + dz * dz < 34.0f * 34.0f;
+                    const float dx = cx - 22.0f * kScale, dz = cz + 22.0f * kScale;
+                    const bool blossom = dx * dx + dz * dz < 34.0f * 34.0f * kScale * kScale;
                     const unsigned int rarity = village ? 60u : (wood > 0.56f ? 6u : 34u);
                     if (h % rarity == 0 && !crowded(g, bx, base, bz, 2))
                     {
                         const unsigned int kind = (h >> 8) % 10u;
                         const int trunk = 4 + static_cast<int>((h >> 12) % 3u);
-                        if (grove && kind < 6u)
+                        if (blossom && kind < 6u)
                             roundTree(blocks, bx, base, bz, OAK_LOG, LEAVES_CHERRY, trunk, true);
                         else if (kind < 4u)
                             roundTree(blocks, bx, base, bz, BIRCH_LOG, LEAVES_BIRCH, trunk + 1,
@@ -2162,7 +2320,7 @@ void plantTrees(Grid &g, const Clearance &clear, const Extras &extras)
 }
 
 // Flowers, grass and bushes on open ground. Needs the sky light.
-void plantFlowers(Grid &g, const Clearance &clear)
+void plantFlowers(Grid &g, const Clearance &clear, const Extras &extras)
 {
     for (int bx = -kHalf; bx < kHalf; ++bx)
         for (int bz = -kHalf; bz < kHalf; ++bz)
@@ -2182,6 +2340,24 @@ void plantFlowers(Grid &g, const Clearance &clear)
                     plant = h % 9u == 0 ? DEAD_BUSH : NO_PLANT;
                 else if (ground == SNOWY_DIRT)
                     plant = h % 6u == 0 ? FERN : NO_PLANT;
+                else if (extras.hasGrove &&
+                         (cx - extras.grove[0]) * (cx - extras.grove[0]) +
+                                 (cz - extras.grove[2]) * (cz - extras.grove[2]) <
+                             kGroveRadius * kGroveRadius)
+                    // fallen blossom under the cherry trees, with grass
+                    plant = h % 5u < 3u ? PETALS : (h % 5u == 3u ? TALL_GRASS : NO_PLANT);
+                else if (extras.hasMeadow &&
+                         (cx - extras.meadow[0]) * (cx - extras.meadow[0]) +
+                                 (cz - extras.meadow[1]) * (cz - extras.meadow[1]) <
+                             kMeadowRadius * kMeadowRadius)
+                {
+                    // the flower meadow: a sea of flowers in drifts of colour
+                    const int kinds[7] = {POPPY, DANDELION, CORNFLOWER,  TULIP,
+                                          OXEYE, ALLIUM,    TULIP_ORANGE};
+                    const int kind =
+                        kinds[static_cast<int>(valueNoise(cx * 0.045f, cz * 0.045f, 103u) * 6.99f)];
+                    plant = h % 5u < 3u ? kind : (h % 5u == 3u ? kinds[(h >> 8) % 7u] : TALL_GRASS);
+                }
                 else
                 {
                     // flowers grow in drifts of one kind
@@ -2318,6 +2494,8 @@ void spreadGlow(Grid &g)
                     level = 13;
                 else if (block == LANTERN)
                     level = 14;
+                else if (block == JACK_O)
+                    level = 12;
                 else if (block == WINDOW)
                     level = 8;
                 else if (block == MAGMA)
@@ -2410,7 +2588,7 @@ void buildScenery(Grid &g, Extras &extras)
     crustLava(g);
     buildVillage(g, extras, clear);
     buildPond(g, kPondX, kPondZ, kPondRadius);
-    buildPond(g, 12.5f, 102.5f, 5.5f); // a still pool on the badlands
+    buildSpringPool(g, 12.5f, 102.5f, 9.0f); // a hot spring on the badlands
     buildWaterfall(g);
     buildFloatingIsland(g);
 
@@ -2422,15 +2600,17 @@ void buildScenery(Grid &g, Extras &extras)
     buildCastle(g, clear, castle);
     buildBridge(g, clear);
     buildLighthouse(g, clear, castle);
-    buildLake(g, clear);
+    buildLake(g, clear, extras);
     buildFarms(g, clear);
-    buildGiantTree(g, clear);
+    buildGiantTree(g, clear, extras);
+    buildIceSpikes(g, clear);
+    buildHoodoos(g, clear);
     // after the carving, so the water flows round the ride's room
     spreadWater(g);
 
     plantTrees(g, clear, extras);
     spreadSky(g);
-    plantFlowers(g, clear);
+    plantFlowers(g, clear, extras);
     spreadGlow(g);
     placeAnimals(g, clear, extras);
 }
@@ -3191,6 +3371,34 @@ void LandWorld::drawMoving(const Scene &s, float time)
         glRotatef(time * 4.0f + fi * 40.0f, 0.0f, 1.0f, 0.0f);
         drawBalloon(paints[i][0], paints[i][1]);
         glPopMatrix();
+    }
+
+    // cherry blossom drifting down through the grove, carried by the breeze
+    if (s.extras.hasGrove)
+    {
+        setGlow(0.08f);
+        for (int i = 0; i < 220; ++i)
+        {
+            const float fi = static_cast<float>(i);
+            const float a = static_cast<float>(hash(i, 0, 501u) % 6283u) / 1000.0f;
+            const float r = sqrtf(static_cast<float>(hash(i, 1, 501u) % 1000u) / 1000.0f) *
+                            kGroveRadius * 0.85f;
+            const float fall =
+                7.0f + static_cast<float>(i % 5) * 1.5f; // seconds from crown to grass
+            const float t = fmodf(time + fi * 0.73f, fall) / fall;
+            const float x =
+                s.extras.grove[0] + cosf(a) * r + t * 9.0f + sinf(time * 0.9f + fi) * 1.4f;
+            const float z = s.extras.grove[2] + sinf(a) * r + cosf(time * 0.7f + fi * 1.3f) * 1.4f;
+            const float y = s.extras.grove[1] + 18.0f * (1.0f - t);
+            const int tone = static_cast<int>(hash(i, 2, 501u) % 30u);
+            colour(246, 170 + tone, 206 + tone / 2);
+            glPushMatrix();
+            glTranslatef(x, y, z);
+            glRotatef(time * 90.0f + fi * 37.0f, 0.3f, 1.0f, 0.2f);
+            box(-0.16f, -0.03f, -0.12f, 0.16f, 0.03f, 0.12f);
+            glPopMatrix();
+        }
+        setGlow(0.0f);
     }
 }
 

@@ -74,6 +74,14 @@ enum Texture
     TULIP,
     DEAD_BUSH,
     WHEAT,
+    PETALS, // fallen cherry blossom on the ground
+    OXEYE,  // white daisies
+    ALLIUM, // round purple heads
+    TULIP_ORANGE,
+    // more blocks (after the plants, which keep their order)
+    ICE,          // packed ice of the ice spikes
+    PUMPKIN_FACE, // a carved pumpkin lantern's face, lit
+    PUMPKIN_TOP,
     TEXTURE_COUNT
 };
 

@@ -16,6 +16,7 @@
 #include "LandTextures.h"
 
 #include <math.h>
+#include <stdlib.h>
 
 namespace
 {
@@ -927,6 +928,104 @@ Image makeFern()
     return p;
 }
 
+// Fallen petals: small pink flakes on the lowest rows of the cut-out, so
+// the plant reads as a carpet of blossom on the grass.
+Image makePetals()
+{
+    Image p = PixelArt::blank(S);
+    for (int i = 0; i < 26; ++i)
+    {
+        const int x = static_cast<int>(hash(i, 0, 271u) % 30u);
+        const int y = 22 + static_cast<int>(hash(i, 1, 271u) % 9u);
+        const int s = shadeOf(i, 2, 271u, 14);
+        set(p, x, y, 246 + s / 2, 172 + s, 206 + s);
+        set(p, x + 1, y, 236 + s / 2, 156 + s, 196 + s);
+        if (hash(i, 3, 271u) % 2u == 0)
+            set(p, x, y + 1, 228 + s / 2, 146 + s, 186 + s);
+    }
+    return p;
+}
+
+// Packed ice: pale blue with lighter cracks and frosty specks.
+Image makeIce()
+{
+    Image p = PixelArt::blank(S);
+    for (int y = 0; y < S; ++y)
+        for (int x = 0; x < S; ++x)
+        {
+            const int tone = stepped((fbm(x, y, 4, 281u) - 0.5f) * 30.0f, 6);
+            const unsigned int h = hash(x, y, 282u);
+            int r = 162 + tone, g = 196 + tone, b = 238 + tone / 2;
+            if (h % 17u == 0)
+            {
+                r += 30;
+                g += 26;
+                b += 12; // frost
+            }
+            set(p, x, y, r, g, b);
+        }
+    const Cells cracks(3, 283u, 0.9f);
+    for (int y = 0; y < S; ++y)
+        for (int x = 0; x < S; ++x)
+        {
+            int id;
+            float d1, gap, ox, oy;
+            cracks.find(x, y, id, d1, gap, ox, oy);
+            if (gap < 0.7f)
+                set(p, x, y, 214, 234, 252);
+        }
+    return p;
+}
+
+// Pumpkin skin: orange ribs running down, darker in the grooves.
+void pumpkinSkin(Image &p, bool top)
+{
+    for (int y = 0; y < S; ++y)
+        for (int x = 0; x < S; ++x)
+        {
+            const int rib = top ? ((abs(x - 16) + abs(y - 16)) % 6) : (x % 6);
+            const int s = shadeOf(x, y, 291u, 5);
+            const int groove = rib == 0 ? -40 : (rib == 3 ? 14 : 0);
+            set(p, x, y, 222 + groove + s, 118 + groove / 2 + s, 22 + s);
+        }
+}
+
+// A carved pumpkin lantern: triangle eyes and a jagged grin, lit from
+// inside in warm yellow.
+Image makePumpkinFace()
+{
+    Image p = PixelArt::blank(S);
+    pumpkinSkin(p, false);
+    auto glow = [&](int x, int y) {
+        const int s = shadeOf(x, y, 293u, 10);
+        set(p, x, y, 255, 214 + s, 96 + s);
+    };
+    for (int y = 0; y < 6; ++y) // the eyes, points up
+        for (int x = -y; x <= y; ++x)
+        {
+            glow(9 + x, 8 + y);
+            glow(22 + x, 8 + y);
+        }
+    for (int x = 6; x <= 25; ++x) // the grin, with teeth
+        for (int y = 19; y <= 23; ++y)
+        {
+            const bool tooth = (x % 5 == 0 && y == 19) || (x % 5 == 3 && y == 23);
+            if (!tooth && !(y == 23 && (x < 8 || x > 23)))
+                glow(x, y);
+        }
+    return p;
+}
+
+Image makePumpkinTop()
+{
+    Image p = PixelArt::blank(S);
+    pumpkinSkin(p, true);
+    for (int y = 13; y <= 18; ++y)
+        for (int x = 14; x <= 17; ++x)
+            set(p, x, y, 84 + shadeOf(x, y, 295u, 8), 112, 40); // the stem
+    return p;
+}
+
 } // namespace
 
 namespace LandTextures
@@ -1052,6 +1151,20 @@ Image make(int texture)
         return makeDeadBush();
     case WHEAT:
         return makeWheat();
+    case PETALS:
+        return makePetals();
+    case OXEYE:
+        return makeFlower(246, 246, 236, 248, 206, 44, false);
+    case ALLIUM:
+        return makeFlower(182, 112, 226, 214, 156, 246, false);
+    case TULIP_ORANGE:
+        return makeFlower(246, 140, 46, 0, 0, 0, true);
+    case ICE:
+        return makeIce();
+    case PUMPKIN_FACE:
+        return makePumpkinFace();
+    case PUMPKIN_TOP:
+        return makePumpkinTop();
     default:
         return PixelArt::blank(S);
     }
