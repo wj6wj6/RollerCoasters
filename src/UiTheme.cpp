@@ -7,6 +7,7 @@
 #include <FL/Fl_Box.H>
 #include <FL/Fl_Browser.H>
 #include <FL/Fl_Button.H>
+#include <FL/Fl_Choice.H>
 #include <FL/Fl_Group.H>
 #include <FL/Fl_Tooltip.H>
 #include <FL/Fl_Value_Input.H>
@@ -175,6 +176,21 @@ void UiTheme::styleSlider(Fl_Value_Slider *slider)
     slider->textcolor(kText);
     slider->align(FL_ALIGN_LEFT);
     styleLabel(slider, kTextMuted);
+}
+
+void UiTheme::styleChoice(Fl_Choice *choice)
+{
+    choice->box(kWidgetBox);
+    choice->down_box(kWidgetBox);
+    choice->color(kSurfaceHi);
+    choice->selection_color(kAccent);
+    choice->textfont(FL_HELVETICA);
+    choice->textsize(12);
+    choice->textcolor(kText);
+    choice->labelfont(FL_HELVETICA);
+    choice->labelsize(12);
+    choice->labelcolor(kTextMuted);
+    choice->align(FL_ALIGN_LEFT);
 }
 
 void UiTheme::styleBrowser(Fl_Browser *browser)

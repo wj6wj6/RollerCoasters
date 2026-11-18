@@ -3,7 +3,8 @@
 
      Comment:     The 32 x 32 pixel textures of the island's blocks and
                   plants (LandWorld), drawn in code like the others, so
-                  there are no image files to load.
+                  there are no image files to load. A texture pack the
+                  user picks can stand in for any of them (TexturePack).
 
 *************************************************************************/
 #pragma once

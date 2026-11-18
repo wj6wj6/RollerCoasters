@@ -52,6 +52,9 @@ class CTrack;
 #include "Utilities/ArcBallCam.H"
 #include "AdvancedLighting.h"
 #include "PostEffects.h"
+#include <memory>
+#include <utility>
+
 #include "LandWorld.h"
 #include "OceanWorld.h"
 #include "TransformGizmo.h"
@@ -81,6 +84,11 @@ class TrainView : public Fl_Gl_Window
     void setProjection();
 
     // Reset the Arc ball control
+    // Swaps the island's textures for a texture pack's (nullptr: built in).
+    void setTexturePack(std::shared_ptr<const TexturePack::Pack> pack)
+    {
+        m_land.setTexturePack(std::move(pack));
+    }
     void resetArcball();
 
     // pick a point (for when the mouse goes down)

@@ -38,4 +38,9 @@ void set(Image &pixels, int x, int y, int r, int g, int b, int a = 255);
 // vertically as well (side textures clamp so their top row stays on top).
 unsigned int upload(Image pixels, bool repeatT);
 
+// The same into a texture that already has a name, replacing what it held
+// (display lists that bind the name then draw the new picture). The new
+// picture may be a different size.
+void uploadInto(unsigned int texture, Image pixels, bool repeatT);
+
 } // namespace PixelArt

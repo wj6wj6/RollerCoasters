@@ -8,6 +8,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <deque>
+#include <utility>
 #include <vector>
 
 #ifdef _WIN32
@@ -20,6 +21,7 @@
 #include "LandTextures.h"
 #include "OceanWorld.h"
 #include "PixelArt.h"
+#include "TexturePack.h"
 #include "WaterFlow.h"
 #include "WorldShape.h"
 
@@ -3886,7 +3888,8 @@ LandWorld::Scene &LandWorld::scene(bool flat)
         m_textures.assign(LandTextures::TEXTURE_COUNT, 0);
         for (int t = 0; t < LandTextures::TEXTURE_COUNT; ++t)
             m_textures[static_cast<size_t>(t)] =
-                PixelArt::upload(LandTextures::make(t), LandTextures::repeatsVertically(t));
+                PixelArt::upload(pictureOf(t), LandTextures::repeatsVertically(t));
+        m_texturesStale = false;
     }
 
     if (flat)
@@ -3938,9 +3941,32 @@ LandWorld::Scene &LandWorld::scene(bool flat)
     return s;
 }
 
+void LandWorld::setTexturePack(std::shared_ptr<const TexturePack::Pack> pack)
+{
+    m_pack = std::move(pack);
+    m_texturesStale = true;
+}
+
+PixelArt::Image LandWorld::pictureOf(int texture) const
+{
+    PixelArt::Image picture;
+    if (m_pack && m_pack->landTexture(texture, picture))
+        return picture;
+    return LandTextures::make(texture);
+}
+
 void LandWorld::draw(bool flat, bool shadowPass, float time)
 {
     glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_TEXTURE_BIT);
+    // a new pack: its pictures go into the same texture names, which the
+    // display lists bind, so nothing has to be built again
+    if (m_texturesStale && !m_textures.empty())
+    {
+        for (int t = 0; t < LandTextures::TEXTURE_COUNT; ++t)
+            PixelArt::uploadInto(m_textures[static_cast<size_t>(t)], pictureOf(t),
+                                 LandTextures::repeatsVertically(t));
+        m_texturesStale = false;
+    }
     const Scene &s = scene(flat);
     glEnable(GL_TEXTURE_2D);
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
