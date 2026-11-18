@@ -118,6 +118,7 @@ enum Block
     MUD,    // the mangrove swamp's ground
     MANGROVE_LOG,
     LEAVES_MANGROVE,
+    LEAVES_BAMBOO, // the canopy over a bamboo thicket
     BLOCK_COUNT
 };
 
@@ -255,6 +256,8 @@ int textureOf(int block, int face)
         return face == 2 ? T::MANGROVE_SIDE : T::MANGROVE_TOP;
     case LEAVES_MANGROVE:
         return T::LEAVES_MANGROVE;
+    case LEAVES_BAMBOO:
+        return T::LEAVES_BAMBOO;
     default:
         return T::STONE;
     }
@@ -270,7 +273,7 @@ bool isGrowth(int block)
 {
     return (block >= OAK_LOG && block <= LEAVES_AUTUMN) || block == CACTUS ||
            block == MUSHROOM_CAP || block == MUSHROOM_STEM || block == MANGROVE_LOG ||
-           block == LEAVES_MANGROVE;
+           block == LEAVES_MANGROVE || block == LEAVES_BAMBOO;
 }
 
 // How strongly a block shines by itself.
@@ -2465,18 +2468,43 @@ void mangrove(Grid &g, const Clearance &clear, int bx, int base, int bz, unsigne
 }
 
 // A bamboo cane: stalks stacked up, a leafy top; only where every cell is
-// open and clear of the train.
-void bambooCane(Grid &g, const Clearance &clear, int bx, int base, int bz, int height)
+// open and clear of the train. Says whether it grew.
+bool bambooCane(Grid &g, const Clearance &clear, int bx, int base, int bz, int height)
 {
     for (int k = 0; k < height; ++k)
     {
         const size_t cell = Grid::index(bx, base + k, bz);
         if (!Grid::inside(bx, base + k, bz) || g.block[cell] != AIR || g.carved[cell] ||
             g.plant[cell] != NO_PLANT || clear.blocks(bx, base + k, bz))
-            return;
+            return false;
     }
     for (int k = 0; k < height; ++k)
         g.plant[Grid::index(bx, base + k, bz)] = k == height - 1 ? BAMBOO_TOP : BAMBOO;
+    return true;
+}
+
+// Leaves round a cane's top, in the open cells beside it and one above,
+// so from afar a thicket is a pale green canopy on slender stalks.
+void bambooCanopy(Grid &g, const Clearance &clear, int bx, int top, int bz)
+{
+    for (int dy = -2; dy <= 1; ++dy)
+        for (int dx = -1; dx <= 1; ++dx)
+            for (int dz = -1; dz <= 1; ++dz)
+            {
+                const int reach = abs(dx) + abs(dz);
+                if (dy == 1 ? reach != 0 : (reach == 0 || (dy == -2 && reach > 1)))
+                    continue;
+                // the corners and the lowest ring only now and then
+                const unsigned int h = hash(bx + dx, bz + dz * 7 + dy * 31, 747u);
+                if ((reach == 2 || dy == -2) && h % 3u != 0)
+                    continue;
+                const int x = bx + dx, y = top + dy, z = bz + dz;
+                const size_t cell = Grid::index(x, y, z);
+                if (!Grid::inside(x, y, z) || g.block[cell] != AIR || g.carved[cell] ||
+                    g.plant[cell] != NO_PLANT || clear.blocks(x, y, z))
+                    continue;
+                g.block[cell] = LEAVES_BAMBOO;
+            }
 }
 
 // The north-east land's growth: mangroves standing in the swamp, and on
@@ -2484,6 +2512,8 @@ void bambooCane(Grid &g, const Clearance &clear, int bx, int base, int bz, int h
 // trees hung with vines.
 void plantNorthEast(Grid &g, const Clearance &clear)
 {
+    // the canes' tops, for their leaves once every cane has grown
+    std::vector<Placed> caneTops;
     for (int bx = kMinBX + 5; bx < kMaxBX - 5; ++bx)
         for (int bz = kMinBZ + 5; bz < kMaxBZ - 5; ++bz)
         {
@@ -2504,8 +2534,12 @@ void plantNorthEast(Grid &g, const Clearance &clear)
             if (ground != GRASS || top + 20 > kMaxY)
                 continue;
             const float thicket = valueNoise(cx * 0.04f, cz * 0.04f, 743u);
-            if (thicket > 0.38f && h % 3u != 0)
-                bambooCane(g, clear, bx, top + 1, bz, 8 + static_cast<int>((h >> 8) % 9u));
+            if (thicket > 0.34f && h % 4u != 0)
+            {
+                const int height = 8 + static_cast<int>((h >> 8) % 9u);
+                if (bambooCane(g, clear, bx, top + 1, bz, height))
+                    caneTops.push_back(Placed{bx, top + height, bz, LEAVES_BAMBOO});
+            }
             else if (h % 61u == 0 && !crowded(g, bx, top + 1, bz, 3))
             {
                 std::vector<Placed> tree;
@@ -2525,6 +2559,8 @@ void plantNorthEast(Grid &g, const Clearance &clear)
                             }
             }
         }
+    for (const Placed &cane : caneTops)
+        bambooCanopy(g, clear, cane.bx, cane.j, cane.bz);
 }
 
 void plantTrees(Grid &g, const Clearance &clear, const Extras &extras)
@@ -3182,6 +3218,69 @@ void addWaterFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
     }
 }
 
+// A bamboo cane's stalk is a thin square post, not just the crossed
+// pictures, so it stays solid from any side and far away; its faces show
+// the stalk's strip of the picture, shaded a little darker round the post.
+// The leafy top adds a wider spray of leaves square to the crossed one.
+void addBambooStalk(bool top, bool leafy, float cx, float y0, float cz, unsigned int h, Vertex v,
+                    std::vector<Vertex> &out)
+{
+    const float half = 0.26f + 0.08f * static_cast<float>((h >> 4) % 4u) / 3.0f;
+    const float u0 = 13.2f / 32.0f, u1 = 18.8f / 32.0f;
+    const float tint = v.color[0];
+    const float shades[4] = {1.0f, 0.82f, 0.7f, 0.9f};
+    const float corners[5][2] = {
+        {-half, -half}, {half, -half}, {half, half}, {-half, half}, {-half, -half}};
+    // the stalk's picture starts at the top's leaves halfway up the cell
+    const float vTop = top ? 0.5f : 0.0f;
+    const float y1 = top ? y0 + kBlock * 0.5f : y0 + kBlock;
+    for (int f = 0; f < 4; ++f)
+    {
+        v.color[0] = v.color[1] = v.color[2] = tint * shades[f];
+        const float quad[4][4] = {{corners[f][0], y0, corners[f][1], 1.0f},
+                                  {corners[f + 1][0], y0, corners[f + 1][1], 1.0f},
+                                  {corners[f + 1][0], y1, corners[f + 1][1], vTop},
+                                  {corners[f][0], y1, corners[f][1], vTop}};
+        for (int c = 0; c < 4; ++c)
+        {
+            v.pos[0] = cx + quad[c][0];
+            v.pos[1] = quad[c][1];
+            v.pos[2] = cz + quad[c][2];
+            v.uv[0] = (c == 0 || c == 3) ? u0 : u1;
+            v.uv[1] = quad[c][3];
+            out.push_back(v);
+        }
+    }
+    if (!top && !leafy)
+        return;
+    v.color[0] = v.color[1] = v.color[2] = tint;
+    // only the picture's upper half, which holds the leaves and no stalk;
+    // the top's spray is the widest, the ones below it smaller and turned
+    const float spread = kBlock * (top ? 1.15f : 0.8f);
+    const float low = y0 + kBlock * (top ? 0.35f : 0.2f), high = low + kBlock * (top ? 1.3f : 0.9f);
+    // the top's two sprays face along x and z, the lower ones diagonally
+    const float axes[2][2][2] = {{{1.0f, 0.0f}, {0.0f, 1.0f}},
+                                 {{0.7071f, 0.7071f}, {-0.7071f, 0.7071f}}};
+    for (int q = 0; q < 2; ++q)
+    {
+        const float ax = axes[top ? 0 : 1][q][0] * spread;
+        const float az = axes[top ? 0 : 1][q][1] * spread;
+        const float quad[4][4] = {{cx - ax, low, cz - az, 0.5f},
+                                  {cx + ax, low, cz + az, 0.5f},
+                                  {cx + ax, high, cz + az, 0.0f},
+                                  {cx - ax, high, cz - az, 0.0f}};
+        for (int c = 0; c < 4; ++c)
+        {
+            v.pos[0] = quad[c][0];
+            v.pos[1] = quad[c][1];
+            v.pos[2] = quad[c][2];
+            v.uv[0] = (c == 0 || c == 3) ? 0.0f : 1.0f;
+            v.uv[1] = quad[c][3];
+            out.push_back(v);
+        }
+    }
+}
+
 // Two quads crossing diagonally, smaller than the cell and off centre.
 void addPlant(const Grid &g, int bx, int j, int bz, Batches &batches)
 {
@@ -3230,6 +3329,16 @@ void addPlant(const Grid &g, int bx, int j, int bz, Batches &batches)
             v.extra[1] = corners[c][3] > 0.5f ? 0.0f : sway;
             out.push_back(v);
         }
+    }
+    if (plant == BAMBOO || plant == BAMBOO_TOP)
+    {
+        // leaves spray out of the cane's upper cells too, so a thicket's
+        // crowns join into a green canopy
+        bool leafy = false;
+        for (int k = 1; k <= 3 && Grid::inside(bx, j + k, bz); ++k)
+            if (g.plant[Grid::index(bx, j + k, bz)] == BAMBOO_TOP)
+                leafy = k < 3 || (h >> 12) % 2u == 0;
+        addBambooStalk(plant == BAMBOO_TOP, leafy, cx, y0, cz, h, v, out);
     }
 }
 

@@ -89,6 +89,7 @@ enum Texture
     MANGROVE_SIDE,
     MANGROVE_TOP,
     LEAVES_MANGROVE,
+    LEAVES_BAMBOO, // the pale canopy over a bamboo thicket
     TEXTURE_COUNT
 };
 

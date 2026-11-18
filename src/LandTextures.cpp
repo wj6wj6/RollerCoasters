@@ -1261,6 +1261,8 @@ Image make(int texture)
         return makeLogTop(104, 54, 42, 168, 92, 70);
     case LEAVES_MANGROVE:
         return makeLeaves(62, 116, 40, 333u);
+    case LEAVES_BAMBOO:
+        return makeLeaves(118, 176, 62, 335u);
     default:
         return PixelArt::blank(S);
     }
