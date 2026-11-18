@@ -351,8 +351,11 @@ int main()
         check(TexturePack::decodePng(file, width, height, rgba) && width == 16 && height == 32,
               "a PNG decodes to its size");
         const PixelArt::Image frame = TexturePack::firstFrame(rgba, width, height);
+        // the see-through corner's colour is not checked: decoders may
+        // drop the colour of a texel that cannot be seen (FLTK on Windows
+        // does)
         check(PixelArt::sizeOf(frame) == 16 && texelIs(frame, 5, 15, 200, 200, 200, 255) &&
-                  texelIs(frame, 0, 0, 200, 200, 200, 0),
+                  frame[3] == 0,
               "an animated strip gives its top frame");
         ZipArchive::Bytes junk(40, 7);
         check(!TexturePack::decodePng(junk, width, height, rgba),
