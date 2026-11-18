@@ -67,7 +67,7 @@ pwsh -File scripts/check.ps1 -Stage all -Compiler clang -Config Release
   `Ride`（Run、前後步進、ArcLength、Speed）、`Camera`（World／Train／Chase／Top／Fly、Fly 速度與 FOV）、
   `Track`（Spline Type、Edit、Add／Delete Point、Load／Save／Reset、R±X／R±Z）、`Transform`（選取控制點的 X／Y／Z，可直接輸入）、
   `Lighting`（Light+、Shadows、Headlight、Bloom、SSAO、Time）、`World`（Water、Rain、Scenery、Grand Tour）。Load／Save 讀寫軌道文字檔，預設位置是 exe 旁邊的 `TrackFiles\`（build 與安裝時建立，程式啟動時會切到 exe 所在資料夾，不論從 Visual Studio、雙擊或終端機啟動都一樣）。
-- 編輯控制點（先開啟 `Edit`，快捷鍵 `F4`，像方塊遊戲切換遊戲模式；World、Top 與 Fly 相機）：`Edit` 關閉時控制點不顯示也不能選取。左鍵點選，選到的控制點變橘色並出現移動把手。
+- 編輯控制點（先開啟 `Edit`，快捷鍵 `F4`，像方塊遊戲切換遊戲模式；World、Top 與 Fly 相機）：`Edit` 關閉時控制點不顯示也不能選取。左鍵點選，選到的控制點變橘色並出現移動把手；中鍵也能選取（只選不拖），沒有中鍵的觸控板按 `C` 選游標下的點（Fly 鎖定滑鼠時選準心對到的點）。
   - 拖紅／綠／藍箭頭沿 X／Y／Z 軸移動，拖小方塊在該平面內移動，直接拖控制點則平行於畫面移動。
   - 鍵盤操作與 3D 建模軟體相同：`G` 移動、`R` 傾斜（改變控制點的上方向），之後按 `X`／`Y`／`Z` 鎖定軸，`Shift` + `X`／`Y`／`Z` 鎖定另外兩軸的平面；
     左鍵或 Enter 確定，右鍵或 Esc 取消並還原。按住 `Ctrl` 以 1 單位（傾斜時 5 度）吸附。
@@ -75,7 +75,7 @@ pwsh -File scripts/check.ps1 -Stage all -Compiler clang -Config Release
     `Esc` 或右鍵取消，點到軌道以外的地方仍可照常旋轉相機。新點插在點擊處前後兩個控制點之間，軌道仍經過點擊處，所以形狀幾乎不變；
     傾斜方向取前後兩點的內插，列車留在原本的位置。`Edit` 關閉或正在坐車時按 `Add Pt` 會自動開啟 `Edit` 並切到 World 相機。
   - 在 Fly 相機下建造（滑鼠鎖定、`Edit` 開啟；`Add Pt` 或 `Alt` + `D` 會直接鎖定滑鼠），操作照 Minecraft：
-    - 準心對到的控制點外圍出現白框；左鍵敲掉（刪除）它，中鍵選取它，右鍵在準心處放一個新點。
+    - 準心對到的控制點外圍出現白框；左鍵敲掉（刪除）它，中鍵或 `C` 選取它，右鍵在準心處放一個新點。
     - 搬動：按 `G` 拿起準心對到的點（沒對到就是已選取的點）並直接拉到準心上、保持原本的距離，畫面不會停，照常轉視角、飛行，點固定在畫面同一處跟著走，滾輪調遠近；再按 `G` 或左鍵放下（一步 `Ctrl` + `Z`），`Esc` 放回原位。（World／Top 的 `G` 仍是跟著游標移動。）
     - 準心前方的黃點是右鍵會放的位置，黃線連到它會接上的軌道段；滾輪調遠近（往上推遠、往下拉近），左上角顯示距離。建造時滾輪不改飛行速度，速度用 `+`／`-` 或 Fly 滑桿。
     - 新點放在黃點那個位置，插在離它最近那段軌道的前後兩點之間；刪點時列車留在原處附近。每次放、敲都是一步，`Ctrl` + `Z` 可復原。`Edit` 關閉時滑鼠鍵不做事、滾輪照常調速度。

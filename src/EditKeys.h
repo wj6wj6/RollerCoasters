@@ -20,6 +20,8 @@
                                       Ctrl + Shift + Z   Ctrl + Shift + Z
                     cameras           numpad 1 / 7 / 0   numpad 1 / 7 / 0
                     Edit on / off     F4                 F4
+                    select (as the    C                  C
+                    middle button)
 
                   In Fly, Shift + D would sink and slide the camera and
                   Ctrl + D would fly right faster, so adding takes Alt,
@@ -43,6 +45,7 @@ enum Action
     GRAB,
     TILT,
     ADD_POINT,
+    PICK_POINT,
     REMOVE
 };
 

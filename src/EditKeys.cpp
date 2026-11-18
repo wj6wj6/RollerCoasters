@@ -31,6 +31,9 @@ EditKeys::Action EditKeys::forKey(int key, int state, bool fly)
         return (state & FL_SHIFT) != 0 ? REDO : UNDO;
     if (key == 'y' && (state & FL_CTRL) != 0)
         return REDO;
+    // what the middle button does, for touchpads without one
+    if (key == 'c' && (state & (FL_CTRL | FL_ALT)) == 0)
+        return PICK_POINT;
     if (key == 'g')
         return GRAB;
     if (key == 'r')

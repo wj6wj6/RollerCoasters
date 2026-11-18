@@ -116,8 +116,8 @@ class FlyCam
 
     // The FLTK key for a key used in Fly given by its physical position (a set
     // 1 scan code from Windows), or 0: the flying keys, F (face the train),
-    // Home (back to the World view, handled by TrainView) and G / R (move and
-    // tilt the selected control point, also TrainView). Reading keys this way keeps WASD working
+    // Home (back to the World view, handled by TrainView) and G / R / C (move,
+    // tilt and select a control point, also TrainView). Reading keys this way keeps WASD working
     // with any keyboard layout and while a Chinese input method such as Zhuyin
     // is on: it turns letter keys into VK_PROCESSKEY, and FLTK never sees them.
     static int keyForScanCode(unsigned scan, bool extended);

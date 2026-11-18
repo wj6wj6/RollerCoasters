@@ -135,6 +135,8 @@ class TrainView : public Fl_Gl_Window
     void flyAxes(float right[3], float up[3], float forward[3]) const;
     // the control point at the Fly crosshair, or -1
     int crosshairPoint() const;
+    // the point the middle button or C selects (crosshair in Fly, else mouse)
+    int pointUnderMouse() const;
     static constexpr float kCrosshairReach = 18.0f; // pixels
     void adjustPlaceDepth(float wheelDy);
 

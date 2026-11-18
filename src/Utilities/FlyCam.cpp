@@ -288,6 +288,8 @@ int FlyCam::keyForScanCode(unsigned scan, bool extended)
         return 'r'; // tilts the selected control point (TrainView)
     case 0x22:
         return 'g'; // moves the selected control point (TrainView)
+    case 0x2E:
+        return 'c'; // selects the control point at the crosshair (TrainView)
     case 0x47:
         // Home goes back to the World view. Without the E0 prefix this is
         // numpad 7, which TrainView reads as the Top camera through FLTK.

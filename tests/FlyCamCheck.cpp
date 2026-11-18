@@ -363,15 +363,15 @@ static bool checkScanCodes()
                         FlyCam::keyForScanCode(0x36, false) == FL_Shift_R &&
                         FlyCam::keyForScanCode(0x12, false) == 'e' &&
                         FlyCam::keyForScanCode(0x10, false) == 'q';
-    const bool other = FlyCam::keyForScanCode(0x1D, false) == FL_Control_L &&
-                       FlyCam::keyForScanCode(0x1D, true) == FL_Control_R &&
-                       FlyCam::keyForScanCode(0x21, false) == 'f' &&
-                       FlyCam::keyForScanCode(0x13, false) == 'r' &&
-                       FlyCam::keyForScanCode(0x22, false) == 'g' &&
-                       FlyCam::keyForScanCode(0x47, true) == FL_Home &&
-                       FlyCam::keyForScanCode(0x47, false) == 0 && // numpad 7: Top camera
-                       FlyCam::keyForScanCode(0x2D, false) == 0 && // X never reaches Fly
-                       FlyCam::keyForScanCode(0x2C, false) == 0;   // Z is not a flying key
+    const bool other =
+        FlyCam::keyForScanCode(0x1D, false) == FL_Control_L &&
+        FlyCam::keyForScanCode(0x1D, true) == FL_Control_R &&
+        FlyCam::keyForScanCode(0x21, false) == 'f' && FlyCam::keyForScanCode(0x13, false) == 'r' &&
+        FlyCam::keyForScanCode(0x22, false) == 'g' && FlyCam::keyForScanCode(0x2E, false) == 'c' &&
+        FlyCam::keyForScanCode(0x47, true) == FL_Home &&
+        FlyCam::keyForScanCode(0x47, false) == 0 && // numpad 7: Top camera
+        FlyCam::keyForScanCode(0x2D, false) == 0 && // X never reaches Fly
+        FlyCam::keyForScanCode(0x2C, false) == 0;   // Z is not a flying key
     const bool pass = wasd && upDown && other;
     std::printf("%s: flying keys are read by physical position (scan code)\n",
                 pass ? "PASS" : "FAIL");

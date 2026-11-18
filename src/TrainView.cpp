@@ -608,7 +608,15 @@ int TrainView::handle(int event)
                 setMouseCaptured(true);
             damage(1);
             return 1;
-        };
+        }
+        // the middle button selects the point under the mouse (picks it, as
+        // in a block game), without moving anything; C does the same
+        if (last_push == FL_MIDDLE_MOUSE && canEdit())
+        {
+            selectedCube = pointUnderMouse();
+            tw->damageMe();
+            return 1;
+        }
         break;
 
         // Mouse button release event
@@ -930,6 +938,18 @@ bool TrainView::carryEvent(int event)
     }
 }
 
+// The control point the middle button or C selects: at the crosshair while
+// Fly holds the mouse, else under the mouse; -1 when none is near.
+int TrainView::pointUnderMouse() const
+{
+    if (tw->flyCam->value() && mouseCaptured)
+        return crosshairPoint();
+    if (!m_editCameraValid)
+        return -1;
+    return TrackInsert::pickPoint(*m_pTrack, m_editCamera, Fl::event_x(), Fl::event_y(),
+                                  kCrosshairReach);
+}
+
 // The control point at the Fly crosshair, or -1.
 int TrainView::crosshairPoint() const
 {
@@ -1231,6 +1251,14 @@ bool TrainView::editKey(int key)
         tw->redoEdit();
         return true;
     }
+    if (action == EditKeys::PICK_POINT)
+    {
+        // C: select the point at the crosshair in Fly, else under the mouse
+        // (the middle button's job, for a touchpad that has none)
+        selectedCube = pointUnderMouse();
+        tw->damageMe();
+        return true;
+    }
     if (action == EditKeys::ADD_POINT)
     {
         // no selection needed: the new point goes where the track is clicked
@@ -1413,11 +1441,10 @@ void TrainView::drawEditOverlay()
                  selectedCube, static_cast<double>(away));
     }
     else if (building && aimed >= 0)
-        snprintf(
-            text, sizeof(text),
-            "Point %d   [Left] remove   [Middle] select   [G] carry   [Right] place a point %.1f "
-            "ahead",
-            aimed, static_cast<double>(m_placeDepth));
+        snprintf(text, sizeof(text),
+                 "Point %d   [Left] remove   [Middle / C] select   [G] carry   "
+                 "[Right] place a point %.1f ahead",
+                 aimed, static_cast<double>(m_placeDepth));
     else if (building)
         snprintf(text, sizeof(text),
                  "%s  |  [Right] place a point %.1f ahead   [Wheel] nearer / farther", camera,
