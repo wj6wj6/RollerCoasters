@@ -1089,56 +1089,90 @@ void buildRuins(Grid &g)
     g.put(cx - 1, kDeepestTop + 5, cz - 1, GOLD);
 }
 
-// A wrecked ship lying beside the ride: stern castle, masts, and a breach
-// in the side that shows the lamp-lit gold in the hold.
+// A wrecked ship lying beside the ride, as a block game's shipwrecks are
+// built: a hull of planks with a pointed bow, sides that flare out from a
+// narrower bottom, a main deck broken open over the hold, a raised stern
+// castle with a railing of posts, the sides rotted to different heights,
+// the stump of the snapped main mast, and sand drifted against one side
+// and into the hold. A breach in the side shows the lamp-lit gold inside.
 void buildWreck(Grid &g)
 {
     const int x0 = scaledColumn(-21) - 6, x1 = x0 + 13; // bow to stern
-    const int z0 = 43 + kRuinsShift, z1 = z0 + 6;
+    const int z0 = 43 + kRuinsShift, zc = z0 + 3;       // the ship's middle line
     const int keel = kDeepestTop + 1;
     for (int bx = x0; bx <= x1; ++bx)
     {
-        const int fromBow = bx - x0;
-        const int fromStern = x1 - bx;
-        // The hull narrows towards the ends.
-        const int inset =
-            fromBow == 0 ? 3 : (fromBow == 1 ? 2 : ((fromBow == 2 || fromStern == 0) ? 1 : 0));
-        const bool castle = fromStern <= 3;
-        for (int bz = z0 + inset; bz <= z1 - inset; ++bz)
+        const int fromBow = bx - x0, fromStern = x1 - bx;
+        // half the width at the gunwale: to a point at the bow, a little
+        // narrower at the stern
+        const int half = fromBow == 0     ? 0
+                         : fromBow == 1   ? 1
+                         : fromBow == 2   ? 2
+                         : fromStern == 0 ? 2
+                                          : 3;
+        const bool castle = fromStern <= 3, bow = fromBow <= 1;
+        // where the side ends: level with the castle's deck, rotted lower
+        // here and there amidships (the castle's railing reaches
+        // kSceneryTop)
+        int top = keel + 3;
+        if (!castle && !bow && hash(bx, z0, 211u) % 3u == 0)
+            --top;
+        for (int dz = -half; dz <= half; ++dz)
         {
-            const bool side =
-                bz == z0 + inset || bz == z1 - inset || fromBow == 0 || fromStern == 0;
-            const bool breach = bz == z0 && (fromBow == 6 || fromBow == 7);
-            g.put(bx, keel, bz, PLANKS);
-            if (!side)
+            const int bz = zc + dz;
+            const int reach = dz < 0 ? -dz : dz;
+            // the bottom, a block narrower: the sides flare out above it
+            if (reach < half || half == 0)
+                g.put(bx, keel, bz, PLANKS);
+            const bool side = reach == half || fromStern == 0;
+            const bool breach = dz == -half && (fromBow == 6 || fromBow == 7);
+            if (side && !breach)
+                for (int j = keel + 1; j <= top; ++j)
+                    if (j > keel + 1 || reach < half || half == 0)
+                        g.put(bx, j, bz, PLANKS);
+            if (side && reach == half && half > 0)
+                g.put(bx, keel + 1, bz, PLANKS); // the turn of the bilge
+            if (side)
+                continue;
+            // the decks: the main deck, broken open over the hold; the
+            // stern castle's raised deck, with its railing of posts
+            const bool hole = fromBow >= 5 && fromBow <= 8 && reach <= 1;
+            if (castle)
             {
-                if (castle)
-                    g.put(bx, keel + 3, bz, PLANKS); // what is left of the deck
-                continue;
+                g.put(bx, keel + 3, bz, PLANKS);
+                if (fromStern == 3 && dz != 0)
+                    for (int j = keel + 1; j <= keel + 2; ++j)
+                        g.put(bx, j, bz, PLANKS); // the castle's front wall, a door in it
             }
-            if (breach)
-                continue;
-            // The sides have rotted to different heights.
-            const int height = castle ? 4 : (hash(bx, bz, 211u) % 4u == 0 ? 1 : 2);
-            for (int k = 1; k <= height; ++k)
-                g.put(bx, keel + k, bz, (castle && k == height) ? LOG : PLANKS);
+            else if (!hole && fromBow >= 2)
+                g.put(bx, keel + 2, bz, PLANKS);
         }
+        if (castle)
+            for (int dz = -half; dz <= half; dz += half > 0 ? half * 2 : 1)
+                if ((bx + dz) % 2 == 0)
+                    g.put(bx, keel + 4, zc + dz, PLANKS); // railing posts
     }
-    // The hold, seen through the breach.
-    g.put(x0 + 6, keel + 1, z0 + 1, GOLD);
-    g.put(x0 + 7, keel + 1, z0 + 1, GOLD);
-    g.put(x0 + 7, keel + 2, z0 + 1, GOLD);
-    g.put(x0 + 7, keel + 1, z0 + 2, GOLD);
-    g.put(x0 + 6, keel + 1, z0 + 2, LANTERN);
-    // Main mast with its yard, and the fore mast snapped off and lying outside.
-    for (int j = keel + 1; j <= kSceneryTop; ++j)
-        g.put(x0 + 5, j, z0 + 3, LOG);
-    for (int bz = z0 + 1; bz <= z1 - 1; ++bz)
-        g.put(x0 + 5, kSceneryTop - 1, bz, LOG);
-    g.put(x0 + 2, keel + 1, z0 + 3, LOG);
-    g.put(x0 + 2, keel + 2, z0 + 3, LOG);
-    for (int bx = x0 + 1; bx <= x0 + 4; ++bx)
-        g.put(bx, keel, z1 + 2, LOG);
+    // sand drifted against the side away from the breach, and into the hold
+    for (int bx = x0 + 2; bx <= x1 - 1; ++bx)
+    {
+        if (hash(bx, z0, 223u) % 4u != 0)
+            g.put(bx, keel + 1, zc + 4, SAND);
+        g.put(bx, keel, zc + 4, SAND);
+    }
+    for (int bx = x0 + 5; bx <= x0 + 8; ++bx)
+        if (hash(bx, z0, 227u) % 2u == 0)
+            g.put(bx, keel + 1, zc + 1, SAND);
+    // the hold, seen through the breach and the broken deck
+    g.put(x0 + 6, keel + 1, zc - 2, GOLD);
+    g.put(x0 + 7, keel + 1, zc - 2, GOLD);
+    g.put(x0 + 7, keel + 2, zc - 2, GOLD);
+    g.put(x0 + 6, keel + 1, zc - 1, LANTERN);
+    // the main mast, snapped off above the deck, and a piece of it on the
+    // sea bed beside the ship
+    for (int j = keel + 1; j <= keel + 4; ++j)
+        g.put(x0 + 4, j, zc, LOG);
+    g.put(x0 + 3, keel, zc - 5, LOG);
+    g.put(x0 + 2, keel, zc - 5, LOG);
 }
 
 // Removes every block the train could touch, for all three spline types:
