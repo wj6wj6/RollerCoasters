@@ -114,7 +114,8 @@ class TrainView : public Fl_Gl_Window
     // island), the trestles under the track and the sea floor around it
     // (TrainViewEffects.cpp)
     bool sceneryOn() const;
-    float topViewHalf() const; // half the shorter side of the Top view
+    float topViewHalf() const;                    // half the shorter side of the Top view
+    void topViewCentre(float &x, float &z) const; // the ground it centres on
     void drawGround(bool shadowPass = false);
     void drawSupports(bool shadowPass);
     void drawUnderwater(bool shadowPass);
