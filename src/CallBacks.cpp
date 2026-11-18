@@ -227,6 +227,8 @@ void grandTourCB(Fl_Widget *, TrainWindow *tw)
     tw->arcLength->value(1);
     tw->speed->value(1.8); // the world is larger: a little faster round it
     tw->trainCam->setonly();
+    // the World camera frames the whole scenery island when switched to
+    tw->trainView->resetArcball();
     tw->trainView->cameraChanged();
     tw->damageMe();
 }

@@ -294,7 +294,12 @@ void ArcBallCam::setProjection(bool doClear)
 
     // Compute the aspect ratio so we don't distort things
     double aspect = ((double)wind->w()) / ((double)wind->h());
-    gluPerspective(fieldOfView, aspect, .1, 1000);
+    // The far plane follows the camera out, so zoomed all the way out the far
+    // side of the island and the sea round it are still drawn; the near
+    // plane moves out with it to keep the depth buffer precise.
+    const double distance = eyeZ > 1.0f ? eyeZ : 1.0;
+    const double nearPlane = distance * 0.005 > 0.1 ? distance * 0.005 : 0.1;
+    gluPerspective(fieldOfView, aspect, nearPlane, distance + 2000.0);
 
     // Put the camera where we want it to be
     glMatrixMode(GL_MODELVIEW);

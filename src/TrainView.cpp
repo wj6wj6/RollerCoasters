@@ -204,8 +204,11 @@ static void touchpadMoves(void *data, float dx, float dy, float scale)
 // degrees; the FOV slider changes all of them (TrainView::setFieldOfView).
 static const float startFieldOfView = 70.0f;
 // The World camera's start: this far away with a 40 degree view frames the
-// island; a wider view starts as much closer.
+// editor's island; a wider view starts as much closer. The scenery island is
+// WorldShape::kScale times wider, so the camera starts that much further out
+// (a little more, for the mountains in front).
 static const float worldStartDistance = 250.0f;
+static const float sceneryStartDistance = 750.0f;
 static const float worldStartFieldOfView = 40.0f;
 // The lowest the observer camera can fly. Tracks may dive below the floor at
 // y = 0 (into the sea, say), so the camera can follow them well under it.
@@ -253,8 +256,9 @@ void TrainView::resetArcball()
     // these parameters might seem magical, and they kindof are
     // a little trial and error goes a long way
     const float halfAngle = 3.14159265f / 360.0f;
-    const float distance = worldStartDistance * tanf(worldStartFieldOfView * halfAngle) /
-                           tanf(m_fieldOfView * halfAngle);
+    const float start = tw && sceneryOn() ? sceneryStartDistance : worldStartDistance;
+    const float distance =
+        start * tanf(worldStartFieldOfView * halfAngle) / tanf(m_fieldOfView * halfAngle);
     arcball.setup(this, m_fieldOfView, distance, .2f, .4f, 0);
 }
 
@@ -293,7 +297,7 @@ void TrainView::placeFlyCamAtCurrentView()
         // at which the same width of ground fills the view.
         const float aspect = h() > 0 ? static_cast<float>(w()) / static_cast<float>(h()) : 1.0f;
         const float half = topViewHalf();
-        const float halfHeight = aspect >= 1.0f ? half / aspect : half;
+        const float halfHeight = aspect >= 1.0f ? half : half / aspect;
         const float height = halfHeight / tanf(m_fieldOfView * 3.14159265f / 360.0f);
         flyCam.setPose(0.0f, height, 0.0f, 0.0f, -89.0f);
     }
@@ -1249,22 +1253,27 @@ void TrainView::setProjection()
     // Or we use the top cam
     else if (tw->topCam->value())
     {
+        // The shorter side of the window shows the whole island, so none of
+        // it is cut off whatever the window's shape.
         float wi, he;
         if (aspect >= 1)
-        {
-            wi = topViewHalf();
-            he = wi / aspect;
-        }
-        else
         {
             he = topViewHalf();
             wi = he * aspect;
         }
+        else
+        {
+            wi = topViewHalf();
+            he = wi / aspect;
+        }
 
         // Set up the top camera drop mode to be orthogonal and set
         // up proper projection matrix
+        // The view looks down from y = 230, just under the block clouds
+        // (LandWorld draws them from y = 235), which would hide the map;
+        // the snow peak and the balloons are lower.
         glMatrixMode(GL_PROJECTION);
-        glOrtho(-wi, wi, -he, he, 400, -400);
+        glOrtho(-wi, wi, -he, he, 230, -400);
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
         glRotatef(-90, 1, 0, 0);
