@@ -392,22 +392,36 @@ int main()
               "what the pack lacks stays built in");
     }
 
-    // a folder pack, one folder down, in the block game's older layout
+    // a folder pack, one folder down, in the block game's older layout,
+    // with oak leaves and the bamboo pictures
+    const fs::path blocks =
+        folder / "Downloaded" / "Inner" / "assets" / "minecraft" / "textures" / "blocks";
     write(folder / "Downloaded" / "Inner" / "pack.mcmeta",
           reinterpret_cast<const unsigned char *>("{}"), 2);
-    write(folder / "Downloaded" / "Inner" / "assets" / "minecraft" / "textures" / "blocks" /
-              "leaves_oak.png",
-          kStripPng, sizeof kStripPng);
+    for (const char *name : {"leaves_oak.png", "bamboo_block.png", "bamboo_large_leaves.png"})
+        write(blocks / name, kStripPng, sizeof kStripPng);
     {
         TexturePack::Pack pack;
         check(pack.open((folder / "Downloaded").u8string()), "a folder pack opens");
-        check(pack.coverage() == 1, "the folder pack replaces its one texture");
+        // the oak leaves, and standing in: the cherry, autumn, mangrove and
+        // bamboo leaves; the bamboo stalk and top
+        check(pack.coverage() == 7, "the folder pack's pictures stand in where they can");
         PixelArt::Image image;
         // grey 200 tinted by the foliage colour (119, 171, 47); the hole
         // filled with the average, darker
         check(pack.landTexture(Texture::LEAVES_OAK, image) &&
                   texelIs(image, 4, 4, 93, 134, 36, 255) && texelIs(image, 0, 0, 51, 73, 19, 255),
               "grey leaves are tinted and their holes filled darker");
+        // the autumn colour (232, 132, 44) on the grey 200
+        check(pack.landTexture(Texture::LEAVES_AUTUMN, image) &&
+                  texelIs(image, 4, 4, 181, 103, 34, 255),
+              "oak leaves stand in for the autumn leaves, tinted orange");
+        // 16 wide: the stalk in columns 6 to 8 of the lower half, the
+        // leaves over the upper half
+        check(pack.landTexture(Texture::BAMBOO_TOP, image) && PixelArt::sizeOf(image) == 16 &&
+                  texelIs(image, 7, 12, 200, 200, 200, 255) && image[(12 * 16 + 2) * 4 + 3] == 0 &&
+                  texelIs(image, 2, 2, 200, 200, 200, 255),
+              "the bamboo top is laid out from the pack's bamboo pictures");
         TexturePack::Pack empty;
         check(!empty.open(folder.u8string()), "a folder that is no pack is refused");
     }

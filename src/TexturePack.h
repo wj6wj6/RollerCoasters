@@ -12,13 +12,17 @@
                     textures/blocks/ in older packs); the files are matched
                     to the island's textures by block name (see the table
                     in TexturePack.cpp). Grey grass and leaf pictures are
-                    tinted green as those games do.
+                    tinted green as those games do; where a pack has no
+                    picture of the island's block, a block it has stands
+                    in (oak leaves tinted orange for the autumn trees,
+                    stained glass for the windows, a sea lantern for the
+                    crystals), so with a full pack every block is the
+                    pack's.
                   A pack may sit one folder down in its archive. Pictures
                   are cut to their first frame (animated strips), made
                   square at a power of two up to 256, and solid blocks are
                   filled in where the picture is see-through. A texture the
-                  pack lacks, or one this program draws differently (the
-                  water, the bamboo stalks), keeps its built-in picture.
+                  pack lacks keeps its built-in picture.
                   No pack's files are part of this program: packs are read
                   from where the user puts them (searchFolders()).
 
@@ -83,6 +87,10 @@ class Pack
     bool readFile(const std::string &relative, ZipArchive::Bytes &out) const;
     bool hasFile(const std::string &relative) const;
     bool picture(const std::string &relative, PixelArt::Image &out) const;
+    // a resource pack's block picture by name, in either folder
+    bool blockPicture(const std::string &name, PixelArt::Image &out) const;
+    // the bamboo stalk (or top) laid out as the island draws it
+    bool bambooPicture(bool top, PixelArt::Image &out) const;
 
     std::string m_name;
     std::string m_folder; // a folder pack's root, or empty
