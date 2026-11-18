@@ -1295,7 +1295,7 @@ void PostEffects::applyWetGround(const AdvancedLighting &lighting, float wetness
 void PostEffects::buildWaterMesh()
 {
     const float reach = kWaterGridCell * static_cast<float>(kWaterGridCells) * 0.5f;
-    const float horizon = 1500.0f;
+    const float horizon = 3500.0f;
     const float y = waterLevel;
     m_waterList = glGenLists(1);
     glNewList(m_waterList, GL_COMPILE);
@@ -1389,7 +1389,7 @@ void PostEffects::drawWater(const AdvancedLighting &lighting, float time, bool o
     glUniform3fv(loc(p, "uLightColor"), 1, sky.lightColor);
     glUniform3fv(loc(p, "uZenith"), 1, sky.zenith);
     glUniform3fv(loc(p, "uHorizon"), 1, sky.horizon);
-    glUniform1f(loc(p, "uFogDensity"), orthographic ? 0.0f : 0.002f + 0.002f * rain);
+    glUniform1f(loc(p, "uFogDensity"), orthographic ? 0.0f : 0.0009f + 0.0016f * rain);
     glUniform1i(loc(p, "uUnder"), underwater ? 1 : 0);
     glUniform3fv(loc(p, "uDeepColor"), 1, m_deepColor);
     glUniform1i(loc(p, "uSsrOn"), orthographic ? 0 : 1);

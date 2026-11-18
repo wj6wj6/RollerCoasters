@@ -54,9 +54,9 @@ int main()
     std::vector<float> buried;
     for (int i = 0; i < 50; ++i)
     {
-        buried.push_back(-70.0f + static_cast<float>(i) * 0.5f);
-        buried.push_back(20.0f);
-        buried.push_back(24.0f);
+        buried.push_back(-175.0f + static_cast<float>(i) * 1.25f);
+        buried.push_back(30.0f);
+        buried.push_back(60.0f);
     }
     const int buriedHits = LandWorld::rideObstructions(buried);
     std::printf("buried path: %d of 50 points obstructed -> %s\n", buriedHits,

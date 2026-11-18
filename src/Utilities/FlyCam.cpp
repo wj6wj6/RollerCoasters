@@ -483,7 +483,7 @@ void FlyCam::setProjection(bool doClear) const
     if (doClear)
         glLoadIdentity();
     const double aspect = (double)wind->w() / (double)wind->h();
-    gluPerspective(fieldOfView, aspect, .1, 2000);
+    gluPerspective(fieldOfView, aspect, .1, 3000);
 
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();

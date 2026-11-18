@@ -64,6 +64,7 @@ add_executable(RollerCoasters
     src/TransformGizmo.h src/TransformGizmo.cpp
     src/UnderwaterOptics.h
     src/WaterFlow.h src/WaterFlow.cpp
+    src/WorldShape.h src/WorldShape.cpp
     src/CallBacks.H src/CallBacks.cpp
     src/EditKeys.h src/EditKeys.cpp
     src/ControlPoint.H src/ControlPoint.cpp
@@ -138,8 +139,8 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     set_tests_properties(GizmoDragCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
     add_executable(OceanRideClearanceCheck tests/OceanRideClearanceCheck.cpp
-        src/OceanWorld.cpp src/Frustum.cpp src/LandTextures.cpp src/PixelArt.cpp src/Track.cpp
-        src/ControlPoint.cpp)
+        src/OceanWorld.cpp src/Frustum.cpp src/LandTextures.cpp src/PixelArt.cpp src/WorldShape.cpp
+        src/Track.cpp src/ControlPoint.cpp)
     target_include_directories(OceanRideClearanceCheck PRIVATE src)
     target_link_libraries(OceanRideClearanceCheck PRIVATE Utilities glad)
     add_test(NAME OceanRideClearanceCheck COMMAND OceanRideClearanceCheck)
@@ -147,7 +148,7 @@ if(ROLLERCOASTERS_BUILD_TESTS)
 
     add_executable(LandRideClearanceCheck tests/LandRideClearanceCheck.cpp
         src/LandWorld.cpp src/Frustum.cpp src/LandTextures.cpp src/OceanWorld.cpp src/PixelArt.cpp
-        src/WaterFlow.cpp src/Track.cpp src/ControlPoint.cpp)
+        src/WaterFlow.cpp src/WorldShape.cpp src/Track.cpp src/ControlPoint.cpp)
     target_include_directories(LandRideClearanceCheck PRIVATE src)
     target_link_libraries(LandRideClearanceCheck PRIVATE Utilities glad)
     add_test(NAME LandRideClearanceCheck COMMAND LandRideClearanceCheck)

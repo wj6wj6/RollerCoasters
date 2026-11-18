@@ -739,7 +739,7 @@ void AdvancedLighting::begin(const LightingFrame &frame)
     // Under water the fog is drawn by the post pass instead.
     glUniform1f(m_locFogDensity, (frame.orthographic || frame.cameraUnderwater)
                                      ? 0.0f
-                                     : 0.002f + 0.002f * clamp01(frame.rain));
+                                     : 0.0009f + 0.0016f * clamp01(frame.rain));
     glUniform1f(m_locWetness, clamp01(frame.wetness));
     glUniform1f(m_locWaterLevel, frame.waterLevel);
     const float crystalLight[3] = {0.12f, 0.55f, 0.75f};

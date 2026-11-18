@@ -154,10 +154,10 @@ class FlyCam
     static constexpr float scrollSeconds = .15f;        // wheel travel per notch, in seconds
     static constexpr float slideSecondsPerPixel = .01f; // touchpad slide per pixel
     static constexpr float turnDegreesPerSecond = 90.0f;
-    static constexpr float turnSeconds = .35f;   // lookAt() duration
-    static constexpr float minHeight = 1.0f;     // eye height above setGround()
-    static constexpr float maxHeight = 400.0f;   // highest the camera can go
-    static constexpr float maxDistance = 400.0f; // |x| and |z| limit
+    static constexpr float turnSeconds = .35f;    // lookAt() duration
+    static constexpr float minHeight = 1.0f;      // eye height above setGround()
+    static constexpr float maxHeight = 600.0f;    // highest the camera can go
+    static constexpr float maxDistance = 1000.0f; // |x| and |z| limit
 
   private:
     enum Key

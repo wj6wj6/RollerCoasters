@@ -22,6 +22,7 @@
 #include "Frustum.h"
 
 #include "LandTextures.h"
+#include "WorldShape.h"
 #include "PixelArt.h"
 
 namespace
@@ -38,11 +39,13 @@ const int S = PixelArt::kSize;
 // ---------------------------------------------------------------------
 const float kBlock = 5.0f;
 const float kWaterLevel = -1.0f;
-const float kIslandHalf = 100.0f;
-const int kHalf = 64; // blocks each side of the origin: +-320 units
+// The ride circles the island at kScale times its first distance
+// (WorldShape.h); the layout below is given in the first units where noted.
+const float kScale = WorldShape::kScale;
+const int kHalf = 136; // blocks each side of the origin: +-680 units
 const int kSizeXZ = 2 * kHalf;
 const int kMinY = -10; // block layer j spans y = 5j .. 5j + 5
-const int kMaxY = 3;
+const int kMaxY = 10;  // the islet's hills rise to y = 55
 const int kSizeY = kMaxY - kMinY + 1;
 const int kDeepestTop = -9; // top layer of the deep sea bed (y = -40)
 
@@ -81,6 +84,8 @@ enum Block
     GOLD,
     MARBLE,
     LAPIS,
+    GRASS,     // on the islet above the sea
+    GRASS_TOP, // only its top face's texture, never a block
     BLOCK_COUNT
 };
 
@@ -177,6 +182,14 @@ const float kDemoTrack[][3] = {{30, 6, -20},
                                {26, 18, -74},
                                {14, 10, -46}};
 const int kDemoCount = static_cast<int>(sizeof(kDemoTrack) / sizeof(kDemoTrack[0]));
+
+// A control point of the ride in the world: the first layout's, scaled out
+// and lifted (WorldShape.h).
+float trackPoint(int i, int k)
+{
+    const float v = kDemoTrack[((i % kDemoCount) + kDemoCount) % kDemoCount][k];
+    return k == 1 ? WorldShape::lifted(v) : WorldShape::scaled(v);
+}
 const int kLandStart = 24; // the control point where the ride comes back ashore
 
 // Control points the scenery is placed around.
@@ -503,17 +516,15 @@ void ridePoint(float u, int type, float out[3])
     const float whole = floorf(u);
     const int seg = static_cast<int>(whole);
     const float t = u - whole;
-    const float *p[4];
-    for (int i = 0; i < 4; ++i)
-        p[i] = kDemoTrack[((seg + i - 1) % kDemoCount + kDemoCount) % kDemoCount];
     for (int k = 0; k < 3; ++k)
-        out[k] = splineComponent(p[0][k], p[1][k], p[2][k], p[3][k], t, type);
+        out[k] = splineComponent(trackPoint(seg - 1, k), trackPoint(seg, k), trackPoint(seg + 1, k),
+                                 trackPoint(seg + 2, k), t, type);
 }
 
 // Closely spaced points along the ride for all three spline types: x, y, z.
 std::vector<float> sampleRide()
 {
-    const int steps = 64;
+    const int steps = 160;
     std::vector<float> xyz;
     xyz.reserve(static_cast<size_t>(3 * kDemoCount * steps * 3));
     for (int type = 1; type <= 3; ++type)
@@ -599,6 +610,8 @@ struct Clearance
 // The ruins, the wreck and the jellyfish need level ground: no outcrops here.
 bool keptFlat(float cx, float cz)
 {
+    cx /= kScale; // the first layout's units
+    cz /= kScale;
     return cx > -150.0f && cx < 100.0f && cz > 150.0f && cz < 285.0f;
 }
 
@@ -607,6 +620,8 @@ bool keptFlat(float cx, float cz)
 // the water from the shore and the ride. Its outline wanders with noise.
 bool onShelf(float cx, float cz)
 {
+    cx /= kScale; // the first layout's units
+    cz /= kScale;
     const float ex = (cx + 130.0f) / 28.0f;
     const float ez = (cz - 25.0f) / 96.0f;
     const float wobble = (valueNoise(cx * 0.05f, cz * 0.05f, 37u) - 0.5f) * 0.7f;
@@ -615,14 +630,21 @@ bool onShelf(float cx, float cz)
 
 bool inReef(float cx, float cz)
 {
+    if (onShelf(cx, cz))
+        return true;
+    cx /= kScale; // the first layout's units
+    cz /= kScale;
     return (cx > 112.0f && cx < 262.0f && cz > -72.0f && cz < 62.0f) ||
-           (cx > -215.0f && cx < -105.0f && cz > -190.0f && cz < -92.0f) || onShelf(cx, cz);
+           (cx > -215.0f && cx < -105.0f && cz > -190.0f && cz < -92.0f);
 }
 
 // The top layer of the terraced sea bed at a column centre, `edge` units out
 // from the island's edge (before outcrops, the islet and the carving).
 int seaBedTop(float cx, float cz, float edge)
 {
+    cx /= kScale; // the first layout's units
+    cz /= kScale;
+    edge /= kScale;
     float depth =
         1.0f + (edge - 6.0f) / 11.0f + (valueNoise(cx * 0.025f, cz * 0.025f, 7u) - 0.5f) * 2.5f;
     depth = fmaxf(1.0f, fminf(8.0f, depth));
@@ -640,7 +662,7 @@ void buildTerrain(Grid &g)
         {
             const float cx = centerOf(bx);
             const float cz = centerOf(bz);
-            const float edge = fmaxf(fabsf(cx), fabsf(cz)) - kIslandHalf;
+            const float edge = -WorldShape::inland(cx, cz);
             if (edge < 0.0f)
             {
                 for (int j = kMinY; j <= -2; ++j)
@@ -651,14 +673,20 @@ void buildTerrain(Grid &g)
             int top = seaBedTop(cx, cz, edge);
 
             // The islet: a rough dome west of the island that breaks the surface.
-            const float ex = (cx + 205.0f) / 58.0f;
-            const float ez = (cz - 25.0f) / 118.0f;
+            const float ex = (cx / kScale + 205.0f) / 58.0f;
+            const float ez = (cz / kScale - 25.0f) / 118.0f;
             const float e2 = ex * ex + ez * ez;
             bool islet = false;
             if (e2 < 1.0f)
             {
-                const float h = -40.0f + (1.0f - e2) * 58.0f +
-                                (valueNoise(cx * 0.06f, cz * 0.06f, 9u) - 0.5f) * 14.0f;
+                // a dome with hills and hollows on it, not a flat table
+                const float hills = valueNoise(cx * 0.012f, cz * 0.012f, 12u) * 0.65f +
+                                    valueNoise(cx * 0.03f, cz * 0.03f, 14u) * 0.35f;
+                const float h = WorldShape::lifted(
+                    -40.0f + (1.0f - e2) * 50.0f +
+                    (valueNoise(cx * 0.06f / kScale, cz * 0.06f / kScale, 9u) - 0.5f) * 14.0f +
+                    (hills - 0.45f) * (16.0f + 22.0f * (1.0f - e2)) +
+                    (valueNoise(cx * 0.08f, cz * 0.08f, 10u) - 0.5f) * 4.0f);
                 const int hillTop = blockOf(h);
                 if (hillTop > top)
                 {
@@ -672,7 +700,14 @@ void buildTerrain(Grid &g)
             {
                 int b = CAVE_ROCK;
                 if (islet)
-                    b = (j >= 0) ? STONE : CAVE_ROCK;
+                {
+                    // mostly sand: all of it near and above the sea, with
+                    // grass on the higher tops; rock only deep under water,
+                    // so no dark stone shows at or above the waterline
+                    b = (j >= -3) ? SAND : CAVE_ROCK;
+                    if (j == top && top >= 2 && hash(bx, bz, 17u) % 7u != 0)
+                        b = GRASS;
+                }
                 else if (j == top)
                     b = gravel ? STONE : SAND;
                 else if (j == top - 1)
@@ -684,9 +719,9 @@ void buildTerrain(Grid &g)
 
             // Outcrops and low mesas: something to see in the distance and
             // for the ride to cut through.
-            const float rock = valueNoise(cx * 0.021f, cz * 0.021f, 23u) * 0.7f +
-                               valueNoise(cx * 0.07f, cz * 0.07f, 29u) * 0.3f;
-            if (edge > 50.0f && rock > 0.62f && !keptFlat(cx, cz))
+            const float rock = valueNoise(cx * 0.021f / kScale, cz * 0.021f / kScale, 23u) * 0.7f +
+                               valueNoise(cx * 0.07f / kScale, cz * 0.07f / kScale, 29u) * 0.3f;
+            if (edge > 50.0f * kScale && rock > 0.62f && !keptFlat(cx, cz))
             {
                 int extra = 1 + static_cast<int>((rock - 0.62f) * 30.0f);
                 if (top + extra > kSceneryTop - 1)
@@ -742,8 +777,9 @@ void buildRocks(Grid &g)
     {
         float forward[3], left[3];
         rideFrame(static_cast<float>(arches[k]), forward, left);
-        const float *c = kDemoTrack[arches[k]];
-        rockBlob(g, c[0], c[2], 8.0f, 27.0f, atan2f(forward[2], forward[0]), -16.0f,
+        const float c[3] = {trackPoint(arches[k], 0), trackPoint(arches[k], 1),
+                            trackPoint(arches[k], 2)};
+        rockBlob(g, c[0], c[2], 13.0f, 44.0f, atan2f(forward[2], forward[0]), -16.0f,
                  static_cast<unsigned int>(61 + k));
     }
 
@@ -956,32 +992,45 @@ void buildColumn(Grid &g, int bx, int bz, int height, int block, int cap)
 
 // A sunken colonnade the ride runs through, with a lamp-lit gate at each
 // end and a stepped temple behind it.
+// The first layout's block x scaled out (blocks of the ruins along the ride).
+int scaledColumn(int b)
+{
+    return static_cast<int>(floorf((static_cast<float>(b) + 0.5f) * kScale - 0.5f + 0.5f));
+}
+
+// The ride runs west through the ruins along z = 470 (block 94); the first
+// layout had it at block 37, so the ruins move out by this many blocks.
+const int kRuinsShift = 57;
+
 void buildRuins(Grid &g)
 {
+    const int z = kRuinsShift;
     // Paved floor with some slabs missing.
-    for (int bx = -10; bx <= 18; ++bx)
-        for (int bz = 32; bz <= 42; ++bz)
+    for (int bx = scaledColumn(-10); bx <= scaledColumn(18); ++bx)
+        for (int bz = 32 + z; bz <= 42 + z; ++bz)
             if (hash(bx, bz, 201u) % 7u != 0)
                 g.put(bx, g.top(bx, bz), bz, BRICK);
 
     // Gates: two tall pillars and a lintel across the ride, lamps at its ends.
-    const int gates[2] = {17, -9};
-    for (int gate = 0; gate < 2; ++gate)
+    const int gates[3] = {scaledColumn(17), scaledColumn(4), scaledColumn(-9)};
+    for (int gate = 0; gate < 3; ++gate)
     {
         const int bx = gates[gate];
-        buildColumn(g, bx, 34, 4, PILLAR, AIR);
-        buildColumn(g, bx, 40, 4, PILLAR, AIR);
+        buildColumn(g, bx, 34 + z, 4, PILLAR, AIR);
+        buildColumn(g, bx, 40 + z, 4, PILLAR, AIR);
         const int lintel = kDeepestTop + 5;
-        for (int bz = 33; bz <= 41; ++bz)
-            g.put(bx, lintel, bz, (bz == 33 || bz == 41) ? LANTERN : BRICK);
+        for (int bz = 33 + z; bz <= 41 + z; ++bz)
+            g.put(bx, lintel, bz, (bz == 33 + z || bz == 41 + z) ? LANTERN : BRICK);
     }
 
     // Two rows of columns, some broken off with their drums lying nearby,
     // the whole ones carrying a lamp.
-    for (int bx = 13; bx >= -5; bx -= 3)
+    for (int bx = scaledColumn(13); bx >= scaledColumn(-5); bx -= 4)
         for (int side = 0; side < 2; ++side)
         {
-            const int bz = side == 0 ? 33 : 41;
+            if (bx == gates[1] || bx == gates[1] + 1 || bx == gates[1] - 1)
+                continue;
+            const int bz = (side == 0 ? 33 : 41) + z;
             const unsigned int h = hash(bx, side, 202u);
             const int height = 2 + static_cast<int>(h % 4u);
             buildColumn(g, bx, bz, height, PILLAR, (height == 5 && h % 3u != 0) ? LANTERN : AIR);
@@ -995,14 +1044,14 @@ void buildRuins(Grid &g)
         }
 
     // A low broken wall behind the south row.
-    for (int bx = -7; bx <= 15; ++bx)
-        buildColumn(g, bx, 43, 1 + static_cast<int>(hash(bx, 0, 204u) % 3u), BRICK, AIR);
+    for (int bx = scaledColumn(-7); bx <= scaledColumn(15); ++bx)
+        buildColumn(g, bx, 43 + z, 1 + static_cast<int>(hash(bx, 0, 204u) % 3u), BRICK, AIR);
 
-    // The stepped temple, a lamp and gold on top.
-    const int cx = 4, cz = 50;
-    for (int tier = 0; tier < 4; ++tier)
+    // The stepped temple, a lamp and gold on top: larger now.
+    const int cx = scaledColumn(4), cz = 52 + z;
+    for (int tier = 0; tier < 5; ++tier)
     {
-        const int half = 4 - tier;
+        const int half = 6 - tier;
         for (int bx = cx - half; bx <= cx + half; ++bx)
             for (int bz = cz - half; bz <= cz + half; ++bz)
             {
@@ -1010,17 +1059,17 @@ void buildRuins(Grid &g)
                 g.put(bx, kDeepestTop + 1 + tier, bz, corner ? PILLAR : BRICK);
             }
     }
-    g.put(cx, kDeepestTop + 5, cz, LANTERN);
-    g.put(cx + 1, kDeepestTop + 4, cz + 1, GOLD);
-    g.put(cx - 1, kDeepestTop + 4, cz - 1, GOLD);
+    g.put(cx, kDeepestTop + 6, cz, LANTERN);
+    g.put(cx + 1, kDeepestTop + 5, cz + 1, GOLD);
+    g.put(cx - 1, kDeepestTop + 5, cz - 1, GOLD);
 }
 
 // A wrecked ship lying beside the ride: stern castle, masts, and a breach
 // in the side that shows the lamp-lit gold in the hold.
 void buildWreck(Grid &g)
 {
-    const int x0 = -27, x1 = -14; // bow to stern
-    const int z0 = 43, z1 = 49;
+    const int x0 = scaledColumn(-21) - 6, x1 = x0 + 13; // bow to stern
+    const int z0 = 43 + kRuinsShift, z1 = z0 + 6;
     const int keel = kDeepestTop + 1;
     for (int bx = x0; bx <= x1; ++bx)
     {
@@ -1096,8 +1145,8 @@ void carveRide(Grid &g, const std::vector<float> &ride)
 // Crystals in the tunnel walls.
 void embedCrystals(Grid &g)
 {
-    for (int bx = -52; bx <= -28; ++bx)
-        for (int bz = -24; bz <= 30; ++bz)
+    for (int bx = scaledColumn(-52); bx <= scaledColumn(-28); ++bx)
+        for (int bz = scaledColumn(-24); bz <= scaledColumn(30); ++bz)
             for (int j = -8; j <= -2; ++j)
             {
                 if (g.get(bx, j, bz) != CAVE_ROCK)
@@ -1119,9 +1168,10 @@ void decorate(Grid &g, const Clearance &clear)
         {
             const float cx = centerOf(bx);
             const float cz = centerOf(bz);
-            if (fmaxf(fabsf(cx), fabsf(cz)) < kIslandHalf)
+            if (WorldShape::inland(cx, cz) > 0.0f)
                 continue;
-            const bool kelpForest = cx > 135.0f && cx < 265.0f && cz > 40.0f && cz < 185.0f;
+            const float fx = cx / kScale, fz = cz / kScale; // the first layout's units
+            const bool kelpForest = fx > 135.0f && fx < 265.0f && fz > 40.0f && fz < 185.0f;
             const bool reef = inReef(cx, cz);
             float meadow = (valueNoise(cx * 0.03f, cz * 0.03f, 27u) - 0.5f) / 0.3f;
             meadow = fmaxf(0.0f, fminf(1.0f, meadow));
@@ -1459,7 +1509,8 @@ void addBlockFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
             v.extra[1] = 0.0f;
             v.extra[2] = glowFactor(glow / count);
             v.extra[3] = skyFactor(sky / count) * ao[open];
-            batches[static_cast<size_t>(b)].push_back(v);
+            const int texture = (b == GRASS && f.normal[1] == 1) ? GRASS_TOP : b;
+            batches[static_cast<size_t>(texture)].push_back(v);
         }
     }
 }
@@ -1553,7 +1604,7 @@ void addPlant(const Grid &g, int bx, int j, int bz, Batches &batches)
 void addFarFloor(Batches &batches)
 {
     const float inner = static_cast<float>(kHalf) * kBlock;
-    const float outer = 1500.0f;
+    const float outer = 3500.0f;
     const float y = static_cast<float>(kDeepestTop + 1) * kBlock;
     const float rects[4][4] = {{-outer, -outer, outer, -inner},
                                {-outer, inner, outer, outer},
@@ -1692,11 +1743,13 @@ void wanderAt(float a, float phase, bool nimble, float out[3])
 void enterLap(const Lap &lap, float time, float bob, bool nimble = false,
               const float *offset = nullptr)
 {
-    const float a = time * fabsf(lap.speed) + lap.phase;
+    // laps are given in the first layout's units: scaled out, at the same
+    // speed through the water
+    const float a = time * fabsf(lap.speed) / kScale + lap.phase;
     float here[3], ahead[3];
     wanderAt(a, lap.phase, nimble, here);
     wanderAt(a + 0.05f, lap.phase, nimble, ahead);
-    const float scaleAxis[3] = {lap.radiusX, bob, lap.radiusZ};
+    const float scaleAxis[3] = {lap.radiusX * kScale, bob, lap.radiusZ * kScale};
     float position[3], heading[3];
     for (int k = 0; k < 3; ++k)
     {
@@ -1708,9 +1761,9 @@ void enterLap(const Lap &lap, float time, float bob, bool nimble = false,
     float pitch = flat > 1.0e-5f ? atan2f(heading[1], flat) : 0.0f;
     pitch = fmaxf(-0.6f, fminf(0.6f, pitch));
     glPushMatrix();
-    glTranslatef(lap.x + position[0] + (offset ? offset[0] : 0.0f),
+    glTranslatef(lap.x * kScale + position[0] + (offset ? offset[0] : 0.0f),
                  lap.y + position[1] + (offset ? offset[1] : 0.0f),
-                 lap.z + position[2] + (offset ? offset[2] : 0.0f));
+                 lap.z * kScale + position[2] + (offset ? offset[2] : 0.0f));
     glRotatef(turn * 57.29578f, 0.0f, 1.0f, 0.0f);
     glRotatef(-pitch * 57.29578f, 1.0f, 0.0f, 0.0f);
     glScalef(lap.scale, lap.scale, lap.scale);
@@ -1876,7 +1929,7 @@ float OceanWorld::seaFloor(float x, float z)
 {
     const int bx = blockOf(x), bz = blockOf(z);
     const float cx = centerOf(bx), cz = centerOf(bz);
-    const float edge = fmaxf(fabsf(cx), fabsf(cz)) - kIslandHalf;
+    const float edge = -WorldShape::inland(cx, cz);
     if (edge < 0.0f)
         return 0.0f; // under the island
     return static_cast<float>(seaBedTop(cx, cz, edge) + 1) * kBlock;
@@ -1900,7 +1953,7 @@ std::vector<float> OceanWorld::demoTrack()
     std::vector<float> xyz;
     for (int i = 0; i < kDemoCount; ++i)
         for (int k = 0; k < 3; ++k)
-            xyz.push_back(kDemoTrack[i][k]);
+            xyz.push_back(trackPoint(i, k));
     return xyz;
 }
 
@@ -1916,12 +1969,12 @@ int OceanWorld::landStart()
 
 void OceanWorld::shadowBounds(float lo[3], float hi[3])
 {
-    lo[0] = -275.0f;
+    lo[0] = -275.0f * kScale;
     lo[1] = -45.0f;
-    lo[2] = -200.0f;
-    hi[0] = 270.0f;
-    hi[1] = 20.0f;
-    hi[2] = 285.0f;
+    lo[2] = -200.0f * kScale;
+    hi[0] = 270.0f * kScale;
+    hi[1] = 45.0f;
+    hi[2] = 285.0f * kScale;
 }
 
 const std::vector<float> &OceanWorld::bubbleSources()
@@ -1932,8 +1985,15 @@ const std::vector<float> &OceanWorld::bubbleSources()
         {60.0f, -38.0f, 206.0f},   {22.0f, -18.0f, 252.0f},    {-190.0f, -36.0f, 150.0f},
         {-200.0f, -28.0f, -70.0f}, {-150.0f, -22.0f, -150.0f}, {245.0f, -38.0f, 110.0f},
         {-60.0f, -38.0f, 176.0f},  {-100.0f, -38.0f, 204.0f}};
-    static const std::vector<float> list(&sources[0][0],
-                                         &sources[0][0] + sizeof(sources) / sizeof(float));
+    // in the first layout's units: scaled out, the depths kept
+    static std::vector<float> list;
+    if (list.empty())
+        for (const float *p : sources)
+        {
+            list.push_back(p[0] * kScale);
+            list.push_back(p[1]);
+            list.push_back(p[2] * kScale);
+        }
     return list;
 }
 
@@ -1997,7 +2057,8 @@ void OceanWorld::build()
         LandTextures::coral(236, 142, 62, 511u), LandTextures::coral(146, 92, 204, 521u),
         LandTextures::coral(232, 204, 70, 531u), LandTextures::coral(214, 62, 58, 541u),
         LandTextures::crystal(), LandTextures::lantern(), LandTextures::gold(),
-        LandTextures::marble(), LandTextures::lapis(),
+        LandTextures::marble(), LandTextures::lapis(), LandTextures::make(LandTextures::GRASS_SIDE),
+        LandTextures::make(LandTextures::GRASS_TOP),
         PixelArt::blank(), // NO_PLANT
         makeSeagrass(), makeKelp(), makeFanCoral(214, 72, 104), makeFanCoral(226, 170, 52),
         makeFanCoral(150, 96, 214), makeTubeCoral(), makeAnemone(), makeGlowBud(),
@@ -2161,12 +2222,13 @@ void OceanWorld::drawSeaLife(float time)
     for (const Swarm &swarm : swarms)
     {
         const float schoolSeed = static_cast<float>(school) * 1.9f;
-        const float a = time * swarm.speed + schoolSeed;
+        // in the first layout's units, like the laps
+        const float a = time * swarm.speed / kScale + schoolSeed;
         float here[3], ahead[3];
         wanderAt(a, schoolSeed, false, here);
         wanderAt(a + 0.02f, schoolSeed, false, ahead);
-        const float dx = (ahead[0] - here[0]) * swarm.radiusX;
-        const float dz = (ahead[2] - here[2]) * swarm.radiusZ;
+        const float dx = (ahead[0] - here[0]) * swarm.radiusX * kScale;
+        const float dz = (ahead[2] - here[2]) * swarm.radiusZ * kScale;
         const float flat = sqrtf(dx * dx + dz * dz);
         const float fx = flat > 1.0e-5f ? dx / flat : 0.0f; // the way the school is going
         const float fz = flat > 1.0e-5f ? dz / flat : 1.0f;
@@ -2185,9 +2247,9 @@ void OceanWorld::drawSeaLife(float time)
                 (static_cast<float>(hash(i, school, 633u) % 100u) * 0.01f - 0.5f) * 3.6f +
                 sinf(time * 0.8f + fi * 2.7f) * 0.3f;
             glPushMatrix();
-            glTranslatef(swarm.x + here[0] * swarm.radiusX + fx * along + fz * across,
+            glTranslatef((swarm.x + here[0] * swarm.radiusX) * kScale + fx * along + fz * across,
                          swarm.y + here[1] * 0.8f + height,
-                         swarm.z + here[2] * swarm.radiusZ + fz * along - fx * across);
+                         (swarm.z + here[2] * swarm.radiusZ) * kScale + fz * along - fx * across);
             glRotatef((heading + sinf(time * 1.1f + fi * 1.7f) * 0.12f) * 57.29578f, 0.0f, 1.0f,
                       0.0f);
             drawFishShape(swarm.body, swarm.fin, sinf(time * 7.0f + fi * 2.3f) * 22.0f);
@@ -2236,17 +2298,18 @@ void OceanWorld::drawSeaLife(float time)
     // of the way of the train.
     const unsigned char jellyColours[3][3] = {{255, 150, 220}, {140, 230, 255}, {190, 150, 255}};
     setGlow(0.75f);
-    for (int i = 0; i < 28; ++i)
+    for (int i = 0; i < 60; ++i)
     {
         const float fx = static_cast<float>(hash(i, 1, 611u) % 1000u) * 0.001f;
         const float fz = static_cast<float>(hash(i, 2, 611u) % 1000u) * 0.001f;
         const float fy = static_cast<float>(hash(i, 3, 611u) % 1000u) * 0.001f;
         const float seed = static_cast<float>(i) * 0.37f;
-        const float x = -122.0f + 88.0f * fx;
-        float z = 168.0f + 40.0f * fz;
+        // the first layout's region, scaled out
+        const float x = (-122.0f + 88.0f * fx) * kScale;
+        float z = (168.0f + 40.0f * fz) * kScale;
         const float y = -30.0f + 17.0f * fy;
-        // The ride runs through here at about z = 188 - 196, y = -34.
-        const float rideZ = 188.0f + (-12.0f - x) * (8.0f / 120.0f);
+        // The ride runs through here at about z = 470 - 490, y = -34.
+        const float rideZ = (188.0f + (-12.0f - x / kScale) * (8.0f / 120.0f)) * kScale;
         if (y < -21.0f && fabsf(z - rideZ) < 8.0f)
             z = rideZ + (z < rideZ ? -9.0f : 9.0f);
         glPushMatrix();

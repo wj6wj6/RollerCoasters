@@ -225,7 +225,7 @@ void grandTourCB(Fl_Widget *, TrainWindow *tw)
     tw->editButton->value(0);
     tw->splineBrowser->select(3);
     tw->arcLength->value(1);
-    tw->speed->value(1.0);
+    tw->speed->value(1.8); // the world is larger: a little faster round it
     tw->trainCam->setonly();
     tw->trainView->cameraChanged();
     tw->damageMe();

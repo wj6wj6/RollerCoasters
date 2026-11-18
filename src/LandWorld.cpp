@@ -20,6 +20,7 @@
 #include "OceanWorld.h"
 #include "PixelArt.h"
 #include "WaterFlow.h"
+#include "WorldShape.h"
 
 namespace
 {
@@ -30,17 +31,21 @@ using PixelArt::hash;
 // World layout
 // ---------------------------------------------------------------------
 const float kBlock = 2.5f;
-const float kIslandHalf = 100.0f;
+const float kScale = WorldShape::kScale; // see WorldShape.h
+const float kLift = WorldShape::kLift;
+// The editor's flat island keeps the first size: +-100 units.
+const float kFlatHalf = 100.0f;
 // The highest layer of blocks that touches the sea (the sea is at y = -1;
 // layer 0 spans 0 to 2.5): water in it is coloured like the sea.
 const int kSeaLayer = 0;
-// Blocks each side of the origin: the island is +-100 units (40 blocks), and
-// one more ring of open air round it, over the sea, for water running off
-// the island to fall through.
-const int kHalf = 41;
+// Blocks each side of the origin: the island reaches at most
+// WorldShape::kIslandReach (278 units, 111 blocks), and two more rings of
+// open air round it, over the sea, for water running off the island to
+// fall through.
+const int kHalf = 113;
 const int kSizeXZ = 2 * kHalf;
 const int kMinY = -2; // block layer j spans y = 2.5 j .. 2.5 j + 2.5
-const int kMaxY = 47;
+const int kMaxY = 76; // the snow peak tops out near y = 182
 const int kSizeY = kMaxY - kMinY + 1;
 
 // Room kept free around the ride. Blocks are carved out of a tube around
@@ -302,10 +307,16 @@ float centerOf(int b)
     return (static_cast<float>(b) + 0.5f) * kBlock;
 }
 
-// Is this column part of the island, not the ring of air over the sea?
+// Is this column part of the island, not the sea round it?
 bool onIsland(int bx, int bz)
 {
-    return fabsf(centerOf(bx)) < kIslandHalf && fabsf(centerOf(bz)) < kIslandHalf;
+    return WorldShape::inland(centerOf(bx), centerOf(bz)) > 0.0f;
+}
+
+// ... of the editor's flat island?
+bool onFlatIsland(int bx, int bz)
+{
+    return fabsf(centerOf(bx)) < kFlatHalf && fabsf(centerOf(bz)) < kFlatHalf;
 }
 
 int blockOf(float v)
@@ -341,10 +352,13 @@ float distanceToLine(float x, float z, const float *points, int count)
 // ---------------------------------------------------------------------
 // The lie of the land
 // ---------------------------------------------------------------------
+// The mountains, the volcano, the crags, the canyon and the lava rivers are
+// given in the units of the first layout (WorldShape.h): siteAt() looks
+// them up at the world position divided by kScale, and lifts the heights.
 const float kAlpineX = -56.0f, kAlpineZ = 24.0f, kAlpineRadius = 56.0f, kAlpineHeight = 112.0f;
 const float kVolcanoX = 58.0f, kVolcanoZ = 58.0f, kVolcanoRadius = 44.0f, kVolcanoHeight = 66.0f;
 const float kCraterRadius = 9.5f;
-const int kLavaLakeTop = 18; // the lava lake fills the crater up to this layer (y = 47.5)
+const int kLavaLakeTop = 28; // the lava lake fills the crater up to this layer (y = 72.5)
 
 // The crags in the north east: x, z, radius, height.
 const float kCrags[2][4] = {{48.0f, -72.0f, 27.0f, 54.0f}, {78.0f, -50.0f, 27.0f, 64.0f}};
@@ -357,19 +371,30 @@ const int kCanyonPoints = 5;
 const float kLavaSouth[] = {58.0f, 67.5f, 61.0f, 80.0f, 57.0f, 92.0f, 58.0f, 103.0f};
 const float kLavaEast[] = {67.5f, 58.0f, 82.0f, 63.0f, 93.0f, 57.0f, 103.0f, 58.0f};
 
+// The rest is in world units and blocks.
 // The waterfall on the north side of the snow mountain, where no track runs:
 // the blocks of the lip (x from kFallX0 to kFallX1, z = kFallLipZ), the
-// height it falls and the river from its pool to the north shore (x, z).
-const int kFallX0 = -21, kFallX1 = -18, kFallLipZ = 24;
-const int kFallDrop = 9;
+// height it falls and the river from its pool to the north shore (x, z,
+// in the first layout's units).
+const int kFallX0 = -52, kFallX1 = -44, kFallLipZ = 61;
+const int kFallDrop = 14;
 const float kRiver[] = {-47.0f, 80.0f, -51.0f, 90.0f, -48.0f, 101.0f};
 
-// The village green in the north west, the meadow pond and the island
-// that floats above it.
-const float kVillageX = -70.0f, kVillageZ = -72.0f, kVillageRadius = 27.0f;
-const int kVillageTop = 1; // the green's top layer (y = 5)
-const float kPondX = 51.0f, kPondZ = -36.0f, kPondRadius = 6.5f;
-const int kFloatX = 16, kFloatZ = -15, kFloatTop = 25; // blocks; top at y = 65
+// The village green in the north west, the meadow ponds and the island
+// that floats above the first one.
+const float kVillageX = -160.0f, kVillageZ = -165.0f, kVillageRadius = 55.0f;
+const int kVillageTop = 2; // the green's top layer (y = 7.5)
+const float kPondX = 127.5f, kPondZ = -90.0f, kPondRadius = 11.0f;
+const int kFloatX = 41, kFloatZ = -37, kFloatTop = 38; // blocks; top at y = 97.5
+
+// A line of the first layout (x, z pairs), in world units.
+std::vector<float> scaledLine(const float *points, int count)
+{
+    std::vector<float> out(points, points + 2 * count);
+    for (float &v : out)
+        v *= kScale;
+    return out;
+}
 
 struct Site
 {
@@ -377,10 +402,10 @@ struct Site
     int biome;
 };
 
-Site siteAt(float x, float z)
+// The land at (x, z) of the first layout, coast units from the shore.
+Site firstSite(float x, float z, float coast)
 {
     Site site;
-    const float coast = kIslandHalf - fmaxf(fabsf(x), fabsf(z));
     const float inland = ramp(2.0f, 24.0f, coast);
     site.height = 1.0f + inland * 4.2f + (fbm(x * 0.035f, z * 0.035f, 3u) - 0.5f) * 6.0f * inland +
                   (valueNoise(x * 0.09f, z * 0.09f, 5u) - 0.5f) * 1.5f * inland;
@@ -463,6 +488,21 @@ Site siteAt(float x, float z)
         site.height = bed + (site.height - bed) * ramp(6.5f, 13.0f, canyon);
         site.biome = MESA;
     }
+    return site;
+}
+
+// The land at world position (x, z): the first layout scaled up, with finer
+// knolls and hollows on the meadows, mountains and crags that the first
+// layout was too small to hold (the badlands keep their level steps, the
+// volcano its smooth cone).
+Site siteAt(float x, float z)
+{
+    const float coast = WorldShape::inland(x, z) / kScale;
+    Site site = firstSite(x / kScale, z / kScale, coast);
+    site.height = WorldShape::lifted(site.height);
+    if (site.height > 3.0f && (site.biome == MEADOW || site.biome == ALPINE || site.biome == CRAG))
+        site.height += (fbm(x * 0.05f, z * 0.05f, 81u) - 0.5f) * (3.0f + site.height * 0.06f) +
+                       (valueNoise(x * 0.16f, z * 0.16f, 83u) - 0.5f) * 1.6f;
     return site;
 }
 
@@ -578,7 +618,8 @@ struct Clearance
         for (size_t i = 0; i + 2 < ride.size(); i += 3)
         {
             const float x = ride[i], y = ride[i + 1], z = ride[i + 2];
-            if (fabsf(x) > kIslandHalf + wide || fabsf(z) > kIslandHalf + wide)
+            if (fabsf(x) > WorldShape::kIslandReach + wide ||
+                fabsf(z) > WorldShape::kIslandReach + wide)
                 continue;
             for (int bx = blockOf(x - wide); bx <= blockOf(x + wide); ++bx)
                 for (int bz = blockOf(z - wide); bz <= blockOf(z + wide); ++bz)
@@ -688,7 +729,7 @@ void buildTerrain(Grid &g)
             const int top = tops[Grid::column(bx, bz)];
             const int biome = g.biome[Grid::column(bx, bz)];
             const float topY = static_cast<float>(top + 1) * kBlock;
-            const float coast = kIslandHalf - fmaxf(fabsf(cx), fabsf(cz));
+            const float coast = WorldShape::inland(cx, cz);
 
             // how much higher or lower the neighbours are: cliffs are bare rock
             int steep = 0;
@@ -710,20 +751,20 @@ void buildTerrain(Grid &g)
                 switch (biome)
                 {
                 case ALPINE: {
-                    const float snowLine = 56.0f + patch * 10.0f;
+                    const float snowLine = (56.0f + patch * 10.0f) * kLift;
                     if (topY > snowLine)
                         b = depth < 2 ? SNOW : stoneOrOre(bx, j, bz, false);
-                    else if (topY > 34.0f || steep >= 3)
+                    else if (topY > 34.0f * kLift || steep >= 3)
                         b = (depth == 0 && steep < 2 && patch > 0.55f)
-                                ? (topY > 44.0f ? SNOWY_DIRT : GRASS)
+                                ? (topY > 44.0f * kLift ? SNOWY_DIRT : GRASS)
                                 : stoneOrOre(bx, j, bz, false);
                     else
-                        b = depth == 0 ? (topY > 26.0f && patch > 0.4f ? SNOWY_DIRT : GRASS)
+                        b = depth == 0 ? (topY > 26.0f * kLift && patch > 0.4f ? SNOWY_DIRT : GRASS)
                                        : (depth < 3 ? DIRT : stoneOrOre(bx, j, bz, false));
                     break;
                 }
                 case VOLCANO:
-                    if (topY < 9.0f && patch > 0.45f)
+                    if (topY < 9.0f * kLift && patch > 0.45f)
                         b = depth == 0 ? GRASS : (depth < 2 ? DIRT : BASALT);
                     else if (depth == 0 && patch > 0.7f)
                         b = GRAVEL; // ash
@@ -733,15 +774,15 @@ void buildTerrain(Grid &g)
                 case MESA:
                     if (topY <= 0.0f)
                         b = depth == 0 ? (patch > 0.5f ? GRAVEL : SAND) : STONE; // the canyon bed
-                    else if (depth == 0 && steep < 2 && topY > 12.0f)
+                    else if (depth == 0 && steep < 2 && topY > 12.0f * kLift)
                         b = RED_SAND;
                     else
                         b = clayBand(j);
                     break;
                 case CRAG:
-                    if (topY > 44.0f && depth == 0)
+                    if (topY > 44.0f * kLift && depth == 0)
                         b = SNOW;
-                    else if (steep < 2 && topY < 26.0f)
+                    else if (steep < 2 && topY < 26.0f * kLift)
                         b = depth == 0 ? GRASS : (depth < 2 ? DIRT : stoneOrOre(bx, j, bz, true));
                     else if (depth == 0 && patch > 0.62f)
                         b = MOSSY;
@@ -749,7 +790,7 @@ void buildTerrain(Grid &g)
                         b = stoneOrOre(bx, j, bz, true);
                     break;
                 default:
-                    if (topY <= 2.5f && coast < 9.0f)
+                    if (topY <= 2.5f && coast < 14.0f)
                         b = depth < 3 ? SAND : STONE; // the beach
                     else
                         b = depth == 0 ? GRASS : (depth < 3 ? DIRT : stoneOrOre(bx, j, bz, false));
@@ -766,7 +807,8 @@ void buildLavaLake(Grid &g)
     for (int bx = -kHalf; bx < kHalf; ++bx)
         for (int bz = -kHalf; bz < kHalf; ++bz)
         {
-            const float dx = centerOf(bx) - kVolcanoX, dz = centerOf(bz) - kVolcanoZ;
+            const float dx = centerOf(bx) / kScale - kVolcanoX;
+            const float dz = centerOf(bz) / kScale - kVolcanoZ;
             if (dx * dx + dz * dz > kCraterRadius * kCraterRadius)
                 continue;
             for (int j = g.top(bx, bz) + 1; j <= kLavaLakeTop; ++j)
@@ -880,22 +922,23 @@ void buildRiver(Grid &g, const float *points, int count, int level, int width)
 }
 
 // A waterfall in a rocky gorge cut into the north side of the snow mountain:
-// a stream four blocks wide runs out of the rock to a sheer stone lip and
+// a stream nine blocks wide runs out of the rock to a sheer stone lip and
 // falls kFallDrop blocks into a pool; the gorge opens north and a river runs
 // from the pool down to the shore and into the sea. Only the sources are put
 // here; the fall itself is the water flowing over the lip (spreadWater).
 void buildWaterfall(Grid &g)
 {
-    const int lip = g.top((kFallX0 + kFallX1) / 2, kFallLipZ);
-    const int pool = lip - kFallDrop;
     const int cx = (kFallX0 + kFallX1) / 2;
+    const int lip = g.top(cx, kFallLipZ);
+    const int pool = lip - kFallDrop;
+    const int width = (kFallX1 - kFallX0) / 2; // half the fall's width
 
     // The gorge: open down to the pool from the cliff out to the north, wider
     // further out, its walls bare stone with the grass left on top.
-    for (int bz = kFallLipZ + 1; bz <= kFallLipZ + 9; ++bz)
+    for (int bz = kFallLipZ + 1; bz <= kFallLipZ + 22; ++bz)
     {
-        const int half = 3 + (bz - kFallLipZ) / 3;
-        for (int bx = cx - half - 2; bx <= cx + half + 2; ++bx)
+        const int half = width + 3 + (bz - kFallLipZ) / 3;
+        for (int bx = cx - half - 3; bx <= cx + half + 3; ++bx)
         {
             if (!Grid::insideColumn(bx, bz))
                 continue;
@@ -914,8 +957,8 @@ void buildWaterfall(Grid &g)
         }
     }
     // The cliff behind the fall, sheer stone up to the lip, and stone round it.
-    for (int bx = cx - 4; bx <= cx + 4; ++bx)
-        for (int bz = kFallLipZ - 3; bz <= kFallLipZ; ++bz)
+    for (int bx = cx - width - 6; bx <= cx + width + 6; ++bx)
+        for (int bz = kFallLipZ - 5; bz <= kFallLipZ; ++bz)
         {
             const int top = g.top(bx, bz);
             for (int j = pool; j <= (top > lip ? top : lip); ++j)
@@ -923,26 +966,29 @@ void buildWaterfall(Grid &g)
         }
     // The stream: sources in a channel cut into the rock above the lip.
     for (int bx = kFallX0; bx <= kFallX1; ++bx)
-        for (int bz = kFallLipZ - 2; bz <= kFallLipZ; ++bz)
+        for (int bz = kFallLipZ - 4; bz <= kFallLipZ; ++bz)
         {
             g.clearAbove(bx, lip, bz);
             g.put(bx, lip, bz, WATER);
         }
     // The pool, round and a block deep, under the fall.
-    for (int bx = cx - 3; bx <= cx + 3; ++bx)
-        for (int bz = kFallLipZ + 1; bz <= kFallLipZ + 6; ++bz)
+    const float poolRadius = static_cast<float>(width + 4);
+    for (int bx = cx - width - 5; bx <= cx + width + 5; ++bx)
+        for (int bz = kFallLipZ + 1; bz <= kFallLipZ + 14; ++bz)
         {
             const float dx = static_cast<float>(bx - cx),
-                        dz = static_cast<float>(bz - kFallLipZ - 3);
-            if (dx * dx + dz * dz * 1.4f > 11.0f)
+                        dz = static_cast<float>(bz - kFallLipZ - 6) * 0.8f;
+            if (dx * dx + dz * dz > poolRadius * poolRadius)
                 continue;
             g.put(bx, pool, bz, WATER);
             g.put(bx, pool - 1, bz, GRAVEL);
         }
     // And the river from the pool to the sea.
-    const float start[] = {centerOf(cx), centerOf(kFallLipZ + 6), kRiver[0], kRiver[1]};
-    buildRiver(g, start, 2, pool, 2);
-    buildRiver(g, kRiver, static_cast<int>(sizeof(kRiver) / sizeof(kRiver[0]) / 2), pool, 2);
+    const std::vector<float> river =
+        scaledLine(kRiver, static_cast<int>(sizeof(kRiver) / sizeof(kRiver[0]) / 2));
+    const float start[] = {centerOf(cx), centerOf(kFallLipZ + 12), river[0], river[1]};
+    buildRiver(g, start, 2, pool, 3);
+    buildRiver(g, river.data(), static_cast<int>(river.size() / 2), pool, 3);
 }
 
 // The room that must stay free of water round the ride: within kWaterReach
@@ -1055,26 +1101,25 @@ void buildPond(Grid &g, float x, float z, float radius)
 // with a spring that falls from its edge to the pond in the meadow.
 void buildFloatingIsland(Grid &g)
 {
-    const float radius = 4.3f; // in blocks
-    for (int dx = -5; dx <= 5; ++dx)
-        for (int dz = -5; dz <= 5; ++dz)
+    const float radius = 7.5f; // in blocks
+    for (int dx = -9; dx <= 9; ++dx)
+        for (int dz = -9; dz <= 9; ++dz)
         {
             const float d =
-                sqrtf(static_cast<float>(dx * dx + dz * dz)) + (lattice(dx, dz, 67u) - 0.5f) * 0.8f;
+                sqrtf(static_cast<float>(dx * dx + dz * dz)) + (lattice(dx, dz, 67u) - 0.5f) * 1.4f;
             if (d > radius)
                 continue;
-            const int depth = 1 + static_cast<int>((1.0f - (d / radius) * (d / radius)) * 6.5f);
+            const int depth = 1 + static_cast<int>((1.0f - (d / radius) * (d / radius)) * 10.0f);
             for (int k = 0; k < depth; ++k)
                 g.put(kFloatX + dx, kFloatTop - k, kFloatZ + dz,
                       k == 0 ? GRASS
                              : (k < 2 ? DIRT : (oneIn(dx + k, dz, 69u, 9) ? ORE_GOLD : STONE)));
         }
-    // the spring: three sources in a channel to the east edge; the water
-    // runs over the edge and falls (spreadWater)
-    g.put(kFloatX + 2, kFloatTop, kFloatZ, WATER);
-    g.put(kFloatX + 3, kFloatTop, kFloatZ, WATER);
-    g.put(kFloatX + 4, kFloatTop, kFloatZ, WATER);
-    g.put(kFloatX + 4, kFloatTop - 1, kFloatZ, STONE);
+    // the spring: sources in a channel to the east edge; the water runs over
+    // the edge and falls (spreadWater)
+    for (int k = 3; k <= 7; ++k)
+        g.put(kFloatX + k, kFloatTop, kFloatZ, WATER);
+    g.put(kFloatX + 7, kFloatTop - 1, kFloatZ, STONE);
 }
 
 // ---------------------------------------------------------------------
@@ -1160,90 +1205,6 @@ void buildLampPost(Grid &g, int bx, int bz, int floor)
     g.put(bx, floor + 2, bz, LANTERN);
 }
 
-void buildVillage(Grid &g, Extras &extras)
-{
-    // level the green, blending into the meadow around it
-    for (int bx = -kHalf; bx < kHalf; ++bx)
-        for (int bz = -kHalf; bz < kHalf; ++bz)
-        {
-            const float dx = centerOf(bx) - kVillageX, dz = centerOf(bz) - kVillageZ;
-            const float d = sqrtf(dx * dx + dz * dz);
-            if (d > kVillageRadius)
-                continue;
-            const int top = g.top(bx, bz);
-            if (top < 0 && d > kVillageRadius - 8.0f)
-                continue; // leave the beach alone
-            int target = kVillageTop;
-            if (d > kVillageRadius - 6.0f)
-                target = top > kVillageTop ? top - 1 : (top < kVillageTop ? top + 1 : top);
-            if (g.biome[Grid::column(bx, bz)] != MEADOW)
-                continue;
-            g.clearAbove(bx, target, bz);
-            for (int j = kMinY; j <= target; ++j)
-                g.put(bx, j, bz, j == target ? GRASS : (j > target - 3 ? DIRT : STONE));
-        }
-
-    const int floor = kVillageTop + 1;
-    // gravel lanes
-    for (int bx = -37; bx <= -19; ++bx)
-        g.put(bx, kVillageTop, -30, GRAVEL);
-    for (int bz = -37; bz <= -20; ++bz)
-        g.put(-27, kVillageTop, bz, GRAVEL);
-
-    buildHouse(g, -35, -37, -31, -33, floor, false);
-    buildHouse(g, -24, -36, -20, -32, floor, false);
-    buildHouse(g, -36, -26, -31, -22, floor, true);
-
-    // the well at the crossing
-    fill(g, -28, -26, floor, floor, -31, -29, COBBLE);
-    g.put(-27, floor, -30, WATER);
-    g.put(-28, floor + 1, -31, OAK_LOG);
-    g.put(-26, floor + 1, -29, OAK_LOG);
-    g.put(-28, floor + 2, -31, OAK_LOG);
-    g.put(-26, floor + 2, -29, OAK_LOG);
-    fill(g, -28, -26, floor + 3, floor + 3, -31, -29, ROOF);
-
-    // the wheat field, with a ditch down the middle and hay bales beside it
-    for (int bx = -25; bx <= -19; ++bx)
-        for (int bz = -27; bz <= -22; ++bz)
-        {
-            g.put(bx, kVillageTop, bz, bx == -22 ? WATER : FARMLAND);
-            if (bx != -22)
-                g.plant[Grid::index(bx, floor, bz)] = WHEAT;
-        }
-    g.put(-26, floor, -24, HAY);
-    g.put(-26, floor, -23, HAY);
-    g.put(-26, floor + 1, -23, HAY);
-
-    // the windmill: a stone tower with a timber top, the sails facing south
-    footing(g, -23, -21, -21, -19, floor);
-    fill(g, -23, -21, floor, floor + 3, -21, -19, COBBLE);
-    fill(g, -23, -21, floor + 4, floor + 6, -21, -19, PLANKS);
-    for (int j = floor + 4; j <= floor + 6; ++j)
-    {
-        g.put(-23, j, -21, OAK_LOG);
-        g.put(-21, j, -21, OAK_LOG);
-        g.put(-23, j, -19, OAK_LOG);
-        g.put(-21, j, -19, OAK_LOG);
-    }
-    fill(g, -24, -20, floor + 7, floor + 7, -22, -18, ROOF);
-    fill(g, -23, -21, floor + 8, floor + 8, -21, -19, ROOF);
-    g.put(-22, floor + 9, -20, ROOF);
-    g.put(-22, floor, -19, DOOR);
-    g.put(-22, floor + 5, -19, WINDOW);
-    extras.mill[0] = centerOf(-22);
-    extras.mill[1] = static_cast<float>(floor + 6) * kBlock;
-    // the hub stands clear of the roof's overhang (it reaches z = -42.5), so
-    // the sails turn in front of it
-    extras.mill[2] = static_cast<float>(-17) * kBlock + 0.8f;
-    extras.hasMill = true;
-
-    buildLampPost(g, -29, -32, floor);
-    buildLampPost(g, -25, -28, floor);
-    buildLampPost(g, -29, -21, floor);
-    buildLampPost(g, -19, -30, floor);
-}
-
 // Is the box of cells clear of the train (and inside the island)?
 bool roomForBuilding(const Clearance &clear, int x0, int x1, int j0, int j1, int z0, int z1)
 {
@@ -1259,6 +1220,127 @@ bool roomForBuilding(const Clearance &clear, int x0, int x1, int j0, int j1, int
     return true;
 }
 
+// The village: the first layout's cottages, well, wheat field, windmill and
+// lamp posts, spread out to 1.6 times their spacing round the centre of a
+// larger green, and more cottages round it. Every building stands only
+// where all of it is clear of the train.
+void buildVillage(Grid &g, Extras &extras, const Clearance &clear)
+{
+    // level the green, blending into the meadow around it
+    for (int bx = -kHalf; bx < kHalf; ++bx)
+        for (int bz = -kHalf; bz < kHalf; ++bz)
+        {
+            const float dx = centerOf(bx) - kVillageX, dz = centerOf(bz) - kVillageZ;
+            const float d = sqrtf(dx * dx + dz * dz);
+            if (d > kVillageRadius)
+                continue;
+            const int top = g.top(bx, bz);
+            if (top < 0 && d > kVillageRadius - 12.0f)
+                continue; // leave the beach alone
+            int target = kVillageTop;
+            if (d > kVillageRadius - 10.0f)
+                target = top > kVillageTop ? top - 1 : (top < kVillageTop ? top + 1 : top);
+            if (g.biome[Grid::column(bx, bz)] != MEADOW)
+                continue;
+            g.clearAbove(bx, target, bz);
+            for (int j = kMinY; j <= target; ++j)
+                g.put(bx, j, bz, j == target ? GRASS : (j > target - 3 ? DIRT : STONE));
+        }
+
+    // the first layout's blocks round its centre (-28, -29), moved out
+    const int cx = blockOf(kVillageX), cz = blockOf(kVillageZ);
+    auto vx = [&](int b) {
+        return cx + static_cast<int>(floorf(static_cast<float>(b + 28) * 1.6f + 0.5f));
+    };
+    auto vz = [&](int b) {
+        return cz + static_cast<int>(floorf(static_cast<float>(b + 29) * 1.6f + 0.5f));
+    };
+    const int floor = kVillageTop + 1;
+    auto house = [&](int x0, int z0, int w, int d, bool doorOnX) {
+        if (roomForBuilding(clear, x0 - 1, x0 + w + 1, floor - 1, floor + 8, z0 - 1, z0 + d + 1))
+            buildHouse(g, x0, z0, x0 + w, z0 + d, floor, doorOnX);
+    };
+
+    // gravel lanes crossing at the well, out to the edge of the green
+    for (int bx = vx(-37) - 6; bx <= vx(-19) + 6; ++bx)
+        if (!clear.blocks(bx, kVillageTop, vz(-30)))
+            g.put(bx, kVillageTop, vz(-30), GRAVEL);
+    for (int bz = vz(-37) - 6; bz <= vz(-20) + 6; ++bz)
+        if (!clear.blocks(vx(-27), kVillageTop, bz))
+            g.put(vx(-27), kVillageTop, bz, GRAVEL);
+
+    house(vx(-35), vz(-37), 4, 4, false);
+    house(vx(-24), vz(-36), 4, 4, false);
+    house(vx(-36), vz(-26), 5, 4, true);
+    // the newer cottages further out
+    house(cx - 22, cz + 6, 4, 5, true);
+    house(cx + 8, cz - 22, 5, 4, false);
+    house(cx + 14, cz + 12, 4, 4, false);
+    house(cx - 8, cz + 16, 5, 4, false);
+    house(cx - 24, cz - 8, 4, 4, true);
+
+    // the well at the crossing
+    const int wx = vx(-27), wz = vz(-30);
+    if (roomForBuilding(clear, wx - 1, wx + 1, floor, floor + 3, wz - 1, wz + 1))
+    {
+        fill(g, wx - 1, wx + 1, floor, floor, wz - 1, wz + 1, COBBLE);
+        g.put(wx, floor, wz, WATER);
+        g.put(wx - 1, floor + 1, wz - 1, OAK_LOG);
+        g.put(wx + 1, floor + 1, wz + 1, OAK_LOG);
+        g.put(wx - 1, floor + 2, wz - 1, OAK_LOG);
+        g.put(wx + 1, floor + 2, wz + 1, OAK_LOG);
+        fill(g, wx - 1, wx + 1, floor + 3, floor + 3, wz - 1, wz + 1, ROOF);
+    }
+
+    // the wheat field, with a ditch down the middle and hay bales beside it
+    const int fx = vx(-25), fz = vz(-27);
+    for (int bx = fx; bx <= fx + 8; ++bx)
+        for (int bz = fz; bz <= fz + 7; ++bz)
+        {
+            if (clear.blocks(bx, floor, bz))
+                continue;
+            g.put(bx, kVillageTop, bz, bx == fx + 4 ? WATER : FARMLAND);
+            if (bx != fx + 4)
+                g.plant[Grid::index(bx, floor, bz)] = WHEAT;
+        }
+    g.put(fx - 1, floor, fz + 3, HAY);
+    g.put(fx - 1, floor, fz + 4, HAY);
+    g.put(fx - 1, floor + 1, fz + 4, HAY);
+
+    // the windmill: a stone tower with a timber top, the sails facing south
+    const int mx = vx(-22), mz = vz(-20);
+    if (roomForBuilding(clear, mx - 2, mx + 2, floor, floor + 12, mz - 2, mz + 7))
+    {
+        footing(g, mx - 1, mx + 1, mz - 1, mz + 1, floor);
+        fill(g, mx - 1, mx + 1, floor, floor + 3, mz - 1, mz + 1, COBBLE);
+        fill(g, mx - 1, mx + 1, floor + 4, floor + 6, mz - 1, mz + 1, PLANKS);
+        for (int j = floor + 4; j <= floor + 6; ++j)
+        {
+            g.put(mx - 1, j, mz - 1, OAK_LOG);
+            g.put(mx + 1, j, mz - 1, OAK_LOG);
+            g.put(mx - 1, j, mz + 1, OAK_LOG);
+            g.put(mx + 1, j, mz + 1, OAK_LOG);
+        }
+        fill(g, mx - 2, mx + 2, floor + 7, floor + 7, mz - 2, mz + 2, ROOF);
+        fill(g, mx - 1, mx + 1, floor + 8, floor + 8, mz - 1, mz + 1, ROOF);
+        g.put(mx, floor + 9, mz, ROOF);
+        g.put(mx, floor, mz + 1, DOOR);
+        g.put(mx, floor + 5, mz + 1, WINDOW);
+        extras.mill[0] = centerOf(mx);
+        extras.mill[1] = static_cast<float>(floor + 6) * kBlock;
+        // the hub stands clear of the roof's overhang, so the sails turn in
+        // front of it
+        extras.mill[2] = static_cast<float>(mz + 3) * kBlock + 0.8f;
+        extras.hasMill = true;
+    }
+
+    const int lamps[][2] = {{vx(-29), vz(-32)}, {vx(-25), vz(-28)}, {vx(-29), vz(-21)},
+                            {vx(-19), vz(-30)}, {cx - 12, cz + 12}, {cx + 12, cz - 12}};
+    for (const int *lamp : lamps)
+        if (roomForBuilding(clear, lamp[0], lamp[0], floor, floor + 2, lamp[1], lamp[1]))
+            buildLampPost(g, lamp[0], lamp[1], floor);
+}
+
 // A small castle on the cliff beside the waterfall, after the user's
 // reference: a cobble keep on a low footing, timber upper floors with lit
 // windows, a steep shingle roof, and a taller tower on the corner nearest
@@ -1270,11 +1352,11 @@ void buildCastle(Grid &g, const Clearance &clear)
     const int cx = (kFallX0 + kFallX1) / 2;
     const int lip = g.top(cx, kFallLipZ); // the stream at the top of the fall
     int bestX = 0, bestZ = 0, bestFloor = 0, bestScore = 1 << 30;
-    for (int x0 = cx - 22; x0 <= cx + 12; ++x0)
-        for (int z0 = kFallLipZ - 14; z0 <= kFallLipZ + 8; ++z0)
+    for (int x0 = cx - 40; x0 <= cx + 30; ++x0)
+        for (int z0 = kFallLipZ - 30; z0 <= kFallLipZ + 20; ++z0)
         {
             // not in the gorge or on the fall's cliff
-            if (x0 + 4 >= cx - 6 && x0 <= cx + 6 && z0 + 4 >= kFallLipZ - 4)
+            if (x0 + 4 >= cx - 16 && x0 <= cx + 16 && z0 + 4 >= kFallLipZ - 6)
                 continue;
             const int x1 = x0 + 4, z1 = z0 + 4;
             int high = kMinY - 1, low = kMaxY + 1;
@@ -1363,13 +1445,13 @@ void buildCastle(Grid &g, const Clearance &clear)
 void buildBridge(Grid &g, const Clearance &clear)
 {
     const int cx = (kFallX0 + kFallX1) / 2;
-    const int pool = g.top(cx, kFallLipZ + 3); // the pool's water
-    const int deck = pool + 3;
-    const int z0 = kFallLipZ + 2, z1 = z0 + 1;
+    const int pool = g.top(cx, kFallLipZ + 6); // the pool's water
+    const int deck = pool + 4;
+    const int z0 = kFallLipZ + 4, z1 = z0 + 1;
     int x0 = cx, x1 = cx;
-    while (x0 > cx - 9 && g.get(x0 - 1, deck, z0) == AIR && g.get(x0 - 1, deck, z1) == AIR)
+    while (x0 > cx - 20 && g.get(x0 - 1, deck, z0) == AIR && g.get(x0 - 1, deck, z1) == AIR)
         --x0;
-    while (x1 < cx + 9 && g.get(x1 + 1, deck, z0) == AIR && g.get(x1 + 1, deck, z1) == AIR)
+    while (x1 < cx + 20 && g.get(x1 + 1, deck, z0) == AIR && g.get(x1 + 1, deck, z1) == AIR)
         ++x1;
     --x0;
     ++x1;
@@ -1400,7 +1482,8 @@ void carveRide(Grid &g, const std::vector<float> &ride)
     for (size_t i = 0; i + 2 < ride.size(); i += 3)
     {
         const float x = ride[i], y = ride[i + 1], z = ride[i + 2];
-        if (fabsf(x) > kIslandHalf + kCarveRadius || fabsf(z) > kIslandHalf + kCarveRadius)
+        if (fabsf(x) > WorldShape::kIslandReach + kCarveRadius ||
+            fabsf(z) > WorldShape::kIslandReach + kCarveRadius)
             continue;
         const int jLow = blockOf(y - kCarveBelow);
         const int jHigh = blockOf(y + kCarveAbove);
@@ -1594,8 +1677,10 @@ bool crowded(const Grid &g, int bx, int j, int bz, int reach)
     return false;
 }
 
-void plantTrees(Grid &g, const Clearance &clear)
+void plantTrees(Grid &g, const Clearance &clear, const Extras &extras)
 {
+    // the windmill's hub, or nowhere when there is none
+    const float millHub[2] = {extras.hasMill ? extras.mill[0] : 1.0e6f, extras.mill[2]};
     std::vector<Placed> blocks;
     for (int bx = -kHalf + 1; bx < kHalf - 1; ++bx)
         for (int bz = -kHalf + 1; bz < kHalf - 1; ++bz)
@@ -1626,7 +1711,7 @@ void plantTrees(Grid &g, const Clearance &clear)
                 if (!clear.roomForTree(bx, top, bz))
                     continue;
                 // nothing tall where the windmill's sails turn
-                const float millX = cx - centerOf(-22), millZ = cz + 42.5f;
+                const float millX = cx - millHub[0], millZ = cz - millHub[1];
                 if (millX * millX + millZ * millZ < 16.0f * 16.0f)
                     continue;
                 const float villageX = cx - kVillageX, villageZ = cz - kVillageZ;
@@ -1636,7 +1721,7 @@ void plantTrees(Grid &g, const Clearance &clear)
                 {
                     if (h % 5u == 0 && !crowded(g, bx, base, bz, 1))
                         spruce(blocks, bx, base, bz, 6 + static_cast<int>((h >> 8) % 3u),
-                               ground == SNOWY_DIRT || topY > 30.0f);
+                               ground == SNOWY_DIRT || topY > 30.0f * kLift);
                 }
                 else if (biome == CRAG || biome == VOLCANO)
                 {
@@ -1725,12 +1810,16 @@ void plantFlowers(Grid &g, const Clearance &clear)
 // Animals graze where the meadow is open and level.
 void placeAnimals(const Grid &g, const Clearance &clear, Extras &extras)
 {
-    const float spots[][2] = {
+    // the first layout's spots, scaled
+    const float firstSpots[][2] = {
         {-58.0f, -86.0f}, {-84.0f, -62.0f}, {-46.0f, -58.0f}, {-80.0f, -90.0f}, {-62.0f, -50.0f},
         {6.0f, -24.0f},   {34.0f, -44.0f},  {-4.0f, -6.0f},   {58.0f, -22.0f},  {44.0f, 4.0f},
         {18.0f, 6.0f},    {70.0f, -24.0f},  {-30.0f, -74.0f}, {0.0f, -84.0f}};
+    std::vector<std::vector<float>> spots;
+    for (const float *spot : firstSpots)
+        spots.push_back({spot[0] * kScale, spot[1] * kScale});
     int count = 0;
-    for (const float *spot : spots)
+    for (const std::vector<float> &spot : spots)
     {
         const int bx = blockOf(spot[0]), bz = blockOf(spot[1]);
         const int top = g.top(bx, bz);
@@ -1921,12 +2010,12 @@ void buildScenery(Grid &g, Extras &extras)
 
     buildTerrain(g);
     buildLavaLake(g);
-    traceLava(g, kLavaSouth, 4, true);
-    traceLava(g, kLavaEast, 4, true);
+    traceLava(g, scaledLine(kLavaSouth, 4).data(), 4, true);
+    traceLava(g, scaledLine(kLavaEast, 4).data(), 4, true);
     crustLava(g);
-    buildVillage(g, extras);
+    buildVillage(g, extras, clear);
     buildPond(g, kPondX, kPondZ, kPondRadius);
-    buildPond(g, 5.0f, 41.0f, 3.2f); // a still pool on the badlands
+    buildPond(g, 12.5f, 102.5f, 5.5f); // a still pool on the badlands
     buildWaterfall(g);
     buildFloatingIsland(g);
 
@@ -1939,7 +2028,7 @@ void buildScenery(Grid &g, Extras &extras)
     // after the carving, so the water flows round the ride's room
     spreadWater(g);
 
-    plantTrees(g, clear);
+    plantTrees(g, clear, extras);
     spreadSky(g);
     plantFlowers(g, clear);
     spreadGlow(g);
@@ -1953,7 +2042,7 @@ void buildFlat(Grid &g)
     const Clearance clear;
     for (int bx = -kHalf; bx < kHalf; ++bx)
         for (int bz = -kHalf; bz < kHalf; ++bz)
-            if (onIsland(bx, bz))
+            if (onFlatIsland(bx, bz))
             {
                 g.put(bx, -2, bz, DIRT);
                 g.put(bx, -1, bz, GRASS);
@@ -1978,7 +2067,8 @@ void buildFlat(Grid &g)
         for (int bz = -kHalf; bz < kHalf; ++bz)
         {
             const float cx = centerOf(bx), cz = centerOf(bz);
-            if (cx * cx + cz * cz < 68.0f * 68.0f || g.get(bx, 0, bz) != AIR)
+            if (!onFlatIsland(bx, bz) || cx * cx + cz * cz < 68.0f * 68.0f ||
+                g.get(bx, 0, bz) != AIR)
                 continue;
             const unsigned int h = hash(bx, bz, 89u);
             const int kinds[4] = {POPPY, DANDELION, CORNFLOWER, TULIP};
@@ -2423,12 +2513,12 @@ void LandWorld::releaseResources()
 
 void LandWorld::shadowBounds(float lo[3], float hi[3])
 {
-    lo[0] = -kIslandHalf - 2.0f;
+    lo[0] = -WorldShape::kIslandReach;
     lo[1] = static_cast<float>(kMinY) * kBlock;
-    lo[2] = -kIslandHalf - 2.0f;
-    hi[0] = kIslandHalf + 2.0f;
+    lo[2] = -WorldShape::kIslandReach;
+    hi[0] = WorldShape::kIslandReach;
     hi[1] = static_cast<float>(kMaxY + 1) * kBlock;
-    hi[2] = kIslandHalf + 2.0f;
+    hi[2] = WorldShape::kIslandReach;
 }
 
 int LandWorld::rideObstructions(const std::vector<float> &path)
@@ -2666,14 +2756,14 @@ void LandWorld::drawMoving(const Scene &s, float time)
     // blocky clouds drifting east, high above the peaks
     setGlow(0.12f);
     colour(250, 252, 255);
-    for (int i = 0; i < 16; ++i)
+    for (int i = 0; i < 40; ++i)
     {
-        const float span = 1400.0f;
-        float x = static_cast<float>(hash(i, 0, 441u) % 1400u) +
+        const float span = 2600.0f;
+        float x = static_cast<float>(hash(i, 0, 441u) % 2600u) +
                   time * (3.0f + static_cast<float>(i % 3));
         x = x - floorf(x / span) * span - span * 0.5f;
-        const float z = static_cast<float>(hash(i, 1, 441u) % 1300u) - 650.0f;
-        const float y = 165.0f + static_cast<float>(hash(i, 2, 441u) % 50u);
+        const float z = static_cast<float>(hash(i, 1, 441u) % 2200u) - 1100.0f;
+        const float y = 235.0f + static_cast<float>(hash(i, 2, 441u) % 60u);
         for (int part = 0; part < 4; ++part)
         {
             const float px = x + static_cast<float>(hash(i, part, 443u) % 40u) - 20.0f;
@@ -2687,7 +2777,7 @@ void LandWorld::drawMoving(const Scene &s, float time)
 
     // hot-air balloons, bobbing where the ride gets a good look at them
     const float spots[3][3] = {
-        {-10.0f, 104.0f, 84.0f}, {150.0f, 62.0f, 96.0f}, {30.0f, 58.0f, -150.0f}};
+        {-25.0f, 156.0f, 210.0f}, {375.0f, 93.0f, 240.0f}, {75.0f, 87.0f, -375.0f}};
     const int paints[3][2][3] = {{{224, 60, 50}, {250, 240, 220}},
                                  {{50, 120, 220}, {250, 206, 60}},
                                  {{240, 150, 40}, {120, 60, 160}}};
