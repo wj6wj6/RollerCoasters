@@ -164,28 +164,42 @@ void main()
 // Shared by the water's vertex and fragment shaders: the large waves.
 // Gerstner waves move each point of the surface round a circle instead of
 // just up and down, which sharpens the crests and flattens the troughs.
+// A real sea is many waves of unrelated lengths from a spread of
+// directions, so it never repeats; a few waves of round lengths add up to
+// a grid of crests. So there are eight, their lengths in no simple ratio,
+// their directions spread round the wind's (roughly from the west-south-
+// west) and each with its own phase.
 const char *kWaveGlsl = R"GLSL(
-void gerstner(vec2 dir, float len, float amp, vec2 p, float t, inout vec3 disp, inout vec3 slope)
+void gerstner(vec2 dir, float len, float amp, float phase, vec2 p, float t, float shortest,
+              inout vec3 disp, inout vec3 slope)
 {
+    if (len < shortest)
+        return;
     float k = 6.2831853 / len;
     float w = sqrt(9.8 * k) * 0.6;
-    float ph = k * dot(dir, p) - w * t;
-    float q = 0.1375 / (k * amp);   // steepness: the four waves share 0.55
+    float ph = k * dot(dir, p) - w * t + phase;
+    float q = 0.07 / (k * amp);   // steepness: the eight waves share 0.56
     disp.xz += dir * (q * amp * cos(ph));
     disp.y += amp * sin(ph);
     slope.xz += dir * (k * amp * cos(ph));
     slope.y += q * k * amp * sin(ph);
 }
 
-// Displacement and normal of the surface at rest position p.
-void oceanWaves(vec2 p, float t, out vec3 disp, out vec3 normal)
+// Displacement and normal of the surface at rest position p, from the
+// waves at least `shortest` long (the grid's vertices are too far apart to
+// follow the shortest ones, which only shade it).
+void oceanWaves(vec2 p, float t, float shortest, out vec3 disp, out vec3 normal)
 {
     disp = vec3(0.0);
     vec3 s = vec3(0.0);
-    gerstner(vec2(0.944, 0.330), 46.0, 0.34, p, t, disp, s);
-    gerstner(vec2(0.600, -0.800), 27.0, 0.20, p, t, disp, s);
-    gerstner(vec2(-0.287, 0.958), 17.0, 0.12, p, t, disp, s);
-    gerstner(vec2(0.874, 0.486), 11.0, 0.07, p, t, disp, s);
+    gerstner(normalize(vec2(0.944, 0.330)), 46.3, 0.30, 0.0, p, t, shortest, disp, s);
+    gerstner(normalize(vec2(0.731, -0.682)), 31.7, 0.17, 2.1, p, t, shortest, disp, s);
+    gerstner(normalize(vec2(0.281, 0.960)), 23.9, 0.12, 4.4, p, t, shortest, disp, s);
+    gerstner(normalize(vec2(0.990, -0.141)), 17.3, 0.08, 1.3, p, t, shortest, disp, s);
+    gerstner(normalize(vec2(0.616, 0.788)), 12.9, 0.06, 5.6, p, t, shortest, disp, s);
+    gerstner(normalize(vec2(0.857, -0.515)), 9.7, 0.04, 3.2, p, t, shortest, disp, s);
+    gerstner(normalize(vec2(-0.208, 0.978)), 7.1, 0.03, 0.7, p, t, shortest, disp, s);
+    gerstner(normalize(vec2(0.951, 0.309)), 5.3, 0.02, 4.9, p, t, shortest, disp, s);
     normal = normalize(vec3(-s.x, 1.0 - s.y, -s.z));
 }
 )GLSL";
@@ -207,7 +221,7 @@ void main()
     float fade = 1.0 - smoothstep(0.55 * uWaveReach, 0.95 * uWaveReach, length(gl_Vertex.xz));
     vec3 disp;
     vec3 normal;
-    oceanWaves(base.xz, uTime, disp, normal);
+    oceanWaves(base.xz, uTime, 12.0, disp, normal); // four grid cells or longer
     vec3 world = base + disp * fade;
     vBase = base.xz;
     vWave = fade;
@@ -354,7 +368,7 @@ void main()
     // Normal: the big waves, then the ripples (and rain rings) on top.
     vec3 disp;
     vec3 N;
-    oceanWaves(vBase, uTime, disp, N);
+    oceanWaves(vBase, uTime, 0.0, disp, N);
     vec2 g = rippleSlope(vBase, uTime);
     if (uRain > 0.0)
         g += rainSlope(vBase, uTime) * uRain;
@@ -435,11 +449,18 @@ void main()
     col += uLightColor * spec * shadow * (0.3 + fresnel);
 
     // Foam where the water is shallow and on the steepest crests, broken up
-    // by moving noise.
+    // by moving noise. Out at sea a crest only breaks where a gust is
+    // blowing (a slowly drifting field of patches) and where its own
+    // random threshold is passed, so whitecaps come and go here and there
+    // instead of on every crest; more of them in the rain.
     float edge = 1.0 - smoothstep(0.0, 1.2, thickness);
     float pattern = noise(P.xz * 0.9 + vec2(uTime * 0.3, uTime * 0.2)) *
                     noise(P.xz * 2.3 - vec2(uTime * 0.25));
-    float crest = smoothstep(0.38, 0.6, disp.y) * vWave * 0.5;
+    float gust = noise(P.xz * 0.011 + vec2(uTime * 0.021, uTime * 0.013)) * 0.65 +
+                 noise(P.xz * 0.037 - vec2(uTime * 0.017, -uTime * 0.029)) * 0.35;
+    gust = mix(smoothstep(0.44, 0.72, gust), 1.0, uRain * 0.6);
+    float breaking = smoothstep(0.38, 0.68, noise(P.xz * 0.13 + vec2(uTime * 0.06, -uTime * 0.04)));
+    float crest = smoothstep(0.42, 0.66, disp.y) * vWave * 0.5 * gust * breaking;
     float foam = max(edge, crest) * smoothstep(0.15, 0.45, pattern + edge * 0.35);
     vec3 foamLight = uLightColor * max(uLightDir.y, 0.0) * shadow + uZenith * 1.5 + uHorizon * 0.3;
     col = mix(col, foamLight * 0.9, foam * 0.85);
