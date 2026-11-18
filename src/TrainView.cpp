@@ -73,7 +73,8 @@ static int touchpadWheel(void *event, void *data)
     if (!view->tw || !view->shown())
         return 0;
     const bool fly = view->tw->flyCam->value() != 0;
-    if (!view->tw->worldCam->value() && !fly)
+    const bool train = view->tw->trainCam->value() != 0;
+    if (!view->tw->worldCam->value() && !fly && !train)
         return 0;
     HWND canvas = fl_xid(view);
     if (!canvas || GetAncestor(message->hwnd, GA_ROOT) != GetAncestor(canvas, GA_ROOT))
@@ -95,10 +96,18 @@ static int touchpadWheel(void *event, void *data)
         state |= FL_ALT;
     const float steps = (float)delta / WHEEL_DELTA;
     const bool precise = isPreciseWheel(delta);
+    // Riding the train, touchpad scrolling turns the head; wheel notches do nothing.
+    if (train && (!precise || (state & FL_CTRL)))
+        return 1;
     // Match FLTK's signs: wheel up is -dy, tilting right is +dx.
     const float dx = message->message == WM_MOUSEWHEEL ? 0.0f : steps;
     const float dy = message->message == WM_MOUSEWHEEL ? -steps : 0.0f;
-    if (fly)
+    if (train)
+    {
+        view->headLook.scroll(dx, dy);
+        view->damage(1);
+    }
+    else if (fly)
     {
         view->flyCam.scroll(dx, dy, state, precise);
         // The mouse wheel changes the flying speed; keep the slider in step.
@@ -117,16 +126,29 @@ static int flyKeys(void *event, void *data)
     if (message->message != WM_KEYDOWN && message->message != WM_KEYUP)
         return 0;
     TrainView *view = static_cast<TrainView *>(data);
-    if (!view->tw || !view->shown() || !view->tw->flyCam->value())
+    if (!view->tw || !view->shown())
+        return 0;
+    const bool train = view->tw->trainCam->value() != 0;
+    if (!view->tw->flyCam->value() && !train)
         return 0;
     HWND canvas = fl_xid(view);
     if (!canvas || GetAncestor(message->hwnd, GA_ROOT) != GetAncestor(canvas, GA_ROOT))
         return 0;
+    // Only when the view has the keyboard, so typing in a panel widget still works.
+    if (train && Fl::focus() != view)
+        return 0;
     const unsigned scan = (unsigned)(message->lParam >> 16) & 0xFF;
     const bool extended = ((message->lParam >> 24) & 1) != 0;
     const int key = FlyCam::keyForScanCode(scan, extended);
-    if (!key)
+    // Riding the train, only R (look ahead again) is read this way.
+    if (!key || (train && key != 'r'))
         return 0;
+    if (train)
+    {
+        if (message->message == WM_KEYDOWN)
+            view->recenterHead();
+        return 1;
+    }
     Fl::e_keysym = key;
     // FLTK never saw this message, so take the modifiers from the keyboard:
     // editing commands such as Ctrl + snapping read them.
@@ -145,7 +167,8 @@ static int flyKeys(void *event, void *data)
 static bool touchpadAccepts(void *data)
 {
     TrainView *view = static_cast<TrainView *>(data);
-    return view->tw && (view->tw->worldCam->value() || view->tw->flyCam->value());
+    return view->tw && (view->tw->worldCam->value() || view->tw->flyCam->value() ||
+                        view->tw->trainCam->value());
 }
 
 // Direct Manipulation reports finger movement and pinch together, so the
@@ -157,8 +180,17 @@ static void touchpadMoves(void *data, float dx, float dy, float scale)
     const bool alt = GetKeyState(VK_MENU) < 0;
     const bool pan = alt || GetKeyState(VK_SHIFT) < 0;
     TrainView *view = static_cast<TrainView *>(data);
+    // Riding the train, two fingers turn the head; spreading does nothing.
+    if (view->tw->trainCam->value())
+    {
+        if (!view->headDragging && (dx != 0 || dy != 0))
+        {
+            view->headLook.touchpadGesture(dx, dy);
+            view->damage(1);
+        }
+    }
     // In Fly mode Shift sinks the camera, so only Alt slides.
-    if (view->tw->flyCam->value())
+    else if (view->tw->flyCam->value())
         view->flyCam.touchpadGesture(dx, dy, scale, alt);
     else
         view->arcball.touchpadGesture(dx, dy, scale, pan);
@@ -190,6 +222,9 @@ TrainView::TrainView(int x, int y, int w, int h, const char *l) : Fl_Gl_Window(x
     selectedCube = -1;
     mouseCaptured = false;
     m_fieldOfView = startFieldOfView;
+    headDragging = false;
+    headDragX = 0;
+    headDragY = 0;
     mode(FL_RGB | FL_ALPHA | FL_DOUBLE | FL_STENCIL);
 
     resetArcball();
@@ -326,8 +361,11 @@ void TrainView::cameraChanged()
 //========================================================================
 {
     // A first-person view that keeps spinning after a flick is disorienting.
-    touchpad.inertia = !tw->flyCam->value();
+    touchpad.inertia = !tw->flyCam->value() && !tw->trainCam->value();
     setInputMethodEnabled(!tw->flyCam->value());
+    // Each ride starts looking ahead.
+    headDragging = false;
+    headLook.reset();
     if (!tw->flyCam->value())
     {
         setMouseCaptured(false);
@@ -357,6 +395,66 @@ void TrainView::setInputMethodEnabled(bool enabled)
     (void)ImmAssociateContextEx(GetAncestor(canvas, GA_ROOT), nullptr, flags);
 }
 
+//========================================================================
+void TrainView::recenterHead()
+//========================================================================
+{
+    headLook.reset();
+    damage(1);
+}
+
+//************************************************************************
+//
+// * Mouse input for the Train camera: any drag turns the rider's head, a
+//   double click looks ahead again. Control points are hidden while riding,
+//   so clicks never pick them. Returns 1 when the event was used.
+//========================================================================
+int TrainView::handleTrainLook(int event)
+//========================================================================
+{
+    switch (event)
+    {
+    case FL_PUSH:
+        if (Fl::event_button() == FL_MIDDLE_MOUSE)
+            break;
+        Fl::focus(this);
+        if (Fl::event_clicks())
+        {
+            recenterHead();
+            headDragging = false;
+            // The next press starts a new drag rather than counting as a third click.
+            Fl::event_is_click(0);
+            return 1;
+        }
+        headDragging = true;
+        headDragX = Fl::event_x();
+        headDragY = Fl::event_y();
+        return 1;
+    case FL_DRAG:
+        if (!headDragging)
+            break;
+        headLook.drag((float)(Fl::event_x() - headDragX), (float)(Fl::event_y() - headDragY));
+        headDragX = Fl::event_x();
+        headDragY = Fl::event_y();
+        damage(1);
+        return 1;
+    case FL_RELEASE:
+        if (!headDragging)
+            break;
+        headDragging = false;
+        return 1;
+    case FL_KEYBOARD:
+        // R (or Home) looks ahead again; the scan-code handler covers input methods.
+        if (Fl::event_key() == 'r' || Fl::event_key() == FL_Home)
+        {
+            recenterHead();
+            return 1;
+        }
+        break;
+    }
+    return 0;
+}
+
 //************************************************************************
 //
 // * FlTk Event handler for the window
@@ -378,6 +476,10 @@ int TrainView::handle(int event)
     if (tw->worldCam->value())
         if (arcball.handle(event))
             return 1;
+
+    // Riding the train, drags turn the rider's head.
+    if (tw->trainCam->value() && handleTrainLook(event))
+        return 1;
 
     // The observer camera takes held keys, right drags and the wheel.
     if (tw->flyCam->value())
@@ -1201,6 +1303,11 @@ void TrainView::setProjection()
                 gluLookAt(eye.x, eye.y, eye.z, look.x, look.y, look.z, 0.0, 1.0, 0.0);
                 return;
             }
+            // The rider may turn their head; the view still moves with the train.
+            Pnt3f viewForward, viewUp;
+            headLook.apply(forward, side, up, viewForward, viewUp);
+            forward = viewForward;
+            up = viewUp;
         }
 
         glMatrixMode(GL_PROJECTION);

@@ -56,6 +56,7 @@ class CTrack;
 #include "OceanWorld.h"
 #include "TransformGizmo.h"
 #include "Utilities/FlyCam.H"
+#include "Utilities/HeadLook.H"
 #include "TrackRenderer.H"
 #include "TouchpadGestures.H"
 
@@ -141,6 +142,11 @@ class TrainView : public Fl_Gl_Window
     void setInputMethodEnabled(bool enabled);
     void centerCursor();
 
+    // Train camera: look straight ahead again, and mouse drags that turn the
+    // rider's head (returns 1 when the event was used).
+    void recenterHead();
+    int handleTrainLook(int event);
+
     // Where the train is now (the track centre without a train).
     Pnt3f trainPosition() const;
 
@@ -150,8 +156,12 @@ class TrainView : public Fl_Gl_Window
     void drawFlyOverlay();
 
   public:
-    ArcBallCam arcball;  // keep an ArcBall for the UI
-    FlyCam flyCam;       // free-moving observer camera
+    ArcBallCam arcball; // keep an ArcBall for the UI
+    FlyCam flyCam;      // free-moving observer camera
+    HeadLook headLook;  // where the rider looks in the Train camera
+    bool headDragging;  // is a mouse drag turning the rider's head?
+    int headDragX;      // last mouse position of that drag
+    int headDragY;
     float m_fieldOfView; // degrees, the World, Train, Chase and Fly cameras
     bool mouseCaptured;  // does the mouse steer the observer camera?
     int selectedCube;    // simple - just remember which cube is selected

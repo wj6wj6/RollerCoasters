@@ -152,6 +152,10 @@ TrainWindow::TrainWindow(const int x, const int y)
         trainCam->value(0);
         UiTheme::styleToggle(trainCam);
         trainCam->callback((Fl_Callback *)cameraCB, this);
+        trainCam->tooltip("Ride the train and turn your head\n"
+                          "Look around: drag the view (left or right button)\n"
+                          "Touchpad: two fingers look around\n"
+                          "Look ahead again: double click, R or Home");
         chaseCam = new Fl_Button(col3, pty, col3W, rowH, "Chase");
         chaseCam->type(FL_RADIO_BUTTON);
         chaseCam->value(0);
