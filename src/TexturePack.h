@@ -15,7 +15,7 @@
                     tinted green as those games do; where a pack has no
                     picture of the island's block, a block it has stands
                     in (oak leaves tinted orange for the autumn trees,
-                    stained glass for the windows, a sea lantern for the
+                    a sea lantern for the
                     crystals), so with a full pack every block is the
                     pack's.
                   A pack may sit one folder down in its archive. Pictures
@@ -112,6 +112,10 @@ bool isGrey(const PixelArt::Image &image);
 void tint(PixelArt::Image &image, int r, int g, int b);
 // Draws `over` on top of `image` by its alpha (same size, or scaled).
 void overlay(PixelArt::Image &image, const PixelArt::Image &over);
+// Gives the see-through texels the picture's average colour, keeping them
+// see-through, so a cut-out picture does not darken where its texels are
+// averaged far away.
+void bleedHoles(PixelArt::Image &image);
 // Fills the see-through texels with the picture's average colour, darker
 // by `shade`, so a solid block has no holes.
 void fillHoles(PixelArt::Image &image, float shade);

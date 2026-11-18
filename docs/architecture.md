@@ -56,6 +56,8 @@ flowchart LR
 
 材質包：`World` 面板的 `Textures` 選單由 `TrainWindow::listTexturePacks()` 列出 `TexturePack::findAll()` 在搜尋資料夾（exe 旁的 `texturepacks/`，建置與安裝時建立；以及工作資料夾的 `texturepacks/` 與 `data/texturepacks/`，`main()` 啟動時已切到 exe 的資料夾）找到的 `.zip` 與資料夾。選定後 `texturePackCB()` 以 `TexturePack::Pack::open()` 開啟（zip 由 `ZipArchive` 讀目錄、自己的 DEFLATE 解碼器解壓；包在一層資料夾裡時以 `pack.mcmeta` 等標記找根目錄），交給 `TrainView::setTexturePack()` → `LandWorld::setTexturePack()`。下一次 `draw()` 對每種貼圖先問材質包（本程式格式 `textures/<名稱>.png`，再依對照表找資源包的 `block/`、`blocks/` 圖片；PNG 由 FLTK 解碼，取動畫第一格、縮成 2 的次方、灰階的草與樹葉染色、實心方塊補滿透明處），沒有就用 `LandTextures::make()`，再以 `PixelArt::uploadInto()` 寫進原本的貼圖名稱。顯示清單綁定的是貼圖名稱，所以換材質包不必重建島嶼或顯示清單。
 
+村莊與材質：`buildHouse()` 照方塊遊戲平原村莊的配置蓋房子（圓石牆、四角與牆中央的橡木原木柱、柱間兩格高的玻璃窗、空心的屋內與木地板、兩格高的門、橡木板山形屋頂出簷一格、圓石煙囪），`putPath()` 鋪三格寬、夾雜礫石的泥土小路（`PATH` 方塊）並從每戶門口接到主路，燈與井柱用 `FENCE`（植物格，由 `addFence()` 畫成柱子與接到相鄰柵欄或方塊的兩根橫木），教堂改在綠地上離中心最近、不壓到麥田、井、風車與房子的空地。窗戶（`WINDOW`）不再發光也不算光源；它不遮擋旁邊的面（`Grid::opaque()` 排除玻璃），由 `addGlassFaces()` 放進與水同一批半透明網格，在 `drawWater()` 混合，所以看得到屋內。樹葉的貼圖有鏤空（`isLeafBlock()`）：相鄰方塊朝樹葉的面也會畫，兩片樹葉之間只畫一面，實心方塊以 alpha test（shader 本來就丟掉 alpha 小於一半的像素）切出空隙，像精緻樹葉；材質包的樹葉保留透明處，只把透明像素的顏色換成平均色（`bleedHoles()`），遠處 mipmap 不會發黑。
+
 `TrainWindow` 持有場景狀態與 widget；`TrainView` 讀取場景與 UI 選項並繪圖。
 `TrackRenderer` 建立累積弧長表，依弧長等距擺放枕木，並以程式產生的像素材質畫方塊風鐵軌；`makeTrackFrame()` 也放在這裡，供列車與相機共用。
 `CallBacks` 處理按鈕、軌道載入儲存與列車更新。
@@ -104,7 +106,7 @@ caustics、吸收係數與水體顏色放在 `UnderwaterOptics.h`，三個 shade
 光照烘焙與 `OceanWorld` 相同（天光、發光方塊、ambient occlusion）；熔岩與燈籠的暖光寫進頂點顏色與發光量，水晶的冷光用 shader 既有的方塊光。
 `LandWorld::rideObstructions()` 與測試 `LandRideClearanceCheck` 用正式的 `CTrack` 取樣，檢查三種 spline 下列車都不會碰到方塊或植物。
 島的網格同樣以 16×16 欄為一塊，每塊有自己的方塊、植物與水的 display list 和包住實際方塊的邊界框。`Frustum` 從目前的投影 × modelview 矩陣取出六個平面，`LandWorld::draw()`、`drawWater()` 與 `OceanWorld::draw()` 只畫看得到的塊；因為用的是當下的矩陣，陰影 pass（光源視角）與水面反射 pass（鏡射視角）也自動只畫各自看得到的部分。這讓之後放大世界時，每幀的繪製量只跟畫面裡的範圍有關。`FrustumCheck` 單獨測試剔除的判斷。
-水方塊是半透明的靜態水：不遮擋旁邊的面、不擋天光也不算 ambient occlusion，網格另外編成 display list，由 `TrainView::drawStuff()` 在最後畫上：先只寫入水的深度，再在最近的水面上以 alpha 混合畫顏色，所以只看得到水體正面，方塊之間的內部平面與背面不會透出（不進 shadow map，目標的 alpha 保持不變）；挖軌道時被切斷而懸空的水會移除。會動的東西（風車、動物、雲、熱氣球）每格以方塊即時畫出；`TrainView::drawSupports()` 以目前 spline（含 B-spline）每約 1 單位取一點、控制點不變時沿用，交給 `LandWorld::drawSupports()` 每 9 單位規劃一座木棧橋（同一條路線只規劃一次）：
+水方塊是半透明的靜態水：不遮擋旁邊的面、不擋天光也不算 ambient occlusion，網格另外編成 display list，由 `TrainView::drawStuff()` 在最後畫上：先只寫入水的深度，再在最近的水面上以 alpha 混合畫顏色，所以只看得到水體正面，方塊之間的內部平面與背面不會透出（不進 shadow map，目標的 alpha 保持不變）；挖軌道時被切斷而懸空的水會移除。會動的東西（風車、動物、雲、熱氣球）每格以方塊即時畫出；`TrainView::drawSupports()` 以目前 spline（含 B-spline）每約 1 單位取一點、控制點不變時沿用，交給 `LandWorld::drawSupports()` 每 16 單位規劃一座木棧橋（同一條路線只規劃一次）：
 左右兩根柱各自從自己的落點往下找地面（穿過水、立在熔岩裡；島外立在 `OceanWorld::seaFloor()` 的海床上），柱頂貼齊枕木底；只有被另一段軌道擋住的那一根柱不立，兩根都在時才加橫撐。山體也畫進 shadow map，所以會投影。
 `Scenery` 關閉時 `LandWorld` 改建平坦的編輯用島；固定管線（`Light+` 關閉）的平面陰影只在這個模式使用。
 `Train`／`Chase` 相機由 `TrainView::setProjection()` 從軌道座標系算出；`Chase` 用 `TrainModel::parameterBehind()` 沿軌道往回取最後一節礦車後方的點，抬高後看向火車頭，所以會留在為軌道挖出的空間裡。

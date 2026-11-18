@@ -121,6 +121,8 @@ enum Block
     MANGROVE_LOG,
     LEAVES_MANGROVE,
     LEAVES_BAMBOO, // the canopy over a bamboo thicket
+    PATH,          // a trodden dirt path
+    SPRUCE_PLANKS, // dark planks
     BLOCK_COUNT
 };
 
@@ -143,6 +145,7 @@ enum Plant
     BAMBOO_TOP, // the leafy top of a cane
     VINES,      // hanging under the mangroves' crowns
     SNOW_LAYER, // fallen snow, 1 to 8 eighths of a block deep (Grid::level)
+    FENCE,      // an oak fence: a post, and rails to the fences and blocks beside it
     PLANT_COUNT
 };
 
@@ -222,7 +225,7 @@ int textureOf(int block, int face)
     case ROOF:
         return T::ROOF;
     case WINDOW:
-        return face == 2 ? T::WINDOW : T::PLANKS;
+        return T::WINDOW;
     case DOOR:
         return face == 2 ? T::DOOR : T::PLANKS;
     case LANTERN:
@@ -261,6 +264,10 @@ int textureOf(int block, int face)
         return T::LEAVES_MANGROVE;
     case LEAVES_BAMBOO:
         return T::LEAVES_BAMBOO;
+    case PATH:
+        return face == 0 ? T::PATH_TOP : (face == 1 ? T::DIRT : T::PATH_SIDE);
+    case SPRUCE_PLANKS:
+        return T::SPRUCE_PLANKS;
     default:
         return T::STONE;
     }
@@ -269,6 +276,15 @@ int textureOf(int block, int face)
 int plantTexture(int plant)
 {
     return LandTextures::TALL_GRASS + (plant - TALL_GRASS);
+}
+
+// Leaves are cut out (their pictures have holes), so they hide nothing
+// behind them: the faces next to them are drawn, as with fancy leaves in a
+// block game.
+bool isLeafBlock(int block)
+{
+    return (block >= LEAVES_OAK && block <= LEAVES_AUTUMN) || block == LEAVES_MANGROVE ||
+           block == LEAVES_BAMBOO;
 }
 
 // Trees and the like: the ground is what lies under them.
@@ -290,8 +306,6 @@ float blockGlow(int block)
         return 1.3f;
     case CRYSTAL:
         return 1.0f;
-    case WINDOW:
-        return 0.5f;
     case MAGMA:
         return 0.22f;
     case JACK_O:
@@ -632,12 +646,13 @@ struct Grid
     {
         return get(bx, j, bz) != AIR;
     }
-    // Solid and not see-through: water lets light through and shows what is
-    // behind it, so it hides no faces and casts no ambient occlusion.
+    // Solid and not see-through: water and glass let light through and show
+    // what is behind them, so they hide no faces and cast no ambient
+    // occlusion.
     bool opaque(int bx, int j, int bz) const
     {
         const int b = get(bx, j, bz);
-        return b != AIR && b != WATER;
+        return b != AIR && b != WATER && b != WINDOW;
     }
     int skyAt(int bx, int j, int bz) const
     {
@@ -1271,46 +1286,75 @@ void footing(Grid &g, int x0, int x1, int z0, int z1, int floor)
         }
 }
 
-// A cottage: plank walls between log corner posts on a cobble footing, lit
-// windows, a door facing +z or +x and a gabled roof of shingles.
+// A fence post in a cell, if it is free.
+void putFence(Grid &g, int bx, int j, int bz)
+{
+    if (!Grid::inside(bx, j, bz) || g.get(bx, j, bz) != AIR)
+        return;
+    g.plant[Grid::index(bx, j, bz)] = FENCE;
+}
+
+// A cottage as in a block game's plains village: cobble walls framed by oak
+// log posts at the corners and in the middle of each wall, glass windows
+// between the posts (they do not light up: the lamps do), an oak door two
+// blocks high with a lantern on a fence post beside it, a gabled roof of
+// oak planks overhanging the walls by a block, and a cobble chimney. Three
+// materials and the glass: cobble, oak logs, oak planks. Walls run an even
+// number of blocks between corners (x1 - x0 and z1 - z0 of 4 or 6), so the
+// middle post and the windows either side of it are symmetrical.
 void buildHouse(Grid &g, int x0, int z0, int x1, int z1, int floor, bool doorOnX)
 {
-    const int wallTop = floor + 2;
+    const int wallTop = floor + 3;
     footing(g, x0, x1, z0, z1, floor);
-    fill(g, x0, x1, floor, wallTop, z0, z1, PLANKS);
-    for (int j = floor; j <= wallTop; ++j)
+    fill(g, x0, x1, floor, wallTop, z0, z1, COBBLE);
+    // a room inside, with a plank floor, seen through the glass
+    fill(g, x0 + 1, x1 - 1, floor, wallTop, z0 + 1, z1 - 1, AIR);
+    fill(g, x0 + 1, x1 - 1, floor - 1, floor - 1, z0 + 1, z1 - 1, PLANKS);
+    auto post = [&](int bx, int bz) {
+        for (int j = floor; j <= wallTop; ++j)
+            g.put(bx, j, bz, OAK_LOG);
+    };
+    // posts at the corners and the middle of each wall, glass filling the
+    // bays between them, two blocks high
+    const int along[2] = {x1 - x0, z1 - z0};
+    for (int side = 0; side < 2; ++side)
     {
-        g.put(x0, j, z0, OAK_LOG);
-        g.put(x1, j, z0, OAK_LOG);
-        g.put(x0, j, z1, OAK_LOG);
-        g.put(x1, j, z1, OAK_LOG);
+        const int length = along[side];
+        for (int k = 0; k <= length; ++k)
+        {
+            const bool isPost = k == 0 || k == length || k * 2 == length;
+            const bool isWindow = !isPost; // the bays are one or two blocks wide
+            for (int wall = 0; wall < 2; ++wall)
+            {
+                const int bx = side == 0 ? x0 + k : (wall == 0 ? x0 : x1);
+                const int bz = side == 0 ? (wall == 0 ? z0 : z1) : z0 + k;
+                if (isPost)
+                    post(bx, bz);
+                else if (isWindow)
+                {
+                    g.put(bx, floor + 1, bz, WINDOW);
+                    g.put(bx, floor + 2, bz, WINDOW);
+                }
+            }
+        }
     }
-    for (int bx = x0 + 1; bx < x1; bx += 2)
+    // the door, two blocks high, in the middle of a bay on the front wall,
+    // a lantern on a post beside it
+    const int dx = doorOnX ? x1 : x0 + along[0] / 4;
+    const int dz = doorOnX ? z0 + along[1] / 4 : z1;
+    const int ox = doorOnX ? 1 : 0, oz = doorOnX ? 0 : 1; // outwards
+    g.put(dx, floor, dz, DOOR);
+    g.put(dx, floor + 1, dz, DOOR);
+    g.put(dx, floor + 2, dz, COBBLE);
+    const int lx = dx + ox + (doorOnX ? 0 : 1), lz = dz + oz + (doorOnX ? 1 : 0);
+    if (g.get(lx, floor, lz) == AIR && g.get(lx, floor + 1, lz) == AIR)
     {
-        g.put(bx, floor + 1, z0, WINDOW);
-        g.put(bx, floor + 1, z1, WINDOW);
+        putFence(g, lx, floor, lz);
+        g.put(lx, floor + 1, lz, LANTERN);
     }
-    for (int bz = z0 + 1; bz < z1; bz += 2)
-    {
-        g.put(x0, floor + 1, bz, WINDOW);
-        g.put(x1, floor + 1, bz, WINDOW);
-    }
-    if (doorOnX)
-    {
-        g.put(x1, floor, (z0 + z1) / 2, DOOR);
-        g.put(x1, floor + 1, (z0 + z1) / 2, PLANKS);
-        if (g.get(x1 + 1, floor, (z0 + z1) / 2 + 1) == AIR)
-            g.put(x1 + 1, floor, (z0 + z1) / 2 + 1, JACK_O); // a pumpkin lantern by the door
-    }
-    else
-    {
-        g.put((x0 + x1) / 2, floor, z1, DOOR);
-        g.put((x0 + x1) / 2, floor + 1, z1, PLANKS);
-        if (g.get((x0 + x1) / 2 + 1, floor, z1 + 1) == AIR)
-            g.put((x0 + x1) / 2 + 1, floor, z1 + 1, JACK_O);
-    }
-    // the roof: slabs that step in from both long sides, one block of eaves
-    const bool ridgeAlongX = (x1 - x0) >= (z1 - z0);
+    // the roof: oak planks stepping in from both long sides, a block of
+    // eaves all round
+    const bool ridgeAlongX = along[0] >= along[1];
     for (int k = 0;; ++k)
     {
         const int a0 = (ridgeAlongX ? z0 : x0) - 1 + k;
@@ -1318,21 +1362,38 @@ void buildHouse(Grid &g, int x0, int z0, int x1, int z1, int floor, bool doorOnX
         if (a0 > a1)
             break;
         if (ridgeAlongX)
-            fill(g, x0 - 1, x1 + 1, wallTop + 1 + k, wallTop + 1 + k, a0, a1, ROOF);
+            fill(g, x0 - 1, x1 + 1, wallTop + 1 + k, wallTop + 1 + k, a0, a1, PLANKS);
         else
-            fill(g, a0, a1, wallTop + 1 + k, wallTop + 1 + k, z0 - 1, z1 + 1, ROOF);
+            fill(g, a0, a1, wallTop + 1 + k, wallTop + 1 + k, z0 - 1, z1 + 1, PLANKS);
     }
-    // chimney
-    g.put(x0 + 1, wallTop + 2, z0 + 1, COBBLE);
-    g.put(x0 + 1, wallTop + 3, z0 + 1, COBBLE);
-    g.put(x0 + 1, wallTop + 4, z0 + 1, COBBLE);
+    // the chimney, up through the roof at the back
+    const int cx = ridgeAlongX ? x0 + 1 : (x0 + x1) / 2, cz = ridgeAlongX ? (z0 + z1) / 2 : z0 + 1;
+    const int roofRise = ((ridgeAlongX ? along[1] : along[0]) + 2) / 2;
+    for (int j = wallTop + 1; j <= wallTop + roofRise + 2; ++j)
+        g.put(cx, j, cz, COBBLE);
 }
 
+// A lamp post: an oak fence two high with a lantern on it.
 void buildLampPost(Grid &g, int bx, int bz, int floor)
 {
-    g.put(bx, floor, bz, OAK_LOG);
-    g.put(bx, floor + 1, bz, OAK_LOG);
+    putFence(g, bx, floor, bz);
+    putFence(g, bx, floor + 1, bz);
     g.put(bx, floor + 2, bz, LANTERN);
+}
+
+// A trodden path at ground level (layer `top`): dirt path with gravel here
+// and there, never under a building or in the train's way.
+void putPath(Grid &g, const Clearance &clear, int bx, int top, int bz, bool edge)
+{
+    if (!Grid::insideColumn(bx, bz) || clear.blocks(bx, top, bz) || g.get(bx, top + 1, bz) != AIR ||
+        g.plant[Grid::index(bx, top + 1, bz)] == FENCE)
+        return;
+    const int ground = g.get(bx, top, bz);
+    if (ground != GRASS && ground != DIRT && ground != GRAVEL && ground != PATH)
+        return;
+    const unsigned int h = hash(bx, bz, 787u) % 10u;
+    g.put(bx, top, bz, (edge && h < 4u) || h == 0u ? GRAVEL : PATH);
+    g.plant[Grid::index(bx, top + 1, bz)] = NO_PLANT;
 }
 
 // Is the box of cells clear of the train (and inside the island)?
@@ -1386,53 +1447,116 @@ void buildVillage(Grid &g, Extras &extras, const Clearance &clear)
         return cz + static_cast<int>(floorf(static_cast<float>(b + 29) * 1.6f + 0.5f));
     };
     const int floor = kVillageTop + 1;
-    auto house = [&](int x0, int z0, int w, int d, bool doorOnX) {
-        if (roomForBuilding(clear, x0 - 1, x0 + w + 1, floor - 1, floor + 8, z0 - 1, z0 + d + 1))
-            buildHouse(g, x0, z0, x0 + w, z0 + d, floor, doorOnX);
-    };
-
-    // gravel lanes crossing at the well, out to the edge of the green
+    // the lanes: three wide, crossing at the well, out to the edge of the
+    // green; the houses' doors are joined to them by paths
+    const int laneX = vx(-27), laneZ = vz(-30);
     for (int bx = vx(-37) - 6; bx <= vx(-19) + 6; ++bx)
-        if (!clear.blocks(bx, kVillageTop, vz(-30)))
-            g.put(bx, kVillageTop, vz(-30), GRAVEL);
+        for (int w = -1; w <= 1; ++w)
+            putPath(g, clear, bx, kVillageTop, laneZ + w, w != 0);
     for (int bz = vz(-37) - 6; bz <= vz(-20) + 6; ++bz)
-        if (!clear.blocks(vx(-27), kVillageTop, bz))
-            g.put(vx(-27), kVillageTop, bz, GRAVEL);
+        for (int w = -1; w <= 1; ++w)
+            putPath(g, clear, laneX + w, kVillageTop, bz, w != 0);
+    // a path from a door out to the nearer lane: a step out, then straight
+    // along whichever way meets a lane sooner, then along it
+    auto pathFromDoor = [&](int bx, int bz, int ox, int oz) {
+        bx += ox;
+        bz += oz;
+        for (int step = 0; step < 40; ++step)
+        {
+            putPath(g, clear, bx, kVillageTop, bz, false);
+            if (bx == laneX || bz == laneZ)
+                break;
+            if (abs(bx - laneX) <= abs(bz - laneZ))
+                bx += bx < laneX ? 1 : -1;
+            else
+                bz += bz < laneZ ? 1 : -1;
+        }
+    };
+    auto house = [&](int x0, int z0, int w, int d, bool doorOnX) {
+        if (!roomForBuilding(clear, x0 - 2, x0 + w + 2, floor - 1, floor + 9, z0 - 2, z0 + d + 2))
+            return;
+        buildHouse(g, x0, z0, x0 + w, z0 + d, floor, doorOnX);
+        if (doorOnX)
+            pathFromDoor(x0 + w, z0 + d / 4, 1, 0);
+        else
+            pathFromDoor(x0 + w / 4, z0 + d, 0, 1);
+    };
 
     house(vx(-35), vz(-37), 4, 4, false);
     house(vx(-24), vz(-36), 4, 4, false);
-    house(vx(-36), vz(-26), 5, 4, true);
+    house(vx(-36), vz(-26), 6, 4, true);
     // the newer cottages further out
-    house(cx - 22, cz + 6, 4, 5, true);
-    house(cx + 8, cz - 22, 5, 4, false);
+    house(cx - 22, cz + 6, 4, 6, true);
+    house(cx + 8, cz - 22, 6, 4, false);
     house(cx + 14, cz + 12, 4, 4, false);
-    house(cx - 8, cz + 16, 5, 4, false);
+    house(cx - 8, cz + 16, 6, 4, false);
     house(cx - 24, cz - 8, 4, 4, true);
 
-    // the church: a stone nave with tall lit windows and a steep roof, and
-    // a bell tower at its west end with a lantern for a bell; at the first
-    // of a few spots round the green where it is clear of the train
-    const int churchSpots[][2] = {
-        {cx + 6, cz + 4}, {cx - 4, cz - 20}, {cx + 16, cz - 6}, {cx - 26, cz + 12}};
-    for (const int *spot : churchSpots)
+    // the church: a cobble nave with oak log posts, tall glass windows and a
+    // steep oak roof, and a bell tower at its west end with a lantern for a
+    // bell; on the free plot of the green nearest its middle, clear of the
+    // train
+    // the field, the well and the windmill come later: the church keeps off
+    // them, and off the houses already built
+    const int fieldX = vx(-25), fieldZ = vz(-27), millX = vx(-22), millZ = vz(-20);
+    auto overlaps = [](int a0, int a1, int b0, int b1) { return a0 <= b1 && b0 <= a1; };
+    auto plotFree = [&](int x0, int x1, int z0, int z1) {
+        if ((overlaps(x0, x1, fieldX - 2, fieldX + 10) &&
+             overlaps(z0, z1, fieldZ - 2, fieldZ + 9)) ||
+            (overlaps(x0, x1, laneX - 2, laneX + 2) && overlaps(z0, z1, laneZ - 2, laneZ + 2)) ||
+            (overlaps(x0, x1, millX - 3, millX + 3) && overlaps(z0, z1, millZ - 3, millZ + 8)))
+            return false;
+        for (int bx = x0; bx <= x1; ++bx)
+            for (int bz = z0; bz <= z1; ++bz)
+                if (g.top(bx, bz) > kVillageTop)
+                    return false;
+        return true;
+    };
+    // the free plot on the green nearest its middle
+    const int greenReach = static_cast<int>((kVillageRadius - 8.0f) / kBlock);
+    int churchX = 0, churchZ = 0, churchD = 1 << 30;
+    for (int x0 = cx - greenReach; x0 + 9 <= cx + greenReach; ++x0)
+        for (int z0 = cz - greenReach; z0 + 5 <= cz + greenReach; ++z0)
+        {
+            const int x1 = x0 + 9, z1 = z0 + 5;
+            const int mx = (x0 + x1) / 2 - cx, mz = (z0 + z1) / 2 - cz;
+            const int d = mx * mx + mz * mz;
+            // the plot's corner furthest out, squared, in each direction
+            auto outmost = [](int lo, int hi) { return lo * lo > hi * hi ? lo * lo : hi * hi; };
+            const int reach = outmost(x0 - 3 - cx, x1 + 2 - cx) + outmost(z0 - 2 - cz, z1 + 2 - cz);
+            if (d >= churchD || reach > greenReach * greenReach ||
+                !roomForBuilding(clear, x0 - 2, x1 + 1, floor - 1, floor + 16, z0 - 1, z1 + 1) ||
+                !plotFree(x0 - 3, x1 + 2, z0 - 2, z1 + 2))
+                continue;
+            churchD = d;
+            churchX = x0;
+            churchZ = z0;
+        }
+    if (churchD < (1 << 30))
     {
-        const int x0 = spot[0], z0 = spot[1], x1 = x0 + 9, z1 = z0 + 5;
-        if (!roomForBuilding(clear, x0 - 2, x1 + 1, floor - 1, floor + 16, z0 - 1, z1 + 1))
-            continue;
+        const int x0 = churchX, z0 = churchZ, x1 = x0 + 9, z1 = z0 + 5;
         footing(g, x0 - 1, x1, z0, z1, floor);
         fill(g, x0, x1, floor, floor + 4, z0, z1, COBBLE);
         fill(g, x0 + 1, x1 - 1, floor, floor + 4, z0 + 1, z1 - 1, AIR); // the inside
-        for (int bx = x0 + 2; bx < x1; bx += 2)
-        {
-            g.put(bx, floor + 2, z0, WINDOW);
-            g.put(bx, floor + 3, z0, WINDOW);
-            g.put(bx, floor + 2, z1, WINDOW);
-            g.put(bx, floor + 3, z1, WINDOW);
-        }
+        for (int bx = x0; bx <= x1; bx += 3)
+            for (int j = floor; j <= floor + 4; ++j)
+            {
+                g.put(bx, j, z0, OAK_LOG);
+                g.put(bx, j, z1, OAK_LOG);
+            }
+        for (int bx = x0 + 1; bx < x1; ++bx)
+            if ((bx - x0) % 3 != 0)
+            {
+                g.put(bx, floor + 2, z0, WINDOW);
+                g.put(bx, floor + 3, z0, WINDOW);
+                g.put(bx, floor + 2, z1, WINDOW);
+                g.put(bx, floor + 3, z1, WINDOW);
+            }
         g.put(x1, floor, (z0 + z1) / 2, DOOR);
         g.put(x1, floor + 1, (z0 + z1) / 2, DOOR);
+        pathFromDoor(x1, (z0 + z1) / 2, 1, 0);
         for (int k = 0; z0 - 1 + k <= z1 + 1 - k; ++k)
-            fill(g, x0, x1 + 1, floor + 5 + k, floor + 5 + k, z0 - 1 + k, z1 + 1 - k, ROOF);
+            fill(g, x0, x1 + 1, floor + 5 + k, floor + 5 + k, z0 - 1 + k, z1 + 1 - k, PLANKS);
         // the bell tower
         const int tz = (z0 + z1) / 2 - 1;
         fill(g, x0 - 2, x0, floor, floor + 10, tz, tz + 2, COBBLE);
@@ -1441,42 +1565,55 @@ void buildVillage(Grid &g, Extras &extras, const Clearance &clear)
         g.put(x0 - 2, floor + 9, tz + 1, AIR);
         g.put(x0, floor + 9, tz + 1, AIR);
         g.put(x0 - 1, floor + 9, tz + 1, LANTERN);
-        fill(g, x0 - 2, x0, floor + 11, floor + 11, tz, tz + 2, ROOF);
-        g.put(x0 - 1, floor + 12, tz + 1, ROOF);
+        fill(g, x0 - 2, x0, floor + 11, floor + 11, tz, tz + 2, PLANKS);
+        g.put(x0 - 1, floor + 12, tz + 1, PLANKS);
         g.put(x0 - 1, floor + 13, tz + 1, OAK_LOG); // the cross's post
-        break;
     }
 
     // the well at the crossing
     const int wx = vx(-27), wz = vz(-30);
     if (roomForBuilding(clear, wx - 1, wx + 1, floor, floor + 3, wz - 1, wz + 1))
     {
+        // a ring of cobble round the water, fence posts at the corners and
+        // a cobble roof, as in a block game's village well
         fill(g, wx - 1, wx + 1, floor, floor, wz - 1, wz + 1, COBBLE);
         g.put(wx, floor, wz, WATER);
-        g.put(wx - 1, floor + 1, wz - 1, OAK_LOG);
-        g.put(wx + 1, floor + 1, wz + 1, OAK_LOG);
-        g.put(wx - 1, floor + 2, wz - 1, OAK_LOG);
-        g.put(wx + 1, floor + 2, wz + 1, OAK_LOG);
-        fill(g, wx - 1, wx + 1, floor + 3, floor + 3, wz - 1, wz + 1, ROOF);
+        for (int dx = -1; dx <= 1; dx += 2)
+            for (int dz = -1; dz <= 1; dz += 2)
+            {
+                putFence(g, wx + dx, floor + 1, wz + dz);
+                putFence(g, wx + dx, floor + 2, wz + dz);
+            }
+        fill(g, wx - 1, wx + 1, floor + 3, floor + 3, wz - 1, wz + 1, COBBLE);
     }
 
     // the wheat field, with a ditch down the middle and hay bales beside it
-    const int fx = vx(-25), fz = vz(-27);
+    const int fx = fieldX, fz = fieldZ;
     for (int bx = fx; bx <= fx + 8; ++bx)
         for (int bz = fz; bz <= fz + 7; ++bz)
         {
-            if (clear.blocks(bx, floor, bz))
+            // never under a building
+            if (clear.blocks(bx, floor, bz) || g.top(bx, bz) > kVillageTop)
                 continue;
             g.put(bx, kVillageTop, bz, bx == fx + 4 ? WATER : FARMLAND);
             if (bx != fx + 4)
                 g.plant[Grid::index(bx, floor, bz)] = WHEAT;
         }
+    // bordered with oak logs at ground level, as a village farm is
+    for (int bx = fx - 1; bx <= fx + 9; ++bx)
+        for (int bz = fz - 1; bz <= fz + 8; ++bz)
+            if ((bx == fx - 1 || bx == fx + 9 || bz == fz - 1 || bz == fz + 8) &&
+                !clear.blocks(bx, kVillageTop, bz) && g.get(bx, floor, bz) == AIR)
+            {
+                g.put(bx, kVillageTop, bz, OAK_LOG);
+                g.plant[Grid::index(bx, floor, bz)] = NO_PLANT;
+            }
     g.put(fx - 1, floor, fz + 3, HAY);
     g.put(fx - 1, floor, fz + 4, HAY);
     g.put(fx - 1, floor + 1, fz + 4, HAY);
 
     // the windmill: a stone tower with a timber top, the sails facing south
-    const int mx = vx(-22), mz = vz(-20);
+    const int mx = millX, mz = millZ;
     if (roomForBuilding(clear, mx - 2, mx + 2, floor, floor + 12, mz - 2, mz + 7))
     {
         footing(g, mx - 1, mx + 1, mz - 1, mz + 1, floor);
@@ -1489,9 +1626,9 @@ void buildVillage(Grid &g, Extras &extras, const Clearance &clear)
             g.put(mx - 1, j, mz + 1, OAK_LOG);
             g.put(mx + 1, j, mz + 1, OAK_LOG);
         }
-        fill(g, mx - 2, mx + 2, floor + 7, floor + 7, mz - 2, mz + 2, ROOF);
-        fill(g, mx - 1, mx + 1, floor + 8, floor + 8, mz - 1, mz + 1, ROOF);
-        g.put(mx, floor + 9, mz, ROOF);
+        fill(g, mx - 2, mx + 2, floor + 7, floor + 7, mz - 2, mz + 2, PLANKS);
+        fill(g, mx - 1, mx + 1, floor + 8, floor + 8, mz - 1, mz + 1, PLANKS);
+        g.put(mx, floor + 9, mz, OAK_LOG);
         g.put(mx, floor, mz + 1, DOOR);
         g.put(mx, floor + 5, mz + 1, WINDOW);
         extras.mill[0] = centerOf(mx);
@@ -1891,7 +2028,8 @@ bool commit(Grid &g, const Clearance &clear, const std::vector<Placed> &blocks)
 {
     for (const Placed &p : blocks)
         if (!Grid::inside(p.bx, p.j, p.bz) || clear.blocks(p.bx, p.j, p.bz) ||
-            (g.get(p.bx, p.j, p.bz) != AIR && !isGrowth(g.get(p.bx, p.j, p.bz))))
+            (g.get(p.bx, p.j, p.bz) != AIR && !isGrowth(g.get(p.bx, p.j, p.bz))) ||
+            g.plant[Grid::index(p.bx, p.j, p.bz)] == FENCE)
             return false;
     for (const Placed &p : blocks)
         if (g.get(p.bx, p.j, p.bz) == AIR)
@@ -2196,7 +2334,8 @@ void buildCabin(Grid &g, int x0, int z0, int w, int d, int floor)
     g.put((x0 + x1) / 2, floor + 1, z1, DOOR);
     g.put((x0 + x1) / 2 + 1, floor, z1 + 1, JACK_O);
     for (int k = 0; z0 - 1 + k <= z1 + 1 - k; ++k)
-        fill(g, x0 - 1, x1 + 1, wallTop + 1 + k, wallTop + 1 + k, z0 - 1 + k, z1 + 1 - k, ROOF);
+        fill(g, x0 - 1, x1 + 1, wallTop + 1 + k, wallTop + 1 + k, z0 - 1 + k, z1 + 1 - k,
+             SPRUCE_PLANKS);
     g.put(x0 + 1, wallTop + 3, z0 + 1, COBBLE); // the chimney
     g.put(x0 + 1, wallTop + 4, z0 + 1, COBBLE);
 }
@@ -2989,8 +3128,6 @@ void spreadGlow(Grid &g)
                     level = 14;
                 else if (block == JACK_O)
                     level = 12;
-                else if (block == WINDOW)
-                    level = 8;
                 else if (block == MAGMA)
                     level = 6;
                 else if (block == CRYSTAL)
@@ -3254,8 +3391,14 @@ void addBlockFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
     for (const Face &f : kFaces)
     {
         const int ox = bx + f.normal[0], oy = j + f.normal[1], oz = bz + f.normal[2];
-        // Water is see-through: a block shows its face behind it.
-        if (g.opaque(ox, oy, oz))
+        // Water and glass are see-through, and leaves have holes: a block
+        // shows its face behind them.
+        const int beside = g.get(ox, oy, oz);
+        if (g.opaque(ox, oy, oz) && !isLeafBlock(beside))
+            continue;
+        // between two leaf blocks one face does for both sides (faces are
+        // not culled), so they do not flicker over each other
+        if (isLeafBlock(b) && isLeafBlock(beside) && f.normal[0] + f.normal[1] + f.normal[2] < 0)
             continue;
         if (oy < kMinY)
             continue; // the underside of the island
@@ -3475,6 +3618,41 @@ void addBambooStalk(bool top, bool leafy, float cx, float y0, float cz, unsigned
     }
 }
 
+// A glass block: its faces towards anything that does not hide them, into
+// the see-through batch with the water, so they are blended over what is
+// behind them (the dark of a room, the trees beyond); none between two
+// panes of glass.
+void addGlassFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
+{
+    std::vector<Vertex> &out = batches[static_cast<size_t>(LandTextures::WINDOW)];
+    for (const Face &f : kFaces)
+    {
+        const int ox = bx + f.normal[0], oy = j + f.normal[1], oz = bz + f.normal[2];
+        const int beside = g.get(ox, oy, oz);
+        if (beside == WINDOW || (g.opaque(ox, oy, oz) && !isLeafBlock(beside)))
+            continue;
+        const float sky = skyFactor(static_cast<float>(g.skyAt(ox, oy, oz)));
+        const float shade = f.normal[1] > 0 ? 1.0f : (f.normal[1] < 0 ? 0.7f : 0.9f);
+        for (int c = 0; c < 4; ++c)
+        {
+            Vertex v;
+            v.pos[0] = static_cast<float>(bx + f.corner[c][0]) * kBlock;
+            v.pos[1] = static_cast<float>(j + f.corner[c][1]) * kBlock;
+            v.pos[2] = static_cast<float>(bz + f.corner[c][2]) * kBlock;
+            for (int k = 0; k < 3; ++k)
+                v.normal[k] = static_cast<float>(f.normal[k]);
+            v.uv[0] = f.uv[c][0];
+            v.uv[1] = f.uv[c][1];
+            v.color[0] = v.color[1] = v.color[2] = shade;
+            v.extra[0] = 0.0f;
+            v.extra[1] = 0.0f;
+            v.extra[2] = glowFactor(static_cast<float>(g.coolAt(ox, oy, oz)));
+            v.extra[3] = sky;
+            out.push_back(v);
+        }
+    }
+}
+
 // How deep the snow in a cell lies, in blocks; 0 when there is none.
 float snowDepth(const Grid &g, int bx, int j, int bz)
 {
@@ -3542,6 +3720,81 @@ void addSnowLayer(const Grid &g, int bx, int j, int bz, Batches &batches)
             const bool up = f.corner[c][1] == 1;
             corner(f.corner[c][0] == 1 ? x1 : x0, up ? top : low, f.corner[c][2] == 1 ? z1 : z0,
                    f.uv[c][0], up ? vTop : vLow);
+        }
+    }
+}
+
+// A box inside a cell, with the planks' picture at the scale of a block,
+// each face shaded a little by which way it looks (lit by the cell's sky).
+void addBox(const Grid &g, int bx, int j, int bz, const float lo[3], const float hi[3],
+            Batches &batches, int texture)
+{
+    const size_t i = Grid::index(bx, j, bz);
+    const float sky = skyFactor(static_cast<float>(g.sky[i]));
+    const float base[3] = {static_cast<float>(bx) * kBlock, static_cast<float>(j) * kBlock,
+                           static_cast<float>(bz) * kBlock};
+    std::vector<Vertex> &out = batches[static_cast<size_t>(texture)];
+    for (const Face &f : kFaces)
+    {
+        const float shade = f.normal[1] > 0 ? 1.0f : (f.normal[1] < 0 ? 0.6f : 0.82f);
+        for (int c = 0; c < 4; ++c)
+        {
+            Vertex v;
+            float p[3];
+            for (int k = 0; k < 3; ++k)
+            {
+                p[k] = f.corner[c][k] == 1 ? hi[k] : lo[k];
+                v.pos[k] = base[k] + p[k];
+                v.normal[k] = static_cast<float>(f.normal[k]);
+            }
+            // the picture in block units across the face, so it is not
+            // stretched on a thin post or rail
+            const int a = f.normal[0] != 0 ? 2 : 0, b = f.normal[1] != 0 ? 2 : 1;
+            v.uv[0] = p[a] / kBlock;
+            v.uv[1] = 1.0f - p[b] / kBlock;
+            v.color[0] = v.color[1] = v.color[2] = shade;
+            v.extra[0] = 0.0f;
+            v.extra[1] = 0.0f;
+            v.extra[2] = glowFactor(static_cast<float>(g.cool[i]));
+            v.extra[3] = sky;
+            out.push_back(v);
+        }
+    }
+}
+
+// Does a fence reach towards this cell: another fence, or a solid block?
+bool fenceJoins(const Grid &g, int bx, int j, int bz)
+{
+    if (!Grid::inside(bx, j, bz))
+        return false;
+    return g.plant[Grid::index(bx, j, bz)] == FENCE || g.opaque(bx, j, bz);
+}
+
+// An oak fence as in a block game: a square post in the middle of the cell
+// and two rails out to each fence or block beside it.
+void addFence(const Grid &g, int bx, int j, int bz, Batches &batches)
+{
+    const float h = kBlock, mid = kBlock * 0.5f;
+    const float post = kBlock * 0.125f, rail = kBlock * 0.0625f;
+    const float postLo[3] = {mid - post, 0.0f, mid - post};
+    const float postHi[3] = {mid + post, h, mid + post};
+    addBox(g, bx, j, bz, postLo, postHi, batches, LandTextures::PLANKS);
+    const int sides[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+    const float heights[2] = {h * 0.375f, h * 0.75f};
+    for (const auto &d : sides)
+    {
+        if (!fenceJoins(g, bx + d[0], j, bz + d[1]))
+            continue;
+        for (float y : heights)
+        {
+            float lo[3] = {mid - rail, y - h * 0.09f, mid - rail};
+            float hi[3] = {mid + rail, y + h * 0.09f, mid + rail};
+            const int axis = d[0] != 0 ? 0 : 2;
+            if ((d[0] != 0 ? d[0] : d[1]) > 0)
+                hi[axis] = h;
+            else
+                lo[axis] = 0.0f;
+            addBox(g, bx, j, bz, lo, hi, batches, LandTextures::PLANKS);
         }
     }
 }
@@ -3916,10 +4169,14 @@ LandWorld::Scene &LandWorld::scene(bool flat)
                         high = j > high ? j : high;
                         if (b == WATER)
                             addWaterFaces(s.grid, bx, j, bz, water);
+                        else if (b == WINDOW)
+                            addGlassFaces(s.grid, bx, j, bz, water);
                         else if (b != AIR)
                             addBlockFaces(s.grid, bx, j, bz, solids);
                         else if (s.grid.plant[cell] == SNOW_LAYER)
                             addSnowLayer(s.grid, bx, j, bz, solids);
+                        else if (s.grid.plant[cell] == FENCE)
+                            addFence(s.grid, bx, j, bz, solids);
                         else
                             addPlant(s.grid, bx, j, bz, plants);
                     }
@@ -3972,6 +4229,10 @@ void LandWorld::draw(bool flat, bool shadowPass, float time)
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
     const Frustum view = Frustum::current();
     m_chunksDrawn = 0;
+    // the fixed pipeline cuts the leaves and plants out here; the shader
+    // does it itself
+    glEnable(GL_ALPHA_TEST);
+    glAlphaFunc(GL_GREATER, 0.5f);
     for (const LandChunk &c : s.chunks)
         if (view.sees(c.lo, c.hi))
         {
@@ -3980,16 +4241,13 @@ void LandWorld::draw(bool flat, bool shadowPass, float time)
         }
     if (!shadowPass)
     {
-        // the fixed pipeline cuts the plants out here; the shader does it itself
-        glEnable(GL_ALPHA_TEST);
-        glAlphaFunc(GL_GREATER, 0.5f);
         for (const LandChunk &c : s.chunks)
             if (view.sees(c.lo, c.hi))
                 glCallList(c.plant);
-        glDisable(GL_ALPHA_TEST);
         if (!flat)
             drawMoving(s, time);
     }
+    glDisable(GL_ALPHA_TEST);
     setGlow(0.0f);
     glPopAttrib();
 }
@@ -4177,7 +4435,7 @@ void LandWorld::planSupports(const std::vector<float> &path)
     const size_t count = path.size() / 3;
     if (count < 4)
         return;
-    const float spacing = 9.0f; // along the track, between trestles
+    const float spacing = 16.0f; // along the track, between trestles
     const float lean = 2.0f;    // how far out a tall post's foot may go
     // Is the stretch of track far from sample n (along it) in the way of a
     // vertical post at (x, z) from y0 up to y1?

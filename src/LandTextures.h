@@ -91,6 +91,9 @@ enum Texture
     MANGROVE_TOP,
     LEAVES_MANGROVE,
     LEAVES_BAMBOO, // the pale canopy over a bamboo thicket
+    PATH_TOP,      // a trodden dirt path, as in a village
+    PATH_SIDE,
+    SPRUCE_PLANKS, // dark planks: the taiga cabins' roofs
     TEXTURE_COUNT
 };
 
