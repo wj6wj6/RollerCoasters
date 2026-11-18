@@ -23,6 +23,10 @@ EditKeys::Action EditKeys::forKey(int key, int state, bool fly)
         return CAMERA_TOP;
     if (key == FL_KP + '0')
         return CAMERA_TRAIN;
+    // like the game mode switch of a block game: building on or off; a
+    // function key, so an input method such as Zhuyin cannot swallow it
+    if (key == FL_F + 4)
+        return TOGGLE_EDIT;
     if (key == 'z' && (state & FL_CTRL) != 0)
         return (state & FL_SHIFT) != 0 ? REDO : UNDO;
     if (key == 'y' && (state & FL_CTRL) != 0)

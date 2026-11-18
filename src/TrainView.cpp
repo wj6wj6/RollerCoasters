@@ -828,9 +828,10 @@ void TrainView::flyAxes(float right[3], float up[3], float forward[3]) const
     up[2] = right[0] * forward[1] - right[1] * forward[0];
 }
 
-// G in Fly: pick up the point at the crosshair (else the selected one) where
-// it is in the view, so it does not jump. The view keeps turning and flying
-// and the point goes along, until G again or a left click puts it down.
+// G in Fly: pick up the point at the crosshair (else the selected one) and
+// bring it onto the crosshair at the distance it is. The view keeps turning
+// and flying and the point goes along, until G again or a left click puts it
+// down.
 void TrainView::beginCarry()
 {
     const int aimed = crosshairPoint();
@@ -842,11 +843,17 @@ void TrainView::beginCarry()
     const Pnt3f &p = m_pTrack->points[static_cast<size_t>(selectedCube)].pos;
     float ex = 0.0f, ey = 0.0f, ez = 0.0f;
     flyCam.position(ex, ey, ez);
-    float axes[3][3];
-    flyAxes(axes[0], axes[1], axes[2]);
+    // the point jumps onto the crosshair, as far away as it is now
     const float d[3] = {p.x - ex, p.y - ey, p.z - ez};
-    for (int k = 0; k < 3; ++k)
-        m_carryOffset[k] = d[0] * axes[k][0] + d[1] * axes[k][1] + d[2] * axes[k][2];
+    float away = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+    if (away < kPlaceDepthMin)
+        away = kPlaceDepthMin;
+    if (away > kPlaceDepthMax)
+        away = kPlaceDepthMax;
+    m_carryOffset[0] = 0.0f;
+    m_carryOffset[1] = 0.0f;
+    m_carryOffset[2] = away;
+    updateCarry();
     m_carrying = true;
     setMouseCaptured(true); // the mouse turns the view, so the point follows the crosshair
     tw->damageMe();
@@ -1200,6 +1207,15 @@ bool TrainView::editKey(int key)
                                 : (action == EditKeys::CAMERA_TOP ? tw->topCam : tw->trainCam);
         camera->setonly();
         cameraChanged();
+        tw->damageMe();
+        return true;
+    }
+    if (action == EditKeys::TOGGLE_EDIT)
+    {
+        // F4: show or hide the control points and their editing, as the Edit
+        // button does; whatever is in progress is kept first
+        finishEdits();
+        tw->editButton->value(tw->editButton->value() ? 0 : 1);
         tw->damageMe();
         return true;
     }

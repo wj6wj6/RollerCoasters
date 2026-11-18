@@ -231,7 +231,7 @@ TrainWindow::TrainWindow(const int x, const int y)
         // show the control points for editing; add and delete points
         editButton = new Fl_Button(innerX, pty, colW, rowH, "Edit");
         togglify(editButton);
-        editButton->tooltip("Show the control points and their move handles.\n"
+        editButton->tooltip("Show the control points and their move handles (F4).\n"
                             "Off for the Grand Tour: the scenery is built around that ride.");
         Fl_Button *ap = new Fl_Button(col2, pty, colW, rowH, "Add Pt");
         UiTheme::styleButton(ap);

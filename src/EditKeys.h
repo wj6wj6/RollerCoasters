@@ -19,6 +19,7 @@
                     redo              Ctrl + Y or        Ctrl + Y or
                                       Ctrl + Shift + Z   Ctrl + Shift + Z
                     cameras           numpad 1 / 7 / 0   numpad 1 / 7 / 0
+                    Edit on / off     F4                 F4
 
                   In Fly, Shift + D would sink and slide the camera and
                   Ctrl + D would fly right faster, so adding takes Alt,
@@ -36,6 +37,7 @@ enum Action
     CAMERA_WORLD,
     CAMERA_TOP,
     CAMERA_TRAIN,
+    TOGGLE_EDIT,
     UNDO,
     REDO,
     GRAB,

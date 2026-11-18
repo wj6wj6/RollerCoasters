@@ -49,6 +49,8 @@ int main()
     expect(forKey('z', FL_CTRL | FL_SHIFT, false) == EditKeys::REDO,
            "World: Ctrl + Shift + Z redoes");
     expect(forKey('y', 0, false) == EditKeys::NONE, "World: Y alone does nothing");
+    expect(forKey(FL_F + 4, 0, false) == EditKeys::TOGGLE_EDIT, "World: F4 turns Edit on / off");
+    expect(forKey(FL_F + 4, 0, true) == EditKeys::TOGGLE_EDIT, "Fly: F4 turns Edit on / off");
     expect(forKey('z', FL_CTRL, false) == EditKeys::UNDO, "World: Ctrl + Z undoes");
     expect(forKey(FL_KP + '7', 0, false) == EditKeys::CAMERA_TOP, "World: numpad 7 is Top");
 
@@ -85,12 +87,13 @@ int main()
     Fl_Gl_Window window(400, 300);
     FlyCam camera;
     camera.setup(&window, 90);
-    const int editing[] = {'g', 'r', FL_Delete, 'z', 'y', FL_KP + '1', FL_KP + '7', FL_KP + '0'};
+    const int editing[] = {'g',         'r',         FL_Delete,   'z',     'y',
+                           FL_KP + '1', FL_KP + '7', FL_KP + '0', FL_F + 4};
     bool untouched = true;
     for (int key : editing)
         if (flyTakes(camera, key, 0))
             untouched = false;
-    expect(untouched, "FlyCam does not use G, R, Delete, Z, Y or the numpad camera keys");
+    expect(untouched, "FlyCam does not use G, R, Delete, Z, Y, F4 or the numpad camera keys");
     expect(flyTakes(camera, 'w', 0), "FlyCam still takes W (the check can see a used key)");
 
     // Key releases always reach FlyCam: a release of a held key stops the camera.
