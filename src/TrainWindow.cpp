@@ -38,6 +38,14 @@
 #include "TexturePack.h"
 #include "UiTheme.h"
 
+// after the program's headers: on X11 it brings in Xlib, whose None macro
+// would break ArcBallCam.H; the usual guard for FLTK's pointer casts
+#pragma warning(push)
+#pragma warning(disable : 4311)
+#pragma warning(disable : 4312)
+#include <FL/fl_draw.H>
+#pragma warning(pop)
+
 // The panel's cards are laid out for this height; the window starts at it
 // so the cards are never squeezed (the strip below them takes any change).
 static const int kPanelHeight = 690;
@@ -636,5 +644,24 @@ void TrainWindow::listTexturePacks(const std::string &select)
     items = const_cast<Fl_Menu_Item *>(texturePackMenu->menu());
     items[chosen].setonly();
     texturePackLabel = "Textures: " + chosenName;
+    // a long name is shortened with "..." so the label fits on the button
+    // beside its arrow (UTF-8: never cut inside a character)
+    fl_open_display();
+    fl_font(texturePackMenu->labelfont(), texturePackMenu->labelsize());
+    const double room = texturePackMenu->w() - 28;
+    if (fl_width(texturePackLabel.c_str()) > room)
+    {
+        std::string cut = texturePackLabel;
+        while (!cut.empty() && fl_width((cut + "...").c_str()) > room)
+        {
+            // drop the last character: its continuation bytes, then its
+            // first byte
+            while (!cut.empty() && (static_cast<unsigned char>(cut.back()) & 0xC0) == 0x80)
+                cut.pop_back();
+            if (!cut.empty())
+                cut.pop_back();
+        }
+        texturePackLabel = cut + "...";
+    }
     texturePackMenu->copy_label(texturePackLabel.c_str());
 }
