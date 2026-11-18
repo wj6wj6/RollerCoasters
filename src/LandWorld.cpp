@@ -1243,6 +1243,153 @@ void buildVillage(Grid &g, Extras &extras)
     buildLampPost(g, -19, -30, floor);
 }
 
+// Is the box of cells clear of the train (and inside the island)?
+bool roomForBuilding(const Clearance &clear, int x0, int x1, int j0, int j1, int z0, int z1)
+{
+    for (int bx = x0; bx <= x1; ++bx)
+        for (int bz = z0; bz <= z1; ++bz)
+        {
+            if (!Grid::insideColumn(bx, bz))
+                return false;
+            for (int j = j0; j <= j1; ++j)
+                if (clear.blocks(bx, j, bz))
+                    return false;
+        }
+    return true;
+}
+
+// A small castle on the cliff beside the waterfall, after the user's
+// reference: a cobble keep on a low footing, timber upper floors with lit
+// windows, a steep shingle roof, and a taller tower on the corner nearest
+// the fall with a spire and a lantern on top. It looks for the spot west of
+// the fall where the ground is most level and nearest the height of the
+// fall's lip, all of it clear of the train.
+void buildCastle(Grid &g, const Clearance &clear)
+{
+    const int cx = (kFallX0 + kFallX1) / 2;
+    const int lip = g.top(cx, kFallLipZ); // the stream at the top of the fall
+    int bestX = 0, bestZ = 0, bestFloor = 0, bestScore = 1 << 30;
+    for (int x0 = cx - 22; x0 <= cx + 12; ++x0)
+        for (int z0 = kFallLipZ - 14; z0 <= kFallLipZ + 8; ++z0)
+        {
+            // not in the gorge or on the fall's cliff
+            if (x0 + 4 >= cx - 6 && x0 <= cx + 6 && z0 + 4 >= kFallLipZ - 4)
+                continue;
+            const int x1 = x0 + 4, z1 = z0 + 4;
+            int high = kMinY - 1, low = kMaxY + 1;
+            for (int bx = x0; bx <= x1; ++bx)
+                for (int bz = z0; bz <= z1; ++bz)
+                {
+                    const int top = g.top(bx, bz);
+                    high = top > high ? top : high;
+                    low = top < low ? top : low;
+                }
+            const int floor = high + 1;
+            if (high - low > 3 || floor <= 1 || floor > kMaxY - 18)
+                continue;
+            const int far = (x0 + 2 > cx ? x0 + 2 - cx : cx - x0 - 2) +
+                            (z0 + 2 > kFallLipZ ? z0 + 2 - kFallLipZ : kFallLipZ - z0 - 2);
+            const int score = (high - low) * 4 + (floor > lip ? floor - lip : lip - floor) + far;
+            if (score >= bestScore)
+                continue;
+            // the keep is 9 high with its roof, the tower 15 with its spire
+            if (!roomForBuilding(clear, x0 - 1, x1 + 1, floor - 1, floor + 9, z0 - 1, z1 + 1) ||
+                !roomForBuilding(clear, x0 - 1, x1 + 1, floor, floor + 15, z1 - 3, z1 + 1))
+                continue;
+            bestScore = score;
+            bestX = x0;
+            bestZ = z0;
+            bestFloor = floor;
+        }
+    if (bestScore == 1 << 30)
+        return;
+    {
+        const int x0 = bestX, z0 = bestZ, x1 = x0 + 4, z1 = z0 + 4, floor = bestFloor;
+        footing(g, x0, x1, z0, z1, floor);
+        // the keep: two floors of cobble, then timber between log posts
+        fill(g, x0, x1, floor, floor + 1, z0, z1, COBBLE);
+        fill(g, x0, x1, floor + 2, floor + 5, z0, z1, PLANKS);
+        for (int j = floor + 2; j <= floor + 5; ++j)
+        {
+            g.put(x0, j, z0, OAK_LOG);
+            g.put(x1, j, z0, OAK_LOG);
+            g.put(x0, j, z1, OAK_LOG);
+            g.put(x1, j, z1, OAK_LOG);
+        }
+        // lit windows on every side, two floors of them, and the door
+        for (int k = 1; k <= 3; k += 2)
+            for (int j = floor + 2; j <= floor + 4; j += 2)
+            {
+                g.put(x0 + k, j, z0, WINDOW);
+                g.put(x0 + k, j, z1, WINDOW);
+                g.put(x0, j, z0 + k, WINDOW);
+                g.put(x1, j, z0 + k, WINDOW);
+            }
+        g.put(x0 + 2, floor, z1, DOOR);
+        g.put(x0 + 2, floor + 1, z1, DOOR);
+        // the roof, stepping in from an overhang
+        fill(g, x0 - 1, x1 + 1, floor + 6, floor + 6, z0 - 1, z1 + 1, ROOF);
+        fill(g, x0, x1, floor + 7, floor + 7, z0, z1, ROOF);
+        fill(g, x0 + 1, x1 - 1, floor + 8, floor + 8, z0 + 1, z1 - 1, ROOF);
+        g.put(x0 + 2, floor + 9, z0 + 2, ROOF);
+
+        // the tower on the corner nearest the fall
+        const int tx0 = x0 > cx ? x0 : x1 - 2, tz0 = z1 - 2;
+        const int tx1 = tx0 + 2;
+        fill(g, tx0, tx1, floor + 6, floor + 11, tz0, z1, COBBLE);
+        for (int j = floor + 7; j <= floor + 10; j += 3)
+        {
+            g.put(tx0 + 1, j, tz0, WINDOW);
+            g.put(tx0 + 1, j, z1, WINDOW);
+            g.put(tx0, j, tz0 + 1, WINDOW);
+            g.put(tx1, j, tz0 + 1, WINDOW);
+        }
+        fill(g, tx0 - 1, tx1 + 1, floor + 12, floor + 12, tz0 - 1, z1 + 1, ROOF);
+        fill(g, tx0, tx1, floor + 13, floor + 13, tz0, z1, ROOF);
+        g.put(tx0 + 1, floor + 14, tz0 + 1, ROOF);
+        g.put(tx0 + 1, floor + 15, tz0 + 1, LANTERN);
+
+        // lanterns either side of the door
+        buildLampPost(g, x0, z1 + 1, floor);
+        buildLampPost(g, x1, z1 + 1, floor);
+    }
+}
+
+// A timber footbridge over the pool below the fall, three blocks above the
+// water, resting on the gorge's walls at both ends, with a few log rail
+// posts and a lantern at each end; left out if it would not reach rock on
+// both sides or the train would pass through it.
+void buildBridge(Grid &g, const Clearance &clear)
+{
+    const int cx = (kFallX0 + kFallX1) / 2;
+    const int pool = g.top(cx, kFallLipZ + 3); // the pool's water
+    const int deck = pool + 3;
+    const int z0 = kFallLipZ + 2, z1 = z0 + 1;
+    int x0 = cx, x1 = cx;
+    while (x0 > cx - 9 && g.get(x0 - 1, deck, z0) == AIR && g.get(x0 - 1, deck, z1) == AIR)
+        --x0;
+    while (x1 < cx + 9 && g.get(x1 + 1, deck, z0) == AIR && g.get(x1 + 1, deck, z1) == AIR)
+        ++x1;
+    --x0;
+    ++x1;
+    if (g.get(x0, deck, z0) == AIR || g.get(x1, deck, z0) == AIR)
+        return; // no rock to rest on at one end
+    if (!roomForBuilding(clear, x0, x1, deck, deck + 3, z0, z1))
+        return;
+    for (int bx = x0; bx <= x1; ++bx)
+        for (int bz = z0; bz <= z1; ++bz)
+            g.put(bx, deck, bz, PLANKS);
+    for (int bx = x0 + 1; bx < x1; bx += 3)
+    {
+        g.put(bx, deck + 1, z0 - 1, OAK_LOG);
+        g.put(bx, deck, z0 - 1, PLANKS);
+        g.put(bx, deck + 1, z1 + 1, OAK_LOG);
+        g.put(bx, deck, z1 + 1, PLANKS);
+    }
+    g.put(x0, deck + 1, z0, LANTERN);
+    g.put(x1, deck + 1, z1, LANTERN);
+}
+
 // ---------------------------------------------------------------------
 // The ride through it
 // ---------------------------------------------------------------------
@@ -1786,6 +1933,8 @@ void buildScenery(Grid &g, Extras &extras)
     const std::vector<float> along(ride.begin() + static_cast<long>(ride.size() / 3 * 2),
                                    ride.end());
     lightTunnels(g, along, clear);
+    buildCastle(g, clear);
+    buildBridge(g, clear);
     // after the carving, so the water flows round the ride's room
     spreadWater(g);
 

@@ -484,15 +484,18 @@ void AdvancedLighting::skyColor(float timeOfDay, float rgb[3])
 {
     float sun[3];
     sunDirection(timeOfDay, sun);
-    const float day = smoothstep(-0.12f, 0.25f, sun[1]);
-    const float dusk = (1.0f - smoothstep(0.05f, 0.45f, sun[1])) * day;
+    const float day = smoothstep(-0.14f, 0.22f, sun[1]);
+    // the golden hour: strongest with the sun on the horizon, gone by the
+    // time it is a third of the way up, and fading out after it has set
+    const float dusk =
+        (1.0f - smoothstep(0.04f, 0.42f, sun[1])) * smoothstep(-0.16f, -0.02f, sun[1]);
 
-    const float night[3] = {0.02f, 0.03f, 0.09f};
+    const float night[3] = {0.035f, 0.05f, 0.12f};
     const float noon[3] = {0.50f, 0.72f, 0.95f};
-    const float sunset[3] = {1.0f, 0.60f, 0.35f};
+    const float sunset[3] = {1.0f, 0.50f, 0.22f};
     float base[3];
     mix3(night, noon, day, base);
-    mix3(base, sunset, dusk * 0.7f, rgb);
+    mix3(base, sunset, dusk * 0.85f, rgb);
 }
 
 void AdvancedLighting::prepare(const LightingFrame &frame)
@@ -507,33 +510,44 @@ void AdvancedLighting::prepare(const LightingFrame &frame)
     float *lightColor = m_sky.lightColor;
     for (int i = 0; i < 3; ++i)
         m_sky.sunDir[i] = sun[i];
+    // The moon rises in the east as the sun sets in the west, a little to
+    // the other side of the sky, so the two never overlap.
     m_sky.moonDir[0] = -sun[0];
     m_sky.moonDir[1] = -sun[1];
-    m_sky.moonDir[2] = sun[2];
-    const float day = smoothstep(-0.02f, 0.25f, sun[1]);
-    const float dusk = 1.0f - smoothstep(0.05f, 0.5f, sun[1]);
+    m_sky.moonDir[2] = -sun[2];
+    const float day = smoothstep(-0.04f, 0.16f, sun[1]);
+    const float dusk =
+        (1.0f - smoothstep(0.04f, 0.42f, sun[1])) * smoothstep(-0.16f, -0.02f, sun[1]);
 
-    // The sun lights the scene by day and the moon (opposite side, dim and
-    // blue) by night. Shadows always come from whichever one is up.
-    if (sun[1] > 0.0f)
+    // The sun lights the scene by day: deep orange on the horizon, golden
+    // a little higher, white by mid morning. The moon (opposite side, cool
+    // blue, bright enough to see by) lights it by night. Shadows always come
+    // from whichever one is up.
+    if (sun[1] > -0.02f)
     {
         const float white[3] = {1.0f, 0.95f, 0.86f};
-        const float orange[3] = {1.0f, 0.55f, 0.28f};
-        mix3(white, orange, dusk, lightColor);
+        const float golden[3] = {1.0f, 0.66f, 0.36f};
+        const float ember[3] = {1.0f, 0.40f, 0.14f};
+        const float high = smoothstep(0.12f, 0.5f, sun[1]);
+        const float low = 1.0f - smoothstep(0.0f, 0.14f, sun[1]);
+        float warm[3];
+        mix3(golden, ember, low, warm);
+        mix3(warm, white, high, lightColor);
         for (int i = 0; i < 3; ++i)
         {
-            lightColor[i] *= 1.3f * day;
+            lightColor[i] *= 1.35f * day;
             lightDir[i] = sun[i];
         }
     }
     else
     {
-        const float moon[3] = {0.025f, 0.035f, 0.07f};
+        const float moon[3] = {0.13f, 0.17f, 0.30f};
+        const float up = smoothstep(-0.02f, -0.16f, sun[1]); // fades in as the sun goes down
         for (int i = 0; i < 3; ++i)
-            lightColor[i] = moon[i] * (1.0f - day);
-        lightDir[0] = -sun[0];
-        lightDir[1] = -sun[1];
-        lightDir[2] = sun[2];
+        {
+            lightColor[i] = moon[i] * up;
+            lightDir[i] = m_sky.moonDir[i];
+        }
     }
     // Keep the light a little above the horizon so shadows stay finite.
     if (lightDir[1] < 0.12f)
@@ -542,26 +556,33 @@ void AdvancedLighting::prepare(const LightingFrame &frame)
         normalize3(lightDir);
     }
 
-    const float nightSky[3] = {0.010f, 0.012f, 0.025f};
+    // Light from the sky itself: blue by day, warm and rosy in the golden
+    // hour, and the moon's pale blue at night.
+    const float nightSky[3] = {0.040f, 0.050f, 0.090f};
     const float daySky[3] = {0.26f, 0.31f, 0.40f};
+    const float duskSky[3] = {0.30f, 0.20f, 0.20f};
     mix3(nightSky, daySky, day, m_skyAmbient);
-    m_skyAmbient[0] += 0.06f * dusk * day;
-    const float nightGround[3] = {0.01f, 0.01f, 0.015f};
+    mix3(m_skyAmbient, duskSky, dusk * 0.6f, m_skyAmbient);
+    const float nightGround[3] = {0.016f, 0.018f, 0.028f};
     const float dayGround[3] = {0.13f, 0.11f, 0.08f};
+    const float duskGround[3] = {0.16f, 0.09f, 0.05f};
     mix3(nightGround, dayGround, day, m_groundAmbient);
+    mix3(m_groundAmbient, duskGround, dusk * 0.5f, m_groundAmbient);
 
     float sky[3];
     skyColor(frame.timeOfDay, sky);
     for (int i = 0; i < 3; ++i)
         m_fogColor[i] = powf(sky[i], 2.2f);
 
-    const float nightZenith[3] = {0.002f, 0.003f, 0.010f};
+    const float nightZenith[3] = {0.004f, 0.006f, 0.022f};
     const float dayZenith[3] = {0.09f, 0.22f, 0.62f};
+    const float duskZenith[3] = {0.05f, 0.05f, 0.22f}; // deep blue turning violet
     mix3(nightZenith, dayZenith, day, m_sky.zenith);
+    mix3(m_sky.zenith, duskZenith, dusk * 0.8f, m_sky.zenith);
     for (int i = 0; i < 3; ++i)
         m_sky.horizon[i] = m_fogColor[i];
     m_sky.day = day;
-    m_sky.dusk = dusk * day;
+    m_sky.dusk = dusk;
 
     // Rain: the clouds close in, so the sun dims and the sky, the fog and
     // the light from the sky all turn grey.

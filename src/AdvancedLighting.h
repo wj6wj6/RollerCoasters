@@ -10,8 +10,9 @@
                   * Per-pixel Blinn-Phong lighting with a sky/ground
                     hemisphere ambient term, gamma correction and
                     distance fog.
-                  * A time-of-day sun that moves across the sky, with a
-                    dim moon at night.
+                  * A time-of-day sun that moves across the sky, orange
+                    and golden near the horizon, and a cool blue moon
+                    with its ambient light at night.
                   * A spotlight headlight attached to the front of the
                     train.
                   * Below the water level: sunlight absorbed with depth

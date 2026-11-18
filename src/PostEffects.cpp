@@ -92,23 +92,51 @@ void main()
     if (y < 0.0)
         col = uHorizon * mix(1.0, 0.5, clamp(-y * 3.0, 0.0, 1.0));
 
-    // Sun disc and the glow around it (wider and warmer at dusk).
-    float cs = max(dot(ray, uSunDir), 0.0);
-    col += uSunColor * (pow(cs, 400.0) * 3.0 + pow(cs, 24.0) * 0.25 + pow(cs, 4.0) * 0.15 * uDusk);
-    col += uSunColor * smoothstep(0.99955, 0.9997, cs) * 40.0;
+    // The golden hour: the band of sky along the horizon glows orange on
+    // the sun's side and rose to violet on the other.
+    vec2 dirXZ = ray.xz / max(length(ray.xz), 1e-4);
+    vec2 sunFlat = uSunDir.xz / max(length(uSunDir.xz), 1e-4);
+    float toward = dot(dirXZ, sunFlat) * 0.5 + 0.5;
+    float band = exp(-max(y, 0.0) * 4.0) * (y < 0.0 ? mix(1.0, 0.4, clamp(-y * 3.0, 0.0, 1.0)) : 1.0);
+    vec3 warm = mix(vec3(0.34, 0.10, 0.28), vec3(1.25, 0.36, 0.06), toward * toward);
+    col = mix(col, warm, band * uDusk * 0.9);
+    // higher up the golden-hour sky turns violet
+    col = mix(col, vec3(0.09, 0.07, 0.28), (1.0 - band) * uDusk * 0.35);
 
-    // Moon and stars at night.
+    // Sun: a square, as in a block game, with a glow round it that is wider
+    // and warmer at dusk.
+    vec3 east = normalize(cross(vec3(0.0, 1.0, 0.0), uSunDir));
+    vec3 north = cross(uSunDir, east);
+    float cs = max(dot(ray, uSunDir), 0.0);
+    col += uSunColor * (pow(cs, 400.0) * 2.0 + pow(cs, 24.0) * (0.25 + 0.5 * uDusk) +
+                        pow(cs, 4.0) * 0.3 * uDusk);
+    if (cs > 0.99) {
+        vec2 q = abs(vec2(dot(ray, east), dot(ray, north)));
+        col += uSunColor * vec3(1.0, 0.85 + 0.15 * uDay, 0.5 + 0.5 * uDay) * (1.0 - smoothstep(0.034, 0.037, max(q.x, q.y))) * (6.0 + 12.0 * (1.0 - uDusk));
+    }
+
+    // Moon: a pale square with darker patches (its seas), a soft halo, and
+    // the stars; they come out as the sky darkens.
     float night = 1.0 - uDay;
+    vec3 mEast = normalize(cross(vec3(0.0, 1.0, 0.0), uMoonDir));
+    vec3 mNorth = cross(uMoonDir, mEast);
     float cm = dot(ray, uMoonDir);
-    col += vec3(0.9, 0.95, 1.1) * smoothstep(0.9993, 0.9995, cm) * 1.5 * night;
-    col += vec3(0.25, 0.3, 0.45) * pow(max(cm, 0.0), 60.0) * 0.15 * night;
+    if (cm > 0.99) {
+        vec2 q = vec2(dot(ray, mEast), dot(ray, mNorth));
+        float disc = 1.0 - smoothstep(0.030, 0.033, max(abs(q.x), abs(q.y)));
+        vec2 pix = floor((q + 0.0315) / 0.063 * 8.0); // its 8 x 8 pixels
+        float sea = step(0.62, hash2(pix + 3.0));
+        vec3 face = mix(vec3(1.25, 1.3, 1.4), vec3(0.75, 0.8, 0.95), sea);
+        col = mix(col, face * (0.35 + 0.65 * night), disc * night);
+    }
+    col += vec3(0.30, 0.38, 0.60) * (pow(max(cm, 0.0), 200.0) * 0.6 + pow(max(cm, 0.0), 12.0) * 0.12) * night;
     if (y > 0.0 && night > 0.01) {
         vec3 d = ray * 260.0;
         vec3 cell = floor(d);
         float h = hash3(cell);
-        float star = step(0.9975, h) * smoothstep(0.45, 0.1, length(fract(d) - 0.5));
+        float star = step(0.9972, h) * smoothstep(0.45, 0.1, length(fract(d) - 0.5));
         float twinkle = 0.6 + 0.4 * sin(uTime * 3.0 + h * 400.0);
-        col += vec3(star * twinkle * 1.2 * night * smoothstep(0.0, 0.15, y));
+        col += vec3(star * twinkle * 1.3 * night * night * smoothstep(0.0, 0.15, y));
     }
 
     // Clouds: fractal noise on a flat layer high above, drifting with the wind.
@@ -118,6 +146,11 @@ void main()
         float cover = smoothstep(0.48 - 0.42 * uOvercast, 0.78 - 0.36 * uOvercast, n);
         float thick = fbm(p * 1.3 + uSunDir.xz * 0.12);
         vec3 lit = uSunColor * 0.9 + uZenith * 0.8 + uHorizon * 0.3;
+        // at dusk the clouds catch the low sun from below: gold towards it,
+        // pink overhead and away from it
+        lit = mix(lit, mix(vec3(0.85, 0.32, 0.38), vec3(1.6, 0.66, 0.26), toward), uDusk * 0.75);
+        // at night the moon gives them a silver edge
+        lit += vec3(0.05, 0.06, 0.10) * night;
         vec3 cloudCol = mix(lit, lit * 0.55, smoothstep(0.4, 0.8, thick));
         cloudCol *= 1.0 - 0.35 * uOvercast;
         float alpha = cover * smoothstep(0.01, 0.18, y) * mix(0.92, 1.0, uOvercast);
@@ -1635,7 +1668,9 @@ void PostEffects::finish(const SkyState &sky, bool bloom, bool underwater)
     glUniform1i(loc(p, "uRays"), 2);
     glUniform1i(loc(p, "uBloomOn"), bloom ? 1 : 0);
     glUniform3fv(loc(p, "uRayColor"), 1, rayColor);
-    glUniform1f(loc(p, "uExposure"), underwater ? 1.25f : 1.0f);
+    // a little brighter at night, as eyes adjust to the moonlight
+    glUniform1f(loc(p, "uExposure"),
+                (underwater ? 1.25f : 1.0f) * (1.0f + 0.35f * (1.0f - sky.day)));
     glUniform1f(loc(p, "uVibrance"), underwater ? 1.18f : 1.0f);
     fullscreenQuad();
     unbindTextures(3);

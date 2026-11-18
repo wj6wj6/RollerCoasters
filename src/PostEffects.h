@@ -6,8 +6,9 @@
                   The scene is rendered into an HDR (16-bit float) frame
                   buffer and finished by full screen passes:
 
-                  * Sky: gradient, sun and moon discs, stars at night and
-                    drifting procedural clouds.
+                  * Sky: gradient, a golden-hour glow along the horizon,
+                    square sun and moon, stars at night and drifting
+                    procedural clouds lit by the low sun.
                   * Water: an ocean around the island with animated wave
                     normals, planar reflection (the scene is rendered a
                     second time, mirrored), refraction of the sea bed,
