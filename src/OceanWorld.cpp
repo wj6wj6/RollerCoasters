@@ -175,19 +175,20 @@ const float kDemoTrack[][3] = {{30, 6, -20},
                                {62, 14, 95},
                                {92, 34, 86},
                                {86, 56, 64},
-                               {60, 58, 58},
+                               // the crater's turn spread over two points,
+                               // so no bend is sharper than a right angle
+                               {62, 58, 62},
+                               {52, 54, 44},
                                {72, 46, 24},
                                {90, 34, -8},
                                {84, 30, -46},
                                {56, 26, -88},
-                               {26, 18, -74},
-                               {14, 10, -46},
-                               // the north-east land: out over the main
-                               // island's north coast and across the sea to
-                               // its far side, over the bamboo hills, low over
-                               // the mangrove swamp, back over the strait on
-                               // a long trestle and down through the crags
-                               {24, 14.7f, -80},
+                               // the north-east land: on from the crags out
+                               // over the main island's north coast and across
+                               // the sea to its far side, over the bamboo
+                               // hills, low over the mangrove swamp, back over
+                               // the strait on a long trestle and down through
+                               // the crags
                                {44, 14.7f, -110},
                                {68, 13.3f, -136},
                                {94, 13.3f, -164},
