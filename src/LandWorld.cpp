@@ -2667,19 +2667,26 @@ void spreadSky(Grid &g)
                 queue.push_back(Cell{bx, j, bz});
             }
     // light also comes in from the open sides of the island
-    for (int j = kMinY; j <= kMaxY; ++j)
-        for (int k = 0; k < kSizeX || k < kSizeZ; ++k)
+    auto edge = [&](int bx, int j, int bz) {
+        if (!g.opaque(bx, j, bz) && g.sky[Grid::index(bx, j, bz)] < 14)
         {
-            const int x = kMinBX + (k < kSizeX ? k : kSizeX - 1);
-            const int z = kMinBZ + (k < kSizeZ ? k : kSizeZ - 1);
-            const int edges[4][2] = {{kMinBX, z}, {kMaxBX - 1, z}, {x, kMinBZ}, {x, kMaxBZ - 1}};
-            for (const int *e : edges)
-                if (!g.opaque(e[0], j, e[1]) && g.sky[Grid::index(e[0], j, e[1])] < 14)
-                {
-                    g.sky[Grid::index(e[0], j, e[1])] = 14;
-                    queue.push_back(Cell{e[0], j, e[1]});
-                }
+            g.sky[Grid::index(bx, j, bz)] = 14;
+            queue.push_back(Cell{bx, j, bz});
         }
+    };
+    for (int j = kMinY; j <= kMaxY; ++j)
+    {
+        for (int bz = kMinBZ; bz < kMaxBZ; ++bz)
+        {
+            edge(kMinBX, j, bz);
+            edge(kMaxBX - 1, j, bz);
+        }
+        for (int bx = kMinBX; bx < kMaxBX; ++bx)
+        {
+            edge(bx, j, kMinBZ);
+            edge(bx, j, kMaxBZ - 1);
+        }
+    }
     flood(g, g.sky, queue);
 }
 
