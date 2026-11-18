@@ -140,6 +140,7 @@ enum Plant
     BAMBOO,     // a stalk; they stack into tall canes
     BAMBOO_TOP, // the leafy top of a cane
     VINES,      // hanging under the mangroves' crowns
+    SNOW_LAYER, // fallen snow, 1 to 8 eighths of a block deep (Grid::level)
     PLANT_COUNT
 };
 
@@ -584,7 +585,8 @@ struct Grid
     std::vector<unsigned char> warm;   // light of lava and lanterns, 0..14
     std::vector<unsigned char> cool;   // light of crystals, 0..14
     std::vector<unsigned char> carved; // 1: cleared for the ride
-    std::vector<unsigned char> level;  // water: 0 source, 1..7 flowing, 8 falling
+    std::vector<unsigned char> level;  // water: 0 source, 1..7 flowing, 8 falling;
+                                       // a snow layer: its depth in eighths
     std::vector<unsigned char> biome;  // per column
 
     Grid()
@@ -857,11 +859,11 @@ void buildTerrain(Grid &g)
                         b = clayBand(j);
                     break;
                 case CRAG:
-                    if (topY > 44.0f * kLift && depth == 0)
-                        b = SNOW;
-                    else if (steep < 2 && topY < 26.0f * kLift)
+                    // the high crags' tops are bare rock under a layer of
+                    // snow (snowfall()), not blocks of it
+                    if (steep < 2 && topY < 26.0f * kLift)
                         b = depth == 0 ? GRASS : (depth < 2 ? DIRT : stoneOrOre(bx, j, bz, true));
-                    else if (depth == 0 && patch > 0.62f)
+                    else if (depth == 0 && patch > 0.62f && topY <= 44.0f * kLift)
                         b = MOSSY;
                     else
                         b = stoneOrOre(bx, j, bz, true);
@@ -1918,8 +1920,9 @@ void roundTree(std::vector<Placed> &out, int bx, int base, int bz, int log, int 
     }
 }
 
-// A spruce: rings of needles that narrow to a point, snow on top if asked.
-void spruce(std::vector<Placed> &out, int bx, int base, int bz, int trunk, bool snowy)
+// A spruce: rings of needles that narrow to a point. Where it snows the
+// snow settles on it in a thin layer (snowfall()).
+void spruce(std::vector<Placed> &out, int bx, int base, int bz, int trunk)
 {
     for (int k = 0; k < trunk; ++k)
         out.push_back(Placed{bx, base + k, bz, SPRUCE_LOG});
@@ -1939,7 +1942,7 @@ void spruce(std::vector<Placed> &out, int bx, int base, int bz, int trunk, bool 
             }
     }
     out.push_back(Placed{bx, base + trunk, bz, LEAVES_SPRUCE});
-    out.push_back(Placed{bx, base + trunk + 1, bz, snowy ? SNOW : LEAVES_SPRUCE});
+    out.push_back(Placed{bx, base + trunk + 1, bz, LEAVES_SPRUCE});
 }
 
 void giantMushroom(std::vector<Placed> &out, int bx, int base, int bz, int stem)
@@ -2579,7 +2582,6 @@ void plantTrees(Grid &g, const Clearance &clear, const Extras &extras)
             if (g.get(bx, base, bz) != AIR || g.carved[Grid::index(bx, base, bz)])
                 continue;
             const float cx = centerOf(bx), cz = centerOf(bz);
-            const float topY = static_cast<float>(base) * kBlock;
             const int biome = g.biome[Grid::column(bx, bz)];
             const unsigned int h = hash(bx, bz, 79u);
             const float wood = valueNoise(cx * 0.045f, cz * 0.045f, 83u);
@@ -2627,8 +2629,7 @@ void plantTrees(Grid &g, const Clearance &clear, const Extras &extras)
                 if (biome == ALPINE || ground == SNOWY_DIRT)
                 {
                     if (h % 5u == 0 && !crowded(g, bx, base, bz, 1))
-                        spruce(blocks, bx, base, bz, 6 + static_cast<int>((h >> 8) % 3u),
-                               ground == SNOWY_DIRT || topY > 30.0f * kLift);
+                        spruce(blocks, bx, base, bz, 6 + static_cast<int>((h >> 8) % 3u));
                 }
                 else if (biome == CRAG || biome == VOLCANO)
                 {
@@ -2938,6 +2939,67 @@ void crustLava(Grid &g)
 // ---------------------------------------------------------------------
 // Building the world: no OpenGL here, so tests can use it.
 // ---------------------------------------------------------------------
+// Where snow lies, per column, from the bare terrain: 2 on snowy ground
+// and high up on the mountains and crags, where it settles on whatever is
+// there, the rock ledges too; 1 lower on the
+// alpine slopes, where the sunny grass is bare but the trees hold snow;
+// 0 elsewhere.
+std::vector<unsigned char> snowCover(const Grid &g)
+{
+    std::vector<unsigned char> cover(static_cast<size_t>(kSizeX) * kSizeZ, 0);
+    for (int bx = kMinBX; bx < kMaxBX; ++bx)
+        for (int bz = kMinBZ; bz < kMaxBZ; ++bz)
+        {
+            const int top = g.top(bx, bz);
+            const int ground = g.get(bx, top, bz);
+            const int biome = g.biome[Grid::column(bx, bz)];
+            const float topY = static_cast<float>(top + 1) * kBlock;
+            unsigned char c = 0;
+            if (ground == SNOW || ground == SNOWY_DIRT ||
+                ((biome == CRAG || biome == ALPINE) && topY > 44.0f * kLift))
+                c = 2;
+            else if (biome == ALPINE && topY > 30.0f * kLift)
+                c = 1;
+            cover[Grid::column(bx, bz)] = c;
+        }
+    return cover;
+}
+
+// Snow settles as a thin layer, as it does in a block game: on the ground
+// a few eighths of a block deep, drifting deeper and shallower (one to three eighths); on leaves,
+// roofs and rock only an eighth or two. Never on water, lava, ice or a
+// light, and never in the train's way.
+void snowfall(Grid &g, const Clearance &clear, const std::vector<unsigned char> &cover)
+{
+    for (int bx = kMinBX; bx < kMaxBX; ++bx)
+        for (int bz = kMinBZ; bz < kMaxBZ; ++bz)
+        {
+            const int c = cover[Grid::column(bx, bz)];
+            if (c == 0)
+                continue;
+            int j = kMaxY;
+            while (j >= kMinY && g.get(bx, j, bz) == AIR)
+                --j;
+            if (j < kMinY || j >= kMaxY)
+                continue;
+            const int b = g.get(bx, j, bz);
+            if (b == WATER || b == LAVA || b == ICE || b == SNOW || blockGlow(b) > 0.0f ||
+                (c == 1 && !isGrowth(b)))
+                continue;
+            const size_t cell = Grid::index(bx, j + 1, bz);
+            if (g.plant[cell] != NO_PLANT || g.carved[cell] || clear.blocks(bx, j + 1, bz))
+                continue;
+            int depth = 1 + static_cast<int>(hash(bx, bz, 753u) % 2u);
+            if (b == SNOWY_DIRT || b == STONE || b == GRAVEL)
+            {
+                const float drift = valueNoise(centerOf(bx) * 0.09f, centerOf(bz) * 0.09f, 751u);
+                depth = 1 + static_cast<int>(drift * 2.99f);
+            }
+            g.plant[cell] = SNOW_LAYER;
+            g.level[cell] = static_cast<unsigned char>(depth);
+        }
+}
+
 void buildScenery(Grid &g, Extras &extras)
 {
     const std::vector<float> ride = OceanWorld::rideSamples();
@@ -2945,6 +3007,7 @@ void buildScenery(Grid &g, Extras &extras)
     clear.add(ride);
 
     buildTerrain(g);
+    const std::vector<unsigned char> cover = snowCover(g); // before anything is built on it
     buildLavaLake(g);
     traceLava(g, scaledLine(kLavaSouth, 4).data(), 4, true);
     traceLava(g, scaledLine(kLavaEast, 4).data(), 4, true);
@@ -2977,6 +3040,7 @@ void buildScenery(Grid &g, Extras &extras)
     plantNorthEast(g, clear);
     spreadSky(g);
     plantFlowers(g, clear, extras);
+    snowfall(g, clear, cover);
     spreadGlow(g);
     placeAnimals(g, clear, extras);
 }
@@ -3277,6 +3341,77 @@ void addBambooStalk(bool top, bool leafy, float cx, float y0, float cz, unsigned
             v.uv[0] = (c == 0 || c == 3) ? 0.0f : 1.0f;
             v.uv[1] = quad[c][3];
             out.push_back(v);
+        }
+    }
+}
+
+// How deep the snow in a cell lies, in blocks; 0 when there is none.
+float snowDepth(const Grid &g, int bx, int j, int bz)
+{
+    if (!Grid::inside(bx, j, bz))
+        return 0.0f;
+    const size_t i = Grid::index(bx, j, bz);
+    return g.plant[i] == SNOW_LAYER ? static_cast<float>(g.level[i]) / 8.0f : 0.0f;
+}
+
+// A snow layer: a thin slab on the block below, its top and the parts of
+// its sides that stand above the snow (or the open air) next to it. Drawn
+// with the solid blocks, so it is lit, shaded and casts shadows like them.
+void addSnowLayer(const Grid &g, int bx, int j, int bz, Batches &batches)
+{
+    const size_t i = Grid::index(bx, j, bz);
+    const float depth = snowDepth(g, bx, j, bz);
+    std::vector<Vertex> &out = batches[static_cast<size_t>(LandTextures::SNOW)];
+    const float x0 = static_cast<float>(bx) * kBlock, x1 = x0 + kBlock;
+    const float z0 = static_cast<float>(bz) * kBlock, z1 = z0 + kBlock;
+    const float y0 = static_cast<float>(j) * kBlock, top = y0 + depth * kBlock;
+    const float tint =
+        0.95f + 0.05f * static_cast<float>(hash(bx * 7 + j, bz, 401u) % 100u) / 100.0f;
+    Vertex v;
+    v.extra[0] = 0.0f;
+    v.extra[1] = 0.0f;
+    v.extra[2] = glowFactor(static_cast<float>(g.cool[i]));
+    const float sky = skyFactor(static_cast<float>(g.sky[i]));
+    auto corner = [&](float x, float y, float z, float u, float w) {
+        v.pos[0] = x;
+        v.pos[1] = y;
+        v.pos[2] = z;
+        v.uv[0] = u;
+        v.uv[1] = w;
+        out.push_back(v);
+    };
+
+    v.normal[0] = 0.0f;
+    v.normal[1] = 1.0f;
+    v.normal[2] = 0.0f;
+    v.color[0] = v.color[1] = v.color[2] = tint;
+    v.extra[3] = sky;
+    corner(x0, top, z0, 0.0f, 0.0f);
+    corner(x0, top, z1, 0.0f, 1.0f);
+    corner(x1, top, z1, 1.0f, 1.0f);
+    corner(x1, top, z0, 1.0f, 0.0f);
+
+    // the sides, a little darker, wound like the blocks' faces
+    for (const Face &f : kFaces)
+    {
+        if (f.normal[1] != 0)
+            continue;
+        const int ox = bx + f.normal[0], oz = bz + f.normal[2];
+        if (g.opaque(ox, j, oz))
+            continue;
+        const float low = y0 + snowDepth(g, ox, j, oz) * kBlock;
+        if (low >= top)
+            continue;
+        for (int k = 0; k < 3; ++k)
+            v.normal[k] = static_cast<float>(f.normal[k]);
+        v.extra[3] = sky * 0.85f;
+        // the strip of the texture as tall as the side
+        const float vLow = 1.0f - (low - y0) / kBlock, vTop = 1.0f - depth;
+        for (int c = 0; c < 4; ++c)
+        {
+            const bool up = f.corner[c][1] == 1;
+            corner(f.corner[c][0] == 1 ? x1 : x0, up ? top : low, f.corner[c][2] == 1 ? z1 : z0,
+                   f.uv[c][0], up ? vTop : vLow);
         }
     }
 }
@@ -3652,6 +3787,8 @@ LandWorld::Scene &LandWorld::scene(bool flat)
                             addWaterFaces(s.grid, bx, j, bz, water);
                         else if (b != AIR)
                             addBlockFaces(s.grid, bx, j, bz, solids);
+                        else if (s.grid.plant[cell] == SNOW_LAYER)
+                            addSnowLayer(s.grid, bx, j, bz, solids);
                         else
                             addPlant(s.grid, bx, j, bz, plants);
                     }
