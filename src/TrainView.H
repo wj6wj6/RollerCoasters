@@ -120,10 +120,18 @@ class TrainView : public Fl_Gl_Window
   public:
     // In Fly a new point waits at the crosshair; the wheel sets how far ahead
     // (the system wheel handler in TrainView.cpp asks these).
-    bool placingInFly() const;
+    bool wheelSetsDepth() const; // adding or carrying a point in Fly
     // the control point at the crosshair (left click in Fly selects it), or -1
     int crosshairPoint() const;
     static constexpr float kCrosshairReach = 18.0f; // pixels
+
+    // Holding the right button in Fly carries the point at the crosshair with
+    // the view; the wheel sets its distance, Esc puts it back.
+    void beginCarry();
+    void updateCarry();
+    void endCarry(bool keep);
+    bool carryEvent(int event);
+    void flyAxes(float right[3], float up[3], float forward[3]) const;
     void adjustPlaceDepth(float wheelDy);
 
     // shader lighting, shadow maps and post effects (TrainViewEffects.cpp)
@@ -226,6 +234,9 @@ class TrainView : public Fl_Gl_Window
     Pnt3f m_placeSpot;                      // ... and where that is in the world
     bool m_placeFly = false;                // adding in Fly: at the crosshair, not on the track
     float m_placeDepth = 30.0f;             // ... this far ahead of the eye
+    bool m_carrying = false;                // a point held by the right button in Fly
+    float m_carryOffset[3] = {0.0f, 0.0f, 0.0f}; // ... where in the view (right, up, ahead)
+    TrackHistory::Snapshot m_carryBefore;        // ... and the track before (undo)
     static constexpr float kPlaceDepthMin = 2.0f;
     static constexpr float kPlaceDepthMax = 1500.0f;
 
