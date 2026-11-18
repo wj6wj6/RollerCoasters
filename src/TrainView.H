@@ -125,8 +125,8 @@ class TrainView : public Fl_Gl_Window
     int crosshairPoint() const;
     static constexpr float kCrosshairReach = 18.0f; // pixels
 
-    // Holding the right button in Fly carries the point at the crosshair with
-    // the view; the wheel sets its distance, Esc puts it back.
+    // A right click in Fly picks up the point at the crosshair to carry with
+    // the view until the next click; the wheel sets its distance, Esc puts it back.
     void beginCarry();
     void updateCarry();
     void endCarry(bool keep);
@@ -234,7 +234,7 @@ class TrainView : public Fl_Gl_Window
     Pnt3f m_placeSpot;                      // ... and where that is in the world
     bool m_placeFly = false;                // adding in Fly: at the crosshair, not on the track
     float m_placeDepth = 30.0f;             // ... this far ahead of the eye
-    bool m_carrying = false;                // a point held by the right button in Fly
+    bool m_carrying = false;                // a point picked up by a right click in Fly
     float m_carryOffset[3] = {0.0f, 0.0f, 0.0f}; // ... where in the view (right, up, ahead)
     TrackHistory::Snapshot m_carryBefore;        // ... and the track before (undo)
     static constexpr float kPlaceDepthMin = 2.0f;

@@ -525,8 +525,8 @@ int TrainView::handle(int event)
                     selectedCube = crosshairPoint();
                     tw->damageMe();
                 }
-                // holding the right button carries the point at the crosshair
-                // (or the selected one) along with the view
+                // a right click picks up the point at the crosshair (or the
+                // selected one) to carry along with the view, until the next click
                 else if (Fl::event_button() == FL_RIGHT_MOUSE && canEdit())
                     beginCarry();
                 return 1;
@@ -829,8 +829,9 @@ void TrainView::flyAxes(float right[3], float up[3], float forward[3]) const
     up[2] = right[0] * forward[1] - right[1] * forward[0];
 }
 
-// Right button down in Fly: pick up the point at the crosshair (else the
-// selected one) where it is in the view, so it does not jump.
+// Right click in Fly: pick up the point at the crosshair (else the selected
+// one) where it is in the view, so it does not jump; it stays picked up
+// until the next click.
 void TrainView::beginCarry()
 {
     const int aimed = crosshairPoint();
@@ -867,7 +868,7 @@ void TrainView::updateCarry()
     m_pTrack->points[static_cast<size_t>(selectedCube)].pos = Pnt3f(world[0], world[1], world[2]);
 }
 
-// Right button up puts the point down (one undo step); Esc puts it back.
+// A second right click puts the point down (one undo step); Esc puts it back.
 void TrainView::endCarry(bool keep)
 {
     if (!m_carrying)
@@ -887,7 +888,7 @@ void TrainView::endCarry(bool keep)
 }
 
 // Events while carrying a point in Fly. The mouse still looks and the keys
-// still fly; the wheel sets the distance.
+// still fly; the wheel sets the distance, a click puts it down.
 bool TrainView::carryEvent(int event)
 {
     if (!canEdit() || !tw->flyCam->value() || !hasSelection())
@@ -900,12 +901,13 @@ bool TrainView::carryEvent(int event)
     case FL_MOUSEWHEEL:
         adjustPlaceDepth(static_cast<float>(Fl::event_dy()));
         return true;
-    case FL_RELEASE:
-        if (Fl::event_button() == FL_RIGHT_MOUSE)
+    case FL_PUSH:
+        // a second right click (or a left click) puts it down
+        if (Fl::event_button() == FL_RIGHT_MOUSE || Fl::event_button() == FL_LEFT_MOUSE)
             endCarry(true);
         return true;
-    case FL_PUSH:
-        return true; // other buttons do nothing meanwhile
+    case FL_RELEASE:
+        return true;
     case FL_KEYBOARD:
         if (Fl::event_key() == FL_Escape)
         {
@@ -1370,13 +1372,13 @@ void TrainView::drawEditOverlay()
             sqrtf(m_carryOffset[0] * m_carryOffset[0] + m_carryOffset[1] * m_carryOffset[1] +
                   m_carryOffset[2] * m_carryOffset[2]);
         snprintf(text, sizeof(text),
-                 "Carry point %d: %.1f away   [Wheel] nearer / farther   [Release] put down   "
+                 "Carry point %d: %.1f away   [Wheel] nearer / farther   [Click] put down   "
                  "[Esc] put back",
                  selectedCube, static_cast<double>(distance));
     }
     else if (tw->flyCam->value() && mouseCaptured && canEdit() && m_editMode == EDIT_IDLE &&
              crosshairPoint() >= 0 && crosshairPoint() != selectedCube)
-        snprintf(text, sizeof(text), "%s  |  [Click] select point %d   [Hold right] carry it",
+        snprintf(text, sizeof(text), "%s  |  [Click] select point %d   [Right click] carry it",
                  camera, crosshairPoint());
     else if (!selected)
         snprintf(text, sizeof(text), "%s", camera);
