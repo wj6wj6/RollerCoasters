@@ -158,7 +158,7 @@ if(ROLLERCOASTERS_BUILD_TESTS)
 
     add_executable(OceanRideClearanceCheck tests/OceanRideClearanceCheck.cpp
         src/OceanWorld.cpp src/Frustum.cpp src/LandTextures.cpp src/PixelArt.cpp src/WorldShape.cpp
-        src/Track.cpp src/ControlPoint.cpp)
+        src/TexturePack.cpp src/ZipArchive.cpp src/Track.cpp src/ControlPoint.cpp)
     target_include_directories(OceanRideClearanceCheck PRIVATE src)
     target_link_libraries(OceanRideClearanceCheck PRIVATE Utilities glad)
     add_test(NAME OceanRideClearanceCheck COMMAND OceanRideClearanceCheck)
