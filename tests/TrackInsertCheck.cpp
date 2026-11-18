@@ -160,6 +160,16 @@ int main()
         expect(hit && distance(found, spot) < 2.0f, "a click 3 pixels off the track finds it");
         expect(!TrackInsert::pick(track, TRACK_SPLINE_BSPLINE, camera, 400, 300, 12.0f, u),
                "a click in the middle of the loop finds nothing");
+
+        // picking a control point (the Fly crosshair)
+        const float corner[3] = {track.points[4].pos.x, track.points[4].pos.y,
+                                 track.points[4].pos.z};
+        TransformGizmo::project(camera, corner, sx, sy);
+        expect(TrackInsert::pickPoint(track, camera, static_cast<int>(sx) + 6,
+                                      static_cast<int>(sy) - 5, 16.0f) == 4,
+               "a click near point 4 picks it");
+        expect(TrackInsert::pickPoint(track, camera, 400, 300, 16.0f) == -1,
+               "a click far from every point picks none");
     }
 
     std::printf("%s\n", failures == 0 ? "all passed" : "SOME FAILED");

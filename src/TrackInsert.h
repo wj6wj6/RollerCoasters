@@ -59,4 +59,9 @@ int insertNear(CTrack &track, const Pnt3f &position, TrackSplineType splineType)
 // screen, if one is within `maxPixels`.
 bool pick(const CTrack &track, TrackSplineType splineType, const TransformGizmo::Camera &camera,
           int mouseX, int mouseY, float maxPixels, float &u);
+
+// The control point nearest the mouse (or the Fly crosshair) on screen, if
+// one is within `maxPixels`, else -1. Points behind the camera are skipped.
+int pickPoint(const CTrack &track, const TransformGizmo::Camera &camera, int mouseX, int mouseY,
+              float maxPixels);
 } // namespace TrackInsert

@@ -121,6 +121,9 @@ class TrainView : public Fl_Gl_Window
     // In Fly a new point waits at the crosshair; the wheel sets how far ahead
     // (the system wheel handler in TrainView.cpp asks these).
     bool placingInFly() const;
+    // the control point at the crosshair (left click in Fly selects it), or -1
+    int crosshairPoint() const;
+    static constexpr float kCrosshairReach = 18.0f; // pixels
     void adjustPlaceDepth(float wheelDy);
 
     // shader lighting, shadow maps and post effects (TrainViewEffects.cpp)

@@ -223,3 +223,26 @@ bool TrackInsert::pick(const CTrack &track, TrackSplineType splineType,
         u = wrap(u, count);
     return found;
 }
+
+int TrackInsert::pickPoint(const CTrack &track, const TransformGizmo::Camera &camera, int mouseX,
+                           int mouseY, float maxPixels)
+{
+    int found = -1;
+    float best = maxPixels * maxPixels;
+    for (size_t i = 0; i < track.points.size(); ++i)
+    {
+        const Pnt3f &p = track.points[i].pos;
+        const float position[3] = {p.x, p.y, p.z};
+        float sx = 0.0f, sy = 0.0f;
+        if (!TransformGizmo::project(camera, position, sx, sy))
+            continue;
+        const float d =
+            distanceSquared(sx, sy, static_cast<float>(mouseX), static_cast<float>(mouseY));
+        if (d <= best)
+        {
+            best = d;
+            found = static_cast<int>(i);
+        }
+    }
+    return found;
+}

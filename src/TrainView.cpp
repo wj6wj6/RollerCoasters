@@ -513,8 +513,16 @@ int TrainView::handle(int event)
                 }
                 return 1;
             }
-            // Clicks do nothing while the mouse steers the view.
+            // A left click selects the control point at the crosshair (or
+            // nothing, away from every point); other clicks do nothing while
+            // the mouse steers the view.
             case FL_PUSH:
+                if (Fl::event_button() == FL_LEFT_MOUSE && canEdit())
+                {
+                    selectedCube = crosshairPoint();
+                    tw->damageMe();
+                }
+                return 1;
             case FL_RELEASE:
                 return 1;
             case FL_UNFOCUS:
@@ -787,6 +795,14 @@ void TrainView::finishEdits()
         endEdit(true);
     if (m_placing)
         endPlacePoint();
+}
+
+// The control point at the Fly crosshair, or -1.
+int TrainView::crosshairPoint() const
+{
+    if (!m_editCameraValid)
+        return -1;
+    return TrackInsert::pickPoint(*m_pTrack, m_editCamera, w() / 2, h() / 2, kCrosshairReach);
 }
 
 // Add Pt, Shift + D (Alt + D in Fly): wait for a click on the track.
@@ -1205,6 +1221,9 @@ void TrainView::drawEditOverlay()
         snprintf(text, sizeof(text), "Add point: %s   [Esc] cancel",
                  m_placeHit ? "click to put it here, hold to drag it"
                             : "point at the track where it should go");
+    else if (tw->flyCam->value() && mouseCaptured && canEdit() && m_editMode == EDIT_IDLE &&
+             crosshairPoint() >= 0 && crosshairPoint() != selectedCube)
+        snprintf(text, sizeof(text), "%s  |  [Click] select point %d", camera, crosshairPoint());
     else if (!selected)
         snprintf(text, sizeof(text), "%s", camera);
     else
