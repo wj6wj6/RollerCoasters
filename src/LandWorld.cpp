@@ -1971,24 +1971,45 @@ bool crowded(const Grid &g, int bx, int j, int bz, int reach)
 
 // Is every column within `radius` of (bx, bz) open meadow, its top grass or
 // dirt (nothing built on it), between low and high?
-bool openMeadow(const Grid &g, int bx, int bz, int radius, int &low, int &high)
+// biome: the one every column must be in, or -1 for the snow mountain's
+// foot, where the meadow meets the spruce forest (either will do).
+bool openGround(const Grid &g, int bx, int bz, int radius, int biome, int &low, int &high)
 {
     low = kMaxY + 1;
     high = kMinY - 1;
     for (int x = bx - radius; x <= bx + radius; ++x)
         for (int z = bz - radius; z <= bz + radius; ++z)
         {
-            if (!Grid::insideColumn(x, z) || !onIsland(x, z) ||
-                g.biome[Grid::column(x, z)] != MEADOW)
+            if (!Grid::insideColumn(x, z) || !onIsland(x, z))
+                return false;
+            const int here = g.biome[Grid::column(x, z)];
+            if (biome >= 0 ? here != biome : (here != ALPINE && here != MEADOW))
                 return false;
             const int top = g.top(x, z);
             const int b = g.get(x, top, z);
-            if (b != GRASS && b != DIRT)
+            if (b != GRASS && b != DIRT && b != SNOWY_DIRT)
                 return false;
             low = top < low ? top : low;
             high = top > high ? top : high;
         }
     return true;
+}
+
+// Is a round area (radius in blocks, layers j0 to j1) clear of the train?
+bool roomForRound(const Clearance &clear, int bx, int bz, int radius, int j0, int j1)
+{
+    for (int x = bx - radius; x <= bx + radius; ++x)
+        for (int z = bz - radius; z <= bz + radius; ++z)
+            if ((x - bx) * (x - bx) + (z - bz) * (z - bz) <= radius * radius)
+                for (int j = j0; j <= j1; ++j)
+                    if (clear.blocks(x, j, z))
+                        return false;
+    return true;
+}
+
+bool openMeadow(const Grid &g, int bx, int bz, int radius, int &low, int &high)
+{
+    return openGround(g, bx, bz, radius, MEADOW, low, high);
 }
 
 // Does the ride pass within about 30 blocks of (bx, bz), so it can be seen
@@ -2029,14 +2050,7 @@ void buildLake(Grid &g, const Clearance &clear, Extras &extras)
                 continue;
             // the lake and its banks, and three blocks more (water keeps six
             // units from the track), clear of the train: a round area
-            bool room = true;
-            const int reach = radius + 5;
-            for (int x = bx - reach; x <= bx + reach && room; ++x)
-                for (int z = bz - reach; z <= bz + reach && room; ++z)
-                    if ((x - bx) * (x - bx) + (z - bz) * (z - bz) <= reach * reach)
-                        for (int j = low - 3; j <= high + 6 && room; ++j)
-                            room = !clear.blocks(x, j, z);
-            if (!room)
+            if (!roomForRound(clear, bx, bz, radius + 5, low - 3, high + 6))
                 continue;
             bestScore = score;
             bestX = bx;
@@ -2151,6 +2165,109 @@ void buildGiantTree(Grid &g, const Clearance &clear, Extras &extras)
                 tree.push_back(Placed{bestX + dx, crown + dy, bestZ + dz, LEAVES_OAK});
             }
     commit(g, clear, tree);
+}
+
+// A spruce-log cabin: a cobble footing, walls of spruce logs, lit windows,
+// a door with a pumpkin lantern beside it and a steep roof.
+void buildCabin(Grid &g, int x0, int z0, int w, int d, int floor)
+{
+    const int x1 = x0 + w, z1 = z0 + d, wallTop = floor + 2;
+    footing(g, x0, x1, z0, z1, floor);
+    fill(g, x0, x1, floor, wallTop, z0, z1, SPRUCE_LOG);
+    fill(g, x0 + 1, x1 - 1, floor, wallTop, z0 + 1, z1 - 1, AIR);
+    for (int bx = x0 + 2; bx < x1; bx += 2)
+    {
+        g.put(bx, floor + 1, z0, WINDOW);
+        g.put(bx, floor + 1, z1, WINDOW);
+    }
+    g.put((x0 + x1) / 2, floor, z1, DOOR);
+    g.put((x0 + x1) / 2, floor + 1, z1, DOOR);
+    g.put((x0 + x1) / 2 + 1, floor, z1 + 1, JACK_O);
+    for (int k = 0; z0 - 1 + k <= z1 + 1 - k; ++k)
+        fill(g, x0 - 1, x1 + 1, wallTop + 1 + k, wallTop + 1 + k, z0 - 1 + k, z1 + 1 - k, ROOF);
+    g.put(x0 + 1, wallTop + 3, z0 + 1, COBBLE); // the chimney
+    g.put(x0 + 1, wallTop + 4, z0 + 1, COBBLE);
+}
+
+// A camp in the spruce forest at the foot of the snow mountain, where the
+// train passes in sight of it: log cabins round a campfire, lanterns on
+// posts and pumpkin lanterns by the doors, warm against the blue of dusk.
+// The camp's cabins round its middle: x, z of a corner, and width.
+const int kCabins[4][3] = {{-9, -9, 5}, {4, -9, 5}, {-9, 4, 4}, {4, 4, 5}};
+
+void buildTaigaCamp(Grid &g, const Clearance &clear)
+{
+    const int radius = 10;
+    int bestX = 0, bestZ = 0, bestFloor = 0, bestScore = 1 << 30;
+    for (int bx = kMinBX + radius + 2; bx < kMaxBX - radius - 2; bx += 2)
+        for (int bz = kMinBZ + radius + 2; bz < kMaxBZ - radius - 2; bz += 2)
+        {
+            // at the snow mountain's foot, in the first layout's units
+            const float mx = centerOf(bx) / kScale - kAlpineX;
+            const float mz = centerOf(bz) / kScale - kAlpineZ;
+            const float fromPeak = sqrtf(mx * mx + mz * mz) / kAlpineRadius;
+            if (fromPeak > 1.25f)
+                continue;
+            int low, high;
+            if (!openGround(g, bx, bz, radius, -1, low, high) || high - low > 6 ||
+                static_cast<float>(high) * kBlock > 52.0f * kLift)
+                continue;
+            const int score = (high - low) * 10 + static_cast<int>(fromPeak * 40.0f);
+            if (score >= bestScore || !seenFromRide(clear, bx, bz, radius, radius + 18))
+                continue;
+            // the square and the fire, and at least three of the cabins
+            if (!roomForRound(clear, bx, bz, 6, low, high + 6))
+                continue;
+            int cabins = 0;
+            for (const int *c : kCabins)
+                if (roomForBuilding(clear, bx + c[0] - 1, bx + c[0] + c[2] + 1, low, high + 12,
+                                    bz + c[1] - 1, bz + c[1] + 5 + 1))
+                    ++cabins;
+            if (cabins < 3)
+                continue;
+            bestScore = score;
+            bestX = bx;
+            bestZ = bz;
+            bestFloor = high + 1;
+        }
+    if (bestScore == 1 << 30)
+        return;
+
+    const int x = bestX, z = bestZ, floor = bestFloor;
+    // level the camp ground and lay a gravel square in the middle
+    for (int bx = x - radius; bx <= x + radius; ++bx)
+        for (int bz = z - radius; bz <= z + radius; ++bz)
+        {
+            bool free = true;
+            for (int j = floor - 4; j <= floor + 6 && free; ++j)
+                free = !clear.blocks(bx, j, bz);
+            if (!free)
+                continue; // the ride passes this corner
+            g.clearAbove(bx, floor - 1, bz);
+            for (int j = floor - 4; j < floor; ++j)
+                if (g.get(bx, j, bz) == AIR)
+                    g.put(bx, j, bz, DIRT);
+            const bool square = abs(bx - x) <= 3 && abs(bz - z) <= 3;
+            g.put(bx, floor - 1, bz, square ? GRAVEL : SNOWY_DIRT);
+        }
+    // the campfire: logs round a glowing heart, in a ring of stones
+    for (int dx = -1; dx <= 1; ++dx)
+        for (int dz = -1; dz <= 1; ++dz)
+            g.put(x + dx, floor - 1, z + dz, (dx == 0 && dz == 0) ? LANTERN : COBBLE);
+    g.put(x - 1, floor, z, SPRUCE_LOG);
+    g.put(x + 1, floor, z, SPRUCE_LOG);
+    // the cabins round the fire, each where it is clear of the train
+    for (const int *c : kCabins)
+        if (roomForBuilding(clear, x + c[0] - 1, x + c[0] + c[2] + 1, floor - 1, floor + 12,
+                            z + c[1] - 1, z + c[1] + 5 + 1))
+            buildCabin(g, x + c[0], z + c[1], c[2], 4, floor);
+    const int posts[4][2] = {{x - 4, z}, {x + 4, z}, {x, z - 5}, {x, z + 5}};
+    for (const int *post : posts)
+        buildLampPost(g, post[0], post[1], floor);
+    // firewood stacked by the fire
+    g.put(x + 3, floor, z + 2, SPRUCE_LOG);
+    g.put(x + 3, floor, z + 3, SPRUCE_LOG);
+    g.put(x + 3, floor + 1, z + 2, SPRUCE_LOG);
 }
 
 // Fields round the village: a few plots of wheat on farmland with ditches
@@ -2319,7 +2436,7 @@ void mangrove(Grid &g, const Clearance &clear, int bx, int base, int bz, unsigne
             {
                 const float r =
                     sqrtf(static_cast<float>(dx * dx + dz * dz)) + static_cast<float>(dy) * 0.9f;
-                if (r > 4.2f + (lattice(bx + dx * 5 + dy, bz + dz, 731u) - 0.5f) * 1.5f)
+                if (r > 3.7f + (lattice(bx + dx * 5 + dy, bz + dz, 731u) - 0.5f) * 1.5f)
                     continue;
                 if (dx == 0 && dz == 0 && dy < 2)
                     continue;
@@ -2379,8 +2496,8 @@ void plantNorthEast(Grid &g, const Clearance &clear)
             const float cx = centerOf(bx), cz = centerOf(bz);
             if (biome == MANGROVE)
             {
-                if ((ground == MUD || ground == WATER) && h % 21u == 0 && top + 14 < kMaxY &&
-                    !crowded(g, bx, top + 1, bz, 5))
+                if ((ground == MUD || ground == WATER) && h % 34u == 0 && top + 14 < kMaxY &&
+                    !crowded(g, bx, top + 1, bz, 7))
                     mangrove(g, clear, bx, top + 1, bz, h >> 4);
                 continue;
             }
@@ -2813,6 +2930,7 @@ void buildScenery(Grid &g, Extras &extras)
     buildLake(g, clear, extras);
     buildFarms(g, clear);
     buildGiantTree(g, clear, extras);
+    buildTaigaCamp(g, clear);
     buildIceSpikes(g, clear);
     buildHoodoos(g, clear);
     buildSwampWater(g, waterZone(ride));
