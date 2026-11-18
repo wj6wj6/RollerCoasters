@@ -44,6 +44,7 @@
 #include "CallBacks.H"
 #include "TrainModel.h"
 #include "EditKeys.h"
+#include "TrackInsert.h"
 #include <FL/x.H>
 #include <FL/gl.h>
 
@@ -476,6 +477,9 @@ int TrainView::handle(int event)
     // an edit in progress sees every event before the camera does
     if (m_editMode != EDIT_IDLE && editEvent(event))
         return 1;
+    // so does adding a point, so a click on the track is not an orbit
+    if (m_placing && placeEvent(event))
+        return 1;
 
     // see if the ArcBall will handle the event - if it does,
     // then we're done
@@ -658,10 +662,11 @@ int TrainView::handle(int event)
 //   program: G moves and R tilts until a left click or Enter accepts, or a
 //   right click or Esc puts the point back; X / Y / Z keep to that axis and
 //   Shift + X / Y / Z to the other two. Ctrl snaps to whole units (5 degrees
-//   when tilting). Shift + D duplicates, Delete or X removes, Ctrl + Z takes
-//   back the last change. Numpad 1 / 7 / 0 switch to the world, top and train
-//   cameras. In Fly, Alt + D duplicates and only Delete removes, so the
-//   flying keys are left alone (EditKeys.h).
+//   when tilting). Shift + D (or Add Pt) adds a point where the track is
+//   then clicked, Delete or X removes, Ctrl + Z takes back the last change.
+//   Numpad 1 / 7 / 0 switch to the world, top and train cameras. In Fly,
+//   Alt + D adds and only Delete removes, so the flying keys are left alone
+//   (EditKeys.h).
 //========================================================================
 bool TrainView::canEdit() const
 {
@@ -775,6 +780,103 @@ void TrainView::undoEdit()
     damage(1);
 }
 
+// Add Pt, Shift + D (Alt + D in Fly): wait for a click on the track.
+void TrainView::beginPlacePoint()
+{
+    if (m_pTrack->points.size() < 4)
+        return;
+    // the points must be showing, and cannot be edited from the train
+    if (!tw->editButton->value())
+        tw->editButton->value(1);
+    if (tw->trainCam->value() || tw->chaseCam->value())
+    {
+        tw->worldCam->setonly();
+        cameraChanged();
+    }
+    if (m_editMode != EDIT_IDLE)
+        endEdit(true);
+    setMouseCaptured(false);
+    m_placing = true;
+    m_placeHit = false;
+    take_focus(); // so Esc comes here even straight after the button
+    tw->damageMe();
+}
+
+void TrainView::endPlacePoint()
+{
+    m_placing = false;
+    m_placeHit = false;
+    damage(1);
+}
+
+void TrainView::updatePlaceHover(int mouseX, int mouseY)
+{
+    const bool was = m_placeHit;
+    m_placeHit = false;
+    if (m_editCameraValid)
+    {
+        const TrackSplineType splineType = static_cast<TrackSplineType>(tw->splineBrowser->value());
+        float u = 0.0f;
+        if (TrackInsert::pick(*m_pTrack, splineType, m_editCamera, mouseX, mouseY, 14.0f, u))
+        {
+            m_placeHit = true;
+            m_placeU = u;
+            m_placeSpot = m_pTrack->evaluatePosition(u, splineType);
+        }
+    }
+    if (m_placeHit || was)
+        damage(1);
+}
+
+// Events while adding a point. True if the event was used; the rest go on
+// as usual, so the camera can still be turned and zoomed.
+bool TrainView::placeEvent(int event)
+{
+    if (!canEdit())
+    {
+        endPlacePoint();
+        return false;
+    }
+    switch (event)
+    {
+    case FL_MOVE:
+        updatePlaceHover(Fl::event_x(), Fl::event_y());
+        return false; // the handle highlighting still runs
+    case FL_PUSH: {
+        if (Fl::event_button() != FL_LEFT_MOUSE)
+        {
+            endPlacePoint();
+            return true;
+        }
+        const int mx = Fl::event_x();
+        const int my = Fl::event_y();
+        updatePlaceHover(mx, my);
+        if (!m_placeHit)
+            return false; // off the track: orbit or pick a point as usual
+        const TrackSplineType splineType = static_cast<TrackSplineType>(tw->splineBrowser->value());
+        const int index = TrackInsert::insertAt(*m_pTrack, m_placeU, splineType);
+        endPlacePoint();
+        if (index < 0)
+            return true;
+        // select the new point and keep it under the mouse while the button is held
+        m_undoValid = false; // the indices have changed
+        selectedCube = index;
+        beginEdit(EDIT_DRAG, TransformGizmo::VIEW, mx, my);
+        tw->damageMe();
+        return true;
+    }
+    case FL_KEYBOARD:
+        if (Fl::event_key() == FL_Escape)
+        {
+            endPlacePoint();
+            return true;
+        }
+        return false;
+    default:
+        return false;
+    }
+}
+
 // Events while a point is being moved or tilted. True if the event was used.
 bool TrainView::editEvent(int event)
 {
@@ -857,6 +959,12 @@ bool TrainView::editKey(int key)
         undoEdit();
         return true;
     }
+    if (action == EditKeys::ADD_POINT)
+    {
+        // no selection needed: the new point goes where the track is clicked
+        beginPlacePoint();
+        return true;
+    }
     if (!hasSelection())
         return false;
 
@@ -872,19 +980,6 @@ bool TrainView::editKey(int key)
             return false;
         beginEdit(EDIT_ROTATE, TransformGizmo::NONE, Fl::event_x(), Fl::event_y());
         return true;
-    case EditKeys::DUPLICATE_POINT: {
-        if (!m_editCameraValid)
-            return false;
-        // the new point goes in after the selected one; pick it up at once
-        const size_t before = m_pTrack->points.size();
-        addPointCB(nullptr, tw);
-        if (m_pTrack->points.size() > before)
-        {
-            selectedCube = (selectedCube + 1) % static_cast<int>(m_pTrack->points.size());
-            beginEdit(EDIT_GRAB, TransformGizmo::VIEW, Fl::event_x(), Fl::event_y());
-        }
-        return true;
-    }
     case EditKeys::REMOVE:
         m_undoValid = false; // the indices are about to change
         deletePointCB(nullptr, tw);
@@ -940,6 +1035,27 @@ void TrainView::drawEditOverlay()
                              m_editMode == EDIT_IDLE ? m_hoverHandle : m_editHandle, modal);
     }
 
+    // adding a point: a marker where it would go, drawn over everything
+    const bool placing = m_placing && canEdit();
+    if (placing && m_placeHit)
+    {
+        glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_POINT_BIT);
+        glDisable(GL_LIGHTING);
+        glDisable(GL_TEXTURE_2D);
+        glDisable(GL_DEPTH_TEST);
+        glPointSize(15.0f);
+        glColor3f(0.05f, 0.05f, 0.05f);
+        glBegin(GL_POINTS);
+        glVertex3f(m_placeSpot.x, m_placeSpot.y, m_placeSpot.z);
+        glEnd();
+        glPointSize(10.0f);
+        glColor3f(1.0f, 0.85f, 0.1f);
+        glBegin(GL_POINTS);
+        glVertex3f(m_placeSpot.x, m_placeSpot.y, m_placeSpot.z);
+        glEnd();
+        glPopAttrib();
+    }
+
     // one line of text in the top left corner, as a 3D view has
     char text[160] = "";
     const char *camera =
@@ -950,7 +1066,11 @@ void TrainView::drawEditOverlay()
                    : (tw->chaseCam->value()
                           ? "Chase Camera"
                           : (tw->flyCam->value() ? "Fly Camera" : "User Perspective")));
-    if (!selected)
+    if (placing)
+        snprintf(text, sizeof(text), "Add point: %s   [Esc] cancel",
+                 m_placeHit ? "click to put it here, hold to drag it"
+                            : "point at the track where it should go");
+    else if (!selected)
         snprintf(text, sizeof(text), "%s", camera);
     else
     {

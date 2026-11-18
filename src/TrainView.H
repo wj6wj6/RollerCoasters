@@ -105,6 +105,14 @@ class TrainView : public Fl_Gl_Window
     void undoEdit();
     void drawEditOverlay();
 
+    // Adding a point (Add Pt, Shift + D, Alt + D in Fly): the mouse shows
+    // where on the track the new point would go, a left click puts it there
+    // and picks it up to drag, Esc or a right click gives up. See TrackInsert.h.
+    void beginPlacePoint();
+    void endPlacePoint();
+    void updatePlaceHover(int mouseX, int mouseY);
+    bool placeEvent(int event);
+
     // shader lighting, shadow maps and post effects (TrainViewEffects.cpp)
     bool advancedLightingOn();
     void drawAdvanced();
@@ -200,6 +208,10 @@ class TrainView : public Fl_Gl_Window
     bool m_undoValid = false;
     int m_undoIndex = -1;
     ControlPoint m_undoPoint;
+    bool m_placing = false;  // adding a point: waiting for a click on the track
+    bool m_placeHit = false; // ... and the mouse is over the track
+    float m_placeU = 0.0f;   // where on the track (track parameter)
+    Pnt3f m_placeSpot;       // ... and where that is in the world
 
     // Weather, eased towards the Rain button (TrainViewEffects.cpp).
     float m_rain = 0.0f;         // 0 dry sky, 1 pouring

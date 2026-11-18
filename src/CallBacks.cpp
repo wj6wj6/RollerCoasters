@@ -92,41 +92,14 @@ void fovCB(Fl_Widget *, TrainWindow *tw)
 
 //***************************************************************************
 //
-// * Callback that adds a new point to the spline
-// idea: add the point AFTER the selected point
+// * Add Pt: the next click on the track puts a new point there, between
+//   the two points around the spot, and picks it up to drag (TrainView::
+//   beginPlacePoint, TrackInsert.h). Esc or a right click gives up.
 //===========================================================================
 void addPointCB(Fl_Widget *, TrainWindow *tw)
 //===========================================================================
 {
-    // get the number of points
-    size_t npts = tw->m_Track.points.size();
-    if (npts < 4)
-        return;
-
-    // Insert after the selected point. Without a selection, insert at the end
-    // of the loop between the last and first control points.
-    int selected = tw->trainView->selectedCube;
-    size_t selectedIndex = (selected >= 0 && static_cast<size_t>(selected) < npts)
-                               ? static_cast<size_t>(selected)
-                               : npts - 1;
-    size_t nextIndex = (selectedIndex + 1) % npts;
-    size_t insertIndex = selectedIndex + 1;
-
-    // pick a reasonable location
-    Pnt3f npos = (tw->m_Track.points[selectedIndex].pos + tw->m_Track.points[nextIndex].pos) * .5f;
-
-    tw->m_Track.points.insert(tw->m_Track.points.begin() + insertIndex, npos);
-
-    // make it so that the train doesn't move - unless its affected by this control point
-    // it should stay between the same points
-    if (tw->m_Track.trainU >= static_cast<float>(insertIndex))
-    {
-        tw->m_Track.trainU += 1;
-        if (tw->m_Track.trainU >= static_cast<float>(npts))
-            tw->m_Track.trainU -= static_cast<float>(npts);
-    }
-
-    tw->damageMe();
+    tw->trainView->beginPlacePoint();
 }
 
 //***************************************************************************

@@ -15,6 +15,8 @@ flowchart LR
     Train --> Track
     View --> Gizmo[TransformGizmo / 控制點移動把手的挑選、拖曳與繪製]
     View --> Keys[EditKeys / 按鍵對應的編輯指令，依是否在 Fly 相機]
+    View --> Insert[TrackInsert / 在點擊的軌道位置新增控制點]
+    Insert --> Track
     View --> Camera[ArcBallCam / 相機與手勢平滑]
     View --> Fly[FlyCam / 觀察者自由相機]
     View --> Head[HeadLook / Train 視角轉頭]
@@ -55,7 +57,11 @@ flowchart LR
 `CallBacks` 處理按鈕、軌道載入儲存與列車更新。
 `TrainView::handle()` 處理控制點編輯：`TransformGizmo` 以上一幀的相機矩陣做純數學運算（滑鼠射線對軸取最近點、對平面取交點），
 不需要 OpenGL context，所以由 `GizmoDragCheck` 測試；編輯進行中的事件會先於相機處理，結果同步到 `Transform` 面板。
-哪個鍵是哪個編輯指令由 `EditKeys::forKey()` 決定：Fly 相機下避開所有飛行鍵（複製改 `Alt` + `D`、刪除只留 `Delete`），
+新增控制點（`Add Pt`、`Shift` + `D`）先進入放置模式：`TrackInsert::pick()` 把軌道取樣投影到螢幕，找滑鼠附近的軌道參數 u；
+左鍵點下時 `TrackInsert::insertAt()` 把新點插在 u 前後兩點之間，位置解成「軌道仍經過點擊處」（Linear／Cardinal 直接放在該處，
+B-spline 以 `(6S - P前 - P後) / 4` 反解），方向由前後兩點內插，`trainU` 依被切開的段重新對應，接著選取新點並進入拖曳。
+這些都是純數學，由 `TrackInsertCheck` 測試。
+哪個鍵是哪個編輯指令由 `EditKeys::forKey()` 決定：Fly 相機下避開所有飛行鍵（新增改 `Alt` + `D`、刪除只留 `Delete`），
 所以 Fly 模式的 `handle()` 先問 `editKey()`、再交給 `FlyCam`，飛行鍵不會被編輯搶走，`Home` 取代 `R` 回到 World 視角。編輯開始時 `FlyCam` 停止並解除滑鼠鎖定；編輯中 `editEvent()` 只吃按下，按鍵放開（`FL_KEYUP`）仍交給 `FlyCam`。掃描碼 system handler 也送出 `G`、`R` 與 `Home`，並以 `GetKeyState` 補上修飾鍵狀態，兩條路徑的鍵位一致。`EditKeysCheck` 測試這張對照表與正式 `FlyCam` 不衝突。
 `ArcBallCam` 用 FLTK timeout 分攤滑鼠滾輪的整格縮放（左右傾斜為旋轉）；觸控板的細小位移則立即套用。FLTK 1.3 會把滾輪訊息捨入為整格，因此 `TrainView.cpp` 以 system handler 直接讀取 Windows `WM_MOUSEWHEEL`／`WM_MOUSEHWHEEL` 的原始位移。
 `FlyCam` 是 Fly 相機按鈕的觀察者模式：記錄位置、yaw 與 pitch（水平線固定），按住移動鍵時以 FLTK timeout 依實際經過時間移動，因此速度單位是每秒世界單位，與幀率無關。每次進入時 `TrainView` 以最後一幀由 World、Train 或 Chase 畫出的 modelview 矩陣（`drawEditOverlay()` 每幀記下）作為起點，所以畫面不跳動；按住 Fly 按鈕的期間 FLTK 已把 Fly 設為開啟、舊相機還沒關，這時重畫的 Fly 畫面不算；上一幀是 Top 正交視角時，改放在 Top 畫面中心（`topViewCentre()`；造景開啟時 Top 以主島與東北陸地的範圍置中）上方、讓同樣寬度的地面填滿畫面的高度往下看。`FOV` 滑桿經 `TrainView::setFieldOfView()` 同時設定 `ArcBallCam`、`FlyCam` 與 Train／Chase 的 `gluPerspective`，視角都相同，所以接續時不需要視角差補償；World 相機重設時的距離依視角換算，維持原本 40 度、250 單位時的取景。失去焦點或切換相機時清除按住的按鍵，避免相機持續漂移。為了不迷失方向，`FlyCam` 把相機限制在場景周圍的方框內（`TrainView` 以 `setGround()` 把最低點設為 y = −200，可以跟著潛到地面以下的軌道），按鍵前進保持水平，並提供平滑的 `lookAt()`（F 鍵轉向列車）；Fly 模式下 `TrainView` 另外畫中央準星，`Light+` 關閉時再畫延伸到地平線的地面（開啟時已有天空與海面），並關閉觸控板放開後的慣性旋轉。操作仿照方塊遊戲的觀察者模式：在畫面點一下後 `TrainView` 隱藏游標、以 `ClipCursor` 限制在畫面內，每次 `FL_MOVE` 把游標相對中心的位移交給 `FlyCam::mouseLook()` 再用 `SetCursorPos` 拉回中心；Esc、失去焦點或切換相機時放開。滑鼠滾輪改變飛行速度。Fly 模式下 `TrainView` 以 `ImmAssociateContextEx` 關閉視窗的輸入法，並另掛一個 FLTK system handler，依 `WM_KEYDOWN`／`WM_KEYUP` 的掃描碼（`FlyCam::keyForScanCode()`）把飛行按鍵直接交給 `TrainView::handle()`，因此注音等輸入法把按鍵變成 `VK_PROCESSKEY` 時，或使用其他鍵盤配置時，按鍵位置仍然有效。

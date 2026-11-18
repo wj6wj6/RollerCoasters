@@ -30,7 +30,7 @@ EditKeys::Action EditKeys::forKey(int key, int state, bool fly)
     if (key == 'r')
         return TILT;
     if (key == 'd' && (state & (fly ? FL_ALT : FL_SHIFT)) != 0)
-        return DUPLICATE_POINT;
+        return ADD_POINT;
     if (key == FL_Delete || (key == 'x' && !fly))
         return REMOVE;
     return NONE;

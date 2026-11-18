@@ -70,6 +70,7 @@ add_executable(RollerCoasters
     src/ControlPoint.H src/ControlPoint.cpp
     src/main.cpp src/Object.H
     src/Track.H src/Track.cpp
+    src/TrackInsert.h src/TrackInsert.cpp
     src/TouchpadGestures.H src/TouchpadGestures.cpp
     src/TrackRenderer.H src/TrackRenderer.cpp
     src/TrainView.H src/TrainView.cpp
@@ -138,6 +139,13 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     target_link_libraries(TrackSpacingCheck PRIVATE Utilities glad)
     add_test(NAME TrackSpacingCheck COMMAND TrackSpacingCheck)
     set_tests_properties(TrackSpacingCheck PROPERTIES TIMEOUT 10 LABELS integration)
+
+    add_executable(TrackInsertCheck tests/TrackInsertCheck.cpp
+        src/TrackInsert.cpp src/Track.cpp src/ControlPoint.cpp src/TransformGizmo.cpp)
+    target_include_directories(TrackInsertCheck PRIVATE src)
+    target_link_libraries(TrackInsertCheck PRIVATE Utilities glad)
+    add_test(NAME TrackInsertCheck COMMAND TrackInsertCheck)
+    set_tests_properties(TrackInsertCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
     add_executable(GizmoDragCheck tests/GizmoDragCheck.cpp src/TransformGizmo.cpp)
     target_include_directories(GizmoDragCheck PRIVATE src)

@@ -181,7 +181,7 @@ TrainWindow::TrainWindow(const int x, const int y)
                         "Also: right drag or arrow keys look; E/Q up/down\n"
                         "Touchpad: two fingers look, spread / pinch fly, Alt + two fingers slide\n"
                         "Lost? F: face the train; Home: back to the World view\n"
-                        "Edit on: G / R move / tilt the selected point, Alt + D duplicates,\n"
+                        "Edit on: G / R move / tilt the selected point, Alt + D adds a point,\n"
                         "Delete removes (Shift + D and X fly or do nothing here)");
 
         // observer camera speed (world units per second) and field of view
@@ -235,6 +235,8 @@ TrainWindow::TrainWindow(const int x, const int y)
                             "Off for the Grand Tour: the scenery is built around that ride.");
         Fl_Button *ap = new Fl_Button(col2, pty, colW, rowH, "Add Pt");
         UiTheme::styleButton(ap);
+        ap->tooltip("Then click the track where the new point goes (hold to drag it).\n"
+                    "Esc or a right click cancels. Shortcut: Shift + D (Alt + D in Fly).");
         ap->callback((Fl_Callback *)addPointCB, this);
         Fl_Button *dp = new Fl_Button(col3, pty, col3W, rowH, "Del Pt");
         UiTheme::styleButton(dp);
