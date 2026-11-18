@@ -94,6 +94,9 @@ enum Texture
     PATH_TOP,      // a trodden dirt path, as in a village
     PATH_SIDE,
     SPRUCE_PLANKS, // dark planks: the taiga cabins' roofs
+    LANTERN_SMALL, // a lantern as a block game draws it: the parts laid out as
+                   // its lantern picture lays them out (see addLantern())
+    CHAIN,         // what a hanging lantern hangs from
     TEXTURE_COUNT
 };
 

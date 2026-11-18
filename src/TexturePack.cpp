@@ -121,6 +121,7 @@ const Source kSources[] = {
     {T::ROOF, "roof", "dark_oak_planks|planks_big_oak|spruce_planks|planks_spruce", NONE},
     {T::WINDOW, "window", "glass", NONE},
     {T::DOOR, "door", "oak_door_bottom|door_wood_lower", NONE},
+    // the full glowing block: only the mine's lamps set in the rock
     {T::LANTERN, "lantern", "glowstone", NONE},
     {T::CRYSTAL, "crystal", "sea_lantern|amethyst_block|glowstone", NONE},
     {T::ORE_COAL, "ore_coal", "coal_ore", NONE},
@@ -164,6 +165,9 @@ const Source kSources[] = {
     {T::PATH_TOP, "path_top", "dirt_path_top|grass_path_top|coarse_dirt", NONE},
     {T::PATH_SIDE, "path_side", "dirt_path_side|grass_path_side|dirt", NONE},
     {T::SPRUCE_PLANKS, "spruce_planks", "spruce_planks|planks_spruce", NONE},
+    // the lanterns of the buildings: the picture as the game lays it out
+    {T::LANTERN_SMALL, "lantern_small", "lantern", NONE},
+    {T::CHAIN, "chain", "chain|iron_chain", NONE},
 };
 static_assert(sizeof(kSources) / sizeof(kSources[0]) == LandTextures::TEXTURE_COUNT,
               "every island texture needs a row");
@@ -206,7 +210,8 @@ const Source *sourceOf(int texture)
 // leaves are solid blocks, their holes filled darker.
 bool isPlant(int texture)
 {
-    return texture >= T::TALL_GRASS && texture <= T::VINES;
+    return (texture >= T::TALL_GRASS && texture <= T::VINES) || texture == T::LANTERN_SMALL ||
+           texture == T::CHAIN;
 }
 
 bool isLeaves(int texture)

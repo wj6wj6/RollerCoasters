@@ -585,6 +585,52 @@ Image makeWindow()
     return p;
 }
 
+// A lantern's parts laid out as a block game's lantern picture lays them
+// out (in sixteenths): the body's sides at 0..6 across, 2..9 down, its top
+// and bottom at 0..6, 9..15, the cap's sides at 1..5, 0..2. Dark iron
+// frames round warm glowing glass.
+Image makeSmallLantern()
+{
+    Image p = PixelArt::blank(S);
+    for (int y = 0; y < S; ++y)
+        for (int x = 0; x < S; ++x)
+        {
+            const int s = shadeOf(x, y, 631u, 6);
+            if (x < 12 && y >= 4 && y < 18)
+            {
+                // a side: iron at the top, bottom and edges, glass between
+                const bool iron = x < 2 || x > 9 || y < 6 || y > 15 || x == 5 || x == 6;
+                if (iron)
+                    set(p, x, y, 58 + s, 52 + s, 56 + s);
+                else
+                {
+                    const int d = (y - 11) * (y - 11);
+                    set(p, x, y, 255, 214 - d * 2, 120 - d * 4);
+                }
+            }
+            else if (x < 12 && y >= 18 && y < 30)
+                set(p, x, y, 70 + s, 64 + s, 68 + s); // the top and bottom plates
+            else if (x >= 2 && x < 10 && y < 4)
+                set(p, x, y, 50 + s, 46 + s, 50 + s); // the cap
+        }
+    return p;
+}
+
+// A chain: dark iron links one above the other, in the left of the picture.
+Image makeChain()
+{
+    Image p = PixelArt::blank(S);
+    for (int y = 0; y < S; ++y)
+        for (int x = 0; x < 6; ++x)
+        {
+            const bool link =
+                (y / 4) % 2 == 0 ? (x == 1 || x == 4 || y % 4 == 0) : (x >= 2 && x <= 3);
+            if (link)
+                set(p, x, y, 74 + (y % 4) * 6, 72 + (y % 4) * 6, 80 + (y % 4) * 6);
+        }
+    return p;
+}
+
 // A trodden dirt path: packed tan earth with darker grit and a few pale
 // stones.
 Image makePathTop()
@@ -1314,6 +1360,10 @@ Image make(int texture)
         return makePathSide();
     case SPRUCE_PLANKS:
         return makePlanks(112, 80, 50);
+    case LANTERN_SMALL:
+        return makeSmallLantern();
+    case CHAIN:
+        return makeChain();
     default:
         return PixelArt::blank(S);
     }

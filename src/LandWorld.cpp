@@ -103,7 +103,7 @@ enum Block
     ROOF,
     WINDOW,
     DOOR,
-    LANTERN,
+    LANTERN, // a full glowing block (glowstone): only the mine's lamps in the rock
     CRYSTAL,
     ORE_COAL,
     ORE_IRON,
@@ -146,6 +146,7 @@ enum Plant
     VINES,      // hanging under the mangroves' crowns
     SNOW_LAYER, // fallen snow, 1 to 8 eighths of a block deep (Grid::level)
     FENCE,      // an oak fence: a post, and rails to the fences and blocks beside it
+    LAMP,       // a lantern, standing on what is below or hanging from what is above
     PLANT_COUNT
 };
 
@@ -1294,6 +1295,15 @@ void putFence(Grid &g, int bx, int j, int bz)
     g.plant[Grid::index(bx, j, bz)] = FENCE;
 }
 
+// A lantern in a cell, if it is free: it stands on the block or fence below,
+// or hangs from the block above on a chain.
+void putLamp(Grid &g, int bx, int j, int bz)
+{
+    if (!Grid::inside(bx, j, bz) || g.get(bx, j, bz) != AIR)
+        return;
+    g.plant[Grid::index(bx, j, bz)] = LAMP;
+}
+
 // A cottage as in a block game's plains village: cobble walls framed by oak
 // log posts at the corners and in the middle of each wall, glass windows
 // between the posts (they do not light up: the lamps do), an oak door two
@@ -1350,7 +1360,7 @@ void buildHouse(Grid &g, int x0, int z0, int x1, int z1, int floor, bool doorOnX
     if (g.get(lx, floor, lz) == AIR && g.get(lx, floor + 1, lz) == AIR)
     {
         putFence(g, lx, floor, lz);
-        g.put(lx, floor + 1, lz, LANTERN);
+        putLamp(g, lx, floor + 1, lz);
     }
     // the roof: oak planks stepping in from both long sides, a block of
     // eaves all round
@@ -1373,12 +1383,14 @@ void buildHouse(Grid &g, int x0, int z0, int x1, int z1, int floor, bool doorOnX
         g.put(cx, j, cz, COBBLE);
 }
 
-// A lamp post: an oak fence two high with a lantern on it.
+// A lamp post: on a stone brick foot, an oak fence two high with a lantern
+// on it.
 void buildLampPost(Grid &g, int bx, int bz, int floor)
 {
-    putFence(g, bx, floor, bz);
+    g.put(bx, floor, bz, COBBLE);
     putFence(g, bx, floor + 1, bz);
-    g.put(bx, floor + 2, bz, LANTERN);
+    putFence(g, bx, floor + 2, bz);
+    putLamp(g, bx, floor + 3, bz);
 }
 
 // A trodden path at ground level (layer `top`): dirt path with gravel here
@@ -1564,7 +1576,7 @@ void buildVillage(Grid &g, Extras &extras, const Clearance &clear)
         g.put(x0 - 1, floor + 9, tz + 2, AIR);
         g.put(x0 - 2, floor + 9, tz + 1, AIR);
         g.put(x0, floor + 9, tz + 1, AIR);
-        g.put(x0 - 1, floor + 9, tz + 1, LANTERN);
+        putLamp(g, x0 - 1, floor + 9, tz + 1); // hung in the belfry
         fill(g, x0 - 2, x0, floor + 11, floor + 11, tz, tz + 2, PLANKS);
         g.put(x0 - 1, floor + 12, tz + 1, PLANKS);
         g.put(x0 - 1, floor + 13, tz + 1, OAK_LOG); // the cross's post
@@ -1642,7 +1654,7 @@ void buildVillage(Grid &g, Extras &extras, const Clearance &clear)
     const int lamps[][2] = {{vx(-29), vz(-32)}, {vx(-25), vz(-28)}, {vx(-29), vz(-21)},
                             {vx(-19), vz(-30)}, {cx - 12, cz + 12}, {cx + 12, cz - 12}};
     for (const int *lamp : lamps)
-        if (roomForBuilding(clear, lamp[0], lamp[0], floor, floor + 2, lamp[1], lamp[1]))
+        if (roomForBuilding(clear, lamp[0], lamp[0], floor, floor + 3, lamp[1], lamp[1]))
             buildLampPost(g, lamp[0], lamp[1], floor);
 }
 
@@ -1664,7 +1676,7 @@ void buildTower(Grid &g, int x0, int z0, int size, int floor, int height)
     for (int k = -1; x0 + k <= x1 - k; ++k)
         fill(g, x0 + k, x1 - k, top + k + 1, top + k + 1, z0 + k, z1 - k, ROOF);
     const int peak = top + (size + 1) / 2 + 1;
-    g.put((x0 + x1) / 2, peak, (z0 + z1) / 2, LANTERN);
+    putLamp(g, (x0 + x1) / 2, peak, (z0 + z1) / 2);
 }
 
 // The castle by the waterfall, after the user's reference: a curtain wall
@@ -1751,8 +1763,13 @@ bool buildCastle(Grid &g, const Clearance &clear, int at[2])
     fill(g, gx - 1, gx + 1, floor, floor + 2, gz, gz, AIR);
     fill(g, gx - 1, gx + 1, floor + 3, floor + 3, gz, gz, OAK_LOG);
     const int out = gateNorth ? 1 : -1;
-    g.put(gx - 2, floor + 2, gz + out, LANTERN);
-    g.put(gx + 2, floor + 2, gz + out, LANTERN);
+    // a lantern on a post either side of the gate
+    for (int side = -2; side <= 2; side += 4)
+    {
+        putFence(g, gx + side, floor, gz + out);
+        putFence(g, gx + side, floor + 1, gz + out);
+        putLamp(g, gx + side, floor + 2, gz + out);
+    }
 
     // corner towers, four wide, rising well above the wall
     buildTower(g, x0 - 1, z0 - 1, 4, floor, 10);
@@ -1864,7 +1881,13 @@ void buildLighthouse(Grid &g, const Clearance &clear, const int away[2])
     g.put(x + 1, floor + 10, z, WINDOW);
     // the gallery, the lamp room and the cap
     fill(g, x - 2, x + 2, floor + 14, floor + 14, z - 2, z + 2, COBBLE);
-    fill(g, x - 1, x + 1, floor + 15, floor + 16, z - 1, z + 1, LANTERN);
+    // the lamp room: glass all round, lanterns inside, one standing and
+    // one hanging above it
+    fill(g, x - 1, x + 1, floor + 15, floor + 16, z - 1, z + 1, WINDOW);
+    g.put(x, floor + 15, z, AIR);
+    g.put(x, floor + 16, z, AIR);
+    putLamp(g, x, floor + 15, z);
+    putLamp(g, x, floor + 16, z);
     fill(g, x - 2, x + 2, floor + 17, floor + 17, z - 2, z + 2, ROOF);
     fill(g, x - 1, x + 1, floor + 18, floor + 18, z - 1, z + 1, ROOF);
     g.put(x, floor + 19, z, ROOF);
@@ -1909,8 +1932,8 @@ void buildBridge(Grid &g, const Clearance &clear)
         g.put(bx, deck + 1, z1 + 1, OAK_LOG);
         g.put(bx, deck, z1 + 1, PLANKS);
     }
-    g.put(x0, deck + 1, z0, LANTERN);
-    g.put(x1, deck + 1, z1, LANTERN);
+    putLamp(g, x0, deck + 1, z0);
+    putLamp(g, x1, deck + 1, z1);
 }
 
 // ---------------------------------------------------------------------
@@ -2029,7 +2052,8 @@ bool commit(Grid &g, const Clearance &clear, const std::vector<Placed> &blocks)
     for (const Placed &p : blocks)
         if (!Grid::inside(p.bx, p.j, p.bz) || clear.blocks(p.bx, p.j, p.bz) ||
             (g.get(p.bx, p.j, p.bz) != AIR && !isGrowth(g.get(p.bx, p.j, p.bz))) ||
-            g.plant[Grid::index(p.bx, p.j, p.bz)] == FENCE)
+            g.plant[Grid::index(p.bx, p.j, p.bz)] == FENCE ||
+            g.plant[Grid::index(p.bx, p.j, p.bz)] == LAMP)
             return false;
     for (const Placed &p : blocks)
         if (g.get(p.bx, p.j, p.bz) == AIR)
@@ -2251,7 +2275,7 @@ void buildLake(Grid &g, const Clearance &clear, Extras &extras)
         if (z % 2 == 0)
             g.put(bestX + 6, level, z, OAK_LOG);
     }
-    g.put(bestX + 6, level + 2, bestZ + radius - 5, LANTERN);
+    putLamp(g, bestX + 6, level + 2, bestZ + radius - 5);
 }
 
 // A giant oak standing alone in the meadow where the train passes in sight
@@ -2404,7 +2428,7 @@ void buildTaigaCamp(Grid &g, const Clearance &clear)
     // the campfire: logs round a glowing heart, in a ring of stones
     for (int dx = -1; dx <= 1; ++dx)
         for (int dz = -1; dz <= 1; ++dz)
-            g.put(x + dx, floor - 1, z + dz, (dx == 0 && dz == 0) ? LANTERN : COBBLE);
+            g.put(x + dx, floor - 1, z + dz, (dx == 0 && dz == 0) ? MAGMA : COBBLE); // embers
     g.put(x - 1, floor, z, SPRUCE_LOG);
     g.put(x + 1, floor, z, SPRUCE_LOG);
     // the cabins round the fire, each where it is clear of the train
@@ -2734,7 +2758,7 @@ void buildJungleTemple(Grid &g, const Clearance &clear, Extras &extras)
         {
             for (int k = 0; k < 3; ++k)
                 g.put(x + dx, top + k, z + dz, MOSSY);
-            g.put(x + dx * topHalf, top, z + dz * topHalf, LANTERN);
+            putLamp(g, x + dx * topHalf, top, z + dz * topHalf);
         }
     for (int dx = -2; dx <= 2; ++dx)
         for (int dz = -2; dz <= 2; ++dz)
@@ -3120,14 +3144,28 @@ void spreadGlow(Grid &g)
             for (int j = kMinY; j <= kMaxY; ++j)
             {
                 const int block = g.block[Grid::index(bx, j, bz)];
+                // as bright as in a block game, its 15 being 14 here: a
+                // lantern, a pumpkin lantern, lava and glowstone 15, a
+                // campfire's embers (magma) less
                 int level = 0;
                 bool isCool = false;
+                if (g.plant[Grid::index(bx, j, bz)] == LAMP)
+                {
+                    // the lantern's own cell is lit too
+                    unsigned char &own = g.warm[Grid::index(bx, j, bz)];
+                    if (own < 14)
+                    {
+                        own = 14;
+                        warm.push_back(Cell{bx, j, bz});
+                    }
+                    continue;
+                }
                 if (block == LAVA)
-                    level = 13;
+                    level = 14;
                 else if (block == LANTERN)
                     level = 14;
                 else if (block == JACK_O)
-                    level = 12;
+                    level = 14;
                 else if (block == MAGMA)
                     level = 6;
                 else if (block == CRYSTAL)
@@ -3799,6 +3837,71 @@ void addFence(const Grid &g, int bx, int j, int bz, Batches &batches)
     }
 }
 
+// A box in a cell, each face's picture taken from part of a texture: for
+// each face (kFaces order) the left edge's u, the bottom edge's v, the
+// right edge's u and the top edge's v, in sixteenths, v down the picture.
+void addPart(const Grid &g, int bx, int j, int bz, const float lo[3], const float hi[3],
+             const float uv[6][4], float glow, Batches &batches, int texture)
+{
+    const size_t i = Grid::index(bx, j, bz);
+    const float sky = skyFactor(static_cast<float>(g.sky[i]));
+    const float base[3] = {static_cast<float>(bx) * kBlock, static_cast<float>(j) * kBlock,
+                           static_cast<float>(bz) * kBlock};
+    std::vector<Vertex> &out = batches[static_cast<size_t>(texture)];
+    for (int k = 0; k < 6; ++k)
+    {
+        const Face &f = kFaces[k];
+        const float shade = f.normal[1] > 0 ? 1.0f : (f.normal[1] < 0 ? 0.6f : 0.85f);
+        for (int c = 0; c < 4; ++c)
+        {
+            Vertex v;
+            for (int a = 0; a < 3; ++a)
+            {
+                v.pos[a] = base[a] + (f.corner[c][a] == 1 ? hi[a] : lo[a]);
+                v.normal[a] = static_cast<float>(f.normal[a]);
+            }
+            v.uv[0] = (f.uv[c][0] > 0.5f ? uv[k][2] : uv[k][0]) / 16.0f;
+            // uv[k]: across from, the bottom's v, across to, the top's v
+            v.uv[1] = (f.uv[c][1] > 0.5f ? uv[k][1] : uv[k][3]) / 16.0f;
+            v.color[0] = v.color[1] = v.color[2] = shade;
+            v.extra[0] = glow;
+            v.extra[1] = 0.0f;
+            v.extra[2] = glowFactor(static_cast<float>(g.cool[i]));
+            v.extra[3] = sky;
+            out.push_back(v);
+        }
+    }
+}
+
+// A lantern as a block game draws it: a body six sixteenths across and
+// seven high with a narrower cap, glowing; on the block below, or hung from
+// the block above on a chain (then a sixteenth higher, as it is there).
+void addLantern(const Grid &g, int bx, int j, int bz, Batches &batches)
+{
+    const bool standing = g.opaque(bx, j - 1, bz) || (Grid::inside(bx, j - 1, bz) &&
+                                                      g.plant[Grid::index(bx, j - 1, bz)] == FENCE);
+    const float u = kBlock / 16.0f;
+    const float lift = standing ? 0.0f : 1.0f;
+    // faces in kFaces order: +x, -x, +y, -y, +z, -z
+    const float body[6][4] = {{0, 9, 6, 2},  {0, 9, 6, 2}, {0, 9, 6, 15},
+                              {0, 9, 6, 15}, {0, 9, 6, 2}, {0, 9, 6, 2}};
+    const float bodyLo[3] = {5 * u, lift * u, 5 * u}, bodyHi[3] = {11 * u, (7 + lift) * u, 11 * u};
+    addPart(g, bx, j, bz, bodyLo, bodyHi, body, 1.0f, batches, LandTextures::LANTERN_SMALL);
+    const float cap[6][4] = {{1, 2, 5, 0},   {1, 2, 5, 0}, {1, 10, 5, 14},
+                             {1, 10, 5, 14}, {1, 2, 5, 0}, {1, 2, 5, 0}};
+    const float capLo[3] = {6 * u, (7 + lift) * u, 6 * u},
+                capHi[3] = {10 * u, (9 + lift) * u, 10 * u};
+    addPart(g, bx, j, bz, capLo, capHi, cap, 0.3f, batches, LandTextures::LANTERN_SMALL);
+    if (standing)
+        return;
+    // the chain, from the cap up to the block above
+    const float chain[6][4] = {{0, 16, 3, 0}, {0, 16, 3, 0}, {0, 0, 3, 3},
+                               {0, 0, 3, 3},  {0, 16, 3, 0}, {0, 16, 3, 0}};
+    const float chainLo[3] = {7.0f * u, (9 + lift) * u, 7.0f * u};
+    const float chainHi[3] = {9.0f * u, kBlock, 9.0f * u};
+    addPart(g, bx, j, bz, chainLo, chainHi, chain, 0.0f, batches, LandTextures::CHAIN);
+}
+
 // Two quads crossing diagonally, smaller than the cell and off centre.
 void addPlant(const Grid &g, int bx, int j, int bz, Batches &batches)
 {
@@ -4177,6 +4280,8 @@ LandWorld::Scene &LandWorld::scene(bool flat)
                             addSnowLayer(s.grid, bx, j, bz, solids);
                         else if (s.grid.plant[cell] == FENCE)
                             addFence(s.grid, bx, j, bz, solids);
+                        else if (s.grid.plant[cell] == LAMP)
+                            addLantern(s.grid, bx, j, bz, solids);
                         else
                             addPlant(s.grid, bx, j, bz, plants);
                     }
