@@ -3670,7 +3670,10 @@ void addGlassFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
         if (beside == WINDOW || (g.opaque(ox, oy, oz) && !isLeafBlock(beside)))
             continue;
         const float sky = skyFactor(static_cast<float>(g.skyAt(ox, oy, oz)));
-        const float shade = f.normal[1] > 0 ? 1.0f : (f.normal[1] < 0 ? 0.7f : 0.9f);
+        // no shading baked in by which way the face looks: the lighting
+        // shader does that from the normal, as for every block (baked in as
+        // well, it darkened thin parts twice, and more so in linear light)
+        const float shade = 0.95f;
         for (int c = 0; c < 4; ++c)
         {
             Vertex v;
@@ -3763,7 +3766,7 @@ void addSnowLayer(const Grid &g, int bx, int j, int bz, Batches &batches)
 }
 
 // A box inside a cell, with the planks' picture at the scale of a block,
-// each face shaded a little by which way it looks (lit by the cell's sky).
+// lit by the cell's sky.
 void addBox(const Grid &g, int bx, int j, int bz, const float lo[3], const float hi[3],
             Batches &batches, int texture)
 {
@@ -3774,7 +3777,10 @@ void addBox(const Grid &g, int bx, int j, int bz, const float lo[3], const float
     std::vector<Vertex> &out = batches[static_cast<size_t>(texture)];
     for (const Face &f : kFaces)
     {
-        const float shade = f.normal[1] > 0 ? 1.0f : (f.normal[1] < 0 ? 0.6f : 0.82f);
+        // no shading baked in by which way the face looks: the lighting
+        // shader does that from the normal, as for every block (baked in as
+        // well, it darkened thin parts twice, and more so in linear light)
+        const float shade = 0.95f;
         for (int c = 0; c < 4; ++c)
         {
             Vertex v;
@@ -3851,7 +3857,10 @@ void addPart(const Grid &g, int bx, int j, int bz, const float lo[3], const floa
     for (int k = 0; k < 6; ++k)
     {
         const Face &f = kFaces[k];
-        const float shade = f.normal[1] > 0 ? 1.0f : (f.normal[1] < 0 ? 0.6f : 0.85f);
+        // no shading baked in by which way the face looks: the lighting
+        // shader does that from the normal, as for every block (baked in as
+        // well, it darkened thin parts twice, and more so in linear light)
+        const float shade = 0.95f;
         for (int c = 0; c < 4; ++c)
         {
             Vertex v;
