@@ -81,6 +81,13 @@ target_include_directories(RollerCoasters SYSTEM PRIVATE
     "${PROJECT_SOURCE_DIR}/include/glm-0.9.8.5/glm")
 # hid: HidP_* parse the raw precision touchpad reports.
 target_link_libraries(RollerCoasters PRIVATE Utilities glad hid imm32)
+# Load/Save read and write TrackFiles\ beside the exe (main() moves there), so
+# the build makes the folder and Visual Studio debugs from the exe's folder.
+add_custom_command(TARGET RollerCoasters POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:RollerCoasters>/TrackFiles"
+    VERBATIM)
+set_target_properties(RollerCoasters PROPERTIES
+    VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:RollerCoasters>")
 
 if(ROLLERCOASTERS_BUILD_TESTS)
     enable_testing()
@@ -178,3 +185,4 @@ endif()
 install(TARGETS RollerCoasters RUNTIME DESTINATION .)
 install(FILES README.md CONTRIBUTING.md AGENTS.md DESTINATION .)
 install(DIRECTORY docs/ DESTINATION docs)
+install(DIRECTORY DESTINATION TrackFiles)
