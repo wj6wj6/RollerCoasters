@@ -3435,11 +3435,23 @@ void LandWorld::shadowBounds(float lo[3], float hi[3])
     hi[2] = kGridHi[1];
 }
 
+// The scenery for the checks below, built once: it is the same every time,
+// and building it takes a few seconds (in a debug build much longer).
+static const Grid &checkedScenery()
+{
+    static std::unique_ptr<Grid> grid;
+    if (!grid)
+    {
+        grid.reset(new Grid);
+        Extras extras;
+        buildScenery(*grid, extras);
+    }
+    return *grid;
+}
+
 int LandWorld::rideObstructions(const std::vector<float> &path)
 {
-    Grid g;
-    Extras extras;
-    buildScenery(g, extras);
+    const Grid &g = checkedScenery();
 
     // The room the train takes: 3 units either side of the centre line, from
     // just under the sleepers to above the riders' raised hands. Plants are
@@ -3478,9 +3490,7 @@ int LandWorld::rideObstructions(const std::vector<float> &path)
 
 int LandWorld::waterNearRide(const std::vector<float> &path)
 {
-    Grid g;
-    Extras extras;
-    buildScenery(g, extras);
+    const Grid &g = checkedScenery();
     // the same room the scenery keeps free of water, round the given path
     const std::vector<unsigned char> zone = waterZone(path);
     int count = 0;
