@@ -6,6 +6,7 @@
 *************************************************************************/
 
 #include <math.h>
+#include <stdlib.h>
 #include <deque>
 #include <vector>
 
@@ -1279,6 +1280,44 @@ void buildVillage(Grid &g, Extras &extras, const Clearance &clear)
     house(cx - 8, cz + 16, 5, 4, false);
     house(cx - 24, cz - 8, 4, 4, true);
 
+    // the church: a stone nave with tall lit windows and a steep roof, and
+    // a bell tower at its west end with a lantern for a bell; at the first
+    // of a few spots round the green where it is clear of the train
+    const int churchSpots[][2] = {
+        {cx + 6, cz + 4}, {cx - 4, cz - 20}, {cx + 16, cz - 6}, {cx - 26, cz + 12}};
+    for (const int *spot : churchSpots)
+    {
+        const int x0 = spot[0], z0 = spot[1], x1 = x0 + 9, z1 = z0 + 5;
+        if (!roomForBuilding(clear, x0 - 2, x1 + 1, floor - 1, floor + 16, z0 - 1, z1 + 1))
+            continue;
+        footing(g, x0 - 1, x1, z0, z1, floor);
+        fill(g, x0, x1, floor, floor + 4, z0, z1, COBBLE);
+        fill(g, x0 + 1, x1 - 1, floor, floor + 4, z0 + 1, z1 - 1, AIR); // the inside
+        for (int bx = x0 + 2; bx < x1; bx += 2)
+        {
+            g.put(bx, floor + 2, z0, WINDOW);
+            g.put(bx, floor + 3, z0, WINDOW);
+            g.put(bx, floor + 2, z1, WINDOW);
+            g.put(bx, floor + 3, z1, WINDOW);
+        }
+        g.put(x1, floor, (z0 + z1) / 2, DOOR);
+        g.put(x1, floor + 1, (z0 + z1) / 2, DOOR);
+        for (int k = 0; z0 - 1 + k <= z1 + 1 - k; ++k)
+            fill(g, x0, x1 + 1, floor + 5 + k, floor + 5 + k, z0 - 1 + k, z1 + 1 - k, ROOF);
+        // the bell tower
+        const int tz = (z0 + z1) / 2 - 1;
+        fill(g, x0 - 2, x0, floor, floor + 10, tz, tz + 2, COBBLE);
+        g.put(x0 - 1, floor + 9, tz, AIR); // open sides round the bell
+        g.put(x0 - 1, floor + 9, tz + 2, AIR);
+        g.put(x0 - 2, floor + 9, tz + 1, AIR);
+        g.put(x0, floor + 9, tz + 1, AIR);
+        g.put(x0 - 1, floor + 9, tz + 1, LANTERN);
+        fill(g, x0 - 2, x0, floor + 11, floor + 11, tz, tz + 2, ROOF);
+        g.put(x0 - 1, floor + 12, tz + 1, ROOF);
+        g.put(x0 - 1, floor + 13, tz + 1, OAK_LOG); // the cross's post
+        break;
+    }
+
     // the well at the crossing
     const int wx = vx(-27), wz = vz(-30);
     if (roomForBuilding(clear, wx - 1, wx + 1, floor, floor + 3, wz - 1, wz + 1))
@@ -1341,43 +1380,73 @@ void buildVillage(Grid &g, Extras &extras, const Clearance &clear)
             buildLampPost(g, lamp[0], lamp[1], floor);
 }
 
-// A small castle on the cliff beside the waterfall, after the user's
-// reference: a cobble keep on a low footing, timber upper floors with lit
-// windows, a steep shingle roof, and a taller tower on the corner nearest
-// the fall with a spire and a lantern on top. It looks for the spot west of
-// the fall where the ground is most level and nearest the height of the
-// fall's lip, all of it clear of the train.
-void buildCastle(Grid &g, const Clearance &clear)
+// A tower: a square shaft of stone with lit windows, a stepped pointed
+// roof and a lantern on top. x0, z0: its corner; size: its width.
+void buildTower(Grid &g, int x0, int z0, int size, int floor, int height)
 {
+    const int x1 = x0 + size - 1, z1 = z0 + size - 1;
+    fill(g, x0, x1, floor, floor + height - 1, z0, z1, COBBLE);
+    for (int j = floor + 3; j < floor + height - 1; j += 3)
+    {
+        g.put((x0 + x1) / 2, j, z0, WINDOW);
+        g.put((x0 + x1) / 2, j, z1, WINDOW);
+        g.put(x0, j, (z0 + z1) / 2, WINDOW);
+        g.put(x1, j, (z0 + z1) / 2, WINDOW);
+    }
+    // the roof steps in from an overhang to a point
+    int top = floor + height;
+    for (int k = -1; x0 + k <= x1 - k; ++k)
+        fill(g, x0 + k, x1 - k, top + k + 1, top + k + 1, z0 + k, z1 - k, ROOF);
+    const int peak = top + (size + 1) / 2 + 1;
+    g.put((x0 + x1) / 2, peak, (z0 + z1) / 2, LANTERN);
+}
+
+// The castle by the waterfall, after the user's reference: a curtain wall
+// with battlements and four corner towers round a gravel court, a gate in
+// the side facing the fall, and at the back a keep of stone and timber with
+// lit windows and a tall main tower. Where the ground falls away a stone
+// footing carries it, like a castle on a crag. It looks for the spot near
+// the fall that needs the least footing, all of it clear of the train.
+// Returns the block at the middle of the castle in at, or false if there
+// was no room for it.
+bool buildCastle(Grid &g, const Clearance &clear, int at[2])
+{
+    const int width = 15, depth = 13; // x and z, in blocks
     const int cx = (kFallX0 + kFallX1) / 2;
     const int lip = g.top(cx, kFallLipZ); // the stream at the top of the fall
     int bestX = 0, bestZ = 0, bestFloor = 0, bestScore = 1 << 30;
-    for (int x0 = cx - 40; x0 <= cx + 30; ++x0)
-        for (int z0 = kFallLipZ - 30; z0 <= kFallLipZ + 20; ++z0)
+    for (int x0 = cx - 60; x0 <= cx + 40; x0 += 2)
+        for (int z0 = kFallLipZ - 50; z0 <= kFallLipZ + 24; z0 += 2)
         {
+            const int x1 = x0 + width - 1, z1 = z0 + depth - 1;
             // not in the gorge or on the fall's cliff
-            if (x0 + 4 >= cx - 16 && x0 <= cx + 16 && z0 + 4 >= kFallLipZ - 6)
+            if (x1 >= cx - 18 && x0 <= cx + 18 && z1 >= kFallLipZ - 8)
                 continue;
-            const int x1 = x0 + 4, z1 = z0 + 4;
             int high = kMinY - 1, low = kMaxY + 1;
-            for (int bx = x0; bx <= x1; ++bx)
+            bool land = true;
+            for (int bx = x0; bx <= x1 && land; ++bx)
                 for (int bz = z0; bz <= z1; ++bz)
                 {
+                    if (!onIsland(bx, bz))
+                    {
+                        land = false;
+                        break;
+                    }
                     const int top = g.top(bx, bz);
+                    const int b = g.get(bx, top, bz);
+                    if (b == WATER || b == LAVA)
+                        land = false;
                     high = top > high ? top : high;
                     low = top < low ? top : low;
                 }
             const int floor = high + 1;
-            if (high - low > 3 || floor <= 1 || floor > kMaxY - 18)
+            if (!land || high - low > 9 || floor <= 2 || floor > kMaxY - 28)
                 continue;
-            const int away = (x0 + 2 > cx ? x0 + 2 - cx : cx - x0 - 2) +
-                             (z0 + 2 > kFallLipZ ? z0 + 2 - kFallLipZ : kFallLipZ - z0 - 2);
-            const int score = (high - low) * 4 + (floor > lip ? floor - lip : lip - floor) + away;
+            const int away = abs(x0 + width / 2 - cx) + abs(z0 + depth / 2 - kFallLipZ);
+            const int score = (high - low) * 6 + abs(floor - lip) + away;
             if (score >= bestScore)
                 continue;
-            // the keep is 9 high with its roof, the tower 15 with its spire
-            if (!roomForBuilding(clear, x0 - 1, x1 + 1, floor - 1, floor + 9, z0 - 1, z1 + 1) ||
-                !roomForBuilding(clear, x0 - 1, x1 + 1, floor, floor + 15, z1 - 3, z1 + 1))
+            if (!roomForBuilding(clear, x0 - 1, x1 + 1, low, floor + 26, z0 - 1, z1 + 1))
                 continue;
             bestScore = score;
             bestX = x0;
@@ -1385,57 +1454,162 @@ void buildCastle(Grid &g, const Clearance &clear)
             bestFloor = floor;
         }
     if (bestScore == 1 << 30)
-        return;
+        return false;
+
+    const int x0 = bestX, z0 = bestZ, x1 = x0 + width - 1, z1 = z0 + depth - 1;
+    at[0] = x0 + width / 2;
+    at[1] = z0 + depth / 2;
+    const int floor = bestFloor;
+    // the gate faces the fall
+    const bool gateNorth = z0 + depth / 2 < kFallLipZ;
+    footing(g, x0, x1, z0, z1, floor);
+    for (int bx = x0; bx <= x1; ++bx)
+        for (int bz = z0; bz <= z1; ++bz)
+            g.put(bx, floor - 1, bz, hash(bx, bz, 461u) % 4u == 0 ? COBBLE : GRAVEL); // the court
+
+    // the curtain wall, five high, with battlements
+    const int wallTop = floor + 4;
+    for (int bx = x0; bx <= x1; ++bx)
+        for (int bz = z0; bz <= z1; ++bz)
+        {
+            const bool edge = bx == x0 || bx == x1 || bz == z0 || bz == z1;
+            if (!edge)
+                continue;
+            fill(g, bx, bx, floor, wallTop, bz, bz,
+                 hash(bx * 3, bz, 463u) % 6u == 0 ? MOSSY : COBBLE);
+            if ((bx + bz) % 2 == 0)
+                g.put(bx, wallTop + 1, bz, COBBLE);
+        }
+    // the gate: an opening three wide and three high, lanterns either side
+    const int gx = (x0 + x1) / 2, gz = gateNorth ? z1 : z0;
+    fill(g, gx - 1, gx + 1, floor, floor + 2, gz, gz, AIR);
+    fill(g, gx - 1, gx + 1, floor + 3, floor + 3, gz, gz, OAK_LOG);
+    const int out = gateNorth ? 1 : -1;
+    g.put(gx - 2, floor + 2, gz + out, LANTERN);
+    g.put(gx + 2, floor + 2, gz + out, LANTERN);
+
+    // corner towers, four wide, rising well above the wall
+    buildTower(g, x0 - 1, z0 - 1, 4, floor, 10);
+    buildTower(g, x1 - 2, z0 - 1, 4, floor, 10);
+    buildTower(g, x0 - 1, z1 - 2, 4, floor, 10);
+    buildTower(g, x1 - 2, z1 - 2, 4, floor, 10);
+
+    // the keep at the back of the court, away from the gate: two floors of
+    // stone, three of timber between log posts, rows of lit windows
+    const int kx0 = x0 + 3, kx1 = x1 - 3;
+    const int kz0 = gateNorth ? z0 + 2 : z1 - 7, kz1 = kz0 + 5;
+    fill(g, kx0, kx1, floor, floor + 2, kz0, kz1, COBBLE);
+    fill(g, kx0, kx1, floor + 3, floor + 8, kz0, kz1, PLANKS);
+    for (int j = floor + 3; j <= floor + 8; ++j)
+        for (int bx = kx0; bx <= kx1; bx += 3)
+        {
+            g.put(bx, j, kz0, OAK_LOG);
+            g.put(bx, j, kz1, OAK_LOG);
+        }
+    for (int j = floor + 1; j <= floor + 7; j += 3)
     {
-        const int x0 = bestX, z0 = bestZ, x1 = x0 + 4, z1 = z0 + 4, floor = bestFloor;
-        footing(g, x0, x1, z0, z1, floor);
-        // the keep: two floors of cobble, then timber between log posts
-        fill(g, x0, x1, floor, floor + 1, z0, z1, COBBLE);
-        fill(g, x0, x1, floor + 2, floor + 5, z0, z1, PLANKS);
-        for (int j = floor + 2; j <= floor + 5; ++j)
-        {
-            g.put(x0, j, z0, OAK_LOG);
-            g.put(x1, j, z0, OAK_LOG);
-            g.put(x0, j, z1, OAK_LOG);
-            g.put(x1, j, z1, OAK_LOG);
-        }
-        // lit windows on every side, two floors of them, and the door
-        for (int k = 1; k <= 3; k += 2)
-            for (int j = floor + 2; j <= floor + 4; j += 2)
+        for (int bx = kx0 + 1; bx < kx1; ++bx)
+            if ((bx - kx0) % 3 != 0)
             {
-                g.put(x0 + k, j, z0, WINDOW);
-                g.put(x0 + k, j, z1, WINDOW);
-                g.put(x0, j, z0 + k, WINDOW);
-                g.put(x1, j, z0 + k, WINDOW);
+                g.put(bx, j, kz0, WINDOW);
+                g.put(bx, j, kz1, WINDOW);
             }
-        g.put(x0 + 2, floor, z1, DOOR);
-        g.put(x0 + 2, floor + 1, z1, DOOR);
-        // the roof, stepping in from an overhang
-        fill(g, x0 - 1, x1 + 1, floor + 6, floor + 6, z0 - 1, z1 + 1, ROOF);
-        fill(g, x0, x1, floor + 7, floor + 7, z0, z1, ROOF);
-        fill(g, x0 + 1, x1 - 1, floor + 8, floor + 8, z0 + 1, z1 - 1, ROOF);
-        g.put(x0 + 2, floor + 9, z0 + 2, ROOF);
-
-        // the tower on the corner nearest the fall
-        const int tx0 = x0 > cx ? x0 : x1 - 2, tz0 = z1 - 2;
-        const int tx1 = tx0 + 2;
-        fill(g, tx0, tx1, floor + 6, floor + 11, tz0, z1, COBBLE);
-        for (int j = floor + 7; j <= floor + 10; j += 3)
-        {
-            g.put(tx0 + 1, j, tz0, WINDOW);
-            g.put(tx0 + 1, j, z1, WINDOW);
-            g.put(tx0, j, tz0 + 1, WINDOW);
-            g.put(tx1, j, tz0 + 1, WINDOW);
-        }
-        fill(g, tx0 - 1, tx1 + 1, floor + 12, floor + 12, tz0 - 1, z1 + 1, ROOF);
-        fill(g, tx0, tx1, floor + 13, floor + 13, tz0, z1, ROOF);
-        g.put(tx0 + 1, floor + 14, tz0 + 1, ROOF);
-        g.put(tx0 + 1, floor + 15, tz0 + 1, LANTERN);
-
-        // lanterns either side of the door
-        buildLampPost(g, x0, z1 + 1, floor);
-        buildLampPost(g, x1, z1 + 1, floor);
+        g.put(kx0, j, (kz0 + kz1) / 2, WINDOW);
+        g.put(kx1, j, (kz0 + kz1) / 2, WINDOW);
     }
+    g.put((kx0 + kx1) / 2, floor, gateNorth ? kz1 : kz0, DOOR);
+    g.put((kx0 + kx1) / 2, floor + 1, gateNorth ? kz1 : kz0, DOOR);
+    // its roof: a steep gable along x
+    for (int k = 0; kz0 - 1 + k <= kz1 + 1 - k; ++k)
+        fill(g, kx0 - 1, kx1 + 1, floor + 9 + k, floor + 9 + k, kz0 - 1 + k, kz1 + 1 - k, ROOF);
+
+    // the main tower rising out of the keep
+    const int tx = (kx0 + kx1) / 2 - 1;
+    buildTower(g, tx, kz0 + 1, 4, floor, 20);
+
+    // lamp posts in the court
+    buildLampPost(g, x0 + 3, gateNorth ? z1 - 3 : z0 + 3, floor);
+    buildLampPost(g, x1 - 3, gateNorth ? z1 - 3 : z0 + 3, floor);
+    return true;
+}
+
+// A lighthouse on the green headland that reaches furthest out to sea, away
+// from the lava: a tower in
+// red and white bands on a stone base, a gallery, a lamp room of lanterns
+// that glows at night and a pointed cap, with the keeper's cottage beside it.
+// away: a block to stay at least 60 blocks from (the castle).
+void buildLighthouse(Grid &g, const Clearance &clear, const int away[2])
+{
+    int bestX = 0, bestZ = 0, bestTop = 0;
+    float bestReach = -1.0e9f;
+    for (int step = 0; step < 120; ++step)
+    {
+        const float a = static_cast<float>(step) * 3.0f * 3.14159265f / 180.0f;
+        const float dx = cosf(a), dz = sinf(a);
+        // the rounded square's edge in this direction, and the shore
+        const float ex = fabsf(dx), ez = fabsf(dz);
+        const float edge =
+            WorldShape::kIslandHalf / sqrtf(sqrtf(ex * ex * ex * ex + ez * ez * ez * ez));
+        float r = edge - 40.0f;
+        while (r < edge + 40.0f && WorldShape::inland(dx * r, dz * r) > 7.0f)
+            r += kBlock;
+        const int bx = blockOf(dx * r), bz = blockOf(dz * r);
+        if (!Grid::insideColumn(bx, bz) || r - edge <= bestReach ||
+            (bx - away[0]) * (bx - away[0]) + (bz - away[1]) * (bz - away[1]) < 60 * 60)
+            continue;
+        const int top = g.top(bx, bz);
+        const int b = g.get(bx, top, bz);
+        if (top < 0 || top > 6 || (b != GRASS && b != SAND && b != STONE && b != GRAVEL) ||
+            g.biome[Grid::column(bx, bz)] != MEADOW)
+            continue;
+        // on a green headland, well away from the lava rivers
+        bool lava = false;
+        for (int lx = bx - 12; lx <= bx + 12 && !lava; ++lx)
+            for (int lz = bz - 12; lz <= bz + 12; ++lz)
+                if (Grid::insideColumn(lx, lz) && g.get(lx, g.top(lx, lz), lz) == LAVA)
+                {
+                    lava = true;
+                    break;
+                }
+        if (lava)
+            continue;
+        if (!roomForBuilding(clear, bx - 6, bx + 6, top, top + 22, bz - 6, bz + 6))
+            continue;
+        bestReach = r - edge;
+        bestX = bx;
+        bestZ = bz;
+        bestTop = top;
+    }
+    if (bestReach < -1.0e8f)
+        return;
+
+    const int x = bestX, z = bestZ, floor = bestTop + 1;
+    footing(g, x - 2, x + 2, z - 2, z + 2, floor);
+    fill(g, x - 2, x + 2, floor, floor, z - 2, z + 2, COBBLE);
+    // the banded tower
+    for (int j = floor + 1; j <= floor + 13; ++j)
+    {
+        const int band = ((j - floor - 1) / 2) % 2 == 0 ? CLAY_WHITE : CLAY_RED;
+        fill(g, x - 1, x + 1, j, j, z - 1, z + 1, band);
+    }
+    g.put(x, floor + 1, z + 1, DOOR);
+    g.put(x, floor + 2, z + 1, DOOR);
+    g.put(x, floor + 7, z - 1, WINDOW);
+    g.put(x + 1, floor + 10, z, WINDOW);
+    // the gallery, the lamp room and the cap
+    fill(g, x - 2, x + 2, floor + 14, floor + 14, z - 2, z + 2, COBBLE);
+    fill(g, x - 1, x + 1, floor + 15, floor + 16, z - 1, z + 1, LANTERN);
+    fill(g, x - 2, x + 2, floor + 17, floor + 17, z - 2, z + 2, ROOF);
+    fill(g, x - 1, x + 1, floor + 18, floor + 18, z - 1, z + 1, ROOF);
+    g.put(x, floor + 19, z, ROOF);
+    // the keeper's cottage on the landward side
+    const float len = sqrtf(static_cast<float>(x * x + z * z));
+    const int hx = x - static_cast<int>(floorf(static_cast<float>(x) / len * 7.0f + 0.5f)) - 2;
+    const int hz = z - static_cast<int>(floorf(static_cast<float>(z) / len * 7.0f + 0.5f)) - 2;
+    const int hfloor = g.top(hx + 2, hz + 2) + 1;
+    if (hfloor >= 1 &&
+        roomForBuilding(clear, hx - 1, hx + 5, hfloor - 1, hfloor + 8, hz - 1, hz + 5))
+        buildHouse(g, hx, hz, hx + 4, hz + 3, hfloor, false);
 }
 
 // A timber footbridge over the pool below the fall, three blocks above the
@@ -2023,8 +2197,10 @@ void buildScenery(Grid &g, Extras &extras)
     const std::vector<float> along(ride.begin() + static_cast<long>(ride.size() / 3 * 2),
                                    ride.end());
     lightTunnels(g, along, clear);
-    buildCastle(g, clear);
+    int castle[2] = {1 << 20, 1 << 20};
+    buildCastle(g, clear, castle);
     buildBridge(g, clear);
+    buildLighthouse(g, clear, castle);
     // after the carving, so the water flows round the ride's room
     spreadWater(g);
 
