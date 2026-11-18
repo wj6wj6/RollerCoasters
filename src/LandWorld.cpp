@@ -757,6 +757,10 @@ struct Extras
     // the flower meadow round the giant oak
     float meadow[2] = {0.0f, 0.0f};
     bool hasMeadow = false;
+    // the jungle temple's middle, in blocks: the bamboo leaves a clearing
+    // round it so it can be seen
+    int temple[2] = {0, 0};
+    bool hasTemple = false;
 };
 
 const float kGroveRadius = 75.0f; // world units
@@ -2510,10 +2514,125 @@ void bambooCanopy(Grid &g, const Clearance &clear, int bx, int top, int bz)
             }
 }
 
+// A temple lost in the bamboo jungle, where the ride passes in sight of it:
+// a stepped pyramid of mossy stone in four tiers, a stair up its south face
+// and a little shrine on top round a glowing crystal, hung with vines. It
+// stands on the flattest open ground found, filled under with cobble.
+void buildJungleTemple(Grid &g, const Clearance &clear, Extras &extras)
+{
+    const int base = 7;   // the lowest tier's half width
+    const int tiers = 4;  // each 3 high, 2 narrower than the one below
+    const int stair = 10; // how far south of the middle the stair starts
+    int bestX = 0, bestZ = 0, bestFloor = 0, bestScore = 1 << 30;
+    for (int bx = kMinBX + 12; bx < kMaxBX - 12; bx += 2)
+        for (int bz = kMinBZ + 12; bz < kMaxBZ - 12; bz += 2)
+        {
+            if (g.biome[Grid::column(bx, bz)] != BAMBOO_JUNGLE)
+                continue;
+            int low, high;
+            if (!openGround(g, bx, bz, base + 1, BAMBOO_JUNGLE, low, high) || high - low > 5)
+                continue;
+            const int score = (high - low) * 10;
+            if (score >= bestScore || !seenFromRide(clear, bx, bz, 12, 42) ||
+                !roomForBuilding(clear, bx - base - 1, bx + base + 1, low, high + tiers * 3 + 6,
+                                 bz - base - 1, bz + stair + 1))
+                continue;
+            bestScore = score;
+            bestX = bx;
+            bestZ = bz;
+            bestFloor = low + 1;
+        }
+    if (bestScore == 1 << 30)
+        return;
+
+    const int x = bestX, z = bestZ, floor = bestFloor;
+    extras.temple[0] = x;
+    extras.temple[1] = z;
+    extras.hasTemple = true;
+    auto stone = [&](int bx, int j, int bz) {
+        const unsigned int h = hash(bx * 5 + j, bz, 761u) % 10u;
+        g.put(bx, j, bz, h < 5u ? MOSSY : (h < 9u ? COBBLE : STONE));
+    };
+    // the tiers, on a cobble footing down to the ground
+    for (int dx = -base; dx <= base; ++dx)
+        for (int dz = -base; dz <= base; ++dz)
+        {
+            g.clearAbove(x + dx, floor - 1, z + dz);
+            for (int j = floor - 1; j >= floor - 8 && g.get(x + dx, j, z + dz) == AIR; --j)
+                g.put(x + dx, j, z + dz, COBBLE);
+            const int reach = abs(dx) > abs(dz) ? abs(dx) : abs(dz);
+            for (int t = 0; t < tiers && reach <= base - 2 * t; ++t)
+                for (int k = 0; k < 3; ++k)
+                    stone(x + dx, floor + t * 3 + k, z + dz);
+        }
+    // the stair: three wide, rising one block for every block south, from
+    // the ground to the top tier
+    const int top = floor + tiers * 3; // the top tier's floor
+    for (int i = 0; i < tiers * 3; ++i)
+    {
+        const int edge = stair - (i * (stair - 1)) / (tiers * 3 - 1);
+        for (int dx = -1; dx <= 1; ++dx)
+            for (int dz = 0; dz <= edge; ++dz)
+                if (g.get(x + dx, floor + i, z + dz) == AIR)
+                    g.put(x + dx, floor + i, z + dz, dx == 0 ? COBBLE : STONE);
+    }
+    // nothing on the steps that stand out in front of the pyramid
+    for (int dz = base + 1; dz <= stair; ++dz)
+    {
+        int step = 0;
+        while (step + 1 < tiers * 3 && stair - ((step + 1) * (stair - 1)) / (tiers * 3 - 1) >= dz)
+            ++step;
+        for (int dx = -1; dx <= 1; ++dx)
+            g.clearAbove(x + dx, floor + step, z + dz);
+    }
+    // the shrine: four pillars under a cobble roof, a crystal in the middle
+    // and a lantern on each corner of the top tier
+    const int topHalf = base - 2 * (tiers - 1);
+    for (int dx = -1; dx <= 1; dx += 2)
+        for (int dz = -1; dz <= 1; dz += 2)
+        {
+            for (int k = 0; k < 3; ++k)
+                g.put(x + dx, top + k, z + dz, MOSSY);
+            g.put(x + dx * topHalf, top, z + dz * topHalf, LANTERN);
+        }
+    for (int dx = -2; dx <= 2; ++dx)
+        for (int dz = -2; dz <= 2; ++dz)
+            if (abs(dx) + abs(dz) < 4)
+                g.put(x + dx, top + 3, z + dz, COBBLE);
+    g.put(x, top + 4, z, MOSSY);
+    g.put(x, top, z, CRYSTAL);
+    // vines hanging down the tiers' faces
+    for (int t = 0; t < tiers; ++t)
+    {
+        const int half = base - 2 * t, edgeY = floor + t * 3 + 2;
+        for (int a = -half; a <= half; ++a)
+            for (int side = 0; side < 4; ++side)
+            {
+                const int dx = side == 0 ? half + 1 : (side == 1 ? -half - 1 : a);
+                const int dz = side == 2 ? half + 1 : (side == 3 ? -half - 1 : a);
+                if (hash(x + dx, z + dz * 3 + t, 763u) % 3u != 0)
+                    continue;
+                const int length = 1 + static_cast<int>(hash(x + dx, z + dz, 765u) % 3u);
+                for (int k = 0; k < length; ++k)
+                {
+                    const int j = edgeY - k;
+                    const size_t cell = Grid::index(x + dx, j, z + dz);
+                    if (!Grid::inside(x + dx, j, z + dz) || g.block[cell] != AIR ||
+                        clear.blocks(x + dx, j, z + dz))
+                        break;
+                    g.plant[cell] = VINES;
+                }
+            }
+    }
+}
+
 // The north-east land's growth: mangroves standing in the swamp, and on
 // the hills a bamboo jungle, dense in thickets, with a few tall broadleaf
 // trees hung with vines.
-void plantNorthEast(Grid &g, const Clearance &clear)
+// How far round the temple's middle the jungle is cleared, in blocks.
+const int kTempleClearing = 17;
+
+void plantNorthEast(Grid &g, const Clearance &clear, const Extras &extras)
 {
     // the canes' tops, for their leaves once every cane has grown
     std::vector<Placed> caneTops;
@@ -2536,6 +2655,14 @@ void plantNorthEast(Grid &g, const Clearance &clear)
             }
             if (ground != GRASS || top + 20 > kMaxY)
                 continue;
+            // a clearing round the temple, its edge ragged
+            if (extras.hasTemple)
+            {
+                const int tx = bx - extras.temple[0], tz = bz - extras.temple[1];
+                const int ragged = kTempleClearing + static_cast<int>(h % 4u);
+                if (tx * tx + tz * tz < ragged * ragged)
+                    continue;
+            }
             const float thicket = valueNoise(cx * 0.04f, cz * 0.04f, 743u);
             if (thicket > 0.34f && h % 4u != 0)
             {
@@ -3032,12 +3159,13 @@ void buildScenery(Grid &g, Extras &extras)
     buildTaigaCamp(g, clear);
     buildIceSpikes(g, clear);
     buildHoodoos(g, clear);
+    buildJungleTemple(g, clear, extras);
     buildSwampWater(g, waterZone(ride));
     // after the carving, so the water flows round the ride's room
     spreadWater(g);
 
     plantTrees(g, clear, extras);
-    plantNorthEast(g, clear);
+    plantNorthEast(g, clear, extras);
     spreadSky(g);
     plantFlowers(g, clear, extras);
     snowfall(g, clear, cover);
