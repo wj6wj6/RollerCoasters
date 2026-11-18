@@ -1851,6 +1851,227 @@ bool crowded(const Grid &g, int bx, int j, int bz, int reach)
     return false;
 }
 
+// Is every column within `radius` of (bx, bz) open meadow, its top grass or
+// dirt (nothing built on it), between low and high?
+bool openMeadow(const Grid &g, int bx, int bz, int radius, int &low, int &high)
+{
+    low = kMaxY + 1;
+    high = kMinY - 1;
+    for (int x = bx - radius; x <= bx + radius; ++x)
+        for (int z = bz - radius; z <= bz + radius; ++z)
+        {
+            if (!Grid::insideColumn(x, z) || !onIsland(x, z) ||
+                g.biome[Grid::column(x, z)] != MEADOW)
+                return false;
+            const int top = g.top(x, z);
+            const int b = g.get(x, top, z);
+            if (b != GRASS && b != DIRT)
+                return false;
+            low = top < low ? top : low;
+            high = top > high ? top : high;
+        }
+    return true;
+}
+
+// Does the ride pass within about 30 blocks of (bx, bz), so it can be seen
+// from the train?
+bool seenFromRide(const Clearance &clear, int bx, int bz, int from, int to)
+{
+    for (int r = from; r <= to; r += 3)
+        for (int k = 0; k < 16; ++k)
+        {
+            const float a = static_cast<float>(k) * 0.3927f;
+            const int x = bx + static_cast<int>(cosf(a) * static_cast<float>(r));
+            const int z = bz + static_cast<int>(sinf(a) * static_cast<float>(r));
+            if (Grid::insideColumn(x, z) && clear.nearHigh[Grid::column(x, z)] > -1.0e8f)
+                return true;
+        }
+    return false;
+}
+
+// A lake in the open meadow, where the train passes in sight of it: a
+// basin cut down to its lowest shore, sandy banks, a little island
+// with a tree in the middle and a wooden jetty. It is all still water at
+// one level below its rim, so nothing flows out of it.
+void buildLake(Grid &g, const Clearance &clear)
+{
+    const int radius = 10;
+    int bestX = 0, bestZ = 0, bestLevel = 0, bestScore = 1 << 30;
+    for (int bx = -kHalf + radius + 4; bx < kHalf - radius - 4; bx += 4)
+        for (int bz = -kHalf + radius + 4; bz < kHalf - radius - 4; bz += 4)
+        {
+            const float vx = centerOf(bx) - kVillageX, vz = centerOf(bz) - kVillageZ;
+            if (vx * vx + vz * vz < (kVillageRadius + 40.0f) * (kVillageRadius + 40.0f))
+                continue;
+            int low, high;
+            if (!openMeadow(g, bx, bz, radius + 3, low, high) || high - low > 8 || low < 0)
+                continue;
+            const int score = (high - low) * 10;
+            if (score >= bestScore || !seenFromRide(clear, bx, bz, radius + 8, radius + 22))
+                continue;
+            // the lake and its banks, and three blocks more (water keeps six
+            // units from the track), clear of the train: a round area
+            bool room = true;
+            const int reach = radius + 5;
+            for (int x = bx - reach; x <= bx + reach && room; ++x)
+                for (int z = bz - reach; z <= bz + reach && room; ++z)
+                    if ((x - bx) * (x - bx) + (z - bz) * (z - bz) <= reach * reach)
+                        for (int j = low - 3; j <= high + 6 && room; ++j)
+                            room = !clear.blocks(x, j, z);
+            if (!room)
+                continue;
+            bestScore = score;
+            bestX = bx;
+            bestZ = bz;
+            bestLevel = low; // every column round it reaches this layer: no spilling
+        }
+    if (bestScore == 1 << 30)
+        return;
+
+    const int level = bestLevel;
+    for (int x = bestX - radius - 2; x <= bestX + radius + 2; ++x)
+        for (int z = bestZ - radius - 2; z <= bestZ + radius + 2; ++z)
+        {
+            const float dx = static_cast<float>(x - bestX), dz = static_cast<float>(z - bestZ);
+            // a round lake whose shore wanders a little
+            const float d = sqrtf(dx * dx + dz * dz) + (lattice(x, z, 471u) - 0.5f) * 2.0f;
+            if (d > static_cast<float>(radius) + 2.0f)
+                continue;
+            if (d > static_cast<float>(radius))
+            {
+                // the sandy bank, a block above the water
+                g.clearAbove(x, level + 1, z);
+                g.put(x, level + 1, z, SAND);
+                continue;
+            }
+            const int deep = d < static_cast<float>(radius) * 0.5f ? 2 : 1;
+            g.clearAbove(x, level, z);
+            for (int k = 0; k < deep; ++k)
+                g.put(x, level - k, z, WATER);
+            g.put(x, level - deep, z, hash(x, z, 473u) % 3u == 0 ? GRAVEL : SAND);
+        }
+    // the island and its tree
+    for (int x = bestX - 2; x <= bestX + 2; ++x)
+        for (int z = bestZ - 2; z <= bestZ + 2; ++z)
+            if (abs(x - bestX) + abs(z - bestZ) <= 3)
+                g.put(x, level + 1, z, abs(x - bestX) + abs(z - bestZ) <= 1 ? GRASS : SAND);
+    std::vector<Placed> tree;
+    roundTree(tree, bestX, level + 2, bestZ, OAK_LOG, LEAVES_CHERRY, 5, true);
+    commit(g, clear, tree);
+    // the jetty from the south bank
+    for (int z = bestZ + radius + 1; z >= bestZ + radius - 5; --z)
+    {
+        g.put(bestX + 6, level + 1, z, PLANKS);
+        if (z % 2 == 0)
+            g.put(bestX + 6, level, z, OAK_LOG);
+    }
+    g.put(bestX + 6, level + 2, bestZ + radius - 5, LANTERN);
+}
+
+// A giant oak standing alone in the meadow where the train passes in sight
+// of it: a trunk three blocks thick with roots, boughs and a broad crown.
+void buildGiantTree(Grid &g, const Clearance &clear)
+{
+    int bestX = 0, bestZ = 0, bestTop = 0, bestScore = 1 << 30;
+    for (int bx = -kHalf + 12; bx < kHalf - 12; bx += 3)
+        for (int bz = -kHalf + 12; bz < kHalf - 12; bz += 3)
+        {
+            const float vx = centerOf(bx) - kVillageX, vz = centerOf(bz) - kVillageZ;
+            if (vx * vx + vz * vz < (kVillageRadius + 20.0f) * (kVillageRadius + 20.0f))
+                continue;
+            int low, high;
+            if (!openMeadow(g, bx, bz, 4, low, high) || high - low > 1)
+                continue;
+            const int score = abs(bx - 20) + abs(bz + 40); // the open meadow in the south
+            if (score >= bestScore || !seenFromRide(clear, bx, bz, 12, 24))
+                continue;
+            if (!roomForBuilding(clear, bx - 10, bx + 10, low, low + 30, bz - 10, bz + 10))
+                continue;
+            bestScore = score;
+            bestX = bx;
+            bestZ = bz;
+            bestTop = high;
+        }
+    if (bestScore == 1 << 30)
+        return;
+
+    std::vector<Placed> tree;
+    const int base = bestTop + 1, trunk = 16;
+    for (int k = 0; k < trunk; ++k)
+        for (int dx = -1; dx <= 1; ++dx)
+            for (int dz = -1; dz <= 1; ++dz)
+                if (k < trunk - 3 || (dx == 0 && dz == 0))
+                    tree.push_back(Placed{bestX + dx, base + k, bestZ + dz, OAK_LOG});
+    // roots spreading over the ground
+    const int roots[4][2] = {{2, 0}, {-2, 0}, {0, 2}, {0, -2}};
+    for (const int *r : roots)
+    {
+        tree.push_back(Placed{bestX + r[0], base, bestZ + r[1], OAK_LOG});
+        tree.push_back(Placed{bestX + r[0] * 3 / 2, base, bestZ + r[1] * 3 / 2, OAK_LOG});
+    }
+    // boughs reaching out, and the crown: a flattened ball of leaves
+    for (const int *r : roots)
+        for (int k = 1; k <= 4; ++k)
+            tree.push_back(
+                Placed{bestX + r[0] / 2 * k, base + 10 + k / 2, bestZ + r[1] / 2 * k, OAK_LOG});
+    const int crown = base + trunk - 2;
+    for (int dx = -9; dx <= 9; ++dx)
+        for (int dz = -9; dz <= 9; ++dz)
+            for (int dy = -4; dy <= 5; ++dy)
+            {
+                const float d = sqrtf(static_cast<float>(dx * dx + dz * dz) +
+                                      static_cast<float>(dy * dy) * 2.6f);
+                if (d > 8.5f + (lattice(bestX + dx * 7 + dy, bestZ + dz, 477u) - 0.5f) * 2.0f)
+                    continue;
+                tree.push_back(Placed{bestX + dx, crown + dy, bestZ + dz, LEAVES_OAK});
+            }
+    commit(g, clear, tree);
+}
+
+// Fields round the village: a few plots of wheat on farmland with ditches
+// of water between the rows and gravel lanes round them, on level meadow
+// clear of the train.
+void buildFarms(Grid &g, const Clearance &clear)
+{
+    const int vx = blockOf(kVillageX), vz = blockOf(kVillageZ);
+    int fields = 0;
+    for (int k = 0; k < 16 && fields < 4; ++k)
+    {
+        const float a = static_cast<float>(k) * 0.3927f;
+        const int x0 = vx + static_cast<int>(cosf(a) * 32.0f) - 5;
+        const int z0 = vz + static_cast<int>(sinf(a) * 32.0f) - 4;
+        const int x1 = x0 + 11, z1 = z0 + 9;
+        int low, high;
+        if (!openMeadow(g, (x0 + x1) / 2, (z0 + z1) / 2, 7, low, high) || high - low > 2)
+            continue;
+        if (!roomForBuilding(clear, x0 - 1, x1 + 1, low, high + 3, z0 - 1, z1 + 1))
+            continue;
+        const int level = low;
+        for (int x = x0 - 1; x <= x1 + 1; ++x)
+            for (int z = z0 - 1; z <= z1 + 1; ++z)
+            {
+                g.clearAbove(x, level, z);
+                for (int j = level - 2; j < level; ++j)
+                    if (g.get(x, j, z) == AIR)
+                        g.put(x, j, z, DIRT);
+                const bool lane = x == x0 - 1 || x == x1 + 1 || z == z0 - 1 || z == z1 + 1;
+                if (lane)
+                    g.put(x, level, z, GRAVEL);
+                else if ((z - z0) % 4 == 2)
+                    g.put(x, level, z, WATER); // the ditch
+                else
+                {
+                    g.put(x, level, z, FARMLAND);
+                    g.plant[Grid::index(x, level + 1, z)] = WHEAT;
+                }
+            }
+        g.put(x1 + 2, level + 1, z0, HAY);
+        g.put(x1 + 2, level + 1, z0 + 1, HAY);
+        g.put(x1 + 2, level + 2, z0, HAY);
+        ++fields;
+    }
+}
+
 void plantTrees(Grid &g, const Clearance &clear, const Extras &extras)
 {
     // the windmill's hub, or nowhere when there is none
@@ -2201,6 +2422,9 @@ void buildScenery(Grid &g, Extras &extras)
     buildCastle(g, clear, castle);
     buildBridge(g, clear);
     buildLighthouse(g, clear, castle);
+    buildLake(g, clear);
+    buildFarms(g, clear);
+    buildGiantTree(g, clear);
     // after the carving, so the water flows round the ride's room
     spreadWater(g);
 
