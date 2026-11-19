@@ -106,7 +106,13 @@ enum Texture
     CLAY,       // the bed of the lakes and ponds
     PODZOL_TOP, // the spruce forest's floor
     PODZOL_SIDE,
-    COARSE_DIRT, // where the meadow meets the badlands and the volcano
+    COARSE_DIRT,   // where the meadow meets the badlands and the volcano
+    STONE_BRICKS,  // the castle's and the church's dressed stone
+    MOSSY_BRICKS,  // the same, mossy, here and there on old walls
+    DARK_OAK_SIDE, // the dark timber of window frames and beams
+    DARK_OAK_TOP,
+    TRAPDOOR,   // a spruce trapdoor: window sills and shutters
+    FLOWER_POT, // a clay pot, as a block game lays its picture out
     TEXTURE_COUNT
 };
 
