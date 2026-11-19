@@ -39,6 +39,7 @@ pwsh -File scripts/check.ps1 -Stage all -Config Release
 
 ## GUI 驗證清單
 
+- 啟動後視窗立刻出現深色泥土背景的載入畫面（`Generating terrain` → `Building terrain`，綠色進度條持續前進），不會停在白色或沒有回應的視窗；載入期間可拖動、縮放視窗；記錄 Debug 與 Release 各自到出現場景的秒數。關閉後再開一次：載入畫面顯示 `Loading world`，比第一次快很多，exe 旁出現 `data\saves\island.world` 與 `ocean.world`；修改並重新建置 `LandWorld.cpp` 後再開，會重新生成；刪掉 `data\saves\` 也會重新生成。載入完成後關閉 `Scenery` 會短暫顯示平坦島的載入畫面，再開啟時立刻回到原島（不重新生成）。
 - 正常啟動即進入 `Grand Tour` 展示：`Train` 相機、`Run` 沒有開、列車停在原地，按 `Run` 才開始行駛；按 `Reset` 後可見平坦島、軌道與控制點。視窗縮放後繪圖正常；右側深灰控制面板六個面板的文字都沒有被裁切，Spline Type 三項不需捲動。
 - 切換 World／Train／Chase／Top／Fly 相機（`Chase` 沿軌道跟在車尾後方，看得到火車頭、五節礦車與乘客，彎道與隧道中不穿進岩壁），Run、速度與前後步進操作正常。
 - 開啟後按 Grand Tour 再切到 World：從島外斜上方看到整座島，不會卡在山壁前；滾輪縮到最遠時島的遠側、火山與遠方海面都完整畫出。切到 Top：不論視窗寬或窄，主島與東北陸地都在畫面內、上下不被切掉，雲不擋住地圖；Top 中可點選並拖曳控制點，從 Top 切到 Fly 時畫面不跳動。

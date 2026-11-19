@@ -43,6 +43,13 @@ flowchart LR
     Frame --> Post[PostEffects / 天空、波浪水面與 SSR、雨與濕地反射、SSAO、Bloom、god rays、ACES]
     Frame -->|drawGround / drawUnderwater / drawObjects| View
     View --> Land[LandWorld / 方塊島嶼：雪山、峽谷、火山、村莊、木棧橋]
+    View -->|worldReady：未建好前畫載入畫面| Loading[載入畫面 / 泥土背景、階段文字、進度條]
+    Land -->|背景執行緒：生成網格、切塊 mesh| LandWorker[LandWorld::buildScene]
+    LandWorker -->|prepare：每幀約 30 ms 編 display list| Land
+    Ocean -->|背景執行緒：生成網格與 mesh| OceanWorker[OceanWorld::Build::run]
+    OceanWorker -->|prepare：編 display list| Ocean
+    LandWorker <-->|讀／寫 data/saves/*.world| Save[WorldSave / 世界存檔，key 為生成程式的建置時間]
+    OceanWorker <-->|讀／寫| Save
     Land --> LandTex[LandTextures / 島嶼方塊與植物貼圖]
     Callbacks -->|Textures 選單| Packs[TexturePack / 使用者的材質包：資料夾或 zip、方塊名稱對照、染色]
     Packs --> Zip[ZipArchive / zip 目錄與 DEFLATE 解碼]
@@ -125,6 +132,8 @@ caustics、吸收係數與水體顏色放在 `UnderwaterOptics.h`，三個 shade
 島的網格同樣以 16×16 欄為一塊，每塊有自己的方塊、植物與水的 display list 和包住實際方塊的邊界框。`Frustum` 從目前的投影 × modelview 矩陣取出六個平面，`LandWorld::draw()`、`drawWater()` 與 `OceanWorld::draw()` 只畫看得到的塊；因為用的是當下的矩陣，陰影 pass（光源視角）與水面反射 pass（鏡射視角）也自動只畫各自看得到的部分。這讓之後放大世界時，每幀的繪製量只跟畫面裡的範圍有關。`FrustumCheck` 單獨測試剔除的判斷。
 水方塊是半透明的靜態水：不遮擋旁邊的面、不擋天光也不算 ambient occlusion，網格另外編成 display list，由 `TrainView::drawStuff()` 在最後畫上：先只寫入水的深度，再在最近的水面上以 alpha 混合畫顏色，所以只看得到水體正面，方塊之間的內部平面與背面不會透出（不進 shadow map，目標的 alpha 保持不變）；挖軌道時被切斷而懸空的水會移除。會動的東西（風車、動物、雲、熱氣球）每格以方塊即時畫出；`TrainView::drawSupports()` 以目前 spline（含 B-spline）每約 1 單位取一點、控制點不變時沿用，交給 `LandWorld::drawSupports()` 每 16 單位規劃一座木棧橋（同一條路線只規劃一次）：
 左右兩根柱各自從自己的落點往下找地面（穿過水、立在熔岩裡；島外立在 `OceanWorld::seaFloor()` 的海床上），柱頂貼齊枕木底；只有被另一段軌道擋住的那一根柱不立，兩根都在時才加橫撐。山體也畫進 shadow map，所以會投影。
+世界在背景執行緒建造，視窗不會在第一幀卡住：`TrainView::draw()` 先呼叫 `worldReady()`，它對目前要畫的島（`Scenery` 開或關）呼叫 `LandWorld::prepare()`，對海床呼叫 `OceanWorld::prepare()`。第一次呼叫時各自開一條 `std::thread` 生成方塊網格（`buildScenery()` 每完成一段回報進度、並檢查是否要取消）並逐塊產生頂點；display list 只能在擁有 OpenGL context 的主執行緒建立，所以 `prepare()` 每幀把已完成的塊編成 display list，最多花約 30 ms，就回去畫一張方塊遊戲風格的載入畫面（變暗的泥土貼圖、`Generating terrain`／`Building terrain` 與綠色進度條），並以 FLTK timeout 約每 1/30 秒重畫，直到島（`Water` 與 `Light+` 都開時也包括海床）全部完成。OpenGL context 重建時只丟掉 display list，網格保留，`prepare()` 只重做 mesh。
+生成好的網格像方塊遊戲一樣存檔（`WorldSave.h`）：背景執行緒先嘗試讀 `data/saves/island.world`（平坦島 `flat.world`、海床 `ocean.world`，相對於 exe 所在資料夾），讀到才略過生成，讀不到就生成後寫入（先寫 `.tmp` 再改名，避免半個檔案）；讀檔時載入畫面顯示 `Loading world`。每層方塊資料以 run-length 編碼，整座島約 2 MB。存檔開頭有 key：影響該世界的每個原始檔各自以 `buildStamp()` 回傳編譯時的 `__DATE__ __TIME__`，加上網格尺寸，所以只要重新編譯了生成程式，舊存檔就不再相符而重新生成；檔案損壞、截斷或格式不符時同樣當作沒有存檔。光照的 flood fill 用 `CellQueue`（單一 vector 的佇列）取代 `std::deque`：MSVC 的 `std::deque` 對大於 8 bytes 的元素每個都配置一塊 heap，上千萬次配置是 Debug 建置啟動慢的主因之一。
 `Scenery` 關閉時 `LandWorld` 改建平坦的編輯用島；固定管線（`Light+` 關閉）的平面陰影只在這個模式使用。
 `Train`／`Chase` 相機由 `TrainView::setProjection()` 從軌道座標系算出；`Chase` 用 `TrainModel::parameterBehind()` 沿軌道往回取最後一節礦車後方的點，抬高後看向火車頭，所以會留在為軌道挖出的空間裡。
 

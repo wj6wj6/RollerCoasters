@@ -178,4 +178,9 @@ void Field::spread()
     m_queue.clear();
 }
 
+const char *buildStamp()
+{
+    return __DATE__ " " __TIME__;
+}
+
 } // namespace WaterFlow

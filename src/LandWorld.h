@@ -57,7 +57,22 @@ class LandWorld
     ~LandWorld();
 
     // Call when the OpenGL context was recreated: the old names are gone.
+    // The blocks are kept; only their display lists are made again.
     void releaseResources();
+
+    // Gets the island ready to draw without holding up the window: the
+    // first call starts building it on a thread of its own (the scenery
+    // takes a second or two, many more in a Debug build); each call then
+    // turns what is built into display lists for up to the given seconds.
+    // True once it is all ready. draw() builds whatever is left at once.
+    bool prepare(bool flat, float seconds);
+
+    // How far the island is from ready, 0..1, for a loading screen.
+    float progress(bool flat) const;
+
+    // True while the island is being read from its save (WorldSave.h)
+    // rather than generated.
+    bool loadingSave(bool flat) const;
 
     // Draws the island. flat: the level editor island instead of the
     // scenery. shadowPass: only the solid blocks, for the shadow map.
@@ -115,6 +130,7 @@ class LandWorld
     std::vector<float> m_supportPath;
 
     struct Scene;
+    static void buildScene(Scene &scene, bool flat);
     Scene &scene(bool flat);
     void drawMoving(const Scene &scene, float time);
 

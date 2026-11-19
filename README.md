@@ -8,7 +8,9 @@
 
 最簡單的方式：clone 後在 Visual Studio 選「開啟資料夾」（或在檔案總管對資料夾按右鍵「使用 Visual Studio 開啟」），
 Visual Studio 會讀取 `CMakePresets.json`，選 `Visual Studio (any version) / x64` 與 `Debug`，啟動項目選 `RollerCoasters.exe` 後按 F5。
-VS Code 搭配 CMake Tools 擴充也一樣選這個 preset。這個 preset 不綁定 Visual Studio 版本，由 IDE 自行載入已安裝的 x64 編譯器。
+VS Code 搭配 CMake Tools 擴充也一樣選這個 preset。
+世界（約 1000 萬格方塊）在啟動時於背景生成，期間顯示載入畫面與進度條；Release 約一兩秒（依電腦而定），Debug 沒有最佳化又有執行期檢查，會慢上數倍到十幾倍，只想看效果或展示時改選 `Release`。
+第一次生成後，島與海床會像方塊遊戲的存檔一樣存到 exe 旁的 `data\saves\`（`island.world`、`flat.world`、`ocean.world`，各約 2 MB），之後啟動顯示 `Loading world` 直接讀檔，不再重新生成。重新建置任何會影響世界的原始檔（`LandWorld`、`OceanWorld`、`WorldShape`、`WaterFlow`、`PixelArt`）後存檔自動失效並重新生成；想強制重新生成就刪掉 `data\saves\`。這個 preset 不綁定 Visual Studio 版本，由 IDE 自行載入已安裝的 x64 編譯器。
 
 命令列建置與完整檢查，以下命令均在此 repository 根目錄執行：
 
