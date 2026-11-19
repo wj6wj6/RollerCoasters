@@ -14,14 +14,14 @@ repository 是公開的，GitHub 提供的標準 runner（含 Windows）不計�
 | Workflow | 何時執行 | 內容 |
 | --- | --- | --- |
 | `Linux quality`（`ci.yml`，ubuntu-24.04，兩個平行的 job） | PR push、main push、手動 | 快速回饋。`linux`：`check.ps1 -Stage quick`（clang-format 22.1.8、依賴指紋、repository 規範與腳本語法）；`tests/linux/` 以 clang `-Wall -Werror` 編譯平台無關的原始碼並跑 `VersionCheck` 以外的全部 CTest 檢查（xvfb）。`win32-syntax`：`tests/linux/win32-syntax.sh` 用 MinGW-w64 對真正的 Windows SDK 標頭檢查所有檔案的語法 |
-| `Windows build`（`windows.yml`，windows-2022，單一 job） | PR push、main push、`v*` tag、手動 Run workflow | 完整把關：`scripts/check-all.ps1 -Jobs 0`，即格式、MSVC `/analyze`（只跑一次）、MSVC 與 Clang 的 Debug／Release 編譯、CTest、安裝與 `--version` |
+| `Windows build`（`windows.yml`，windows-2022，平行的 job） | PR push、main push、`v*` tag、手動 Run workflow | 完整把關，內容與 `scripts/check-all.ps1` 相同，拆成同時執行的 job：`tools` 先準備並快取工具鏈；`shared` 跑一次格式、repository 規範與 MSVC `/analyze`；`build` 的四個 matrix job（MSVC／Clang × Debug／Release）各自執行 `check-all.ps1 -NoShared`，即編譯、CTest、安裝與 `--version`；最後的 `windows` job 在全部通過時才通過（必要檢查設這個名稱即可） |
 
 同一個 PR 或分支的新 push 會取消舊的執行，draft PR 不執行。Ubuntu 套件鏡像站有時慢到讓安裝逾時，所以兩個 Linux job 各自快取下載過的 `.deb`（`install-packages.sh --only core`／`--only mingw`，快取鍵含腳本的雜湊），安裝一成功就存檔（不必等整個 job 成功），之後的執行不經網路直接安裝；MinGW 佔下載量的大半，獨立成 `win32-syntax` job，`linux` 不必等它。PR 讀得到 main 存的快取，所以 main 跑過一次後 PR 都不必再下載。第一次（沒有快取）的下載仍可能很慢（曾遇到鏡像站每秒約 100 KB，MinGW 77 MB），所以安裝步驟的時限放寬（`linux` 20 分鐘、`win32-syntax` 25 分鐘），讓它至少完整下載一次並存成快取。`tests/linux/stubs/windows.h` 定義了 Windows SDK 會吃掉的 `far`、`near`、`DUPLICATE` 等巨集，所以這類名稱在 Linux 檢查就會失敗；沒有 Windows 的雲端環境也能在推送前跑這組檢查（見 [development.md](development.md#linux-上的檢查)）。
 Linux 檢查不是 MSVC 建置：MSVC 專屬警告、`/analyze`、連結 Win32 程式與封裝只有 Windows build 或本機 `check-all.ps1` 會驗證。
 
 在 Windows 電腦上執行 `pwsh -File scripts/check-all.ps1` 等同 Windows build，結果表寫在 `out/check-summary.md`，可貼進 PR。
 若 repository 改回私有，Actions 會依分鐘計費（Windows 比 Linux 貴數倍，額度用完時連 Linux job 都不會開始）；那時應讓 Windows build 只在 main 與手動時執行，PR 以本機 `check-all.ps1` 驗證。
-Windows build 保存 `out/check-summary.md`、JUnit／CTest 日誌（14 天），以及 MSVC 與 Clang Release 已執行 `--version` 的安裝目錄 artifact（14 天）。Linux 檢查只在失敗時保存日誌（7 天）。
+Windows build 的每個 matrix job 保存自己的 `out/check-summary.md` 與 JUnit／CTest 日誌（`test-results-windows-<編譯器>-<組態>`，14 天），Release 的兩個 job 另存已執行 `--version` 的安裝目錄（`RollerCoasters-windows-x64-msvc`／`-clang`，14 天）。拆成平行的 job 後，一次 Windows build 約 4–5 分鐘（單一 job 依序跑四個組態時約 6–7 分鐘）。Linux 檢查只在失敗時保存日誌（7 天）。
 這是桌面應用程式，以 executable 的版本 smoke test 取代服務 healthcheck；沒有 Docker 或伺服器部署。
 
 ## 建立可交付目錄

@@ -37,7 +37,7 @@ CMake preset 不寫死 Visual Studio 版本（見 [ADR 0004](adr/0004-any-visual
 合併前一次跑完下面四個組態（格式與 `/analyze` 只跑一次），並把結果表寫到 `out/check-summary.md`：
 
 ```powershell
-pwsh -File scripts/check-all.ps1          # 加 -Jobs 0 用上所有核心
+pwsh -File scripts/check-all.ps1          # 加 -Jobs 0 用上所有核心；-Compiler／-Config 只跑其中幾組，-NoShared 略過格式與 /analyze（CI 的 matrix job 用）
 ```
 
 也可以逐一執行：
