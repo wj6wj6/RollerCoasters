@@ -9,6 +9,7 @@
 
 #include <math.h>
 #include <chrono>
+#include <utility>
 #include <vector>
 
 #ifdef _WIN32
@@ -19,6 +20,7 @@
 #include "TrainView.H"
 #include "TrainWindow.H"
 #include "Utilities/3DUtils.h"
+#include "TexturePack.h"
 #include "WorldShape.h"
 
 namespace
@@ -282,4 +284,27 @@ void TrainView::fillLightingFrame(LightingFrame &frame)
         frame.trainUp[1] = up.y;
         frame.trainUp[2] = up.z;
     }
+}
+
+//************************************************************************
+//
+// * A texture pack (nullptr: the built-in pictures) for the island, the
+//   sea floor and the track: its sleepers in the pack's spruce planks and
+//   its rails in iron, as a block game's rails are wood and iron
+//========================================================================
+void TrainView::setTexturePack(std::shared_ptr<const TexturePack::Pack> pack)
+//========================================================================
+{
+    PixelArt::Image wood, iron;
+    if (pack)
+    {
+        using Use = TexturePack::Pack::Use;
+        if (!pack->standIn("spruce_planks|planks_spruce|oak_planks|planks_oak", Use::SOLID, wood))
+            wood.clear();
+        if (!pack->standIn("iron_block", Use::SOLID, iron))
+            iron.clear();
+    }
+    m_trackRenderer.setPictures(wood, iron);
+    m_ocean.setTexturePack(pack);
+    m_land.setTexturePack(std::move(pack));
 }
