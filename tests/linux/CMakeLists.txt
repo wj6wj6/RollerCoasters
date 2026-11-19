@@ -65,13 +65,18 @@ check(TrackSpacingCheck SOURCES src/Track.cpp src/ControlPoint.cpp src/TrackRend
     LIBS Utilities glad)
 check(GizmoDragCheck SOURCES src/TransformGizmo.cpp LIBS glad)
 check(FrustumCheck SOURCES src/Frustum.cpp LIBS glad)
+check(TexturePackCheck
+    SOURCES src/TexturePack.cpp src/ZipArchive.cpp src/LandTextures.cpp src/PixelArt.cpp
+    LIBS Utilities glad)
 check(OceanRideClearanceCheck TIMEOUT 120
     SOURCES src/OceanWorld.cpp src/Frustum.cpp src/LandTextures.cpp src/PixelArt.cpp
-        src/WorldShape.cpp src/Track.cpp src/ControlPoint.cpp
+        src/WorldShape.cpp src/TexturePack.cpp src/ZipArchive.cpp src/Track.cpp
+        src/ControlPoint.cpp
     LIBS Utilities glad)
 check(LandRideClearanceCheck TIMEOUT 120
     SOURCES src/LandWorld.cpp src/Frustum.cpp src/LandTextures.cpp src/OceanWorld.cpp
-        src/PixelArt.cpp src/WaterFlow.cpp src/WorldShape.cpp src/Track.cpp src/ControlPoint.cpp
+        src/PixelArt.cpp src/TexturePack.cpp src/WaterFlow.cpp src/WorldShape.cpp
+        src/ZipArchive.cpp src/Track.cpp src/ControlPoint.cpp
     LIBS Utilities glad)
 
 # Compile the rest of the app as well (not linked), so an error in code that no
