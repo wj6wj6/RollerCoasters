@@ -31,6 +31,7 @@ flowchart LR
     Touchpad -->|Train 模式| Head
     Touchpad -->|Update 計時| Timer
     Track <-->|readPoints / writePoints| File[使用者軌道文字檔]
+    Callbacks -->|Load / Save / Open pack| Dialogs[FileDialogs / 系統的開啟、另存新檔視窗與檔案總管]
     View --> GL[GLAD / OpenGL / GLU]
     View --> Effects[TrainViewEffects / 讀取光影 widget]
     Effects --> Frame[renderAdvancedFrame]
@@ -54,7 +55,9 @@ flowchart LR
     Callbacks -->|Grand Tour| Ocean
 ```
 
-材質包：`World` 面板的 `Textures` 選單由 `TrainWindow::listTexturePacks()` 列出 `TexturePack::findAll()` 在搜尋資料夾（exe 旁的 `texturepacks/`，建置與安裝時建立；以及工作資料夾的 `texturepacks/` 與 `data/texturepacks/`，`main()` 啟動時已切到 exe 的資料夾）找到的 `.zip` 與資料夾。選定後 `texturePackCB()` 以 `TexturePack::Pack::open()` 開啟（zip 由 `ZipArchive` 讀目錄、自己的 DEFLATE 解碼器解壓；包在一層資料夾裡時以 `pack.mcmeta` 等標記找根目錄），交給 `TrainView::setTexturePack()` → `LandWorld::setTexturePack()`。下一次 `draw()` 對每種貼圖先問材質包（本程式格式 `textures/<名稱>.png`，再依對照表找資源包的 `block/`、`blocks/` 圖片；PNG 由 FLTK 解碼，取動畫第一格、縮成 2 的次方、灰階的草與樹葉染色、實心方塊補滿透明處），沒有就用 `LandTextures::make()`，再以 `PixelArt::uploadInto()` 寫進原本的貼圖名稱。海底世界同樣處理：`TrainView::setTexturePack()` 也交給 `OceanWorld::setTexturePack()`，`OceanWorld` 有自己的方塊名稱表（沙、石頭、深板岩、苔石磚、雕紋石磚、珊瑚塊、紫水晶、海燈籠、金塊、海晶石、暗海晶石、海帶、海草、珊瑚扇、海鞘），經 `Pack::standIn()` 取圖，下次 `draw()` 寫進原本的貼圖名稱。軌道的枕木與鋼軌也由 `TrainView::setTexturePack()` 從材質包取雲杉木板與鐵塊（`TrackRenderer::setPictures()`，空的就用內建），風車葉片與熱氣球改用島上的貼圖（橡木、木板與各色羊毛 `WOOL_*`）以 `texturedBox()` 畫出，所以會動的景物也跟著材質包；只有生物、列車、雲與天空維持程式自己的顏色。顯示清單綁定的是貼圖名稱，所以換材質包不必重建島嶼或顯示清單。
+檔案：Load、Save 與 `Open pack...` 經 `FileDialogs` 開系統自己的檔案視窗（`Fl_Native_File_Chooser`，Windows 上是檔案總管的「開啟」與「另存新檔」），`Open texturepacks folder` 以 `ShellExecuteW` 用檔案總管打開資料夾。
+
+材質包：`World` 面板的 `Textures` 按鈕（`Fl_Menu_Button`，每次按下都重新列出）由 `TrainWindow::listTexturePacks()` 列出 `TexturePack::findAll()` 在搜尋資料夾（exe 旁的 `texturepacks/`，建置與安裝時建立；以及工作資料夾的 `texturepacks/` 與 `data/texturepacks/`，`main()` 啟動時已切到 exe 的資料夾）找到的 `.zip` 與資料夾。選定後 `texturePackCB()` 以 `TexturePack::Pack::open()` 開啟（zip 由 `ZipArchive` 讀目錄、自己的 DEFLATE 解碼器解壓；包在一層資料夾裡時以 `pack.mcmeta` 等標記找根目錄），交給 `TrainView::setTexturePack()` → `LandWorld::setTexturePack()`。下一次 `draw()` 對每種貼圖先問材質包（本程式格式 `textures/<名稱>.png`，再依對照表找資源包的 `block/`、`blocks/` 圖片；PNG 由 FLTK 解碼，取動畫第一格、縮成 2 的次方、灰階的草與樹葉染色、實心方塊補滿透明處），沒有就用 `LandTextures::make()`，再以 `PixelArt::uploadInto()` 寫進原本的貼圖名稱。海底世界同樣處理：`TrainView::setTexturePack()` 也交給 `OceanWorld::setTexturePack()`，`OceanWorld` 有自己的方塊名稱表（沙、石頭、深板岩、苔石磚、雕紋石磚、珊瑚塊、紫水晶、海燈籠、金塊、海晶石、暗海晶石、海帶、海草、珊瑚扇、海鞘），經 `Pack::standIn()` 取圖，下次 `draw()` 寫進原本的貼圖名稱。軌道的枕木與鋼軌也由 `TrainView::setTexturePack()` 從材質包取雲杉木板與鐵塊（`TrackRenderer::setPictures()`，空的就用內建），風車葉片與熱氣球改用島上的貼圖（橡木、木板與各色羊毛 `WOOL_*`）以 `texturedBox()` 畫出，所以會動的景物也跟著材質包；只有生物、列車、雲與天空維持程式自己的顏色。顯示清單綁定的是貼圖名稱，所以換材質包不必重建島嶼或顯示清單。
 
 造景的方塊原則：島上與海底的每一種方塊與植物都對應到方塊遊戲有的方塊（材質包對照表裡有名稱），新造景也只用這些方塊蓋，所以套用完整的材質包（例如 Classic Faithful 32x）時整個場景都是材質包的圖；只有會動的生物（魚、動物、水母）、雲、熱氣球、鐵軌與列車不在此列。海底原本自創的物件因此改成方塊遊戲有的：環形閘門用海晶石與暗海晶石，巨蚌改成珊瑚丘（兩種珊瑚塊與頂上發光的海鞘），燈改成海燈籠，水晶改成紫水晶塊，遺跡的柱子用雕紋石磚，海星拿掉。
 
@@ -80,7 +83,7 @@ flowchart LR
 `Light+` 開啟時，`TrainView::draw()` 改呼叫 `renderAdvancedFrame()`：
 先從太陽方向把物體畫進 2048² 深度貼圖（shadow map）。陰影範圍跟著鏡頭：以鏡頭前方約 80 單位處為中心、半徑 `kShadowReach`（150 單位），中心以陰影貼圖的格點為單位移動，移動時陰影邊緣不會閃爍，範圍邊緣淡出；Top 正交視角仍涵蓋整個場景。世界再大，陰影的解析度都不變。水面開啟時再以水平面鏡射相機畫一次反射，
 接著把場景畫進 16-bit 浮點 frame buffer，依序做 SSAO、濕地反射（下雨時）、水面、雨絲、Bloom 與 god rays，最後 ACES 色調映射到視窗。
-水面是跟著鏡頭移動的細分網格：頂點 shader 疊加 Gerstner 波位移，片段 shader 用同一組波的解析法線加上多層捲動噪點；
+水面是跟著鏡頭移動的細分網格：頂點 shader 疊加 Gerstner 波位移，片段 shader 用同一組波的解析法線加上多層捲動噪點。波共有 8 道，波長（46.3 到 5.3 單位）彼此不成簡單比例、方向分散在風向兩側、各有相位，疊起來不會出現週期性的浪峰格子；網格每格 3 單位，頂點只跟著 12 單位以上的波移動（較短的波只影響法線，避免頂點取樣不足而閃動）。浪峰的白浪乘上兩層緩慢飄移的大尺度雜訊（陣風區）與一層隨機門檻，所以只在部分區域、部分浪峰出現，下雨時陣風區擴大；
 倒影先在螢幕空間沿反射方向對深度緩衝做光線步進（SSR），沒打中時用平面反射，再依 Schlick 菲涅耳與折射混合。
 `Time` 由 `AdvancedLighting::prepare()` 依太陽仰角換算：太陽貼近地平線時陽光是深橘、稍高時金黃、上午後轉白，天空環境光在這段黃金時刻偏暖粉；
 天空 shader 在地平線畫一圈帶狀光暈，朝太陽方向是橘金、背向太陽偏玫瑰紫，高處轉藍紫，雲的底部染成金色與粉色。太陽與月亮都是方塊遊戲式的方形，

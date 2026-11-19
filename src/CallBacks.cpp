@@ -26,13 +26,13 @@
 #include "TrainView.H"
 #include "CallBacks.H"
 #include "OceanWorld.h"
+#include "FileDialogs.h"
 #include "LandTextures.h"
 #include "TexturePack.h"
 
 #pragma warning(push)
 #pragma warning(disable : 4312)
 #pragma warning(disable : 4311)
-#include <FL/Fl_File_Chooser.H>
 #include <FL/fl_ask.H>
 #include <FL/math.h>
 #pragma warning(pop)
@@ -203,10 +203,11 @@ void runButtonCB(TrainWindow *tw)
 void loadCB(Fl_Widget *, TrainWindow *tw)
 //===========================================================================
 {
-    const char *fname = fl_file_chooser("Pick a Track File", "*.txt", "TrackFiles/track.txt");
-    if (fname)
+    std::string path;
+    if (FileDialogs::open("Load a track", "Track files (*.txt)\t*.txt\nAll files\t*",
+                          FileDialogs::besideProgram("TrackFiles"), path))
     {
-        tw->m_Track.readPoints(fname);
+        tw->m_Track.readPoints(path.c_str());
         tw->damageMe();
     }
 }
@@ -246,9 +247,10 @@ void grandTourCB(Fl_Widget *, TrainWindow *tw)
 void saveCB(Fl_Widget *, TrainWindow *tw)
 //===========================================================================
 {
-    const char *fname = fl_input("File name for save (should be *.txt)", "TrackFiles/");
-    if (fname)
-        tw->m_Track.writePoints(fname);
+    std::string path;
+    if (FileDialogs::save("Save the track", "Track files (*.txt)\t*.txt",
+                          FileDialogs::besideProgram("TrackFiles"), "track.txt", ".txt", path))
+        tw->m_Track.writePoints(path.c_str());
 }
 
 //***************************************************************************
@@ -333,31 +335,39 @@ void rmzCB(Fl_Widget *, TrainWindow *tw)
 
 //************************************************************************
 //
-// * A texture pack was picked: "Built-in", a pack found on disk, or
-//   "Open pack..." to choose a .zip (or a folder's pack.mcmeta) anywhere.
-//   A pack that cannot be read is reported and the list goes back to what
-//   was in use.
+// * The texture pack list: "Built-in" or a pack, read and put in place;
+//   "Open pack..." chooses a .zip (or a folder's pack.mcmeta) anywhere in
+//   the system's file dialog; "Open texturepacks folder" shows the folder
+//   beside the program where downloaded packs go. A pack that cannot be
+//   read is reported and the list stays on what was in use.
 //========================================================================
 void texturePackCB(Fl_Widget *, TrainWindow *tw)
 //========================================================================
 {
-    static std::string current; // the path in use, empty when built in
-    const int item = tw->texturePackChoice->value();
-    const int last = tw->texturePackChoice->size() - 2; // "Open pack..."; size() counts the end
+    std::string &current = tw->texturePackPath; // the path in use, empty when built in
+    const int item = tw->texturePackMenu->value();
+    const int packs = 1 + static_cast<int>(tw->texturePackPaths.size()); // with "Built-in"
+    const std::string folder = TexturePack::searchFolders().front();
     std::string path;
-    if (item == last)
+    if (item == packs + 1)
     {
-        const char *picked =
-            fl_file_chooser("Open a texture pack (.zip, or pack.mcmeta in a folder)",
-                            "Texture packs (*.{zip,mcmeta})", nullptr);
-        if (!picked)
+        if (!FileDialogs::showFolder(folder))
+            fl_alert("Put texture packs (.zip, or folders) in\n%s", folder.c_str());
+        tw->listTexturePacks(current);
+        return;
+    }
+    if (item == packs)
+    {
+        if (!FileDialogs::open("Open a texture pack",
+                               "Texture packs (*.zip)\t*.zip\n"
+                               "A pack in a folder (pack.mcmeta)\tpack.mcmeta",
+                               folder, path))
         {
             tw->listTexturePacks(current);
             return;
         }
-        path = picked;
     }
-    else if (item > 0 && static_cast<size_t>(item - 1) < tw->texturePackPaths.size())
+    else if (item > 0 && item < packs)
         path = tw->texturePackPaths[static_cast<size_t>(item - 1)];
 
     std::shared_ptr<TexturePack::Pack> pack;
@@ -374,13 +384,15 @@ void texturePackCB(Fl_Widget *, TrainWindow *tw)
     current = path;
     tw->trainView->setTexturePack(pack);
     tw->listTexturePacks(current);
+    // the tooltip says how much of the island the pack covers
+    static std::string tip;
     if (pack)
-    {
-        static std::string tip;
         tip = pack->name() + ": " + std::to_string(pack->coverage()) + " of " +
               std::to_string(LandTextures::TEXTURE_COUNT) +
               " textures from the pack, the rest built in.";
-        tw->texturePackChoice->tooltip(tip.c_str());
-    }
+    else
+        tip = "The island's block textures, drawn in the program.\n"
+              "Pick a texture pack in this list to use its textures.";
+    tw->texturePackMenu->tooltip(tip.c_str());
     tw->damageMe();
 }
