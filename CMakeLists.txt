@@ -68,6 +68,7 @@ add_executable(RollerCoasters
     src/WorldShape.h src/WorldShape.cpp
     src/ZipArchive.h src/ZipArchive.cpp
     src/CallBacks.H src/CallBacks.cpp
+    src/FileDialogs.h src/FileDialogs.cpp
     src/EditKeys.h src/EditKeys.cpp
     src/ControlPoint.H src/ControlPoint.cpp
     src/main.cpp src/Object.H
