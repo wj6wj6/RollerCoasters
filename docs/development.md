@@ -13,7 +13,7 @@ pwsh -File scripts/setup-tools.ps1
 準備腳本先檢查現有原生工具的版本；缺少指定版本時，從官方 release 下載至 `out/`，驗證 SHA256 後解壓縮。只影響專案目錄，不修改系統 PATH，也不需要系統管理員權限。
 檢查腳本優先使用 `out/tools/`，其次使用 PATH 上版本相符的工具；版本不符即失敗。
 CMake 官方套件：[4.3.0 release](https://github.com/Kitware/CMake/releases/tag/v4.3.0)；clang-format 官方套件：[LLVM 22.1.8 release](https://github.com/llvm/llvm-project/releases/tag/llvmorg-22.1.8)。
-LLVM 官方封存檔約 822 MB，首次下載較久，僅解出 clang-format.exe。解壓縮固定使用 Windows 內建的 `tar.exe`；若該版本不支援 `.xz`，改用 7-Zip 先解壓一次。CI 由單一 `tools` job 下載並快取解壓後的工具，同時檢查格式；四個 `quality` matrix job 只還原同一份快取。
+LLVM 官方封存檔約 822 MB，首次下載較久，僅解出 clang-format.exe。解壓縮固定使用 Windows 內建的 `tar.exe`；若該版本不支援 `.xz`，改用 7-Zip 先解壓一次。Windows CI 快取解壓後的工具；Linux CI 從 PyPI 安裝同版本的 clang-format（`check.ps1` 在 Linux 上從 PATH 找不帶 `.exe` 的工具）。
 
 需要 Clang 時，使用 `pwsh -File scripts/setup-tools.ps1 -WithClang`，會額外準備 Ninja、Clang 編譯器、原生 DLL 與 builtin headers。
 [clang-cl](https://clang.llvm.org/docs/UsersManual.html#clang-cl) 使用 MSVC 相容的命令列與 ABI，仍需要 Visual Studio C++ 標頭、連結器、執行期與 Windows SDK。
@@ -33,6 +33,14 @@ CMake preset 不寫死 Visual Studio 版本（見 [ADR 0004](adr/0004-any-visual
 這可偵測檔案增刪改；它記錄的是本 repository 現況，不能證明原始供應鏈來源。
 
 ## 同一套檢查
+
+合併前一次跑完下面四個組態（格式與 `/analyze` 只跑一次），並把結果表寫到 `out/check-summary.md`：
+
+```powershell
+pwsh -File scripts/check-all.ps1          # 加 -Jobs 0 用上所有核心
+```
+
+也可以逐一執行：
 
 ```powershell
 pwsh -File scripts/check.ps1 -Stage all -Config Debug
@@ -54,6 +62,8 @@ MSVC 發布目錄是 `out/package/<Config>/`，Clang 是 `out/package/clang/<Con
 | 安裝與版本驗證 | `-Stage package -Config Debug`（先 build） |
 | 快速檢查 | `-Stage quick`（格式、repository 政策與腳本語法） |
 
+`check.ps1` 預設只用一個建置程序，避免筆電卡住；`-Jobs N` 改為 N 個，`-Jobs 0` 用上所有處理器（CI 使用）。
+
 所有第一方 C++ 編譯使用 `/W3 /WX`，分析使用 `/analyze /analyze:external-`；第三方 GLAD 分開建置。
 隨附 Debug FLTK 沒有 PDB，因此僅抑制該組態的 linker LNK4099。
 初次導入 clang-format 會建立全體 `src/`、`tests/` 的一致格式基準；第三方檔案不重排。
@@ -65,7 +75,22 @@ git config core.hooksPath .githooks
 ```
 
 pre-commit 執行 `quick`；commit-msg 檢查 Conventional Commits；pre-push 執行完整 Debug 檢查。
-hooks 與 CI 使用同一個 PowerShell 入口與 `tools.json`。hooks 只檢查、不修改檔案；CI 同時驗證 MSVC／Clang 的 Debug 與 Release。
+hooks 與 CI 使用同一個 PowerShell 入口與 `tools.json`。hooks 只檢查、不修改檔案。CI 的分工與觸發條件見 [operations.md](operations.md#ci)。
+
+## Linux 上的檢查
+
+沒有 Windows 時（例如雲端環境），可以先跑 Linux CI 的同一組檢查：
+
+```sh
+tests/linux/install-packages.sh           # Ubuntu 24.04：apt 套件與 tools.json 版本的 clang-format
+pwsh -File scripts/check.ps1 -Stage quick
+CC=clang CXX=clang++ cmake -S tests/linux -B out/build/linux -G Ninja
+cmake --build out/build/linux
+xvfb-run -a ctest --test-dir out/build/linux --output-on-failure
+tests/linux/win32-syntax.sh
+```
+
+`tests/linux/` 只用系統的 FLTK 與 `stubs/` 裡的 `<windows.h>` 替身，編譯 `main.cpp`、`TrainView.cpp`、`TouchpadGestures.cpp` 以外的原始碼與全部檢查程式；這三個檔案只做 MinGW 語法檢查。新增測試時，在 `CMakeLists.txt` 與 `tests/linux/CMakeLists.txt` 都加上同樣的來源檔。
 撤銷本機設定可執行 `git config --unset core.hooksPath`。
 
 ## 測試範圍

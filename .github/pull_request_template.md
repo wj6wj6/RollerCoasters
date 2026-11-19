@@ -8,6 +8,8 @@
 
 ## 驗證
 
+PR 的 `Windows build` CI 會跑下列四項；本機可用 `pwsh -File scripts/check-all.ps1` 一次跑完，並貼上 `out/check-summary.md` 的表格。
+
 - [ ] Debug：`pwsh -File scripts/check.ps1 -Stage all -Config Debug`
 - [ ] Release：`pwsh -File scripts/check.ps1 -Stage all -Config Release`
 - [ ] Clang Debug：`pwsh -File scripts/check.ps1 -Stage all -Compiler clang -Config Debug`
