@@ -83,14 +83,18 @@ enum Texture
     BAMBOO_TOP, // the leafy top of a stalk
     VINES,      // hanging from the mangroves' crowns
     // more blocks (after the plants, which keep their order)
-    ICE,          // packed ice of the ice spikes
-    PUMPKIN_FACE, // a carved pumpkin lantern's face, lit
-    PUMPKIN_TOP,
+    ICE, // packed ice of the ice spikes
     MUD, // the mangrove swamp's ground
     MANGROVE_SIDE,
     MANGROVE_TOP,
     LEAVES_MANGROVE,
     LEAVES_BAMBOO, // the pale canopy over a bamboo thicket
+    PATH_TOP,      // a trodden dirt path, as in a village
+    PATH_SIDE,
+    SPRUCE_PLANKS, // dark planks: the taiga cabins' roofs
+    LANTERN_SMALL, // a lantern as a block game draws it: the parts laid out as
+                   // its lantern picture lays them out (see addLantern())
+    CHAIN,         // what a hanging lantern hangs from
     WOOL_WHITE,    // the windmill's sail cloth and the balloons' envelopes
     WOOL_RED,
     WOOL_BLUE,

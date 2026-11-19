@@ -408,10 +408,11 @@ int main()
         check(pack.coverage() == 7, "the folder pack's pictures stand in where they can");
         PixelArt::Image image;
         // grey 200 tinted by the foliage colour (119, 171, 47); the hole
-        // filled with the average, darker
+        // stays see-through (the leaves are cut out) but takes the leaves'
+        // colour, so it does not darken them far away
         check(pack.landTexture(Texture::LEAVES_OAK, image) &&
-                  texelIs(image, 4, 4, 93, 134, 36, 255) && texelIs(image, 0, 0, 51, 73, 19, 255),
-              "grey leaves are tinted and their holes filled darker");
+                  texelIs(image, 4, 4, 93, 134, 36, 255) && texelIs(image, 0, 0, 93, 134, 36, 0),
+              "grey leaves are tinted and cut out, their holes in their colour");
         // the autumn colour (232, 132, 44) on the grey 200
         check(pack.landTexture(Texture::LEAVES_AUTUMN, image) &&
                   texelIs(image, 4, 4, 181, 103, 34, 255),

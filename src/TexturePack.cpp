@@ -117,9 +117,11 @@ const Source kSources[] = {
     {T::LEAVES_CHERRY, "leaves_cherry", "cherry_leaves|oak_leaves@cherry|leaves_oak@cherry", NONE},
     {T::LEAVES_AUTUMN, "leaves_autumn", "oak_leaves@autumn|leaves_oak@autumn", NONE},
     {T::PLANKS, "planks", "oak_planks|planks_oak", NONE},
-    {T::ROOF, "roof", "bricks|brick", NONE},
-    {T::WINDOW, "window", "yellow_stained_glass|glass_yellow|glass", NONE},
+    // the roofs of the castle, towers and lighthouse: dark wood
+    {T::ROOF, "roof", "dark_oak_planks|planks_big_oak|spruce_planks|planks_spruce", NONE},
+    {T::WINDOW, "window", "glass", NONE},
     {T::DOOR, "door", "oak_door_bottom|door_wood_lower", NONE},
+    // the full glowing block: only the mine's lamps set in the rock
     {T::LANTERN, "lantern", "glowstone", NONE},
     {T::CRYSTAL, "crystal", "sea_lantern|amethyst_block|glowstone", NONE},
     {T::ORE_COAL, "ore_coal", "coal_ore", NONE},
@@ -152,14 +154,18 @@ const Source kSources[] = {
     {T::BAMBOO_TOP, "bamboo_top", "", NONE},
     {T::VINES, "vines", "vine", FOLIAGE},
     {T::ICE, "ice", "packed_ice|ice_packed|ice", NONE},
-    {T::PUMPKIN_FACE, "pumpkin_face", "jack_o_lantern|pumpkin_face_on", NONE},
-    {T::PUMPKIN_TOP, "pumpkin_top", "pumpkin_top", NONE},
     {T::MUD, "mud", "mud|coarse_dirt|dirt", NONE},
     {T::MANGROVE_SIDE, "mangrove_side", "mangrove_log|jungle_log|log_jungle", NONE},
     {T::MANGROVE_TOP, "mangrove_top", "mangrove_log_top|jungle_log_top|log_jungle_top", NONE},
     {T::LEAVES_MANGROVE, "leaves_mangrove",
      "mangrove_leaves|jungle_leaves@mangrove|oak_leaves@mangrove|leaves_oak@mangrove", MANGROVE},
     {T::LEAVES_BAMBOO, "leaves_bamboo", "azalea_leaves|oak_leaves@lime|leaves_oak@lime", NONE},
+    {T::PATH_TOP, "path_top", "dirt_path_top|grass_path_top|coarse_dirt", NONE},
+    {T::PATH_SIDE, "path_side", "dirt_path_side|grass_path_side|dirt", NONE},
+    {T::SPRUCE_PLANKS, "spruce_planks", "spruce_planks|planks_spruce", NONE},
+    // the lanterns of the buildings: the picture as the game lays it out
+    {T::LANTERN_SMALL, "lantern_small", "lantern", NONE},
+    {T::CHAIN, "chain", "chain|iron_chain", NONE},
     {T::WOOL_WHITE, "wool_white", "white_wool|wool_colored_white", NONE},
     {T::WOOL_RED, "wool_red", "red_wool|wool_colored_red", NONE},
     {T::WOOL_BLUE, "wool_blue", "blue_wool|wool_colored_blue", NONE},
@@ -208,7 +214,8 @@ const Source *sourceOf(int texture)
 // leaves are solid blocks, their holes filled darker.
 bool isPlant(int texture)
 {
-    return texture >= T::TALL_GRASS && texture <= T::VINES;
+    return (texture >= T::TALL_GRASS && texture <= T::VINES) || texture == T::LANTERN_SMALL ||
+           texture == T::CHAIN;
 }
 
 bool isLeaves(int texture)
@@ -636,6 +643,13 @@ bool Pack::landTexture(int texture, PixelArt::Image &out) const
         for (size_t i = 3; i < out.size(); i += 4)
             out[i] = a;
     }
+    else if (texture == T::WINDOW)
+    {
+        // the pack's glass as it is: blended over what is behind it, its
+        // clear parts (less than half opaque) cut out
+    }
+    else if (isLeaves(texture))
+        bleedHoles(out); // cut out, as fancy leaves are
     else if (!isPlant(texture))
         fillHoles(out, isLeaves(texture) ? 0.55f : 1.0f);
     return true;
@@ -753,6 +767,24 @@ void overlay(PixelArt::Image &image, const PixelArt::Image &over)
                                                255);
             image[i + 3] = static_cast<unsigned char>(std::max<int>(image[i + 3], a));
         }
+}
+
+void bleedHoles(PixelArt::Image &image)
+{
+    long sum[3] = {0, 0, 0}, count = 0;
+    for (size_t i = 0; i + 3 < image.size(); i += 4)
+        if (image[i + 3] >= 128)
+        {
+            for (int c = 0; c < 3; ++c)
+                sum[c] += image[i + static_cast<size_t>(c)];
+            ++count;
+        }
+    if (count == 0)
+        return;
+    for (size_t i = 0; i + 3 < image.size(); i += 4)
+        if (image[i + 3] < 128)
+            for (int c = 0; c < 3; ++c)
+                image[i + static_cast<size_t>(c)] = static_cast<unsigned char>(sum[c] / count);
 }
 
 void fillHoles(PixelArt::Image &image, float shade)
