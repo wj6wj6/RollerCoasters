@@ -60,6 +60,11 @@ class TrackRenderer
     // because the old textures no longer exist in the new context.
     void releaseTextures();
 
+    // The pictures for the sleepers and the rails: RGBA, square, a power of
+    // two on a side (a texture pack's planks and iron), or empty for the
+    // built-in ones. Takes effect at the next draw().
+    void setPictures(std::vector<unsigned char> wood, std::vector<unsigned char> iron);
+
     // Draw sleepers and rails. With doingShadows the caller has already set
     // the shadow colour, so nothing is coloured or textured here.
     void draw(const CTrack &track, TrackSplineType splineType, bool doingShadows);
@@ -72,4 +77,6 @@ class TrackRenderer
     TrackArcTable m_arcTable;
     unsigned int m_woodTexture;
     unsigned int m_ironTexture;
+    std::vector<unsigned char> m_woodPicture, m_ironPicture; // empty: built in
+    bool m_picturesChanged = false;
 };

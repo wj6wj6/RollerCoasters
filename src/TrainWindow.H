@@ -35,7 +35,11 @@
 #include <FL/Fl_Value_Input.H>
 #include <FL/Fl_Value_Slider.H>
 #include <FL/Fl_Browser.H>
+#include <FL/Fl_Menu_Button.H>
 #pragma warning(pop)
+
+#include <string>
+#include <vector>
 
 // we need to know what is in the world to show
 #include "Track.H"
@@ -130,9 +134,18 @@ class TrainWindow : public Fl_Double_Window
     Fl_Button *waterButton;     // reflective ocean around the island
     Fl_Button *rainButton;      // rain: wet ground, streaks and ripples
     Fl_Button *sceneryButton;   // the island's scenery, or level grass
-    Fl_Button *editButton;      // show the control points for editing
-    Fl_Button *bloomButton;     // bloom and god rays
-    Fl_Button *ssaoButton;      // screen space ambient occlusion
+    // the island's textures: a button showing the pack in use whose list
+    // holds "Built-in", the packs found on disk (and one opened from
+    // elsewhere), "Open pack..." and "Open texturepacks folder"; see
+    // TexturePack.h
+    Fl_Menu_Button *texturePackMenu;
+    std::vector<std::string> texturePackPaths; // for the items after "Built-in"
+    std::string texturePackPath;               // the pack in use, empty when built in
+    std::string texturePackLabel;              // "Textures: <name>"
+    void listTexturePacks(const std::string &select = std::string());
+    Fl_Button *editButton;  // show the control points for editing
+    Fl_Button *bloomButton; // bloom and god rays
+    Fl_Button *ssaoButton;  // screen space ambient occlusion
     // how fast the observer camera flies, in world units per second
     Fl_Value_Slider *flySpeed;
     // the field of view of every perspective camera, in degrees

@@ -7,6 +7,7 @@
 #include <FL/Fl_Box.H>
 #include <FL/Fl_Browser.H>
 #include <FL/Fl_Button.H>
+#include <FL/Fl_Menu_Button.H>
 #include <FL/Fl_Group.H>
 #include <FL/Fl_Tooltip.H>
 #include <FL/Fl_Value_Input.H>
@@ -175,6 +176,20 @@ void UiTheme::styleSlider(Fl_Value_Slider *slider)
     slider->textcolor(kText);
     slider->align(FL_ALIGN_LEFT);
     styleLabel(slider, kTextMuted);
+}
+
+void UiTheme::styleMenuButton(Fl_Menu_Button *menu)
+{
+    // the button looks like the others; its pop-up list is dark, the item
+    // under the mouse blue
+    menu->box(kWidgetBox);
+    menu->down_box(kWidgetDownBox);
+    menu->color(kSurfaceHi);
+    menu->selection_color(kAccent);
+    menu->textfont(FL_HELVETICA);
+    menu->textsize(kFontSize);
+    menu->textcolor(kText);
+    styleLabel(menu, kText);
 }
 
 void UiTheme::styleBrowser(Fl_Browser *browser)

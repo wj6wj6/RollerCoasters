@@ -1,0 +1,131 @@
+name: Windows build
+
+# The full MSVC / clang-cl gate, the same checks as scripts/check-all.ps1 (the
+# local pre-merge check), split into jobs that run side by side: the shared
+# checks (format, repository policy, MSVC /analyze) once, and build, CTest and
+# the installed --version for each compiler and configuration. The pinned
+# toolchain is unpacked once and shared through the cache. The `windows` job
+# at the end passes only when all of them did, so a required check of that
+# name keeps working. The repository is public, so GitHub-hosted runners cost
+# nothing and this runs on every non-draft PR push as well as main pushes,
+# v* tags and by hand. Linux quality (ci.yml) gives faster feedback on the
+# same pushes.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/workflows/ci.yml'
+      - 'tests/linux/**'
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/workflows/ci.yml'
+      - 'tests/linux/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch or PR supersedes the running build.
+concurrency:
+  group: windows-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  # Download and unpack the pinned toolchain once (cached), for the jobs below.
+  tools:
+    # Draft PRs are still being written; their checks start when marked ready.
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: out/tools
+          key: native-tools-windows-x64-${{ hashFiles('tools.json', 'scripts/setup-tools.ps1') }}
+      - name: Restore native tools
+        run: ./scripts/setup-tools.ps1 -WithClang
+
+  shared:
+    needs: tools
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache/restore@v4
+        with:
+          path: out/tools
+          key: native-tools-windows-x64-${{ hashFiles('tools.json', 'scripts/setup-tools.ps1') }}
+          fail-on-cache-miss: true
+      - name: Format, repository policy and script syntax
+        run: ./scripts/check.ps1 -Stage quick
+      - name: MSVC /analyze
+        run: ./scripts/check.ps1 -Stage lint -Config Debug -Jobs 0
+
+  build:
+    needs: tools
+    runs-on: windows-2022
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [msvc, clang]
+        config: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache/restore@v4
+        with:
+          path: out/tools
+          key: native-tools-windows-x64-${{ hashFiles('tools.json', 'scripts/setup-tools.ps1') }}
+          fail-on-cache-miss: true
+      - name: Build, CTest, install and --version
+        run: ./scripts/check-all.ps1 -NoShared -Jobs 0 -Compiler ${{ matrix.compiler }} -Config ${{ matrix.config }}
+      - name: Upload test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-windows-${{ matrix.compiler }}-${{ matrix.config }}
+          path: |
+            out/check-summary.md
+            out/build/**/results-*.xml
+            out/build/**/Testing/Temporary/LastTest.log
+          retention-days: 14
+          if-no-files-found: ignore
+      - name: Upload verified distribution
+        if: matrix.config == 'Release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: RollerCoasters-windows-x64-${{ matrix.compiler }}
+          path: |
+            out/package/Release
+            out/package/clang/Release
+          retention-days: 14
+          if-no-files-found: error
+
+  # One check for the whole gate: passes only when every job above did.
+  windows:
+    if: always() && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
+    needs: [tools, shared, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: All Windows jobs passed
+        shell: bash
+        run: |
+          echo "tools: ${{ needs.tools.result }}, shared: ${{ needs.shared.result }}, build: ${{ needs.build.result }}"
+          test "${{ needs.tools.result }}" = success
+          test "${{ needs.shared.result }}" = success
+          test "${{ needs.build.result }}" = success

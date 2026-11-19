@@ -3,7 +3,8 @@
 
      Comment:     The 32 x 32 pixel textures of the island's blocks and
                   plants (LandWorld), drawn in code like the others, so
-                  there are no image files to load.
+                  there are no image files to load. A texture pack the
+                  user picks can stand in for any of them (TexturePack).
 
 *************************************************************************/
 #pragma once
@@ -49,7 +50,7 @@ enum Texture
     PLANKS,
     ROOF,
     WINDOW,
-    DOOR,
+    DOOR, // the bottom half of a door (DOOR_TOP the top)
     LANTERN,
     CRYSTAL,
     ORE_COAL,
@@ -82,14 +83,37 @@ enum Texture
     BAMBOO_TOP, // the leafy top of a stalk
     VINES,      // hanging from the mangroves' crowns
     // more blocks (after the plants, which keep their order)
-    ICE,          // packed ice of the ice spikes
-    PUMPKIN_FACE, // a carved pumpkin lantern's face, lit
-    PUMPKIN_TOP,
+    ICE, // packed ice of the ice spikes
     MUD, // the mangrove swamp's ground
     MANGROVE_SIDE,
     MANGROVE_TOP,
     LEAVES_MANGROVE,
     LEAVES_BAMBOO, // the pale canopy over a bamboo thicket
+    PATH_TOP,      // a trodden dirt path, as in a village
+    PATH_SIDE,
+    SPRUCE_PLANKS, // dark planks: the taiga cabins' roofs
+    LANTERN_SMALL, // a lantern as a block game draws it: the parts laid out as
+                   // its lantern picture lays them out (see addLantern())
+    CHAIN,         // what a hanging lantern hangs from
+    WOOL_WHITE,    // the windmill's sail cloth and the balloons' envelopes
+    WOOL_RED,
+    WOOL_BLUE,
+    WOOL_YELLOW,
+    WOOL_ORANGE,
+    WOOL_PURPLE,
+    LILY_PAD,   // floating on still water
+    SUGAR_CANE, // stalks by the water's edge; they stack
+    CLAY,       // the bed of the lakes and ponds
+    PODZOL_TOP, // the spruce forest's floor
+    PODZOL_SIDE,
+    COARSE_DIRT,   // where the meadow meets the badlands and the volcano
+    STONE_BRICKS,  // the castle's and the church's dressed stone
+    MOSSY_BRICKS,  // the same, mossy, here and there on old walls
+    DARK_OAK_SIDE, // the dark timber of window frames and beams
+    DARK_OAK_TOP,
+    TRAPDOOR,   // a spruce trapdoor: window sills and shutters
+    FLOWER_POT, // a clay pot, as a block game lays its picture out
+    DOOR_TOP,   // the top half of the door (DOOR is the bottom), with its windows
     TEXTURE_COUNT
 };
 

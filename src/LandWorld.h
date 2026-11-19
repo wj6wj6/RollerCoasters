@@ -43,6 +43,13 @@
 #include <memory>
 #include <vector>
 
+#include "PixelArt.h"
+
+namespace TexturePack
+{
+class Pack;
+}
+
 class LandWorld
 {
   public:
@@ -50,7 +57,22 @@ class LandWorld
     ~LandWorld();
 
     // Call when the OpenGL context was recreated: the old names are gone.
+    // The blocks are kept; only their display lists are made again.
     void releaseResources();
+
+    // Gets the island ready to draw without holding up the window: the
+    // first call starts building it on a thread of its own (the scenery
+    // takes a second or two, many more in a Debug build); each call then
+    // turns what is built into display lists for up to the given seconds.
+    // True once it is all ready. draw() builds whatever is left at once.
+    bool prepare(bool flat, float seconds);
+
+    // How far the island is from ready, 0..1, for a loading screen.
+    float progress(bool flat) const;
+
+    // True while the island is being read from its save (WorldSave.h)
+    // rather than generated.
+    bool loadingSave(bool flat) const;
 
     // Draws the island. flat: the level editor island instead of the
     // scenery. shadowPass: only the solid blocks, for the shadow map.
@@ -62,7 +84,7 @@ class LandWorld
     // over what is behind them.
     void drawWater(bool flat);
 
-    // Stands the track on wooden trestles, one every 9 units along it
+    // Stands the track on wooden trestles, one every 16 units along it
     // wherever it is above the water and well above the ground; off the
     // island the posts go down to the sea bed. path: points along the whole
     // track about a unit apart, x, y, z for each. The trestles are worked
@@ -75,6 +97,10 @@ class LandWorld
     {
         return m_chunksDrawn;
     }
+
+    // Swaps the island's textures for a texture pack's, where it has them
+    // (nullptr: all built in). Takes effect at the next draw().
+    void setTexturePack(std::shared_ptr<const TexturePack::Pack> pack);
 
     // A box around the blocks that cast shadows.
     static void shadowBounds(float lo[3], float hi[3]);
@@ -104,11 +130,17 @@ class LandWorld
     std::vector<float> m_supportPath;
 
     struct Scene;
+    static void buildScene(Scene &scene, bool flat);
     Scene &scene(bool flat);
     void drawMoving(const Scene &scene, float time);
 
     std::unique_ptr<Scene> m_scenery;
     std::unique_ptr<Scene> m_flat;
+    // the pack's picture for a texture, or the built-in one
+    PixelArt::Image pictureOf(int texture) const;
+
     std::vector<unsigned int> m_textures;
+    std::shared_ptr<const TexturePack::Pack> m_pack;
+    bool m_texturesStale = false;
     int m_chunksDrawn = 0;
 };

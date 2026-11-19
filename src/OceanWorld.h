@@ -41,19 +41,40 @@
 *************************************************************************/
 #pragma once
 
+#include <memory>
 #include <vector>
+
+namespace TexturePack
+{
+class Pack;
+}
 
 class OceanWorld
 {
   public:
     OceanWorld();
+    ~OceanWorld();
 
     // Call when the OpenGL context was recreated: the old names are gone.
     void releaseResources();
 
+    // Gets the sea floor ready to draw without holding up the window: the
+    // first call starts building it on a thread of its own (or reading it
+    // from its save, WorldSave.h); the call after it is built makes the
+    // display lists. True once it is all ready. draw() waits for whatever
+    // is left.
+    bool prepare();
+
+    // How far the sea floor is from ready, 0..1, for a loading screen.
+    float progress() const;
+
     // Draws the sea floor and everything on it. shadowPass: only the solid
     // blocks, for the shadow map. time (seconds) moves the fish.
     void draw(bool shadowPass, float time);
+
+    // Swaps the sea floor's textures for a texture pack's, where it has
+    // them (nullptr: all built in). Takes effect at the next draw().
+    void setTexturePack(std::shared_ptr<const TexturePack::Pack> pack);
 
     // Where bubbles rise from: x, y, z for each source.
     static const std::vector<float> &bubbleSources();
@@ -73,6 +94,10 @@ class OceanWorld
     // (a third of the points each). LandWorld shapes the island around them.
     static std::vector<float> rideSamples();
 
+    // When this file was compiled, for the key of a saved world
+    // (WorldSave.h).
+    static const char *buildStamp();
+
     // Height of the water surface.
     static float waterLevel();
 
@@ -86,7 +111,6 @@ class OceanWorld
     static int rideObstructions(const std::vector<float> &path);
 
   private:
-    void build();
     void drawSeaLife(float time);
 
     bool m_built;
@@ -98,4 +122,9 @@ class OceanWorld
     std::vector<Chunk> m_chunks; // drawn only when in view
     unsigned int m_farList;      // the sea bed beyond the grid, always drawn
     std::vector<unsigned int> m_textures;
+    std::shared_ptr<const TexturePack::Pack> m_pack;
+    bool m_texturesStale = false;
+    void uploadTextures(bool fresh);
+    struct Build;
+    std::unique_ptr<Build> m_build; // while it is being built
 };

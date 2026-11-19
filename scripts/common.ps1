@@ -18,7 +18,9 @@ function Resolve-NativeTool {
     $spec = $ToolVersions[$Name]
     $localPath = Join-Path $ProjectRoot $spec.executable
     $candidates = @($localPath)
-    $installed = @(Get-Command "$Name.exe" -All -CommandType Application -ErrorAction SilentlyContinue)
+    # tools.json pins Windows downloads; the Linux CI job installs the same versions on PATH.
+    $commandName = if ($IsWindows) { "$Name.exe" } else { $Name }
+    $installed = @(Get-Command $commandName -All -CommandType Application -ErrorAction SilentlyContinue)
     if ($installed) { $candidates += $installed.Source }
     foreach ($candidate in $candidates) {
         if (Test-Path -LiteralPath $candidate -PathType Leaf) {

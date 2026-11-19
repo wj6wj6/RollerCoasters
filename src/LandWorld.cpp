@@ -7,7 +7,11 @@
 
 #include <math.h>
 #include <stdlib.h>
-#include <deque>
+#include <atomic>
+#include <chrono>
+#include <mutex>
+#include <thread>
+#include <utility>
 #include <vector>
 
 #ifdef _WIN32
@@ -16,11 +20,14 @@
 #include <glad/glad.h>
 
 #include "LandWorld.h"
+#include "CellQueue.h"
 #include "Frustum.h"
 #include "LandTextures.h"
 #include "OceanWorld.h"
 #include "PixelArt.h"
+#include "TexturePack.h"
 #include "WaterFlow.h"
+#include "WorldSave.h"
 #include "WorldShape.h"
 
 namespace
@@ -101,7 +108,7 @@ enum Block
     ROOF,
     WINDOW,
     DOOR,
-    LANTERN,
+    LANTERN, // a full glowing block (glowstone); the scenery no longer uses it
     CRYSTAL,
     ORE_COAL,
     ORE_IRON,
@@ -113,12 +120,19 @@ enum Block
     HAY,
     FARMLAND,
     WATER,
-    ICE,    // packed ice: the ice spikes
-    JACK_O, // a carved pumpkin lantern, lit
-    MUD,    // the mangrove swamp's ground
+    ICE, // packed ice: the ice spikes
+    MUD, // the mangrove swamp's ground
     MANGROVE_LOG,
     LEAVES_MANGROVE,
     LEAVES_BAMBOO, // the canopy over a bamboo thicket
+    PATH,          // a trodden dirt path
+    SPRUCE_PLANKS, // dark planks
+    CLAY,          // the bed of the lakes and ponds
+    PODZOL,        // the spruce forest's floor
+    COARSE_DIRT,   // where the meadow meets the badlands and the volcano
+    STONE_BRICKS,  // dressed stone: the castle, the church, the lighthouse's base
+    MOSSY_BRICKS,  // the same, mossy, on the castle's old walls
+    DARK_OAK_LOG,  // dark timber: window frames and beams
     BLOCK_COUNT
 };
 
@@ -141,6 +155,17 @@ enum Plant
     BAMBOO_TOP, // the leafy top of a cane
     VINES,      // hanging under the mangroves' crowns
     SNOW_LAYER, // fallen snow, 1 to 8 eighths of a block deep (Grid::level)
+    FENCE,      // an oak fence: a post, and rails to the fences and blocks beside it
+    LAMP,       // a lantern, standing on what is below or hanging from what is above
+    LILY_PAD,   // floating on still water (in the water's own cell)
+    SUGAR_CANE, // stalks by the water's edge; they stack
+    // the parts of buildings smaller than a block, as a block game has them;
+    // what each is made of and which way it faces is kept in Grid::level
+    // (see shapeLevel())
+    STAIRS,   // a step: a half block with a quarter block on its back half
+    SLAB,     // a half block, low or high in the cell
+    TRAPDOOR, // a thin board: closed at the top of the cell, or open against a wall
+    POT,      // a flower pot with a flower in it (Grid::level: the flower)
     PLANT_COUNT
 };
 
@@ -220,7 +245,7 @@ int textureOf(int block, int face)
     case ROOF:
         return T::ROOF;
     case WINDOW:
-        return face == 2 ? T::WINDOW : T::PLANKS;
+        return T::WINDOW;
     case DOOR:
         return face == 2 ? T::DOOR : T::PLANKS;
     case LANTERN:
@@ -249,8 +274,6 @@ int textureOf(int block, int face)
         return T::WATER;
     case ICE:
         return T::ICE;
-    case JACK_O:
-        return face == 0 || face == 1 ? T::PUMPKIN_TOP : T::PUMPKIN_FACE;
     case MUD:
         return T::MUD;
     case MANGROVE_LOG:
@@ -259,6 +282,22 @@ int textureOf(int block, int face)
         return T::LEAVES_MANGROVE;
     case LEAVES_BAMBOO:
         return T::LEAVES_BAMBOO;
+    case PATH:
+        return face == 0 ? T::PATH_TOP : (face == 1 ? T::DIRT : T::PATH_SIDE);
+    case SPRUCE_PLANKS:
+        return T::SPRUCE_PLANKS;
+    case CLAY:
+        return T::CLAY;
+    case PODZOL:
+        return face == 0 ? T::PODZOL_TOP : (face == 1 ? T::DIRT : T::PODZOL_SIDE);
+    case COARSE_DIRT:
+        return T::COARSE_DIRT;
+    case STONE_BRICKS:
+        return T::STONE_BRICKS;
+    case MOSSY_BRICKS:
+        return T::MOSSY_BRICKS;
+    case DARK_OAK_LOG:
+        return face == 2 ? T::DARK_OAK_SIDE : T::DARK_OAK_TOP;
     default:
         return T::STONE;
     }
@@ -266,7 +305,50 @@ int textureOf(int block, int face)
 
 int plantTexture(int plant)
 {
+    if (plant == LILY_PAD)
+        return LandTextures::LILY_PAD;
+    if (plant == SUGAR_CANE)
+        return LandTextures::SUGAR_CANE;
     return LandTextures::TALL_GRASS + (plant - TALL_GRASS);
+}
+
+// The parts of buildings in plant cells (fences, lanterns, steps, slabs,
+// trapdoors, flower pots): nothing else is put where one of them is.
+bool isFixture(int plant)
+{
+    return plant == FENCE || plant == LAMP || (plant >= STAIRS && plant <= POT);
+}
+
+// The four ways a step can rise, a trapdoor lean or a corner turn, in this
+// order: +x, +z, -x, -z.
+const int kFacing[4][2] = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
+
+// What steps and slabs can be made of: their block, its index kept in
+// Grid::level.
+const int kShapeBlocks[8] = {PLANKS,       SPRUCE_PLANKS, ROOF,  COBBLE,
+                             STONE_BRICKS, MOSSY_BRICKS,  STONE, DARK_OAK_LOG};
+
+// Grid::level of a step, slab or trapdoor: bits 0..1 which way it faces
+// (kFacing), bit 2 high in the cell (an upside-down step, a high slab, a
+// closed trapdoor), bit 3 an outer corner step, bits 4..6 what it is made
+// of (kShapeBlocks).
+unsigned char shapeLevel(int facing, bool high, bool corner, int block)
+{
+    int material = 0;
+    for (int k = 0; k < 8; ++k)
+        if (kShapeBlocks[k] == block)
+            material = k;
+    return static_cast<unsigned char>((facing & 3) | (high ? 4 : 0) | (corner ? 8 : 0) |
+                                      (material << 4));
+}
+
+// Leaves are cut out (their pictures have holes), so they hide nothing
+// behind them: the faces next to them are drawn, as with fancy leaves in a
+// block game.
+bool isLeafBlock(int block)
+{
+    return (block >= LEAVES_OAK && block <= LEAVES_AUTUMN) || block == LEAVES_MANGROVE ||
+           block == LEAVES_BAMBOO;
 }
 
 // Trees and the like: the ground is what lies under them.
@@ -288,12 +370,8 @@ float blockGlow(int block)
         return 1.3f;
     case CRYSTAL:
         return 1.0f;
-    case WINDOW:
-        return 0.5f;
     case MAGMA:
         return 0.22f;
-    case JACK_O:
-        return 0.6f;
     case ORE_DIAMOND:
         return 0.1f;
     default:
@@ -630,12 +708,14 @@ struct Grid
     {
         return get(bx, j, bz) != AIR;
     }
-    // Solid and not see-through: water lets light through and shows what is
-    // behind it, so it hides no faces and casts no ambient occlusion.
+    // Solid and not see-through: water and glass let light through and show
+    // what is behind them, so they hide no faces and cast no ambient
+    // occlusion.
     bool opaque(int bx, int j, int bz) const
     {
         const int b = get(bx, j, bz);
-        return b != AIR && b != WATER;
+        // a door is a thin board in its cell, so it hides nothing beside it
+        return b != AIR && b != WATER && b != WINDOW && b != DOOR;
     }
     int skyAt(int bx, int j, int bz) const
     {
@@ -1269,68 +1349,301 @@ void footing(Grid &g, int x0, int x1, int z0, int z1, int floor)
         }
 }
 
-// A cottage: plank walls between log corner posts on a cobble footing, lit
-// windows, a door facing +z or +x and a gabled roof of shingles.
-void buildHouse(Grid &g, int x0, int z0, int x1, int z1, int floor, bool doorOnX)
+// Half of a, rounded down also when it is negative (a / 2 rounds towards
+// zero): the middle of a run of blocks from b0 to b1 is floorHalf(b0 + b1).
+int floorHalf(int a)
 {
-    const int wallTop = floor + 2;
-    footing(g, x0, x1, z0, z1, floor);
-    fill(g, x0, x1, floor, wallTop, z0, z1, PLANKS);
-    for (int j = floor; j <= wallTop; ++j)
-    {
-        g.put(x0, j, z0, OAK_LOG);
-        g.put(x1, j, z0, OAK_LOG);
-        g.put(x0, j, z1, OAK_LOG);
-        g.put(x1, j, z1, OAK_LOG);
-    }
-    for (int bx = x0 + 1; bx < x1; bx += 2)
-    {
-        g.put(bx, floor + 1, z0, WINDOW);
-        g.put(bx, floor + 1, z1, WINDOW);
-    }
-    for (int bz = z0 + 1; bz < z1; bz += 2)
-    {
-        g.put(x0, floor + 1, bz, WINDOW);
-        g.put(x1, floor + 1, bz, WINDOW);
-    }
-    if (doorOnX)
-    {
-        g.put(x1, floor, (z0 + z1) / 2, DOOR);
-        g.put(x1, floor + 1, (z0 + z1) / 2, PLANKS);
-        if (g.get(x1 + 1, floor, (z0 + z1) / 2 + 1) == AIR)
-            g.put(x1 + 1, floor, (z0 + z1) / 2 + 1, JACK_O); // a pumpkin lantern by the door
-    }
-    else
-    {
-        g.put((x0 + x1) / 2, floor, z1, DOOR);
-        g.put((x0 + x1) / 2, floor + 1, z1, PLANKS);
-        if (g.get((x0 + x1) / 2 + 1, floor, z1 + 1) == AIR)
-            g.put((x0 + x1) / 2 + 1, floor, z1 + 1, JACK_O);
-    }
-    // the roof: slabs that step in from both long sides, one block of eaves
-    const bool ridgeAlongX = (x1 - x0) >= (z1 - z0);
-    for (int k = 0;; ++k)
-    {
-        const int a0 = (ridgeAlongX ? z0 : x0) - 1 + k;
-        const int a1 = (ridgeAlongX ? z1 : x1) + 1 - k;
-        if (a0 > a1)
-            break;
-        if (ridgeAlongX)
-            fill(g, x0 - 1, x1 + 1, wallTop + 1 + k, wallTop + 1 + k, a0, a1, ROOF);
-        else
-            fill(g, a0, a1, wallTop + 1 + k, wallTop + 1 + k, z0 - 1, z1 + 1, ROOF);
-    }
-    // chimney
-    g.put(x0 + 1, wallTop + 2, z0 + 1, COBBLE);
-    g.put(x0 + 1, wallTop + 3, z0 + 1, COBBLE);
-    g.put(x0 + 1, wallTop + 4, z0 + 1, COBBLE);
+    return a >= 0 ? a / 2 : -((1 - a) / 2);
 }
 
+// Is the cell free for a part of a building: air, with at most grass or a
+// flower in it?
+bool freeCell(const Grid &g, int bx, int j, int bz)
+{
+    return Grid::inside(bx, j, bz) && g.get(bx, j, bz) == AIR &&
+           !isFixture(g.plant[Grid::index(bx, j, bz)]);
+}
+
+// A part of a building in a cell, if it is free.
+void putFixture(Grid &g, int bx, int j, int bz, int plant, unsigned char level)
+{
+    if (!freeCell(g, bx, j, bz))
+        return;
+    const size_t i = Grid::index(bx, j, bz);
+    g.plant[i] = static_cast<unsigned char>(plant);
+    g.level[i] = level;
+}
+
+// A fence post in a cell, if it is free.
+void putFence(Grid &g, int bx, int j, int bz)
+{
+    putFixture(g, bx, j, bz, FENCE, 0);
+}
+
+// A lantern in a cell, if it is free: it stands on the block or fence below,
+// or hangs from the block above on a chain.
+void putLamp(Grid &g, int bx, int j, int bz)
+{
+    putFixture(g, bx, j, bz, LAMP, 0);
+}
+
+// A step of `block` rising towards kFacing[rises]; upside down if high; an
+// outer corner (its upper quarter towards kFacing[rises] and the next way
+// round) if corner.
+void putStairs(Grid &g, int bx, int j, int bz, int rises, int block, bool high = false,
+               bool corner = false)
+{
+    putFixture(g, bx, j, bz, STAIRS, shapeLevel(rises, high, corner, block));
+}
+
+// A slab of `block`, in the lower or upper half of the cell.
+void putSlab(Grid &g, int bx, int j, int bz, int block, bool high = false)
+{
+    putFixture(g, bx, j, bz, SLAB, shapeLevel(0, high, false, block));
+}
+
+// A spruce trapdoor: closed, at the top of the cell (a window sill), or
+// open against the wall towards kFacing[wall] (a shutter).
+void putTrapdoor(Grid &g, int bx, int j, int bz, int wall, bool closed)
+{
+    putFixture(g, bx, j, bz, TRAPDOOR, shapeLevel(wall, closed, false, PLANKS));
+}
+
+// A flower pot with a flower (a Plant) in it.
+void putPot(Grid &g, int bx, int j, int bz, int flower)
+{
+    putFixture(g, bx, j, bz, POT, static_cast<unsigned char>(flower));
+}
+
+// A gable roof of steps over the box b0..b1 along the ridge, a0..a1 across
+// it, eaves included, the lowest course at layer `base`: two rows of steps
+// rising from the eaves to the ridge (a row of slabs where it is odd), the
+// inside and the gable ends filled with `gable`, set back a block under
+// the steps. alongX: the ridge runs along x (a is z), else along z.
+void buildGableRoof(Grid &g, int b0, int b1, int a0, int a1, int base, bool alongX, int roof,
+                    int gable)
+{
+    auto at = [&](int a, int b, int j, int what, int rises) {
+        const int bx = alongX ? b : a, bz = alongX ? a : b;
+        if (what == STAIRS)
+            putStairs(g, bx, j, bz, rises, roof);
+        else if (what == SLAB)
+            putSlab(g, bx, j, bz, roof);
+        else if (g.get(bx, j, bz) == AIR)
+        {
+            g.put(bx, j, bz, gable);
+            g.plant[Grid::index(bx, j, bz)] = NO_PLANT;
+        }
+    };
+    const int up = alongX ? 1 : 0, down = alongX ? 3 : 2; // rising towards +a, -a
+    for (int k = 0; a0 + k <= a1 - k; ++k)
+    {
+        const int lo = a0 + k, hi = a1 - k, j = base + k;
+        for (int b = b0; b <= b1; ++b)
+        {
+            if (lo == hi)
+            {
+                at(lo, b, j, SLAB, 0);
+                continue;
+            }
+            at(lo, b, j, STAIRS, up);
+            at(hi, b, j, STAIRS, down);
+            if (b > b0 && b < b1)
+                for (int a = lo + 1; a < hi; ++a)
+                    at(a, b, j, AIR, 0);
+        }
+    }
+}
+
+// A hipped roof of steps over x0..x1, z0..z1 (eaves included), the lowest
+// course at layer `base`: rings of steps rising inwards, outer corner steps
+// at the corners (four of them make a point where two by two are left),
+// slabs on top, filled with `fill` inside.
+void buildHipRoof(Grid &g, int x0, int x1, int z0, int z1, int base, int roof, int fill)
+{
+    for (int k = 0; x0 + k <= x1 - k && z0 + k <= z1 - k; ++k)
+    {
+        const int lx = x0 + k, hx = x1 - k, lz = z0 + k, hz = z1 - k, j = base + k;
+        for (int bx = lx; bx <= hx; ++bx)
+            for (int bz = lz; bz <= hz; ++bz)
+            {
+                const bool edgeX = bx == lx || bx == hx, edgeZ = bz == lz || bz == hz;
+                if (lx == hx || lz == hz)
+                    putSlab(g, bx, j, bz, roof); // the top: a row or one block
+                else if (edgeX && edgeZ)
+                {
+                    const int corner = bx == lx ? (bz == lz ? 0 : 3) : (bz == lz ? 1 : 2);
+                    putStairs(g, bx, j, bz, corner, roof, false, true);
+                }
+                else if (edgeZ)
+                    putStairs(g, bx, j, bz, bz == lz ? 1 : 3, roof);
+                else if (edgeX)
+                    putStairs(g, bx, j, bz, bx == lx ? 0 : 2, roof);
+                else if (g.get(bx, j, bz) == AIR)
+                {
+                    g.put(bx, j, bz, fill);
+                    g.plant[Grid::index(bx, j, bz)] = NO_PLANT;
+                }
+            }
+    }
+}
+
+// The flowers that grow in beds and pots.
+const int kBedFlowers[5] = {POPPY, DANDELION, OXEYE, ALLIUM, CORNFLOWER};
+
+// Under each window pane in a wall, outside: a trapdoor for a sill, and on
+// some of them a flower pot. The panes are found in the wall's layer
+// `paneLayer` between (x0, z0) and (x1, z1) (a straight run along x or
+// z); `out` is the way out of the wall (kFacing). The pots are chosen by
+// the distance from the middle of the wall, so the two halves mirror each
+// other, as the walls do.
+void dressWindows(Grid &g, int x0, int z0, int x1, int z1, int paneLayer, int out)
+{
+    const int ox = kFacing[out][0], oz = kFacing[out][1];
+    const int sx = x1 > x0 ? 1 : (x1 < x0 ? -1 : 0), sz = z1 > z0 ? 1 : (z1 < z0 ? -1 : 0);
+    const int length = abs(x1 - x0) + abs(z1 - z0);
+    for (int k = 0, bx = x0, bz = z0; k <= length; ++k, bx += sx, bz += sz)
+    {
+        if (g.get(bx, paneLayer, bz) != WINDOW || g.get(bx, paneLayer - 1, bz) == WINDOW)
+            continue;
+        putTrapdoor(g, bx + ox, paneLayer - 1, bz + oz, (out + 2) % 4, true);
+        const int fromMiddle = abs(2 * k - length);
+        const unsigned int h = hash(fromMiddle, paneLayer, 811u);
+        if (h % 3u == 0u)
+            putPot(g, bx + ox, paneLayer, bz + oz, kBedFlowers[(h >> 4) % 5u]);
+    }
+}
+
+// Flowers along the foot of a building's walls, outside x0..x1, z0..z1,
+// here and there, leaving the door's side (doorSide: kFacing, or -1) bare
+// so the path reaches it. Chosen by the distance from the building's middle
+// lines, so the beds mirror each other.
+void flowerBeds(Grid &g, int x0, int z0, int x1, int z1, int floor, int doorSide)
+{
+    for (int bx = x0 - 1; bx <= x1 + 1; ++bx)
+        for (int bz = z0 - 1; bz <= z1 + 1; ++bz)
+        {
+            const bool ring = bx == x0 - 1 || bx == x1 + 1 || bz == z0 - 1 || bz == z1 + 1;
+            const bool corner = (bx == x0 - 1 || bx == x1 + 1) && (bz == z0 - 1 || bz == z1 + 1);
+            if (!ring || corner)
+                continue;
+            const int side = bx == x1 + 1 ? 0 : (bz == z1 + 1 ? 1 : (bx == x0 - 1 ? 2 : 3));
+            const unsigned int h = hash(abs(2 * bx - x0 - x1), abs(2 * bz - z0 - z1), 813u);
+            if (side == doorSide || h % 5u > 1u || !Grid::inside(bx, floor, bz) ||
+                g.get(bx, floor - 1, bz) != GRASS || g.get(bx, floor, bz) != AIR ||
+                g.plant[Grid::index(bx, floor, bz)] != NO_PLANT)
+                continue;
+            g.plant[Grid::index(bx, floor, bz)] =
+                static_cast<unsigned char>(kBedFlowers[(h >> 4) % 5u]);
+        }
+}
+
+// A cottage as in a block game's plains village, shaped first, then
+// coloured, then dressed: a cobble footing course, dark oak log posts at
+// the corners and in the middle of each wall, glass between the posts two
+// blocks high (they do not light up: the lamps do), a band of oak planks
+// along the top, an oak door two blocks high in the middle of the front
+// under a little roof of a step, a lantern hung under the eaves at each
+// front corner; a gable roof of dark oak steps overhanging the walls by a
+// block all round, its gable ends of oak planks set back under it, and a
+// cobble chimney. Under the windows trapdoor sills, some with a flower pot,
+// and flowers at the foot of the walls. The colours: the cobble's grey,
+// dark oak, light oak, and the flowers. Walls run an even number of blocks
+// between corners (x1 - x0 and z1 - z0 of 4 or 6), so the middle post and
+// the windows either side of it are symmetrical.
+void buildHouse(Grid &g, int x0, int z0, int x1, int z1, int floor, bool doorOnX)
+{
+    const int wallTop = floor + 3;
+    footing(g, x0, x1, z0, z1, floor);
+    fill(g, x0, x1, floor, floor, z0, z1, COBBLE);
+    fill(g, x0, x1, floor + 1, wallTop - 1, z0, z1, DARK_OAK_LOG); // the posts
+    fill(g, x0, x1, wallTop, wallTop, z0, z1, PLANKS);             // a band under the eaves
+    // a room inside, with a plank floor, seen through the glass
+    fill(g, x0 + 1, x1 - 1, floor, wallTop, z0 + 1, z1 - 1, AIR);
+    fill(g, x0 + 1, x1 - 1, floor - 1, floor - 1, z0 + 1, z1 - 1, PLANKS);
+    // posts at the corners and the middle of each wall, glass filling the
+    // bays between them, two blocks high
+    const int along[2] = {x1 - x0, z1 - z0};
+    for (int side = 0; side < 2; ++side)
+    {
+        const int length = along[side];
+        for (int k = 1; k < length; ++k)
+        {
+            if (k * 2 == length)
+                continue; // the middle post
+            for (int wall = 0; wall < 2; ++wall)
+            {
+                const int bx = side == 0 ? x0 + k : (wall == 0 ? x0 : x1);
+                const int bz = side == 0 ? (wall == 0 ? z0 : z1) : z0 + k;
+                g.put(bx, floor + 1, bz, WINDOW);
+                g.put(bx, floor + 2, bz, WINDOW);
+            }
+        }
+    }
+    // the door, two blocks high, in the middle of the front wall in place
+    // of its middle post, so the front is symmetrical, under a step for a
+    // little roof; a lantern hangs under the eaves at each front corner,
+    // high over the corner posts, out of the way of the door
+    const int dx = doorOnX ? x1 : x0 + along[0] / 2;
+    const int dz = doorOnX ? z0 + along[1] / 2 : z1;
+    const int out = doorOnX ? 0 : 1; // the front faces +x or +z
+    const int ox = kFacing[out][0], oz = kFacing[out][1];
+    g.put(dx, floor, dz, DOOR);
+    g.put(dx, floor + 1, dz, DOOR);
+    g.put(dx, floor + 2, dz, DARK_OAK_LOG);
+    putStairs(g, dx + ox, floor + 2, dz + oz, (out + 2) % 4, ROOF);
+    for (int side = 0; side < 2; ++side)
+    {
+        if (doorOnX)
+            putLamp(g, x1 + 1, wallTop, side == 0 ? z0 : z1);
+        else
+            putLamp(g, side == 0 ? x0 : x1, wallTop, z1 + 1);
+    }
+    // sills and pots under the windows of all four walls
+    dressWindows(g, x0, z0, x1, z0, floor + 1, 3);
+    dressWindows(g, x0, z1, x1, z1, floor + 1, 1);
+    dressWindows(g, x0, z0, x0, z1, floor + 1, 2);
+    dressWindows(g, x1, z0, x1, z1, floor + 1, 0);
+    flowerBeds(g, x0, z0, x1, z1, floor, out);
+    // the roof, along the longer side, a block of eaves all round
+    const bool ridgeAlongX = along[0] >= along[1];
+    if (ridgeAlongX)
+        buildGableRoof(g, x0 - 1, x1 + 1, z0 - 1, z1 + 1, wallTop + 1, true, ROOF, PLANKS);
+    else
+        buildGableRoof(g, z0 - 1, z1 + 1, x0 - 1, x1 + 1, wallTop + 1, false, ROOF, PLANKS);
+    // the chimney, up through the roof at the back, a block above it
+    const int cx = ridgeAlongX ? x0 + 1 : (x0 + x1) / 2, cz = ridgeAlongX ? (z0 + z1) / 2 : z0 + 1;
+    const int roofRise = ((ridgeAlongX ? along[1] : along[0]) + 2) / 2;
+    for (int j = wallTop + 1; j <= wallTop + roofRise + 2; ++j)
+    {
+        g.put(cx, j, cz, COBBLE);
+        g.plant[Grid::index(cx, j, cz)] = NO_PLANT;
+    }
+}
+
+// A lamp post: on a stone brick foot, an oak fence two high with a lantern
+// on it.
 void buildLampPost(Grid &g, int bx, int bz, int floor)
 {
-    g.put(bx, floor, bz, OAK_LOG);
-    g.put(bx, floor + 1, bz, OAK_LOG);
-    g.put(bx, floor + 2, bz, LANTERN);
+    g.put(bx, floor, bz, COBBLE);
+    putFence(g, bx, floor + 1, bz);
+    putFence(g, bx, floor + 2, bz);
+    putLamp(g, bx, floor + 3, bz);
+}
+
+// A trodden path at ground level (layer `top`): dirt path with gravel here
+// and there, never under a building or in the train's way.
+void putPath(Grid &g, const Clearance &clear, int bx, int top, int bz, bool edge)
+{
+    if (!Grid::insideColumn(bx, bz) || clear.blocks(bx, top, bz) || g.get(bx, top + 1, bz) != AIR ||
+        isFixture(g.plant[Grid::index(bx, top + 1, bz)]))
+        return;
+    const int ground = g.get(bx, top, bz);
+    if (ground != GRASS && ground != DIRT && ground != GRAVEL && ground != PATH)
+        return;
+    const unsigned int h = hash(bx, bz, 787u) % 10u;
+    g.put(bx, top, bz, (edge && h < 4u) || h == 0u ? GRAVEL : PATH);
+    g.plant[Grid::index(bx, top + 1, bz)] = NO_PLANT;
 }
 
 // Is the box of cells clear of the train (and inside the island)?
@@ -1384,97 +1697,205 @@ void buildVillage(Grid &g, Extras &extras, const Clearance &clear)
         return cz + static_cast<int>(floorf(static_cast<float>(b + 29) * 1.6f + 0.5f));
     };
     const int floor = kVillageTop + 1;
-    auto house = [&](int x0, int z0, int w, int d, bool doorOnX) {
-        if (roomForBuilding(clear, x0 - 1, x0 + w + 1, floor - 1, floor + 8, z0 - 1, z0 + d + 1))
-            buildHouse(g, x0, z0, x0 + w, z0 + d, floor, doorOnX);
-    };
-
-    // gravel lanes crossing at the well, out to the edge of the green
+    // the lanes: three wide, crossing at the well, out to the edge of the
+    // green; the houses' doors are joined to them by paths
+    const int laneX = vx(-27), laneZ = vz(-30);
     for (int bx = vx(-37) - 6; bx <= vx(-19) + 6; ++bx)
-        if (!clear.blocks(bx, kVillageTop, vz(-30)))
-            g.put(bx, kVillageTop, vz(-30), GRAVEL);
+        for (int w = -1; w <= 1; ++w)
+            putPath(g, clear, bx, kVillageTop, laneZ + w, w != 0);
     for (int bz = vz(-37) - 6; bz <= vz(-20) + 6; ++bz)
-        if (!clear.blocks(vx(-27), kVillageTop, bz))
-            g.put(vx(-27), kVillageTop, bz, GRAVEL);
+        for (int w = -1; w <= 1; ++w)
+            putPath(g, clear, laneX + w, kVillageTop, bz, w != 0);
+    // a path from a door out to the nearer lane: a step out, then straight
+    // along whichever way meets a lane sooner, then along it
+    auto pathFromDoor = [&](int bx, int bz, int ox, int oz) {
+        bx += ox;
+        bz += oz;
+        for (int step = 0; step < 40; ++step)
+        {
+            putPath(g, clear, bx, kVillageTop, bz, false);
+            if (bx == laneX || bz == laneZ)
+                break;
+            if (abs(bx - laneX) <= abs(bz - laneZ))
+                bx += bx < laneX ? 1 : -1;
+            else
+                bz += bz < laneZ ? 1 : -1;
+        }
+    };
+    auto house = [&](int x0, int z0, int w, int d, bool doorOnX) {
+        if (!roomForBuilding(clear, x0 - 2, x0 + w + 2, floor - 1, floor + 9, z0 - 2, z0 + d + 2))
+            return;
+        buildHouse(g, x0, z0, x0 + w, z0 + d, floor, doorOnX);
+        if (doorOnX)
+            pathFromDoor(x0 + w, z0 + d / 2, 1, 0);
+        else
+            pathFromDoor(x0 + w / 2, z0 + d, 0, 1);
+    };
 
     house(vx(-35), vz(-37), 4, 4, false);
     house(vx(-24), vz(-36), 4, 4, false);
-    house(vx(-36), vz(-26), 5, 4, true);
+    house(vx(-36), vz(-26), 6, 4, true);
     // the newer cottages further out
-    house(cx - 22, cz + 6, 4, 5, true);
-    house(cx + 8, cz - 22, 5, 4, false);
+    house(cx - 22, cz + 6, 4, 6, true);
+    house(cx + 8, cz - 22, 6, 4, false);
     house(cx + 14, cz + 12, 4, 4, false);
-    house(cx - 8, cz + 16, 5, 4, false);
+    house(cx - 8, cz + 16, 6, 4, false);
     house(cx - 24, cz - 8, 4, 4, true);
 
-    // the church: a stone nave with tall lit windows and a steep roof, and
-    // a bell tower at its west end with a lantern for a bell; at the first
-    // of a few spots round the green where it is clear of the train
-    const int churchSpots[][2] = {
-        {cx + 6, cz + 4}, {cx - 4, cz - 20}, {cx + 16, cz - 6}, {cx - 26, cz + 12}};
-    for (const int *spot : churchSpots)
-    {
-        const int x0 = spot[0], z0 = spot[1], x1 = x0 + 9, z1 = z0 + 5;
-        if (!roomForBuilding(clear, x0 - 2, x1 + 1, floor - 1, floor + 16, z0 - 1, z1 + 1))
-            continue;
-        footing(g, x0 - 1, x1, z0, z1, floor);
-        fill(g, x0, x1, floor, floor + 4, z0, z1, COBBLE);
-        fill(g, x0 + 1, x1 - 1, floor, floor + 4, z0 + 1, z1 - 1, AIR); // the inside
-        for (int bx = x0 + 2; bx < x1; bx += 2)
+    // the church: a cobble nave with oak log posts, tall glass windows and a
+    // steep oak roof, and a bell tower at its west end with a lantern for a
+    // bell; on the free plot of the green nearest its middle, clear of the
+    // train
+    // the field, the well and the windmill come later: the church keeps off
+    // them, and off the houses already built
+    const int fieldX = vx(-25), fieldZ = vz(-27), millX = vx(-22), millZ = vz(-20);
+    auto overlaps = [](int a0, int a1, int b0, int b1) { return a0 <= b1 && b0 <= a1; };
+    auto plotFree = [&](int x0, int x1, int z0, int z1) {
+        if ((overlaps(x0, x1, fieldX - 2, fieldX + 10) &&
+             overlaps(z0, z1, fieldZ - 2, fieldZ + 9)) ||
+            (overlaps(x0, x1, laneX - 2, laneX + 2) && overlaps(z0, z1, laneZ - 2, laneZ + 2)) ||
+            (overlaps(x0, x1, millX - 3, millX + 3) && overlaps(z0, z1, millZ - 3, millZ + 8)))
+            return false;
+        for (int bx = x0; bx <= x1; ++bx)
+            for (int bz = z0; bz <= z1; ++bz)
+                if (g.top(bx, bz) > kVillageTop)
+                    return false;
+        return true;
+    };
+    // the free plot on the green nearest its middle
+    const int greenReach = static_cast<int>((kVillageRadius - 8.0f) / kBlock);
+    int churchX = 0, churchZ = 0, churchD = 1 << 30;
+    for (int x0 = cx - greenReach; x0 + 9 <= cx + greenReach; ++x0)
+        for (int z0 = cz - greenReach; z0 + 6 <= cz + greenReach; ++z0)
         {
-            g.put(bx, floor + 2, z0, WINDOW);
-            g.put(bx, floor + 3, z0, WINDOW);
-            g.put(bx, floor + 2, z1, WINDOW);
-            g.put(bx, floor + 3, z1, WINDOW);
+            const int x1 = x0 + 9, z1 = z0 + 6;
+            const int mx = (x0 + x1) / 2 - cx, mz = (z0 + z1) / 2 - cz;
+            const int d = mx * mx + mz * mz;
+            // the plot's corner furthest out, squared, in each direction
+            auto outmost = [](int lo, int hi) { return lo * lo > hi * hi ? lo * lo : hi * hi; };
+            const int reach = outmost(x0 - 3 - cx, x1 + 2 - cx) + outmost(z0 - 2 - cz, z1 + 2 - cz);
+            if (d >= churchD || reach > greenReach * greenReach ||
+                !roomForBuilding(clear, x0 - 3, x1 + 2, floor - 1, floor + 16, z0 - 1, z1 + 1) ||
+                !plotFree(x0 - 3, x1 + 2, z0 - 2, z1 + 2))
+                continue;
+            churchD = d;
+            churchX = x0;
+            churchZ = z0;
         }
-        g.put(x1, floor, (z0 + z1) / 2, DOOR);
-        g.put(x1, floor + 1, (z0 + z1) / 2, DOOR);
-        for (int k = 0; z0 - 1 + k <= z1 + 1 - k; ++k)
-            fill(g, x0, x1 + 1, floor + 5 + k, floor + 5 + k, z0 - 1 + k, z1 + 1 - k, ROOF);
-        // the bell tower
-        const int tz = (z0 + z1) / 2 - 1;
-        fill(g, x0 - 2, x0, floor, floor + 10, tz, tz + 2, COBBLE);
-        g.put(x0 - 1, floor + 9, tz, AIR); // open sides round the bell
+    if (churchD < (1 << 30))
+    {
+        // stone bricks on a cobble footing course, dark oak posts, tall
+        // windows two wide on sills, a steep roof of dark oak steps, and at
+        // the west end a bell tower with a hipped cap; symmetrical: ten
+        // long with posts every three, seven wide so the door, the windows
+        // over it and the tower stand in the middle of the ends
+        const int x0 = churchX, z0 = churchZ, x1 = x0 + 9, z1 = z0 + 6;
+        footing(g, x0 - 1, x1, z0, z1, floor);
+        fill(g, x0, x1, floor, floor, z0, z1, COBBLE);
+        fill(g, x0, x1, floor + 1, floor + 4, z0, z1, STONE_BRICKS);
+        fill(g, x0 + 1, x1 - 1, floor, floor + 4, z0 + 1, z1 - 1, AIR); // the inside
+        fill(g, x0 + 1, x1 - 1, floor - 1, floor - 1, z0 + 1, z1 - 1, PLANKS);
+        for (int bx = x0; bx <= x1; bx += 3)
+            for (int j = floor + 1; j <= floor + 4; ++j)
+            {
+                g.put(bx, j, z0, DARK_OAK_LOG);
+                g.put(bx, j, z1, DARK_OAK_LOG);
+            }
+        for (int bx = x0 + 1; bx < x1; ++bx)
+            if ((bx - x0) % 3 != 0)
+            {
+                g.put(bx, floor + 2, z0, WINDOW);
+                g.put(bx, floor + 3, z0, WINDOW);
+                g.put(bx, floor + 2, z1, WINDOW);
+                g.put(bx, floor + 3, z1, WINDOW);
+            }
+        dressWindows(g, x0, z0, x1, z0, floor + 2, 3);
+        dressWindows(g, x0, z1, x1, z1, floor + 2, 1);
+        // the door in the middle of the east end, under a step, a window
+        // above it, a lantern on a post either side
+        const int mz = (z0 + z1) / 2;
+        g.put(x1, floor, mz, DOOR);
+        g.put(x1, floor + 1, mz, DOOR);
+        g.put(x1, floor + 3, mz, WINDOW);
+        putStairs(g, x1 + 1, floor + 2, mz, 2, ROOF);
+        for (int side = -1; side <= 1; side += 2)
+        {
+            putFence(g, x1 + 1, floor, mz + side);
+            putLamp(g, x1 + 1, floor + 1, mz + side);
+        }
+        pathFromDoor(x1, mz, 1, 0);
+        flowerBeds(g, x0, z0, x1, z1, floor, 0);
+        // the bell tower: stone bricks with dark oak corners, open round the
+        // bell (a hung lantern), under a hipped cap
+        const int tz = mz - 1;
+        fill(g, x0 - 2, x0, floor, floor, tz, tz + 2, COBBLE);
+        fill(g, x0 - 2, x0, floor + 1, floor + 10, tz, tz + 2, STONE_BRICKS);
+        for (int j = floor + 1; j <= floor + 10; ++j)
+            for (int c = 0; c < 4; ++c)
+                g.put(c % 2 == 0 ? x0 - 2 : x0, j, c < 2 ? tz : tz + 2, DARK_OAK_LOG);
+        // open on all four sides round the bell (a hung lantern), a window
+        // in the middle of each outer face below
+        g.put(x0 - 1, floor + 9, tz, AIR);
         g.put(x0 - 1, floor + 9, tz + 2, AIR);
         g.put(x0 - 2, floor + 9, tz + 1, AIR);
         g.put(x0, floor + 9, tz + 1, AIR);
-        g.put(x0 - 1, floor + 9, tz + 1, LANTERN);
-        fill(g, x0 - 2, x0, floor + 11, floor + 11, tz, tz + 2, ROOF);
-        g.put(x0 - 1, floor + 12, tz + 1, ROOF);
-        g.put(x0 - 1, floor + 13, tz + 1, OAK_LOG); // the cross's post
-        break;
+        g.put(x0 - 1, floor + 9, tz + 1, AIR);
+        putLamp(g, x0 - 1, floor + 9, tz + 1);
+        g.put(x0 - 1, floor + 6, tz, WINDOW);
+        g.put(x0 - 1, floor + 6, tz + 2, WINDOW);
+        g.put(x0 - 2, floor + 6, tz + 1, WINDOW);
+        buildHipRoof(g, x0 - 3, x0 + 1, tz - 1, tz + 3, floor + 11, ROOF, STONE_BRICKS);
+        // the nave's roof, after the tower, so it stops against it, a
+        // window in the middle of the east gable
+        buildGableRoof(g, x0 - 1, x1 + 1, z0 - 1, z1 + 1, floor + 5, true, ROOF, STONE_BRICKS);
+        g.put(x1, floor + 6, mz, WINDOW);
     }
 
     // the well at the crossing
     const int wx = vx(-27), wz = vz(-30);
     if (roomForBuilding(clear, wx - 1, wx + 1, floor, floor + 3, wz - 1, wz + 1))
     {
+        // a ring of cobble round the water, fence posts at the corners and
+        // a little hipped roof of dark oak steps, as in a block game's
+        // village well
         fill(g, wx - 1, wx + 1, floor, floor, wz - 1, wz + 1, COBBLE);
         g.put(wx, floor, wz, WATER);
-        g.put(wx - 1, floor + 1, wz - 1, OAK_LOG);
-        g.put(wx + 1, floor + 1, wz + 1, OAK_LOG);
-        g.put(wx - 1, floor + 2, wz - 1, OAK_LOG);
-        g.put(wx + 1, floor + 2, wz + 1, OAK_LOG);
-        fill(g, wx - 1, wx + 1, floor + 3, floor + 3, wz - 1, wz + 1, ROOF);
+        for (int dx = -1; dx <= 1; dx += 2)
+            for (int dz = -1; dz <= 1; dz += 2)
+            {
+                putFence(g, wx + dx, floor + 1, wz + dz);
+                putFence(g, wx + dx, floor + 2, wz + dz);
+            }
+        buildHipRoof(g, wx - 1, wx + 1, wz - 1, wz + 1, floor + 3, ROOF, ROOF);
     }
 
     // the wheat field, with a ditch down the middle and hay bales beside it
-    const int fx = vx(-25), fz = vz(-27);
+    const int fx = fieldX, fz = fieldZ;
     for (int bx = fx; bx <= fx + 8; ++bx)
         for (int bz = fz; bz <= fz + 7; ++bz)
         {
-            if (clear.blocks(bx, floor, bz))
+            // never under a building
+            if (clear.blocks(bx, floor, bz) || g.top(bx, bz) > kVillageTop)
                 continue;
             g.put(bx, kVillageTop, bz, bx == fx + 4 ? WATER : FARMLAND);
             if (bx != fx + 4)
                 g.plant[Grid::index(bx, floor, bz)] = WHEAT;
         }
+    // bordered with oak logs at ground level, as a village farm is
+    for (int bx = fx - 1; bx <= fx + 9; ++bx)
+        for (int bz = fz - 1; bz <= fz + 8; ++bz)
+            if ((bx == fx - 1 || bx == fx + 9 || bz == fz - 1 || bz == fz + 8) &&
+                !clear.blocks(bx, kVillageTop, bz) && g.get(bx, floor, bz) == AIR)
+            {
+                g.put(bx, kVillageTop, bz, OAK_LOG);
+                g.plant[Grid::index(bx, floor, bz)] = NO_PLANT;
+            }
     g.put(fx - 1, floor, fz + 3, HAY);
     g.put(fx - 1, floor, fz + 4, HAY);
     g.put(fx - 1, floor + 1, fz + 4, HAY);
 
     // the windmill: a stone tower with a timber top, the sails facing south
-    const int mx = vx(-22), mz = vz(-20);
+    const int mx = millX, mz = millZ;
     if (roomForBuilding(clear, mx - 2, mx + 2, floor, floor + 12, mz - 2, mz + 7))
     {
         footing(g, mx - 1, mx + 1, mz - 1, mz + 1, floor);
@@ -1487,10 +1908,10 @@ void buildVillage(Grid &g, Extras &extras, const Clearance &clear)
             g.put(mx - 1, j, mz + 1, OAK_LOG);
             g.put(mx + 1, j, mz + 1, OAK_LOG);
         }
-        fill(g, mx - 2, mx + 2, floor + 7, floor + 7, mz - 2, mz + 2, ROOF);
-        fill(g, mx - 1, mx + 1, floor + 8, floor + 8, mz - 1, mz + 1, ROOF);
-        g.put(mx, floor + 9, mz, ROOF);
+        // a hipped cap of dark oak steps over the timber top
+        buildHipRoof(g, mx - 2, mx + 2, mz - 2, mz + 2, floor + 7, ROOF, PLANKS);
         g.put(mx, floor, mz + 1, DOOR);
+        g.put(mx, floor + 1, mz + 1, DOOR);
         g.put(mx, floor + 5, mz + 1, WINDOW);
         extras.mill[0] = centerOf(mx);
         extras.mill[1] = static_cast<float>(floor + 6) * kBlock;
@@ -1503,29 +1924,62 @@ void buildVillage(Grid &g, Extras &extras, const Clearance &clear)
     const int lamps[][2] = {{vx(-29), vz(-32)}, {vx(-25), vz(-28)}, {vx(-29), vz(-21)},
                             {vx(-19), vz(-30)}, {cx - 12, cz + 12}, {cx + 12, cz - 12}};
     for (const int *lamp : lamps)
-        if (roomForBuilding(clear, lamp[0], lamp[0], floor, floor + 2, lamp[1], lamp[1]))
+        if (roomForBuilding(clear, lamp[0], lamp[0], floor, floor + 3, lamp[1], lamp[1]))
             buildLampPost(g, lamp[0], lamp[1], floor);
 }
 
-// A tower: a square shaft of stone with lit windows, a stepped pointed
-// roof and a lantern on top. x0, z0: its corner; size: its width.
+// A tower: a square shaft of stone bricks on a cobble foot, mossy here and
+// there, with narrow windows, a band of upside-down steps standing out
+// under the eaves, a hipped roof of dark oak steps overhanging it by a
+// block and a lantern on top. x0, z0: its corner; size: its width.
 void buildTower(Grid &g, int x0, int z0, int size, int floor, int height)
 {
     const int x1 = x0 + size - 1, z1 = z0 + size - 1;
-    fill(g, x0, x1, floor, floor + height - 1, z0, z1, COBBLE);
+    for (int bx = x0; bx <= x1; ++bx)
+        for (int bz = z0; bz <= z1; ++bz)
+            for (int j = floor; j < floor + height; ++j)
+                g.put(bx, j, bz,
+                      j < floor + 2
+                          ? COBBLE
+                          : (hash(bx * 5 + j, bz, 467u) % 7u == 0 ? MOSSY_BRICKS : STONE_BRICKS));
+    // windows in the middle of each face: one where the face is odd, a
+    // pair where it is even (halved rounding down, as the castle stands at
+    // negative x, where / rounds towards zero and put them a block off)
     for (int j = floor + 3; j < floor + height - 1; j += 3)
+        for (int m = floorHalf(x0 + x1); m <= floorHalf(x0 + x1 + 1); ++m)
+        {
+            const int n = z0 + (m - x0); // the same place along the z faces
+            g.put(m, j, z0, WINDOW);
+            g.put(m, j, z1, WINDOW);
+            g.put(x0, j, n, WINDOW);
+            g.put(x1, j, n, WINDOW);
+        }
+    // a corbel of upside-down steps round the top, the roof on it
+    const int top = floor + height;
+    for (int bx = x0 - 1; bx <= x1 + 1; ++bx)
+        for (int bz = z0 - 1; bz <= z1 + 1; ++bz)
+        {
+            const bool ring = bx == x0 - 1 || bx == x1 + 1 || bz == z0 - 1 || bz == z1 + 1;
+            const bool corner = (bx == x0 - 1 || bx == x1 + 1) && (bz == z0 - 1 || bz == z1 + 1);
+            if (!ring || corner)
+                continue;
+            const int rises = bx == x0 - 1 ? 0 : (bx == x1 + 1 ? 2 : (bz == z0 - 1 ? 1 : 3));
+            putStairs(g, bx, top - 1, bz, rises, STONE_BRICKS, true);
+        }
+    buildHipRoof(g, x0 - 1, x1 + 1, z0 - 1, z1 + 1, top, ROOF, STONE_BRICKS);
+    if (size % 2 == 1)
     {
-        g.put((x0 + x1) / 2, j, z0, WINDOW);
-        g.put((x0 + x1) / 2, j, z1, WINDOW);
-        g.put(x0, j, (z0 + z1) / 2, WINDOW);
-        g.put(x1, j, (z0 + z1) / 2, WINDOW);
+        // an odd tower has a middle: a block at the point, a lantern on it
+        const int peak = top + (size + 1) / 2, mx = (x0 + x1) / 2, mz = (z0 + z1) / 2;
+        g.put(mx, peak, mz, ROOF);
+        g.plant[Grid::index(mx, peak, mz)] = NO_PLANT;
+        putLamp(g, mx, peak + 1, mz);
     }
-    // the roof steps in from an overhang to a point
-    int top = floor + height;
-    for (int k = -1; x0 + k <= x1 - k; ++k)
-        fill(g, x0 + k, x1 - k, top + k + 1, top + k + 1, z0 + k, z1 - k, ROOF);
-    const int peak = top + (size + 1) / 2 + 1;
-    g.put((x0 + x1) / 2, peak, (z0 + z1) / 2, LANTERN);
+    else
+        // an even one comes to a point of four corner steps: a lantern
+        // hangs under each corner of the eaves instead
+        for (int c = 0; c < 4; ++c)
+            putLamp(g, c % 2 == 0 ? x0 - 1 : x1 + 1, top - 1, c < 2 ? z0 - 1 : z1 + 1);
 }
 
 // The castle by the waterfall, after the user's reference: a curtain wall
@@ -1602,18 +2056,54 @@ bool buildCastle(Grid &g, const Clearance &clear, int at[2])
             const bool edge = bx == x0 || bx == x1 || bz == z0 || bz == z1;
             if (!edge)
                 continue;
-            fill(g, bx, bx, floor, wallTop, bz, bz,
-                 hash(bx * 3, bz, 463u) % 6u == 0 ? MOSSY : COBBLE);
+            for (int j = floor; j <= wallTop; ++j)
+                g.put(bx, j, bz,
+                      j == floor
+                          ? COBBLE
+                          : (hash(bx * 3 + j, bz, 463u) % 6u == 0 ? MOSSY_BRICKS : STONE_BRICKS));
             if ((bx + bz) % 2 == 0)
-                g.put(bx, wallTop + 1, bz, COBBLE);
+                g.put(bx, wallTop + 1, bz, STONE_BRICKS);
         }
     // the gate: an opening three wide and three high, lanterns either side
     const int gx = (x0 + x1) / 2, gz = gateNorth ? z1 : z0;
     fill(g, gx - 1, gx + 1, floor, floor + 2, gz, gz, AIR);
-    fill(g, gx - 1, gx + 1, floor + 3, floor + 3, gz, gz, OAK_LOG);
+    fill(g, gx - 1, gx + 1, floor + 3, floor + 3, gz, gz, DARK_OAK_LOG);
     const int out = gateNorth ? 1 : -1;
-    g.put(gx - 2, floor + 2, gz + out, LANTERN);
-    g.put(gx + 2, floor + 2, gz + out, LANTERN);
+    // a lantern on a post either side of the gate
+    for (int side = -2; side <= 2; side += 4)
+    {
+        putFence(g, gx + side, floor, gz + out);
+        putFence(g, gx + side, floor + 1, gz + out);
+        putLamp(g, gx + side, floor + 2, gz + out);
+    }
+    // a road three wide out of the gate, following the ground until it
+    // falls away, lamp posts in pairs either side of it
+    for (int d = 2; d <= 14; ++d)
+    {
+        const int bz = gz + out * d;
+        const int top = Grid::insideColumn(gx, bz) ? g.top(gx, bz) : kMinY - 1;
+        if (top < floor - 5 || top > floor)
+            break;
+        for (int w = -1; w <= 1; ++w)
+        {
+            // gravel where it crosses the sand, a trodden path elsewhere
+            const int t = g.top(gx + w, bz);
+            if (g.get(gx + w, t, bz) == SAND && !clear.blocks(gx + w, t, bz) &&
+                g.get(gx + w, t + 1, bz) == AIR)
+                g.put(gx + w, t, bz, GRAVEL);
+            else
+                putPath(g, clear, gx + w, t, bz, w != 0);
+        }
+        if (d % 6 == 0)
+            for (int side = -2; side <= 2; side += 4)
+            {
+                const int lx = gx + side, lt = g.top(lx, bz);
+                if (lt == top && g.opaque(lx, lt, bz) &&
+                    roomForBuilding(clear, lx, lx, lt + 1, lt + 4, bz, bz) &&
+                    g.get(lx, lt + 1, bz) == AIR)
+                    buildLampPost(g, lx, bz, lt + 1);
+            }
+    }
 
     // corner towers, four wide, rising well above the wall
     buildTower(g, x0 - 1, z0 - 1, 4, floor, 10);
@@ -1625,34 +2115,47 @@ bool buildCastle(Grid &g, const Clearance &clear, int at[2])
     // stone, three of timber between log posts, rows of lit windows
     const int kx0 = x0 + 3, kx1 = x1 - 3;
     const int kz0 = gateNorth ? z0 + 2 : z1 - 7, kz1 = kz0 + 5;
-    fill(g, kx0, kx1, floor, floor + 2, kz0, kz1, COBBLE);
+    fill(g, kx0, kx1, floor, floor, kz0, kz1, COBBLE);
+    fill(g, kx0, kx1, floor + 1, floor + 2, kz0, kz1, STONE_BRICKS);
     fill(g, kx0, kx1, floor + 3, floor + 8, kz0, kz1, PLANKS);
+    // the timber floors jut out over the stone on a row of upside-down steps
+    for (int bx = kx0; bx <= kx1; ++bx)
+    {
+        putStairs(g, bx, floor + 2, kz0 - 1, 1, STONE_BRICKS, true);
+        putStairs(g, bx, floor + 2, kz1 + 1, 3, STONE_BRICKS, true);
+    }
+    // log posts at the ends, a quarter and the middle (the keep is nine
+    // long), windows between them, so the front mirrors itself
+    const int keepPosts[5] = {0, 2, 4, 6, 8};
     for (int j = floor + 3; j <= floor + 8; ++j)
-        for (int bx = kx0; bx <= kx1; bx += 3)
+        for (int p : keepPosts)
         {
-            g.put(bx, j, kz0, OAK_LOG);
-            g.put(bx, j, kz1, OAK_LOG);
+            g.put(kx0 + p, j, kz0, OAK_LOG);
+            g.put(kx0 + p, j, kz1, OAK_LOG);
         }
     for (int j = floor + 1; j <= floor + 7; j += 3)
     {
-        for (int bx = kx0 + 1; bx < kx1; ++bx)
-            if ((bx - kx0) % 3 != 0)
-            {
-                g.put(bx, j, kz0, WINDOW);
-                g.put(bx, j, kz1, WINDOW);
-            }
-        g.put(kx0, j, (kz0 + kz1) / 2, WINDOW);
-        g.put(kx1, j, (kz0 + kz1) / 2, WINDOW);
+        for (int bx = kx0 + 1; bx < kx1; bx += 2)
+        {
+            g.put(bx, j, kz0, WINDOW);
+            g.put(bx, j, kz1, WINDOW);
+        }
+        // the ends are six deep: a pair of windows in the middle
+        for (int m = floorHalf(kz0 + kz1); m <= floorHalf(kz0 + kz1 + 1); ++m)
+        {
+            g.put(kx0, j, m, WINDOW);
+            g.put(kx1, j, m, WINDOW);
+        }
     }
     g.put((kx0 + kx1) / 2, floor, gateNorth ? kz1 : kz0, DOOR);
     g.put((kx0 + kx1) / 2, floor + 1, gateNorth ? kz1 : kz0, DOOR);
-    // its roof: a steep gable along x
-    for (int k = 0; kz0 - 1 + k <= kz1 + 1 - k; ++k)
-        fill(g, kx0 - 1, kx1 + 1, floor + 9 + k, floor + 9 + k, kz0 - 1 + k, kz1 + 1 - k, ROOF);
+    // its roof: a gable of dark oak steps along x, the gables of planks
+    buildGableRoof(g, kx0 - 1, kx1 + 1, kz0 - 1, kz1 + 1, floor + 9, true, ROOF, PLANKS);
 
-    // the main tower rising out of the keep
-    const int tx = (kx0 + kx1) / 2 - 1;
-    buildTower(g, tx, kz0 + 1, 4, floor, 20);
+    // the main tower rising out of the keep: five wide, in the middle of
+    // it, against its back wall
+    const int tx = (kx0 + kx1) / 2 - 2;
+    buildTower(g, tx, gateNorth ? kz0 : kz1 - 4, 5, floor, 20);
 
     // lamp posts in the court
     buildLampPost(g, x0 + 3, gateNorth ? z1 - 3 : z0 + 3, floor);
@@ -1712,7 +2215,14 @@ void buildLighthouse(Grid &g, const Clearance &clear, const int away[2])
 
     const int x = bestX, z = bestZ, floor = bestTop + 1;
     footing(g, x - 2, x + 2, z - 2, z + 2, floor);
-    fill(g, x - 2, x + 2, floor, floor, z - 2, z + 2, COBBLE);
+    fill(g, x - 2, x + 2, floor, floor, z - 2, z + 2, STONE_BRICKS);
+    // the base's edge: a ring of stone brick steps up to it
+    for (int bx = x - 3; bx <= x + 3; ++bx)
+        for (int bz = z - 3; bz <= z + 3; ++bz)
+            if ((abs(bx - x) == 3) != (abs(bz - z) == 3) && g.get(bx, floor - 1, bz) != AIR)
+                putStairs(g, bx, floor, bz,
+                          bx == x - 3 ? 0 : (bx == x + 3 ? 2 : (bz == z - 3 ? 1 : 3)),
+                          STONE_BRICKS);
     // the banded tower
     for (int j = floor + 1; j <= floor + 13; ++j)
     {
@@ -1721,14 +2231,35 @@ void buildLighthouse(Grid &g, const Clearance &clear, const int away[2])
     }
     g.put(x, floor + 1, z + 1, DOOR);
     g.put(x, floor + 2, z + 1, DOOR);
-    g.put(x, floor + 7, z - 1, WINDOW);
-    g.put(x + 1, floor + 10, z, WINDOW);
-    // the gallery, the lamp room and the cap
-    fill(g, x - 2, x + 2, floor + 14, floor + 14, z - 2, z + 2, COBBLE);
-    fill(g, x - 1, x + 1, floor + 15, floor + 16, z - 1, z + 1, LANTERN);
-    fill(g, x - 2, x + 2, floor + 17, floor + 17, z - 2, z + 2, ROOF);
-    fill(g, x - 1, x + 1, floor + 18, floor + 18, z - 1, z + 1, ROOF);
-    g.put(x, floor + 19, z, ROOF);
+    // windows in the middle of every face, at two heights
+    for (int j = floor + 6; j <= floor + 10; j += 4)
+    {
+        g.put(x, j, z - 1, WINDOW);
+        g.put(x, j, z + 1, WINDOW);
+        g.put(x - 1, j, z, WINDOW);
+        g.put(x + 1, j, z, WINDOW);
+    }
+    // the gallery on a ring of upside-down steps, with a fence for a rail,
+    // the lamp room and the cap
+    for (int bx = x - 2; bx <= x + 2; ++bx)
+        for (int bz = z - 2; bz <= z + 2; ++bz)
+            if ((abs(bx - x) == 2) != (abs(bz - z) == 2))
+                putStairs(g, bx, floor + 13, bz,
+                          bx == x - 2 ? 0 : (bx == x + 2 ? 2 : (bz == z - 2 ? 1 : 3)), STONE_BRICKS,
+                          true);
+    fill(g, x - 2, x + 2, floor + 14, floor + 14, z - 2, z + 2, STONE_BRICKS);
+    for (int bx = x - 2; bx <= x + 2; ++bx)
+        for (int bz = z - 2; bz <= z + 2; ++bz)
+            if (abs(bx - x) == 2 || abs(bz - z) == 2)
+                putFence(g, bx, floor + 15, bz);
+    // the lamp room: glass all round, lanterns inside, one standing and
+    // one hanging above it
+    fill(g, x - 1, x + 1, floor + 15, floor + 16, z - 1, z + 1, WINDOW);
+    g.put(x, floor + 15, z, AIR);
+    g.put(x, floor + 16, z, AIR);
+    putLamp(g, x, floor + 15, z);
+    putLamp(g, x, floor + 16, z);
+    buildHipRoof(g, x - 2, x + 2, z - 2, z + 2, floor + 17, ROOF, ROOF);
     // the keeper's cottage on the landward side
     const float len = sqrtf(static_cast<float>(x * x + z * z));
     const int hx = x - static_cast<int>(floorf(static_cast<float>(x) / len * 7.0f + 0.5f)) - 2;
@@ -1736,13 +2267,29 @@ void buildLighthouse(Grid &g, const Clearance &clear, const int away[2])
     const int hfloor = g.top(hx + 2, hz + 2) + 1;
     if (hfloor >= 1 &&
         roomForBuilding(clear, hx - 1, hx + 5, hfloor - 1, hfloor + 8, hz - 1, hz + 5))
+    {
         buildHouse(g, hx, hz, hx + 4, hz + 3, hfloor, false);
+        // a path from the cottage's door to the tower's
+        int bx = hx + 2, bz = hz + 4;
+        for (int step = 0; step < 40; ++step)
+        {
+            if (Grid::insideColumn(bx, bz))
+                putPath(g, clear, bx, g.top(bx, bz), bz, false);
+            if (bx == x && bz == z + 4)
+                break;
+            if (bz != z + 4)
+                bz += bz < z + 4 ? 1 : -1;
+            else
+                bx += bx < x ? 1 : -1;
+        }
+    }
 }
 
 // A timber footbridge over the pool below the fall, three blocks above the
-// water, resting on the gorge's walls at both ends, with a few log rail
-// posts and a lantern at each end; left out if it would not reach rock on
-// both sides or the train would pass through it.
+// water, resting on the gorge's walls at both ends: a deck of planks two
+// wide between dark oak beams, a fence rail along both sides and a lantern
+// on the rail at each corner, symmetrical; left out if it would not reach
+// rock on both sides or the train would pass through it.
 void buildBridge(Grid &g, const Clearance &clear)
 {
     const int cx = (kFallX0 + kFallX1) / 2;
@@ -1758,20 +2305,28 @@ void buildBridge(Grid &g, const Clearance &clear)
     ++x1;
     if (g.get(x0, deck, z0) == AIR || g.get(x1, deck, z0) == AIR)
         return; // no rock to rest on at one end
-    if (!roomForBuilding(clear, x0, x1, deck, deck + 3, z0, z1))
+    if (!roomForBuilding(clear, x0, x1, deck, deck + 3, z0 - 1, z1 + 1))
         return;
     for (int bx = x0; bx <= x1; ++bx)
-        for (int bz = z0; bz <= z1; ++bz)
-            g.put(bx, deck, bz, PLANKS);
-    for (int bx = x0 + 1; bx < x1; bx += 3)
     {
-        g.put(bx, deck + 1, z0 - 1, OAK_LOG);
-        g.put(bx, deck, z0 - 1, PLANKS);
-        g.put(bx, deck + 1, z1 + 1, OAK_LOG);
-        g.put(bx, deck, z1 + 1, PLANKS);
+        for (int bz = z0; bz <= z1; ++bz)
+            if (g.get(bx, deck, bz) == AIR || bx == x0 || bx == x1)
+                g.put(bx, deck, bz, PLANKS);
+        // the beams either side, a rail on them over the open span
+        for (int bz = z0 - 1; bz <= z1 + 1; bz += z1 + 2 - z0)
+            if (g.get(bx, deck, bz) == AIR)
+            {
+                g.put(bx, deck, bz, DARK_OAK_LOG);
+                putFence(g, bx, deck + 1, bz);
+            }
     }
-    g.put(x0, deck + 1, z0, LANTERN);
-    g.put(x1, deck + 1, z1, LANTERN);
+    // a lantern on the rail at each of the four corners of the span
+    for (int bx = x0; bx <= x1; ++bx)
+        if (bx == x0 + 1 || bx == x1 - 1)
+            for (int bz = z0 - 1; bz <= z1 + 1; bz += z1 + 2 - z0)
+                if (Grid::inside(bx, deck + 1, bz) &&
+                    g.plant[Grid::index(bx, deck + 1, bz)] == FENCE)
+                    putLamp(g, bx, deck + 2, bz);
 }
 
 // ---------------------------------------------------------------------
@@ -1843,7 +2398,72 @@ void carveRide(Grid &g, const std::vector<float> &ride)
     }
 }
 
-// Lanterns and crystals in the walls where the ride runs under a roof.
+// Boulders: a block or two of stone, cobble or mossy cobble with a few
+// beside it, half sunk into the ground, here and there on the meadows,
+// the crags and more often in the spruce forest and among the bamboo,
+// on level ground away from the water, the buildings and the train.
+void scatterBoulders(Grid &g, const Clearance &clear)
+{
+    for (int bx = kMinBX + 3; bx < kMaxBX - 3; ++bx)
+        for (int bz = kMinBZ + 3; bz < kMaxBZ - 3; ++bz)
+        {
+            const int biome = g.biome[Grid::column(bx, bz)];
+            const unsigned int h = hash(bx, bz, 817u);
+            const unsigned int every = biome == ALPINE          ? 60u
+                                       : biome == BAMBOO_JUNGLE ? 110u
+                                       : biome == CRAG          ? 80u
+                                       : biome == MEADOW        ? 150u
+                                                                : 0u;
+            if (every == 0u || h % every != 0u)
+                continue;
+            const float vx = centerOf(bx) - kVillageX, vz = centerOf(bz) - kVillageZ;
+            if (vx * vx + vz * vz < (kVillageRadius + 10.0f) * (kVillageRadius + 10.0f))
+                continue;
+            const int top = g.top(bx, bz);
+            bool fits = top > kSeaLayer;
+            for (int dx = -1; dx <= 1 && fits; ++dx)
+                for (int dz = -1; dz <= 1 && fits; ++dz)
+                {
+                    const int t = g.top(bx + dx, bz + dz), b = g.get(bx + dx, t, bz + dz);
+                    fits = (b == GRASS || b == PODZOL || b == STONE || b == DIRT ||
+                            b == SNOWY_DIRT || b == SNOW || b == COARSE_DIRT) &&
+                           abs(t - top) <= 1;
+                    for (int j = t + 1; j <= t + 3 && fits; ++j)
+                        fits = g.get(bx + dx, j, bz + dz) == AIR &&
+                               !isFixture(g.plant[Grid::index(bx + dx, j, bz + dz)]) &&
+                               !clear.blocks(bx + dx, j, bz + dz);
+                }
+            if (!fits)
+                continue;
+            auto rock = [&](int x, int j, int z) {
+                const unsigned int r = hash(x * 3 + j, z, 819u) % 10u;
+                int b = STONE;
+                if (biome == ALPINE || biome == BAMBOO_JUNGLE)
+                    b = r < 6u ? MOSSY : COBBLE;
+                else if (biome == MEADOW)
+                    b = r < 4u ? STONE : (r < 7u ? COBBLE : MOSSY);
+                else
+                    b = r < 6u ? STONE : COBBLE;
+                g.put(x, j, z, b);
+                g.plant[Grid::index(x, j, z)] = NO_PLANT;
+            };
+            // the middle, sunk a block, one or two high above the ground
+            rock(bx, top, bz);
+            const int height = 1 + static_cast<int>((h >> 8) % 2u);
+            for (int j = 1; j <= height; ++j)
+                rock(bx, top + j, bz);
+            // some of the four beside it, a block high
+            for (int k = 0; k < 4; ++k)
+                if ((h >> (12 + k)) & 1u)
+                {
+                    const int x = bx + kFacing[k][0], z = bz + kFacing[k][1];
+                    rock(x, g.top(x, z) + 1, z);
+                }
+        }
+}
+
+// Lanterns in niches and crystals in the walls where the ride runs under a
+// roof.
 // along: the B-spline ride, x, y, z for each point.
 void lightTunnels(Grid &g, const std::vector<float> &along, const Clearance &clear)
 {
@@ -1872,7 +2492,21 @@ void lightTunnels(Grid &g, const std::vector<float> &along, const Clearance &cle
         const int here = g.get(bx, j, bz);
         if (here == AIR || here == LAVA || here == WATER)
             continue;
-        g.put(bx, j, bz, hash(bx, bz, 71u) % 3u == 0 ? CRYSTAL : LANTERN);
+        // now and then a crystal grown in the rock; otherwise a lantern in
+        // a niche cut a block into the wall, opening on the tunnel, standing
+        // on its sill under a roof of rock (a glowing block set in the wall
+        // would look like a lamp left on all day)
+        const float in = kCarveRadius + 1.6f - kBlock; // the cell in front of it
+        const int fx = blockOf(x + dz / step * s * in), fz = blockOf(z - dx / step * s * in);
+        const bool opens = g.get(fx, j, fz) == AIR;
+        if (hash(bx, bz, 71u) % 3u == 0 || !opens || !g.solid(bx, j - 1, bz) ||
+            !g.solid(bx, j + 1, bz))
+        {
+            g.put(bx, j, bz, CRYSTAL);
+            continue;
+        }
+        g.put(bx, j, bz, AIR);
+        putLamp(g, bx, j, bz);
     }
 }
 
@@ -1889,7 +2523,8 @@ bool commit(Grid &g, const Clearance &clear, const std::vector<Placed> &blocks)
 {
     for (const Placed &p : blocks)
         if (!Grid::inside(p.bx, p.j, p.bz) || clear.blocks(p.bx, p.j, p.bz) ||
-            (g.get(p.bx, p.j, p.bz) != AIR && !isGrowth(g.get(p.bx, p.j, p.bz))))
+            (g.get(p.bx, p.j, p.bz) != AIR && !isGrowth(g.get(p.bx, p.j, p.bz))) ||
+            isFixture(g.plant[Grid::index(p.bx, p.j, p.bz)]))
             return false;
     for (const Placed &p : blocks)
         if (g.get(p.bx, p.j, p.bz) == AIR)
@@ -2111,7 +2746,7 @@ void buildLake(Grid &g, const Clearance &clear, Extras &extras)
         if (z % 2 == 0)
             g.put(bestX + 6, level, z, OAK_LOG);
     }
-    g.put(bestX + 6, level + 2, bestZ + radius - 5, LANTERN);
+    putLamp(g, bestX + 6, level + 2, bestZ + radius - 5);
 }
 
 // A giant oak standing alone in the meadow where the train passes in sight
@@ -2177,33 +2812,49 @@ void buildGiantTree(Grid &g, const Clearance &clear, Extras &extras)
     commit(g, clear, tree);
 }
 
-// A spruce-log cabin: a cobble footing, walls of spruce logs, lit windows,
-// a door with a pumpkin lantern beside it and a steep roof.
-void buildCabin(Grid &g, int x0, int z0, int w, int d, int floor)
+// A log cabin: spruce log walls on a cobble footing course, a door in the
+// middle of the front (the z1 side, or z0 if frontZ0) under a step, a
+// lantern under the eaves at each front corner (not in the doorway), a
+// window on a trapdoor sill either side of the door and
+// two at the back, a gable roof of dark oak steps with spruce plank gables,
+// overhanging by a block, and a cobble chimney. Spruce, dark oak and
+// cobble. w should be even, so the door has a middle.
+void buildCabin(Grid &g, int x0, int z0, int w, int d, int floor, bool frontZ0)
 {
     const int x1 = x0 + w, z1 = z0 + d, wallTop = floor + 2;
     footing(g, x0, x1, z0, z1, floor);
-    fill(g, x0, x1, floor, wallTop, z0, z1, SPRUCE_LOG);
+    fill(g, x0, x1, floor, floor, z0, z1, COBBLE);
+    fill(g, x0, x1, floor + 1, wallTop, z0, z1, SPRUCE_LOG);
     fill(g, x0 + 1, x1 - 1, floor, wallTop, z0 + 1, z1 - 1, AIR);
-    for (int bx = x0 + 2; bx < x1; bx += 2)
+    fill(g, x0 + 1, x1 - 1, floor - 1, floor - 1, z0 + 1, z1 - 1, SPRUCE_PLANKS);
+    const int mx = (x0 + x1) / 2;
+    for (int side = -1; side <= 1; side += 2)
     {
-        g.put(bx, floor + 1, z0, WINDOW);
-        g.put(bx, floor + 1, z1, WINDOW);
+        g.put(mx + side, floor + 1, z0, WINDOW);
+        g.put(mx + side, floor + 1, z1, WINDOW);
     }
-    g.put((x0 + x1) / 2, floor, z1, DOOR);
-    g.put((x0 + x1) / 2, floor + 1, z1, DOOR);
-    g.put((x0 + x1) / 2 + 1, floor, z1 + 1, JACK_O);
-    for (int k = 0; z0 - 1 + k <= z1 + 1 - k; ++k)
-        fill(g, x0 - 1, x1 + 1, wallTop + 1 + k, wallTop + 1 + k, z0 - 1 + k, z1 + 1 - k, ROOF);
-    g.put(x0 + 1, wallTop + 3, z0 + 1, COBBLE); // the chimney
-    g.put(x0 + 1, wallTop + 4, z0 + 1, COBBLE);
+    const int fz = frontZ0 ? z0 : z1, out = frontZ0 ? -1 : 1;
+    g.put(mx, floor, fz, DOOR);
+    g.put(mx, floor + 1, fz, DOOR);
+    putStairs(g, mx, floor + 2, fz + out, frontZ0 ? 1 : 3, ROOF);
+    putLamp(g, x0, wallTop, fz + out);
+    putLamp(g, x1, wallTop, fz + out);
+    dressWindows(g, x0, z0, x1, z0, floor + 1, 3);
+    dressWindows(g, x0, z1, x1, z1, floor + 1, 1);
+    buildGableRoof(g, x0 - 1, x1 + 1, z0 - 1, z1 + 1, wallTop + 1, true, ROOF, SPRUCE_PLANKS);
+    for (int j = wallTop + 1; j <= wallTop + 5; ++j) // the chimney
+    {
+        g.put(x0 + 1, j, z0 + 1, COBBLE);
+        g.plant[Grid::index(x0 + 1, j, z0 + 1)] = NO_PLANT;
+    }
 }
 
 // A camp in the spruce forest at the foot of the snow mountain, where the
 // train passes in sight of it: log cabins round a campfire, lanterns on
-// posts and pumpkin lanterns by the doors, warm against the blue of dusk.
+// posts and by the doors, warm against the blue of dusk.
 // The camp's cabins round its middle: x, z of a corner, and width.
-const int kCabins[4][3] = {{-9, -9, 5}, {4, -9, 5}, {-9, 4, 4}, {4, 4, 5}};
+// They mirror each other across the fire, their doors facing it.
+const int kCabins[4][3] = {{-8, -8, 4}, {4, -8, 4}, {-8, 4, 4}, {4, 4, 4}};
 
 void buildTaigaCamp(Grid &g, const Clearance &clear)
 {
@@ -2263,14 +2914,14 @@ void buildTaigaCamp(Grid &g, const Clearance &clear)
     // the campfire: logs round a glowing heart, in a ring of stones
     for (int dx = -1; dx <= 1; ++dx)
         for (int dz = -1; dz <= 1; ++dz)
-            g.put(x + dx, floor - 1, z + dz, (dx == 0 && dz == 0) ? LANTERN : COBBLE);
+            g.put(x + dx, floor - 1, z + dz, (dx == 0 && dz == 0) ? MAGMA : COBBLE); // embers
     g.put(x - 1, floor, z, SPRUCE_LOG);
     g.put(x + 1, floor, z, SPRUCE_LOG);
     // the cabins round the fire, each where it is clear of the train
     for (const int *c : kCabins)
         if (roomForBuilding(clear, x + c[0] - 1, x + c[0] + c[2] + 1, floor - 1, floor + 12,
                             z + c[1] - 1, z + c[1] + 5 + 1))
-            buildCabin(g, x + c[0], z + c[1], c[2], 4, floor);
+            buildCabin(g, x + c[0], z + c[1], c[2], 4, floor, c[1] > 0);
     const int posts[4][2] = {{x - 4, z}, {x + 4, z}, {x, z - 5}, {x, z + 5}};
     for (const int *post : posts)
         buildLampPost(g, post[0], post[1], floor);
@@ -2585,6 +3236,21 @@ void buildJungleTemple(Grid &g, const Clearance &clear, Extras &extras)
         for (int dx = -1; dx <= 1; ++dx)
             g.clearAbove(x + dx, floor + step, z + dz);
     }
+    // the stair's nosing: where a step stands out in front of the tier and
+    // nothing is on it, the block becomes a step rising to the temple
+    for (int i = 0; i < tiers * 3; ++i)
+    {
+        const int edge = stair - (i * (stair - 1)) / (tiers * 3 - 1);
+        if (edge <= base - 2 * (i / 3))
+            continue; // inside the tier
+        for (int dx = -1; dx <= 1; ++dx)
+            if (g.get(x + dx, floor + i, z + edge) != AIR &&
+                g.get(x + dx, floor + i + 1, z + edge) == AIR)
+            {
+                g.put(x + dx, floor + i, z + edge, AIR);
+                putStairs(g, x + dx, floor + i, z + edge, 3, dx == 0 ? COBBLE : STONE);
+            }
+    }
     // the shrine: four pillars under a cobble roof, a crystal in the middle
     // and a lantern on each corner of the top tier
     const int topHalf = base - 2 * (tiers - 1);
@@ -2593,7 +3259,7 @@ void buildJungleTemple(Grid &g, const Clearance &clear, Extras &extras)
         {
             for (int k = 0; k < 3; ++k)
                 g.put(x + dx, top + k, z + dz, MOSSY);
-            g.put(x + dx * topHalf, top, z + dz * topHalf, LANTERN);
+            putLamp(g, x + dx * topHalf, top, z + dz * topHalf);
         }
     for (int dx = -2; dx <= 2; ++dx)
         for (int dz = -2; dz <= 2; ++dz)
@@ -2911,24 +3577,31 @@ struct Cell
 
 const int kDirs[6][3] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
 
-void flood(const Grid &g, std::vector<unsigned char> &light, std::deque<Cell> &queue)
+void flood(const Grid &g, std::vector<unsigned char> &light, CellQueue<Cell> &queue)
 {
     while (!queue.empty())
     {
-        const Cell c = queue.front();
-        queue.pop_front();
+        const Cell c = queue.pop_front();
         const int level = light[Grid::index(c.bx, c.j, c.bz)] - 1;
         if (level <= 0)
             continue;
         for (const int *d : kDirs)
         {
             const int x = c.bx + d[0], j = c.j + d[1], z = c.bz + d[2];
-            if (!Grid::inside(x, j, z) || g.opaque(x, j, z))
+            if (!Grid::inside(x, j, z))
+                continue;
+            // leaves let light through, dimmed a level more (their faces
+            // inside a crown show through the gaps and are lit from it)
+            const bool leaf = isLeafBlock(g.get(x, j, z));
+            if (g.opaque(x, j, z) && !leaf)
+                continue;
+            const int here = leaf ? level - 1 : level;
+            if (here <= 0)
                 continue;
             unsigned char &s = light[Grid::index(x, j, z)];
-            if (s < level)
+            if (s < here)
             {
-                s = static_cast<unsigned char>(level);
+                s = static_cast<unsigned char>(here);
                 queue.push_back(Cell{x, j, z});
             }
         }
@@ -2939,7 +3612,7 @@ void flood(const Grid &g, std::vector<unsigned char> &light, std::deque<Cell> &q
 // block sideways, so cuttings stay bright and tunnels get dark.
 void spreadSky(Grid &g)
 {
-    std::deque<Cell> queue;
+    CellQueue<Cell> queue;
     for (int bx = kMinBX; bx < kMaxBX; ++bx)
         for (int bz = kMinBZ; bz < kMaxBZ; ++bz)
             for (int j = kMaxY; j >= kMinY && !g.opaque(bx, j, bz); --j)
@@ -2973,22 +3646,32 @@ void spreadSky(Grid &g)
 
 void spreadGlow(Grid &g)
 {
-    std::deque<Cell> warm, cool;
+    CellQueue<Cell> warm, cool;
     for (int bx = kMinBX; bx < kMaxBX; ++bx)
         for (int bz = kMinBZ; bz < kMaxBZ; ++bz)
             for (int j = kMinY; j <= kMaxY; ++j)
             {
                 const int block = g.block[Grid::index(bx, j, bz)];
+                // as bright as in a block game, its 15 being 14 here: a
+                // lantern, lava and glowstone 15, a
+                // campfire's embers (magma) less
                 int level = 0;
                 bool isCool = false;
+                if (g.plant[Grid::index(bx, j, bz)] == LAMP)
+                {
+                    // the lantern's own cell is lit too
+                    unsigned char &own = g.warm[Grid::index(bx, j, bz)];
+                    if (own < 14)
+                    {
+                        own = 14;
+                        warm.push_back(Cell{bx, j, bz});
+                    }
+                    continue;
+                }
                 if (block == LAVA)
-                    level = 13;
+                    level = 14;
                 else if (block == LANTERN)
                     level = 14;
-                else if (block == JACK_O)
-                    level = 12;
-                else if (block == WINDOW)
-                    level = 8;
                 else if (block == MAGMA)
                     level = 6;
                 else if (block == CRYSTAL)
@@ -3001,7 +3684,8 @@ void spreadGlow(Grid &g)
                 for (const int *d : kDirs)
                 {
                     const int x = bx + d[0], y = j + d[1], z = bz + d[2];
-                    if (!Grid::inside(x, y, z) || g.opaque(x, y, z))
+                    if (!Grid::inside(x, y, z) ||
+                        (g.opaque(x, y, z) && !isLeafBlock(g.get(x, y, z))))
                         continue;
                     unsigned char &s = (isCool ? g.cool : g.warm)[Grid::index(x, y, z)];
                     if (s < level)
@@ -3066,6 +3750,111 @@ void crustLava(Grid &g)
 // ---------------------------------------------------------------------
 // Building the world: no OpenGL here, so tests can use it.
 // ---------------------------------------------------------------------
+// The edges of things, as a block game's world has them: lily pads on the
+// still water of the lakes and ponds, sugar cane on the banks beside it
+// and clay on their beds; podzol on the spruce forest's floor; and coarse
+// dirt and gravel where the meadow meets the badlands and the volcano. All
+// of it clear of the train.
+void dressEdges(Grid &g, const Clearance &clear)
+{
+    const int sides[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+    for (int bx = kMinBX + 1; bx < kMaxBX - 1; ++bx)
+        for (int bz = kMinBZ + 1; bz < kMaxBZ - 1; ++bz)
+        {
+            const unsigned int h = hash(bx, bz, 673u);
+            const int top = g.top(bx, bz);
+            if (top < kMinY || top >= kMaxY - 3)
+                continue;
+            const int ground = g.get(bx, top, bz);
+            const int biome = g.biome[Grid::column(bx, bz)];
+            const float cx = centerOf(bx), cz = centerOf(bz);
+
+            // still water above the sea: a pad now and then, clay below
+            // (top() counts the water as the top: its bed is under it)
+            if (ground == WATER)
+            {
+                const int surface = top;
+                int bed = top;
+                while (bed > kMinY && g.get(bx, bed, bz) == WATER)
+                    --bed;
+                const int floorBlock = g.get(bx, bed, bz);
+                if (surface <= kSeaLayer || g.get(bx, surface + 1, bz) != AIR)
+                    continue;
+                if ((floorBlock == SAND || floorBlock == DIRT || floorBlock == GRAVEL ||
+                     floorBlock == GRASS) &&
+                    valueNoise(cx * 0.12f, cz * 0.12f, 679u) > 0.5f)
+                    g.put(bx, bed, bz, CLAY); // in patches, as a lake bed has it
+                const size_t cell = Grid::index(bx, surface, bz);
+                // only out on open water (not in a well or a ditch), and not
+                // on the hot spring
+                int open = 0;
+                for (const auto &d : sides)
+                    open += g.get(bx + d[0], surface, bz + d[1]) == WATER ? 1 : 0;
+                if (g.level[cell] == 0 && open >= 3 && biome != MESA && h % 9u == 0u &&
+                    !clear.blocks(bx, surface + 1, bz))
+                    g.plant[cell] = LILY_PAD;
+                continue;
+            }
+
+            // a bank beside still water: sugar cane, one to three high
+            const size_t above = Grid::index(bx, top + 1, bz);
+            if ((ground == GRASS || ground == SAND) && g.get(bx, top + 1, bz) == AIR &&
+                g.plant[above] == NO_PLANT && biome != ALPINE)
+            {
+                bool shore = false;
+                for (const auto &d : sides)
+                {
+                    const int x = bx + d[0], z = bz + d[1];
+                    if (g.get(x, top, z) == WATER && g.get(x, top + 1, z) == AIR &&
+                        top > kSeaLayer && g.level[Grid::index(x, top, z)] == 0)
+                        shore = true;
+                }
+                if (shore && h % 4u == 0u)
+                {
+                    const int height = 1 + static_cast<int>((h >> 8) % 3u);
+                    for (int k = 1; k <= height; ++k)
+                    {
+                        const size_t c = Grid::index(bx, top + k, bz);
+                        if (g.get(bx, top + k, bz) != AIR || g.plant[c] != NO_PLANT ||
+                            clear.blocks(bx, top + k, bz))
+                            break;
+                        g.plant[c] = SUGAR_CANE;
+                    }
+                    continue;
+                }
+            }
+
+            // the spruce forest's floor
+            if (biome == ALPINE && ground == GRASS &&
+                valueNoise(cx * 0.06f, cz * 0.06f, 675u) > 0.42f)
+            {
+                g.put(bx, top, bz, PODZOL);
+                continue;
+            }
+
+            // the meadow turning to the badlands' or the volcano's ground
+            if (ground == GRASS && (biome == MEADOW || biome == ALPINE))
+            {
+                int closest = 99;
+                for (int dx = -4; dx <= 4; ++dx)
+                    for (int dz = -4; dz <= 4; ++dz)
+                    {
+                        if (!Grid::insideColumn(bx + dx, bz + dz))
+                            continue;
+                        const int other = g.biome[Grid::column(bx + dx, bz + dz)];
+                        if (other == MESA || other == VOLCANO)
+                        {
+                            const int d = abs(dx) > abs(dz) ? abs(dx) : abs(dz);
+                            closest = d < closest ? d : closest;
+                        }
+                    }
+                if (closest <= 4 &&
+                    valueNoise(cx * 0.2f, cz * 0.2f, 677u) * 5.0f > static_cast<float>(closest))
+                    g.put(bx, top, bz, h % 5u == 0u ? GRAVEL : COARSE_DIRT);
+            }
+        }
+}
+
 // Where snow lies, per column, from the bare terrain: 2 on snowy ground
 // and high up on the mountains and crags, where it settles on whatever is
 // there, the rock ledges too; 1 lower on the
@@ -3127,14 +3916,41 @@ void snowfall(Grid &g, const Clearance &clear, const std::vector<unsigned char> 
         }
 }
 
-void buildScenery(Grid &g, Extras &extras)
+// How far a build has got, for the loading screen, and whether it should
+// stop early (the world is being thrown away).
+struct BuildProgress
+{
+    std::atomic<int> *permille = nullptr; // 0..1000
+    const std::atomic<bool> *cancel = nullptr;
+
+    // Records that the build has got this far (0..1); false: stop now.
+    bool at(float done) const
+    {
+        if (permille)
+            permille->store(static_cast<int>(done * 1000.0f));
+        return !(cancel && cancel->load());
+    }
+};
+
+void buildScenery(Grid &g, Extras &extras, const BuildProgress &progress = BuildProgress())
 {
     const std::vector<float> ride = OceanWorld::rideSamples();
     Clearance clear;
     clear.add(ride);
 
+    // the steps in order, with roughly how long each takes (in tenths of a
+    // percent of the whole build), so the loading bar moves evenly
+    const float total = 1000.0f;
+    float done = 0.0f;
+    auto step = [&](float share) {
+        done += share;
+        return progress.at(done / total);
+    };
+
     buildTerrain(g);
     const std::vector<unsigned char> cover = snowCover(g); // before anything is built on it
+    if (!step(150))
+        return;
     buildLavaLake(g);
     traceLava(g, scaledLine(kLavaSouth, 4).data(), 4, true);
     traceLava(g, scaledLine(kLavaEast, 4).data(), 4, true);
@@ -3144,11 +3960,15 @@ void buildScenery(Grid &g, Extras &extras)
     buildSpringPool(g, 12.5f, 102.5f, 9.0f); // a hot spring on the badlands
     buildWaterfall(g);
     buildFloatingIsland(g);
+    if (!step(100))
+        return;
 
     carveRide(g, ride);
     const std::vector<float> along(ride.begin() + static_cast<long>(ride.size() / 3 * 2),
                                    ride.end());
     lightTunnels(g, along, clear);
+    if (!step(100))
+        return;
     int castle[2] = {1 << 20, 1 << 20};
     buildCastle(g, clear, castle);
     buildBridge(g, clear);
@@ -3160,17 +3980,30 @@ void buildScenery(Grid &g, Extras &extras)
     buildIceSpikes(g, clear);
     buildHoodoos(g, clear);
     buildJungleTemple(g, clear, extras);
+    if (!step(100))
+        return;
     buildSwampWater(g, waterZone(ride));
     // after the carving, so the water flows round the ride's room
     spreadWater(g);
+    if (!step(100))
+        return;
 
+    scatterBoulders(g, clear);
     plantTrees(g, clear, extras);
     plantNorthEast(g, clear, extras);
+    if (!step(50))
+        return;
     spreadSky(g);
+    if (!step(200))
+        return;
     plantFlowers(g, clear, extras);
+    dressEdges(g, clear);
     snowfall(g, clear, cover);
+    if (!step(50))
+        return;
     spreadGlow(g);
     placeAnimals(g, clear, extras);
+    step(150);
 }
 
 // The editor's island: level grass with a few trees and flowers around
@@ -3252,8 +4085,14 @@ void addBlockFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
     for (const Face &f : kFaces)
     {
         const int ox = bx + f.normal[0], oy = j + f.normal[1], oz = bz + f.normal[2];
-        // Water is see-through: a block shows its face behind it.
-        if (g.opaque(ox, oy, oz))
+        // Water and glass are see-through, and leaves have holes: a block
+        // shows its face behind them.
+        const int beside = g.get(ox, oy, oz);
+        if (g.opaque(ox, oy, oz) && !isLeafBlock(beside))
+            continue;
+        // between two leaf blocks one face does for both sides (faces are
+        // not culled), so they do not flicker over each other
+        if (isLeafBlock(b) && isLeafBlock(beside) && f.normal[0] + f.normal[1] + f.normal[2] < 0)
             continue;
         if (oy < kMinY)
             continue; // the underside of the island
@@ -3308,8 +4147,9 @@ void addBlockFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
                         static_cast<float>(g.coolAt(samples[s][0], samples[s][1], samples[s][2]));
                     count += 1.0f;
                 }
-            // Lava and lantern light is warm: it reddens the surface and
-            // makes it glow a little, the crystals' light is the shader's.
+            // Lava and lantern light, warm: the shader casts it, strongly
+            // where it is dark and hardly at all in the sun (as minus the
+            // second extra, which a block never uses to sway).
             const float heat = glowFactor(warm / count);
 
             Vertex v;
@@ -3319,13 +4159,11 @@ void addBlockFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
             for (int k = 0; k < 3; ++k)
                 v.normal[k] = static_cast<float>(f.normal[k]);
             const float self = blockGlow(b);
-            v.color[0] = tint;
-            v.color[1] = tint * (self > 0.0f ? 1.0f : 1.0f - 0.3f * heat);
-            v.color[2] = tint * (self > 0.0f ? 1.0f : 1.0f - 0.55f * heat);
+            v.color[0] = v.color[1] = v.color[2] = tint;
             v.uv[0] = f.uv[c][0];
             v.uv[1] = f.uv[c][1];
-            v.extra[0] = self + heat * 0.5f;
-            v.extra[1] = 0.0f;
+            v.extra[0] = self;
+            v.extra[1] = self > 0.0f ? 0.0f : -heat;
             v.extra[2] = glowFactor(cool / count);
             v.extra[3] = skyFactor(sky / count) * ao[open];
             batches[static_cast<size_t>(texture)].push_back(v);
@@ -3391,7 +4229,7 @@ void addWaterFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
             v.color[k] = 1.0f;
         }
         v.extra[0] = 0.0f;
-        v.extra[1] = 0.0f;
+        v.extra[1] = -glowFactor(static_cast<float>(g.warmAt(lx, ly, lz)));
         v.extra[2] = glowFactor(static_cast<float>(g.coolAt(lx, ly, lz)));
         v.extra[3] = skyFactor(static_cast<float>(g.skyAt(lx, ly, lz)));
         for (int c = 0; c < 4; ++c)
@@ -3412,15 +4250,16 @@ void addWaterFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
 
 // A bamboo cane's stalk is a thin square post, not just the crossed
 // pictures, so it stays solid from any side and far away; its faces show
-// the stalk's strip of the picture, shaded a little darker round the post.
+// the stalk's strip of the picture.
 // The leafy top adds a wider spray of leaves square to the crossed one.
 void addBambooStalk(bool top, bool leafy, float cx, float y0, float cz, unsigned int h, Vertex v,
                     std::vector<Vertex> &out)
 {
     const float half = 0.26f + 0.08f * static_cast<float>((h >> 4) % 4u) / 3.0f;
     const float u0 = 13.2f / 32.0f, u1 = 18.8f / 32.0f;
-    const float tint = v.color[0];
-    const float shades[4] = {1.0f, 0.82f, 0.7f, 0.9f};
+    // each side faces its own way, lit by the shader from its normal (no
+    // shade baked in as well)
+    const float normals[4][2] = {{0.0f, -1.0f}, {1.0f, 0.0f}, {0.0f, 1.0f}, {-1.0f, 0.0f}};
     const float corners[5][2] = {
         {-half, -half}, {half, -half}, {half, half}, {-half, half}, {-half, -half}};
     // the stalk's picture starts at the top's leaves halfway up the cell
@@ -3428,7 +4267,9 @@ void addBambooStalk(bool top, bool leafy, float cx, float y0, float cz, unsigned
     const float y1 = top ? y0 + kBlock * 0.5f : y0 + kBlock;
     for (int f = 0; f < 4; ++f)
     {
-        v.color[0] = v.color[1] = v.color[2] = tint * shades[f];
+        v.normal[0] = normals[f][0];
+        v.normal[1] = 0.0f;
+        v.normal[2] = normals[f][1];
         const float quad[4][4] = {{corners[f][0], y0, corners[f][1], 1.0f},
                                   {corners[f + 1][0], y0, corners[f + 1][1], 1.0f},
                                   {corners[f + 1][0], y1, corners[f + 1][1], vTop},
@@ -3445,7 +4286,10 @@ void addBambooStalk(bool top, bool leafy, float cx, float y0, float cz, unsigned
     }
     if (!top && !leafy)
         return;
-    v.color[0] = v.color[1] = v.color[2] = tint;
+    // the leaves are crossed pictures, lit as facing the sky like the plants
+    v.normal[0] = 0.0f;
+    v.normal[1] = 1.0f;
+    v.normal[2] = 0.0f;
     // only the picture's upper half, which holds the leaves and no stalk;
     // the top's spray is the widest, the ones below it smaller and turned
     const float spread = kBlock * (top ? 1.15f : 0.8f);
@@ -3468,6 +4312,44 @@ void addBambooStalk(bool top, bool leafy, float cx, float y0, float cz, unsigned
             v.pos[2] = quad[c][2];
             v.uv[0] = (c == 0 || c == 3) ? 0.0f : 1.0f;
             v.uv[1] = quad[c][3];
+            out.push_back(v);
+        }
+    }
+}
+
+// A glass block: its faces towards anything that does not hide them, into
+// the see-through batch with the water, so they are blended over what is
+// behind them (the dark of a room, the trees beyond); none between two
+// panes of glass.
+void addGlassFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
+{
+    std::vector<Vertex> &out = batches[static_cast<size_t>(LandTextures::WINDOW)];
+    for (const Face &f : kFaces)
+    {
+        const int ox = bx + f.normal[0], oy = j + f.normal[1], oz = bz + f.normal[2];
+        const int beside = g.get(ox, oy, oz);
+        if (beside == WINDOW || (g.opaque(ox, oy, oz) && !isLeafBlock(beside)))
+            continue;
+        const float sky = skyFactor(static_cast<float>(g.skyAt(ox, oy, oz)));
+        // no shading baked in by which way the face looks: the lighting
+        // shader does that from the normal, as for every block (baked in as
+        // well, it darkened thin parts twice, and more so in linear light)
+        const float shade = 0.95f;
+        for (int c = 0; c < 4; ++c)
+        {
+            Vertex v;
+            v.pos[0] = static_cast<float>(bx + f.corner[c][0]) * kBlock;
+            v.pos[1] = static_cast<float>(j + f.corner[c][1]) * kBlock;
+            v.pos[2] = static_cast<float>(bz + f.corner[c][2]) * kBlock;
+            for (int k = 0; k < 3; ++k)
+                v.normal[k] = static_cast<float>(f.normal[k]);
+            v.uv[0] = f.uv[c][0];
+            v.uv[1] = f.uv[c][1];
+            v.color[0] = v.color[1] = v.color[2] = shade;
+            v.extra[0] = 0.0f;
+            v.extra[1] = -glowFactor(static_cast<float>(g.warmAt(ox, oy, oz)));
+            v.extra[2] = glowFactor(static_cast<float>(g.coolAt(ox, oy, oz)));
+            v.extra[3] = sky;
             out.push_back(v);
         }
     }
@@ -3497,7 +4379,7 @@ void addSnowLayer(const Grid &g, int bx, int j, int bz, Batches &batches)
         0.95f + 0.05f * static_cast<float>(hash(bx * 7 + j, bz, 401u) % 100u) / 100.0f;
     Vertex v;
     v.extra[0] = 0.0f;
-    v.extra[1] = 0.0f;
+    v.extra[1] = -glowFactor(static_cast<float>(g.warm[i]));
     v.extra[2] = glowFactor(static_cast<float>(g.cool[i]));
     const float sky = skyFactor(static_cast<float>(g.sky[i]));
     auto corner = [&](float x, float y, float z, float u, float w) {
@@ -3532,7 +4414,7 @@ void addSnowLayer(const Grid &g, int bx, int j, int bz, Batches &batches)
             continue;
         for (int k = 0; k < 3; ++k)
             v.normal[k] = static_cast<float>(f.normal[k]);
-        v.extra[3] = sky * 0.85f;
+        v.extra[3] = sky;
         // the strip of the texture as tall as the side
         const float vLow = 1.0f - (low - y0) / kBlock, vTop = 1.0f - depth;
         for (int c = 0; c < 4; ++c)
@@ -3544,6 +4426,347 @@ void addSnowLayer(const Grid &g, int bx, int j, int bz, Batches &batches)
     }
 }
 
+// A box inside a cell, with the planks' picture at the scale of a block,
+// lit by the cell's sky.
+void addBox(const Grid &g, int bx, int j, int bz, const float lo[3], const float hi[3],
+            Batches &batches, int texture)
+{
+    const size_t i = Grid::index(bx, j, bz);
+    const float sky = skyFactor(static_cast<float>(g.sky[i]));
+    const float base[3] = {static_cast<float>(bx) * kBlock, static_cast<float>(j) * kBlock,
+                           static_cast<float>(bz) * kBlock};
+    std::vector<Vertex> &out = batches[static_cast<size_t>(texture)];
+    for (const Face &f : kFaces)
+    {
+        // no shading baked in by which way the face looks: the lighting
+        // shader does that from the normal, as for every block (baked in as
+        // well, it darkened thin parts twice, and more so in linear light)
+        const float shade = 0.95f;
+        for (int c = 0; c < 4; ++c)
+        {
+            Vertex v;
+            float p[3];
+            for (int k = 0; k < 3; ++k)
+            {
+                p[k] = f.corner[c][k] == 1 ? hi[k] : lo[k];
+                v.pos[k] = base[k] + p[k];
+                v.normal[k] = static_cast<float>(f.normal[k]);
+            }
+            // the picture in block units across the face, so it is not
+            // stretched on a thin post or rail
+            const int a = f.normal[0] != 0 ? 2 : 0, b = f.normal[1] != 0 ? 2 : 1;
+            v.uv[0] = p[a] / kBlock;
+            v.uv[1] = 1.0f - p[b] / kBlock;
+            v.color[0] = v.color[1] = v.color[2] = shade;
+            v.extra[0] = 0.0f;
+            v.extra[1] = -glowFactor(static_cast<float>(g.warm[i]));
+            v.extra[2] = glowFactor(static_cast<float>(g.cool[i]));
+            v.extra[3] = sky;
+            out.push_back(v);
+        }
+    }
+}
+
+// Does a fence reach towards this cell: another fence, or a solid block?
+bool fenceJoins(const Grid &g, int bx, int j, int bz)
+{
+    if (!Grid::inside(bx, j, bz))
+        return false;
+    return g.plant[Grid::index(bx, j, bz)] == FENCE || g.opaque(bx, j, bz);
+}
+
+// An oak fence as in a block game: a square post in the middle of the cell
+// and two rails out to each fence or block beside it.
+void addFence(const Grid &g, int bx, int j, int bz, Batches &batches)
+{
+    const float h = kBlock, mid = kBlock * 0.5f;
+    const float post = kBlock * 0.125f, rail = kBlock * 0.0625f;
+    const float postLo[3] = {mid - post, 0.0f, mid - post};
+    const float postHi[3] = {mid + post, h, mid + post};
+    addBox(g, bx, j, bz, postLo, postHi, batches, LandTextures::PLANKS);
+    const int sides[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+    const float heights[2] = {h * 0.375f, h * 0.75f};
+    for (const auto &d : sides)
+    {
+        if (!fenceJoins(g, bx + d[0], j, bz + d[1]))
+            continue;
+        for (float y : heights)
+        {
+            float lo[3] = {mid - rail, y - h * 0.09f, mid - rail};
+            float hi[3] = {mid + rail, y + h * 0.09f, mid + rail};
+            const int axis = d[0] != 0 ? 0 : 2;
+            if ((d[0] != 0 ? d[0] : d[1]) > 0)
+                hi[axis] = h;
+            else
+                lo[axis] = 0.0f;
+            addBox(g, bx, j, bz, lo, hi, batches, LandTextures::PLANKS);
+        }
+    }
+}
+
+// A box in a cell, each face's picture taken from part of a texture: for
+// each face (kFaces order) the left edge's u, the bottom edge's v, the
+// right edge's u and the top edge's v, in sixteenths, v down the picture.
+void addPart(const Grid &g, int bx, int j, int bz, const float lo[3], const float hi[3],
+             const float uv[6][4], float glow, Batches &batches, int texture)
+{
+    const size_t i = Grid::index(bx, j, bz);
+    const float sky = skyFactor(static_cast<float>(g.sky[i]));
+    const float base[3] = {static_cast<float>(bx) * kBlock, static_cast<float>(j) * kBlock,
+                           static_cast<float>(bz) * kBlock};
+    std::vector<Vertex> &out = batches[static_cast<size_t>(texture)];
+    for (int k = 0; k < 6; ++k)
+    {
+        const Face &f = kFaces[k];
+        // no shading baked in by which way the face looks: the lighting
+        // shader does that from the normal, as for every block (baked in as
+        // well, it darkened thin parts twice, and more so in linear light)
+        const float shade = 0.95f;
+        for (int c = 0; c < 4; ++c)
+        {
+            Vertex v;
+            for (int a = 0; a < 3; ++a)
+            {
+                v.pos[a] = base[a] + (f.corner[c][a] == 1 ? hi[a] : lo[a]);
+                v.normal[a] = static_cast<float>(f.normal[a]);
+            }
+            v.uv[0] = (f.uv[c][0] > 0.5f ? uv[k][2] : uv[k][0]) / 16.0f;
+            // uv[k]: across from, the bottom's v, across to, the top's v
+            v.uv[1] = (f.uv[c][1] > 0.5f ? uv[k][1] : uv[k][3]) / 16.0f;
+            v.color[0] = v.color[1] = v.color[2] = shade;
+            v.extra[0] = glow;
+            v.extra[1] = -glowFactor(static_cast<float>(g.warm[i]));
+            v.extra[2] = glowFactor(static_cast<float>(g.cool[i]));
+            v.extra[3] = sky;
+            out.push_back(v);
+        }
+    }
+}
+
+// A lantern as a block game draws it: a body six sixteenths across and
+// seven high with a narrower cap, glowing; on the block below, or hung from
+// the block above on a chain (then a sixteenth higher, as it is there).
+void addLantern(const Grid &g, int bx, int j, int bz, Batches &batches)
+{
+    const bool standing = g.opaque(bx, j - 1, bz) || (Grid::inside(bx, j - 1, bz) &&
+                                                      g.plant[Grid::index(bx, j - 1, bz)] == FENCE);
+    const float u = kBlock / 16.0f;
+    const float lift = standing ? 0.0f : 1.0f;
+    // faces in kFaces order: +x, -x, +y, -y, +z, -z
+    const float body[6][4] = {{0, 9, 6, 2},  {0, 9, 6, 2}, {0, 9, 6, 15},
+                              {0, 9, 6, 15}, {0, 9, 6, 2}, {0, 9, 6, 2}};
+    const float bodyLo[3] = {5 * u, lift * u, 5 * u}, bodyHi[3] = {11 * u, (7 + lift) * u, 11 * u};
+    addPart(g, bx, j, bz, bodyLo, bodyHi, body, 1.0f, batches, LandTextures::LANTERN_SMALL);
+    const float cap[6][4] = {{1, 2, 5, 0},   {1, 2, 5, 0}, {1, 10, 5, 14},
+                             {1, 10, 5, 14}, {1, 2, 5, 0}, {1, 2, 5, 0}};
+    const float capLo[3] = {6 * u, (7 + lift) * u, 6 * u},
+                capHi[3] = {10 * u, (9 + lift) * u, 10 * u};
+    addPart(g, bx, j, bz, capLo, capHi, cap, 0.3f, batches, LandTextures::LANTERN_SMALL);
+    if (standing)
+        return;
+    // the chain, from the cap up to the block above
+    const float chain[6][4] = {{0, 16, 3, 0}, {0, 16, 3, 0}, {0, 0, 3, 3},
+                               {0, 0, 3, 3},  {0, 16, 3, 0}, {0, 16, 3, 0}};
+    const float chainLo[3] = {7.0f * u, (9 + lift) * u, 7.0f * u};
+    const float chainHi[3] = {9.0f * u, kBlock, 9.0f * u};
+    addPart(g, bx, j, bz, chainLo, chainHi, chain, 0.0f, batches, LandTextures::CHAIN);
+}
+
+// A lily pad: one flat leaf just above the still water in its cell, a
+// little smaller than the cell and turned a random way.
+void addLilyPad(const Grid &g, int bx, int j, int bz, Batches &batches)
+{
+    const size_t i = Grid::index(bx, j, bz);
+    const unsigned int h = hash(bx, bz, 671u);
+    std::vector<Vertex> &out = batches[static_cast<size_t>(LandTextures::LILY_PAD)];
+    Vertex v;
+    v.normal[0] = 0.0f;
+    v.normal[1] = 1.0f;
+    v.normal[2] = 0.0f;
+    v.color[0] = v.color[1] = v.color[2] = 0.9f + 0.1f * static_cast<float>(h % 10u) / 10.0f;
+    v.extra[0] = 0.0f;
+    v.extra[1] = -glowFactor(static_cast<float>(g.warm[i]));
+    v.extra[2] = glowFactor(static_cast<float>(g.cool[i]));
+    v.extra[3] = skyFactor(static_cast<float>(g.skyAt(bx, j + 1, bz)));
+    const float cx = (static_cast<float>(bx) + 0.5f) * kBlock;
+    const float cz = (static_cast<float>(bz) + 0.5f) * kBlock;
+    const float y = (static_cast<float>(j) + 8.0f / 9.0f) * kBlock + 0.03f;
+    const float a = static_cast<float>(h % 360u) * 3.14159265f / 180.0f;
+    const float r = kBlock * 0.62f;
+    const float uv[4][2] = {{0, 1}, {1, 1}, {1, 0}, {0, 0}};
+    for (int c = 0; c < 4; ++c)
+    {
+        const float ca = a + 0.785398f + 1.570796f * static_cast<float>(c);
+        v.pos[0] = cx + cosf(ca) * r;
+        v.pos[1] = y;
+        v.pos[2] = cz - sinf(ca) * r;
+        v.uv[0] = uv[c][0];
+        v.uv[1] = uv[c][1];
+        out.push_back(v);
+    }
+}
+
+// A box inside a cell (in block units, 0..1) with the picture at the scale
+// of a block, as addBox(), leaving out a face that lies on the cell's side
+// against a solid block (nothing sees it).
+void addShapeBox(const Grid &g, int bx, int j, int bz, const float lo[3], const float hi[3],
+                 Batches &batches, int texture)
+{
+    const size_t i = Grid::index(bx, j, bz);
+    const float sky = skyFactor(static_cast<float>(g.sky[i]));
+    std::vector<Vertex> &out = batches[static_cast<size_t>(texture)];
+    for (const Face &f : kFaces)
+    {
+        int axis = 0;
+        while (f.normal[axis] == 0)
+            ++axis;
+        const bool outward = f.normal[axis] > 0 ? hi[axis] >= 1.0f : lo[axis] <= 0.0f;
+        if (outward && g.opaque(bx + f.normal[0], j + f.normal[1], bz + f.normal[2]))
+            continue;
+        for (int c = 0; c < 4; ++c)
+        {
+            Vertex v;
+            float p[3];
+            for (int k = 0; k < 3; ++k)
+            {
+                p[k] = f.corner[c][k] == 1 ? hi[k] : lo[k];
+                v.normal[k] = static_cast<float>(f.normal[k]);
+            }
+            v.pos[0] = (static_cast<float>(bx) + p[0]) * kBlock;
+            v.pos[1] = (static_cast<float>(j) + p[1]) * kBlock;
+            v.pos[2] = (static_cast<float>(bz) + p[2]) * kBlock;
+            const int a = f.normal[0] != 0 ? 2 : 0, b = f.normal[1] != 0 ? 2 : 1;
+            v.uv[0] = p[a];
+            v.uv[1] = 1.0f - p[b];
+            v.color[0] = v.color[1] = v.color[2] = 0.95f;
+            v.extra[0] = 0.0f;
+            v.extra[1] = -glowFactor(static_cast<float>(g.warm[i]));
+            v.extra[2] = glowFactor(static_cast<float>(g.cool[i]));
+            v.extra[3] = sky;
+            out.push_back(v);
+        }
+    }
+}
+
+// A step, a slab, a trapdoor or a flower pot (see shapeLevel()), drawn
+// with the solid blocks, so it is lit and casts shadows like them.
+void addShape(const Grid &g, int bx, int j, int bz, Batches &batches)
+{
+    const size_t i = Grid::index(bx, j, bz);
+    const int plant = g.plant[i], level = g.level[i];
+    const int facing = level & 3;
+    const bool high = (level & 4) != 0, corner = (level & 8) != 0;
+    const int texture = textureOf(kShapeBlocks[(level >> 4) & 7], 2);
+    const float y0 = high ? 0.5f : 0.0f;
+    if (plant == SLAB || plant == STAIRS)
+    {
+        const float lo[3] = {0.0f, y0, 0.0f}, hi[3] = {1.0f, y0 + 0.5f, 1.0f};
+        addShapeBox(g, bx, j, bz, lo, hi, batches, texture);
+    }
+    if (plant == STAIRS)
+    {
+        // the upper (or, upside down, the lower) half on the side it rises
+        // to, or on a corner just the quarter between that way and the next
+        float lo[3] = {0.0f, high ? 0.0f : 0.5f, 0.0f}, hi[3] = {1.0f, high ? 0.5f : 1.0f, 1.0f};
+        const int ways = corner ? 2 : 1;
+        for (int w = 0; w < ways; ++w)
+        {
+            const int *d = kFacing[(facing + w) % 4];
+            if (d[0] > 0)
+                lo[0] = 0.5f;
+            if (d[0] < 0)
+                hi[0] = 0.5f;
+            if (d[1] > 0)
+                lo[2] = 0.5f;
+            if (d[1] < 0)
+                hi[2] = 0.5f;
+        }
+        addShapeBox(g, bx, j, bz, lo, hi, batches, texture);
+    }
+    else if (plant == TRAPDOOR)
+    {
+        const float t = 3.0f / 16.0f;
+        float lo[3] = {0.0f, 0.0f, 0.0f}, hi[3] = {1.0f, 1.0f, 1.0f};
+        if (high)
+            lo[1] = 1.0f - t; // closed, at the top of the cell
+        else
+        {
+            const int *d = kFacing[facing]; // open, against that wall
+            if (d[0] > 0)
+                lo[0] = 1.0f - t;
+            if (d[0] < 0)
+                hi[0] = t;
+            if (d[1] > 0)
+                lo[2] = 1.0f - t;
+            if (d[1] < 0)
+                hi[2] = t;
+        }
+        addShapeBox(g, bx, j, bz, lo, hi, batches, LandTextures::TRAPDOOR);
+    }
+    else if (plant == POT)
+    {
+        // the pot, six sixteenths across and high, and the flower crossed
+        // above its earth
+        const float lo[3] = {5.0f / 16.0f, 0.0f, 5.0f / 16.0f};
+        const float hi[3] = {11.0f / 16.0f, 6.0f / 16.0f, 11.0f / 16.0f};
+        addShapeBox(g, bx, j, bz, lo, hi, batches, LandTextures::FLOWER_POT);
+        std::vector<Vertex> &out = batches[static_cast<size_t>(plantTexture(level))];
+        Vertex v;
+        v.normal[0] = 0.0f;
+        v.normal[1] = 1.0f;
+        v.normal[2] = 0.0f;
+        v.color[0] = v.color[1] = v.color[2] = 0.95f;
+        v.extra[0] = 0.0f;
+        v.extra[1] = -glowFactor(static_cast<float>(g.warm[i]));
+        v.extra[2] = glowFactor(static_cast<float>(g.cool[i]));
+        v.extra[3] = skyFactor(static_cast<float>(g.sky[i]));
+        const float cx = (static_cast<float>(bx) + 0.5f) * kBlock;
+        const float cz = (static_cast<float>(bz) + 0.5f) * kBlock;
+        const float y = (static_cast<float>(j) + 4.0f / 16.0f) * kBlock, r = 0.3f * kBlock;
+        const float size = 0.75f * kBlock;
+        for (int q = 0; q < 2; ++q)
+        {
+            const float sx = q == 0 ? r : -r, sz = r;
+            const float pts[4][3] = {{cx - sx, y, cz - sz},
+                                     {cx + sx, y, cz + sz},
+                                     {cx + sx, y + size, cz + sz},
+                                     {cx - sx, y + size, cz - sz}};
+            const float uv[4][2] = {{0, 1}, {1, 1}, {1, 0}, {0, 0}};
+            for (int c = 0; c < 4; ++c)
+            {
+                for (int k = 0; k < 3; ++k)
+                    v.pos[k] = pts[c][k];
+                v.uv[0] = uv[c][0];
+                v.uv[1] = uv[c][1];
+                out.push_back(v);
+            }
+        }
+    }
+}
+
+// A door as a block game has it: a board three sixteenths thick standing at
+// one side of its cell, the bottom or top half of the door's picture by
+// whether there is door below. It closes the doorway on the inside, so the
+// doorway is set back in the wall: the wall runs along the axis where the
+// cells either side are built (wall or window), and the inside is the side
+// that gets less sky.
+void addDoor(const Grid &g, int bx, int j, int bz, Batches &batches)
+{
+    const bool wallAlongX = g.get(bx - 1, j, bz) != AIR || g.get(bx + 1, j, bz) != AIR;
+    const int ax = wallAlongX ? 0 : 1, az = wallAlongX ? 1 : 0; // across the wall
+    const int skyPlus = g.skyAt(bx + ax, j, bz + az), skyMinus = g.skyAt(bx - ax, j, bz - az);
+    const bool insidePlus = skyPlus < skyMinus;
+    const float t = 3.0f / 16.0f;
+    float lo[3] = {0.0f, 0.0f, 0.0f}, hi[3] = {1.0f, 1.0f, 1.0f};
+    const int axis = wallAlongX ? 2 : 0;
+    if (insidePlus)
+        lo[axis] = 1.0f - t;
+    else
+        hi[axis] = t;
+    const bool top = g.get(bx, j - 1, bz) == DOOR;
+    addShapeBox(g, bx, j, bz, lo, hi, batches, top ? LandTextures::DOOR_TOP : LandTextures::DOOR);
+}
+
 // Two quads crossing diagonally, smaller than the cell and off centre.
 void addPlant(const Grid &g, int bx, int j, int bz, Batches &batches)
 {
@@ -3551,7 +4774,8 @@ void addPlant(const Grid &g, int bx, int j, int bz, Batches &batches)
     const int plant = g.plant[i];
     // bamboo and vines stack into columns: a whole cell tall, in the same
     // place in every cell of the column and still, so they join up
-    const bool stacked = plant == BAMBOO || plant == BAMBOO_TOP || plant == VINES;
+    const bool stacked =
+        plant == BAMBOO || plant == BAMBOO_TOP || plant == VINES || plant == SUGAR_CANE;
     const unsigned int h = stacked ? hash(bx, bz * 13, 411u) : hash(bx, bz * 13 + j, 411u);
     const float tint = 0.86f + 0.14f * static_cast<float>(h % 100u) / 100.0f;
     std::vector<Vertex> &out = batches[static_cast<size_t>(plantTexture(plant))];
@@ -3564,6 +4788,9 @@ void addPlant(const Grid &g, int bx, int j, int bz, Batches &batches)
     v.extra[0] = 0.0f;
     v.extra[2] = glowFactor(static_cast<float>(g.cool[i]));
     v.extra[3] = skyFactor(static_cast<float>(g.sky[i]));
+    // the warm light, where the plant does not sway (its foot, or all of a
+    // plant that never sways)
+    const float heat = glowFactor(static_cast<float>(g.warm[i]));
 
     const bool crop = plant == WHEAT;
     const float size =
@@ -3589,7 +4816,7 @@ void addPlant(const Grid &g, int bx, int j, int bz, Batches &batches)
             v.pos[2] = corners[c][2];
             v.uv[0] = (c == 0 || c == 3) ? 0.0f : 1.0f;
             v.uv[1] = corners[c][3];
-            v.extra[1] = corners[c][3] > 0.5f ? 0.0f : sway;
+            v.extra[1] = corners[c][3] > 0.5f || sway <= 0.0f ? -heat : sway;
             out.push_back(v);
         }
     }
@@ -3676,6 +4903,69 @@ void box(float x0, float y0, float z0, float x1, float y1, float z1)
     glEnd();
 }
 
+// A box with the texture bound, its picture at the scale of a block on
+// every face, as on the blocks.
+void texturedBox(float x0, float y0, float z0, float x1, float y1, float z1)
+{
+    const float k = 1.0f / kBlock;
+    glBegin(GL_QUADS);
+    glNormal3f(0, 0, 1);
+    glTexCoord2f(x0 * k, 1.0f - y0 * k);
+    glVertex3f(x0, y0, z1);
+    glTexCoord2f(x1 * k, 1.0f - y0 * k);
+    glVertex3f(x1, y0, z1);
+    glTexCoord2f(x1 * k, 1.0f - y1 * k);
+    glVertex3f(x1, y1, z1);
+    glTexCoord2f(x0 * k, 1.0f - y1 * k);
+    glVertex3f(x0, y1, z1);
+    glNormal3f(0, 0, -1);
+    glTexCoord2f(x1 * k, 1.0f - y0 * k);
+    glVertex3f(x1, y0, z0);
+    glTexCoord2f(x0 * k, 1.0f - y0 * k);
+    glVertex3f(x0, y0, z0);
+    glTexCoord2f(x0 * k, 1.0f - y1 * k);
+    glVertex3f(x0, y1, z0);
+    glTexCoord2f(x1 * k, 1.0f - y1 * k);
+    glVertex3f(x1, y1, z0);
+    glNormal3f(0, 1, 0);
+    glTexCoord2f(x0 * k, z1 * k);
+    glVertex3f(x0, y1, z1);
+    glTexCoord2f(x1 * k, z1 * k);
+    glVertex3f(x1, y1, z1);
+    glTexCoord2f(x1 * k, z0 * k);
+    glVertex3f(x1, y1, z0);
+    glTexCoord2f(x0 * k, z0 * k);
+    glVertex3f(x0, y1, z0);
+    glNormal3f(0, -1, 0);
+    glTexCoord2f(x0 * k, z0 * k);
+    glVertex3f(x0, y0, z0);
+    glTexCoord2f(x1 * k, z0 * k);
+    glVertex3f(x1, y0, z0);
+    glTexCoord2f(x1 * k, z1 * k);
+    glVertex3f(x1, y0, z1);
+    glTexCoord2f(x0 * k, z1 * k);
+    glVertex3f(x0, y0, z1);
+    glNormal3f(1, 0, 0);
+    glTexCoord2f(z1 * k, 1.0f - y0 * k);
+    glVertex3f(x1, y0, z1);
+    glTexCoord2f(z0 * k, 1.0f - y0 * k);
+    glVertex3f(x1, y0, z0);
+    glTexCoord2f(z0 * k, 1.0f - y1 * k);
+    glVertex3f(x1, y1, z0);
+    glTexCoord2f(z1 * k, 1.0f - y1 * k);
+    glVertex3f(x1, y1, z1);
+    glNormal3f(-1, 0, 0);
+    glTexCoord2f(z0 * k, 1.0f - y0 * k);
+    glVertex3f(x0, y0, z0);
+    glTexCoord2f(z1 * k, 1.0f - y0 * k);
+    glVertex3f(x0, y0, z1);
+    glTexCoord2f(z1 * k, 1.0f - y1 * k);
+    glVertex3f(x0, y1, z1);
+    glTexCoord2f(z0 * k, 1.0f - y1 * k);
+    glVertex3f(x0, y1, z0);
+    glEnd();
+}
+
 void colour(int r, int g, int b)
 {
     glColor3ub(static_cast<GLubyte>(r), static_cast<GLubyte>(g), static_cast<GLubyte>(b));
@@ -3725,31 +5015,36 @@ void drawAnimal(int kind, float stride)
     }
 }
 
-// A hot-air balloon: a stepped envelope in two colours, ropes and a basket.
-void drawBalloon(const int a[3], const int b[3])
+// A hot-air balloon: a stepped envelope of wool in two colours, oak ropes
+// and a basket of planks, as blocks a block game has; textures: the texture
+// names by LandTextures slot.
+void drawBalloon(int woolA, int woolB, const std::vector<unsigned int> &textures)
 {
     const float rings[7][2] = {{2.2f, 0.0f}, {4.2f, 1.6f},  {5.6f, 3.6f}, {6.0f, 6.0f},
                                {5.4f, 8.6f}, {4.0f, 10.8f}, {2.2f, 12.4f}};
+    glEnable(GL_TEXTURE_2D);
+    glColor3f(0.95f, 0.95f, 0.95f);
     for (int i = 0; i < 7; ++i)
     {
-        const int *c = i % 2 == 0 ? a : b;
-        colour(c[0], c[1], c[2]);
+        glBindTexture(GL_TEXTURE_2D, textures[static_cast<size_t>(i % 2 == 0 ? woolA : woolB)]);
         const float r = rings[i][0];
         const float top = i < 6 ? rings[i + 1][1] : 13.6f;
-        box(-r, rings[i][1], -r, r, top, r);
+        texturedBox(-r, rings[i][1], -r, r, top, r);
     }
-    colour(70, 50, 34);
+    glBindTexture(GL_TEXTURE_2D, textures[LandTextures::OAK_SIDE]);
     for (int k = 0; k < 4; ++k)
     {
         const float x = (k % 2 == 0) ? -1.1f : 1.0f;
         const float z = k < 2 ? -1.1f : 1.0f;
-        box(x, -3.4f, z, x + 0.1f, 0.0f, z + 0.1f);
+        texturedBox(x, -3.4f, z, x + 0.1f, 0.0f, z + 0.1f);
     }
-    colour(150, 108, 60);
-    box(-1.3f, -5.0f, -1.3f, 1.3f, -3.4f, 1.3f);
+    glBindTexture(GL_TEXTURE_2D, textures[LandTextures::PLANKS]);
+    texturedBox(-1.3f, -5.0f, -1.3f, 1.3f, -3.4f, 1.3f);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glDisable(GL_TEXTURE_2D);
     colour(255, 200, 90);
     setGlow(1.2f);
-    box(-0.4f, -1.2f, -0.4f, 0.4f, -0.5f, 0.4f); // the burner
+    box(-0.4f, -1.2f, -0.4f, 0.4f, -0.5f, 0.4f); // the burner's flame
     setGlow(0.0f);
 }
 
@@ -3771,13 +5066,55 @@ struct LandChunk
     float lo[3], hi[3];
 };
 
+namespace
+{
+// A chunk the builder has meshed, waiting for its display lists.
+struct MeshedChunk
+{
+    Batches solids, plants, water;
+    float lo[3], hi[3];
+};
+} // namespace
+
+// One of the two islands. The grid and the meshes are made on a thread of
+// their own (build()), so the window keeps drawing (the loading screen)
+// meanwhile; prepare() turns the meshes into display lists, which only
+// the thread that owns the OpenGL context can do.
 struct LandWorld::Scene
 {
     Grid grid;
     Extras extras;
-    bool built = false;
+    bool built = false; // every chunk has its display lists
     std::vector<LandChunk> chunks;
+
+    std::thread worker;
+    std::atomic<bool> gridReady{false}; // the grid is complete; the worker no longer writes it
+    std::atomic<bool> cancel{false};
+    std::atomic<bool> fromSave{false}; // the grid is being read from its save
+    std::atomic<int> gridPermille{0};
+    std::atomic<int> chunksMeshed{0}; // of kChunkCount
+    std::mutex lock;                  // guards meshed and meshingDone
+    std::vector<MeshedChunk> meshed;
+    bool meshingDone = false;
+
+    ~Scene()
+    {
+        stop();
+    }
+
+    // Stops the worker and throws away what it has not handed over.
+    void stop()
+    {
+        cancel = true;
+        if (worker.joinable())
+            worker.join();
+        cancel = false;
+        meshed.clear();
+        meshingDone = false;
+    }
 };
+
+const int kChunkCount = ((kSizeX + kChunk - 1) / kChunk) * ((kSizeZ + kChunk - 1) / kChunk);
 
 LandWorld::LandWorld()
 {
@@ -3789,9 +5126,16 @@ LandWorld::~LandWorld()
 
 void LandWorld::releaseResources()
 {
-    // the grids are rebuilt with the lists; that takes a fraction of a second
-    m_scenery.reset();
-    m_flat.reset();
+    // The display lists are gone with the old context; the grids are kept,
+    // so only the meshes are made again.
+    for (Scene *s : {m_scenery.get(), m_flat.get()})
+        if (s)
+        {
+            s->stop();
+            s->chunks.clear();
+            s->built = false;
+            s->chunksMeshed = 0;
+        }
     m_textures.clear();
     m_trestles.clear();
     m_supportPath.clear();
@@ -3872,34 +5216,129 @@ int LandWorld::waterNearRide(const std::vector<float> &path)
     return count;
 }
 
-LandWorld::Scene &LandWorld::scene(bool flat)
+namespace
 {
-    std::unique_ptr<Scene> &slot = flat ? m_flat : m_scenery;
-    if (!slot)
-        slot.reset(new Scene);
-    Scene &s = *slot;
-    if (s.built)
-        return s;
+// What a save of this island must have been made by (WorldSave.h): the
+// files that shape it, built when they were.
+std::string saveKey(bool flat)
+{
+    return std::string(flat ? "flat " : "island ") + __DATE__ " " __TIME__ + " | " +
+           OceanWorld::buildStamp() + " | " + WorldShape::buildStamp() + " | " +
+           WaterFlow::buildStamp() + " | " + PixelArt::buildStamp() + " | " +
+           std::to_string(kSizeX) + "x" + std::to_string(kSizeY) + "x" + std::to_string(kSizeZ);
+}
 
-    if (m_textures.empty())
+const char *saveName(bool flat)
+{
+    return flat ? "flat" : "island";
+}
+
+std::vector<std::vector<unsigned char> *> gridLayers(Grid &g)
+{
+    return {&g.block, &g.plant, &g.sky, &g.warm, &g.cool, &g.carved, &g.level, &g.biome};
+}
+
+void saveExtras(WorldSave::Writer &save, const Extras &e)
+{
+    save.number(static_cast<std::uint32_t>(e.animals.size()));
+    for (const Animal &a : e.animals)
     {
-        m_textures.assign(LandTextures::TEXTURE_COUNT, 0);
-        for (int t = 0; t < LandTextures::TEXTURE_COUNT; ++t)
-            m_textures[static_cast<size_t>(t)] =
-                PixelArt::upload(LandTextures::make(t), LandTextures::repeatsVertically(t));
+        save.raw(&a.x, sizeof(a.x));
+        save.raw(&a.z, sizeof(a.z));
+        save.raw(&a.kind, sizeof(a.kind));
+        save.raw(&a.phase, sizeof(a.phase));
     }
+    save.raw(e.mill, sizeof(e.mill));
+    save.raw(&e.hasMill, sizeof(e.hasMill));
+    save.raw(e.grove, sizeof(e.grove));
+    save.raw(&e.hasGrove, sizeof(e.hasGrove));
+    save.raw(e.meadow, sizeof(e.meadow));
+    save.raw(&e.hasMeadow, sizeof(e.hasMeadow));
+    save.raw(e.temple, sizeof(e.temple));
+    save.raw(&e.hasTemple, sizeof(e.hasTemple));
+}
 
-    if (flat)
-        buildFlat(s.grid);
-    else
-        buildScenery(s.grid, s.extras);
+bool loadExtras(WorldSave::Reader &save, Extras &e)
+{
+    std::uint32_t count = 0;
+    if (!save.number(count) || count > 100000u)
+        return false;
+    e.animals.resize(count);
+    for (Animal &a : e.animals)
+        if (!save.raw(&a.x, sizeof(a.x)) || !save.raw(&a.z, sizeof(a.z)) ||
+            !save.raw(&a.kind, sizeof(a.kind)) || !save.raw(&a.phase, sizeof(a.phase)))
+            return false;
+    return save.raw(e.mill, sizeof(e.mill)) && save.raw(&e.hasMill, sizeof(e.hasMill)) &&
+           save.raw(e.grove, sizeof(e.grove)) && save.raw(&e.hasGrove, sizeof(e.hasGrove)) &&
+           save.raw(e.meadow, sizeof(e.meadow)) && save.raw(&e.hasMeadow, sizeof(e.hasMeadow)) &&
+           save.raw(e.temple, sizeof(e.temple)) && save.raw(&e.hasTemple, sizeof(e.hasTemple));
+}
+
+bool loadGrid(Grid &g, Extras &e, bool flat)
+{
+    WorldSave::Reader save;
+    if (!save.open(saveName(flat), saveKey(flat)))
+        return false;
+    for (std::vector<unsigned char> *layer : gridLayers(g))
+        if (!save.layer(*layer))
+            return false;
+    return loadExtras(save, e) && save.done();
+}
+
+void saveGrid(Grid &g, const Extras &e, bool flat)
+{
+    WorldSave::Writer save(saveKey(flat));
+    for (std::vector<unsigned char> *layer : gridLayers(g))
+        save.layer(*layer);
+    saveExtras(save, e);
+    save.finish(saveName(flat));
+}
+} // namespace
+
+// Runs on the worker thread: reads the grid from its save, or makes it and
+// saves it, unless it is already there; then meshes it chunk by chunk and
+// hands each chunk over.
+void LandWorld::buildScene(Scene &s, bool flat)
+{
+    if (!s.gridReady)
+    {
+        s.fromSave = true;
+        if (loadGrid(s.grid, s.extras, flat))
+        {
+            s.gridPermille = 1000;
+            s.gridReady = true;
+        }
+        s.fromSave = false;
+    }
+    if (!s.gridReady)
+    {
+        s.grid = Grid();
+        s.extras = Extras();
+        if (flat)
+            buildFlat(s.grid);
+        else
+        {
+            BuildProgress progress;
+            progress.permille = &s.gridPermille;
+            progress.cancel = &s.cancel;
+            buildScenery(s.grid, s.extras, progress);
+        }
+        if (s.cancel)
+            return; // half built: made again from the start next time
+        saveGrid(s.grid, s.extras, flat);
+        s.gridPermille = 1000;
+        s.gridReady = true;
+    }
 
     for (int cx = kMinBX; cx < kMaxBX; cx += kChunk)
         for (int cz = kMinBZ; cz < kMaxBZ; cz += kChunk)
         {
-            Batches solids(LandTextures::TEXTURE_COUNT);
-            Batches plants(LandTextures::TEXTURE_COUNT);
-            Batches water(LandTextures::TEXTURE_COUNT);
+            if (s.cancel)
+                return;
+            MeshedChunk chunk;
+            chunk.solids.resize(LandTextures::TEXTURE_COUNT);
+            chunk.plants.resize(LandTextures::TEXTURE_COUNT);
+            chunk.water.resize(LandTextures::TEXTURE_COUNT);
             int low = kMaxY + 1, high = kMinY - 1;
             for (int bx = cx; bx < cx + kChunk && bx < kMaxBX; ++bx)
                 for (int bz = cz; bz < cz + kChunk && bz < kMaxBZ; ++bz)
@@ -3912,40 +5351,186 @@ LandWorld::Scene &LandWorld::scene(bool flat)
                         low = j < low ? j : low;
                         high = j > high ? j : high;
                         if (b == WATER)
-                            addWaterFaces(s.grid, bx, j, bz, water);
+                        {
+                            addWaterFaces(s.grid, bx, j, bz, chunk.water);
+                            if (s.grid.plant[cell] == LILY_PAD)
+                                addLilyPad(s.grid, bx, j, bz, chunk.plants);
+                        }
+                        else if (b == WINDOW)
+                            addGlassFaces(s.grid, bx, j, bz, chunk.water);
+                        else if (b == DOOR)
+                            addDoor(s.grid, bx, j, bz, chunk.solids);
                         else if (b != AIR)
-                            addBlockFaces(s.grid, bx, j, bz, solids);
+                            addBlockFaces(s.grid, bx, j, bz, chunk.solids);
                         else if (s.grid.plant[cell] == SNOW_LAYER)
-                            addSnowLayer(s.grid, bx, j, bz, solids);
+                            addSnowLayer(s.grid, bx, j, bz, chunk.solids);
+                        else if (s.grid.plant[cell] == FENCE)
+                            addFence(s.grid, bx, j, bz, chunk.solids);
+                        else if (s.grid.plant[cell] == LAMP)
+                            addLantern(s.grid, bx, j, bz, chunk.solids);
+                        else if (s.grid.plant[cell] >= STAIRS && s.grid.plant[cell] <= POT)
+                            addShape(s.grid, bx, j, bz, chunk.solids);
                         else
-                            addPlant(s.grid, bx, j, bz, plants);
+                            addPlant(s.grid, bx, j, bz, chunk.plants);
                     }
+            ++s.chunksMeshed;
             if (high < low)
                 continue; // nothing in it
-            LandChunk chunk;
             chunk.lo[0] = static_cast<float>(cx) * kBlock;
             chunk.lo[1] = static_cast<float>(low) * kBlock;
             chunk.lo[2] = static_cast<float>(cz) * kBlock;
             chunk.hi[0] = static_cast<float>(cx + kChunk) * kBlock;
             chunk.hi[1] = static_cast<float>(high + 1) * kBlock + 1.0f; // plants sway a little
             chunk.hi[2] = static_cast<float>(cz + kChunk) * kBlock;
-            chunk.solid = compileList(solids, m_textures);
-            chunk.plant = compileList(plants, m_textures);
-            chunk.water = compileList(water, m_textures);
-            s.chunks.push_back(chunk);
+            std::lock_guard<std::mutex> hold(s.lock);
+            s.meshed.push_back(std::move(chunk));
         }
-    s.built = true;
-    return s;
+    std::lock_guard<std::mutex> hold(s.lock);
+    s.meshingDone = true;
+}
+
+bool LandWorld::prepare(bool flat, float seconds)
+{
+    std::unique_ptr<Scene> &slot = flat ? m_flat : m_scenery;
+    if (!slot)
+        slot.reset(new Scene);
+    Scene &s = *slot;
+    if (s.built)
+        return true;
+
+    if (!s.worker.joinable())
+        s.worker = std::thread(&LandWorld::buildScene, std::ref(s), flat);
+
+    if (m_textures.empty())
+    {
+        m_textures.assign(LandTextures::TEXTURE_COUNT, 0);
+        for (int t = 0; t < LandTextures::TEXTURE_COUNT; ++t)
+            m_textures[static_cast<size_t>(t)] =
+                PixelArt::upload(pictureOf(t), LandTextures::repeatsVertically(t));
+        m_texturesStale = false;
+    }
+
+    // Turn the chunks meshed so far into display lists, for as long as the
+    // caller can wait.
+    const auto until = std::chrono::steady_clock::now() +
+                       std::chrono::microseconds(static_cast<long long>(seconds * 1e6f));
+    for (;;)
+    {
+        std::vector<MeshedChunk> ready;
+        bool finished;
+        {
+            std::lock_guard<std::mutex> hold(s.lock);
+            ready.swap(s.meshed);
+            finished = s.meshingDone;
+        }
+        for (size_t i = 0; i < ready.size(); ++i)
+        {
+            LandChunk chunk;
+            for (int k = 0; k < 3; ++k)
+            {
+                chunk.lo[k] = ready[i].lo[k];
+                chunk.hi[k] = ready[i].hi[k];
+            }
+            chunk.solid = compileList(ready[i].solids, m_textures);
+            chunk.plant = compileList(ready[i].plants, m_textures);
+            chunk.water = compileList(ready[i].water, m_textures);
+            s.chunks.push_back(chunk);
+            if (std::chrono::steady_clock::now() > until && i + 1 < ready.size())
+            {
+                // out of time: give the rest back for the next frame
+                std::lock_guard<std::mutex> hold(s.lock);
+                s.meshed.insert(
+                    s.meshed.begin(),
+                    std::make_move_iterator(ready.begin() + static_cast<std::ptrdiff_t>(i) + 1),
+                    std::make_move_iterator(ready.end()));
+                return false;
+            }
+        }
+        if (finished && ready.empty())
+        {
+            s.worker.join();
+            s.built = true;
+            return true;
+        }
+        if (finished)
+            continue; // the last chunks were handed over with the flag
+        if (std::chrono::steady_clock::now() > until)
+            return false;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+}
+
+float LandWorld::progress(bool flat) const
+{
+    const Scene *s = (flat ? m_flat : m_scenery).get();
+    if (!s)
+        return 0.0f;
+    if (s->built)
+        return 1.0f;
+    // making the grid is most of the work; meshing and the lists the rest
+    const float grid = static_cast<float>(s->gridPermille.load()) / 1000.0f;
+    const float meshed =
+        static_cast<float>(s->chunksMeshed.load()) / static_cast<float>(kChunkCount);
+    const float lists = static_cast<float>(s->chunks.size()) / static_cast<float>(kChunkCount);
+    return 0.7f * grid + 0.2f * meshed + 0.1f * fminf(1.0f, lists * 1.25f);
+}
+
+bool LandWorld::loadingSave(bool flat) const
+{
+    const Scene *s = (flat ? m_flat : m_scenery).get();
+    return s && s->fromSave;
+}
+
+LandWorld::Scene &LandWorld::scene(bool flat)
+{
+    // a caller that cannot wait: finish the build now
+    while (!prepare(flat, 1.0f))
+    {
+    }
+    return *(flat ? m_flat : m_scenery);
+}
+
+void LandWorld::setTexturePack(std::shared_ptr<const TexturePack::Pack> pack)
+{
+    m_pack = std::move(pack);
+    m_texturesStale = true;
+}
+
+PixelArt::Image LandWorld::pictureOf(int texture) const
+{
+    PixelArt::Image picture;
+    if (m_pack && m_pack->landTexture(texture, picture))
+        return picture;
+    return LandTextures::make(texture);
 }
 
 void LandWorld::draw(bool flat, bool shadowPass, float time)
 {
     glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_TEXTURE_BIT);
+    // a new pack: its pictures go into the same texture names, which the
+    // display lists bind, so nothing has to be built again
+    if (m_texturesStale && !m_textures.empty())
+    {
+        for (int t = 0; t < LandTextures::TEXTURE_COUNT; ++t)
+            PixelArt::uploadInto(m_textures[static_cast<size_t>(t)], pictureOf(t),
+                                 LandTextures::repeatsVertically(t));
+        m_texturesStale = false;
+    }
     const Scene &s = scene(flat);
     glEnable(GL_TEXTURE_2D);
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
     const Frustum view = Frustum::current();
     m_chunksDrawn = 0;
+    // the fixed pipeline cuts the leaves and plants out here; the shader
+    // does it itself, and uses the alpha it writes for something else (how
+    // open a surface is to the rain), so the test stays off under it
+    GLint program = 0;
+    glGetIntegerv(GL_CURRENT_PROGRAM, &program);
+    if (program == 0)
+    {
+        glEnable(GL_ALPHA_TEST);
+        glAlphaFunc(GL_GREATER, 0.5f);
+    }
     for (const LandChunk &c : s.chunks)
         if (view.sees(c.lo, c.hi))
         {
@@ -3954,16 +5539,13 @@ void LandWorld::draw(bool flat, bool shadowPass, float time)
         }
     if (!shadowPass)
     {
-        // the fixed pipeline cuts the plants out here; the shader does it itself
-        glEnable(GL_ALPHA_TEST);
-        glAlphaFunc(GL_GREATER, 0.5f);
         for (const LandChunk &c : s.chunks)
             if (view.sees(c.lo, c.hi))
                 glCallList(c.plant);
-        glDisable(GL_ALPHA_TEST);
         if (!flat)
             drawMoving(s, time);
     }
+    glDisable(GL_ALPHA_TEST);
     setGlow(0.0f);
     glPopAttrib();
 }
@@ -4015,19 +5597,25 @@ void LandWorld::drawMoving(const Scene &s, float time)
     {
         glPushMatrix();
         glTranslatef(s.extras.mill[0], s.extras.mill[1], s.extras.mill[2]);
-        colour(96, 70, 44);
-        box(-0.5f, -0.5f, -3.4f, 0.5f, 0.5f, 0.3f); // the shaft, back to the tower
+        // an oak shaft and frames with white wool sails, as blocks a block
+        // game has
+        glEnable(GL_TEXTURE_2D);
+        glColor3f(0.95f, 0.95f, 0.95f);
+        glBindTexture(GL_TEXTURE_2D, m_textures[LandTextures::OAK_SIDE]);
+        texturedBox(-0.5f, -0.5f, -3.4f, 0.5f, 0.5f, 0.3f); // the shaft, back to the tower
         glRotatef(time * 22.0f, 0.0f, 0.0f, 1.0f);
         for (int blade = 0; blade < 4; ++blade)
         {
             glPushMatrix();
             glRotatef(90.0f * static_cast<float>(blade), 0.0f, 0.0f, 1.0f);
-            colour(120, 90, 54);
-            box(-0.22f, 0.0f, -0.05f, 0.22f, 11.5f, 0.3f);
-            colour(240, 236, 224);
-            box(0.22f, 2.0f, 0.0f, 2.9f, 11.0f, 0.16f);
+            glBindTexture(GL_TEXTURE_2D, m_textures[LandTextures::PLANKS]);
+            texturedBox(-0.22f, 0.0f, -0.05f, 0.22f, 11.5f, 0.3f);
+            glBindTexture(GL_TEXTURE_2D, m_textures[LandTextures::WOOL_WHITE]);
+            texturedBox(0.22f, 2.0f, 0.0f, 2.9f, 11.0f, 0.16f);
             glPopMatrix();
         }
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glDisable(GL_TEXTURE_2D);
         glPopMatrix();
     }
 
@@ -4076,9 +5664,9 @@ void LandWorld::drawMoving(const Scene &s, float time)
     // hot-air balloons, bobbing where the ride gets a good look at them
     const float spots[3][3] = {
         {-25.0f, 156.0f, 210.0f}, {375.0f, 93.0f, 240.0f}, {75.0f, 87.0f, -375.0f}};
-    const int paints[3][2][3] = {{{224, 60, 50}, {250, 240, 220}},
-                                 {{50, 120, 220}, {250, 206, 60}},
-                                 {{240, 150, 40}, {120, 60, 160}}};
+    const int paints[3][2] = {{LandTextures::WOOL_RED, LandTextures::WOOL_WHITE},
+                              {LandTextures::WOOL_BLUE, LandTextures::WOOL_YELLOW},
+                              {LandTextures::WOOL_ORANGE, LandTextures::WOOL_PURPLE}};
     for (int i = 0; i < 3; ++i)
     {
         const float fi = static_cast<float>(i);
@@ -4087,7 +5675,7 @@ void LandWorld::drawMoving(const Scene &s, float time)
                      spots[i][1] + sinf(time * 0.4f + fi) * 2.5f,
                      spots[i][2] + cosf(time * 0.09f + fi) * 9.0f);
         glRotatef(time * 4.0f + fi * 40.0f, 0.0f, 1.0f, 0.0f);
-        drawBalloon(paints[i][0], paints[i][1]);
+        drawBalloon(paints[i][0], paints[i][1], m_textures);
         glPopMatrix();
     }
 
@@ -4126,7 +5714,7 @@ void LandWorld::drawMoving(const Scene &s, float time)
 float LandWorld::postGround(float x, float z, float from) const
 {
     const int bx = blockOf(x), bz = blockOf(z);
-    if (!Grid::insideColumn(bx, bz) || !onIsland(bx, bz) || !m_scenery)
+    if (!Grid::insideColumn(bx, bz) || !onIsland(bx, bz) || !m_scenery || !m_scenery->gridReady)
         return OceanWorld::seaFloor(x, z);
     const Grid &g = m_scenery->grid;
     int j = blockOf(from);
@@ -4151,8 +5739,8 @@ void LandWorld::planSupports(const std::vector<float> &path)
     const size_t count = path.size() / 3;
     if (count < 4)
         return;
-    const float spacing = 9.0f; // along the track, between trestles
-    const float lean = 2.0f;    // how far out a tall post's foot may go
+    const float spacing = 16.0f; // along the track, between trestles
+    const float lean = 2.0f;     // how far out a tall post's foot may go
     // Is the stretch of track far from sample n (along it) in the way of a
     // vertical post at (x, z) from y0 up to y1?
     auto blocked = [&](size_t n, float x, float z, float y0, float y1) {

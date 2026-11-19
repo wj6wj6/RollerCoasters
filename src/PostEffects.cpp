@@ -164,28 +164,42 @@ void main()
 // Shared by the water's vertex and fragment shaders: the large waves.
 // Gerstner waves move each point of the surface round a circle instead of
 // just up and down, which sharpens the crests and flattens the troughs.
+// A real sea is many waves of unrelated lengths from a spread of
+// directions, so it never repeats; a few waves of round lengths add up to
+// a grid of crests. So there are eight, their lengths in no simple ratio,
+// their directions spread round the wind's (roughly from the west-south-
+// west) and each with its own phase.
 const char *kWaveGlsl = R"GLSL(
-void gerstner(vec2 dir, float len, float amp, vec2 p, float t, inout vec3 disp, inout vec3 slope)
+void gerstner(vec2 dir, float len, float amp, float phase, vec2 p, float t, float shortest,
+              inout vec3 disp, inout vec3 slope)
 {
+    if (len < shortest)
+        return;
     float k = 6.2831853 / len;
     float w = sqrt(9.8 * k) * 0.6;
-    float ph = k * dot(dir, p) - w * t;
-    float q = 0.1375 / (k * amp);   // steepness: the four waves share 0.55
+    float ph = k * dot(dir, p) - w * t + phase;
+    float q = 0.07 / (k * amp);   // steepness: the eight waves share 0.56
     disp.xz += dir * (q * amp * cos(ph));
     disp.y += amp * sin(ph);
     slope.xz += dir * (k * amp * cos(ph));
     slope.y += q * k * amp * sin(ph);
 }
 
-// Displacement and normal of the surface at rest position p.
-void oceanWaves(vec2 p, float t, out vec3 disp, out vec3 normal)
+// Displacement and normal of the surface at rest position p, from the
+// waves at least `shortest` long (the grid's vertices are too far apart to
+// follow the shortest ones, which only shade it).
+void oceanWaves(vec2 p, float t, float shortest, out vec3 disp, out vec3 normal)
 {
     disp = vec3(0.0);
     vec3 s = vec3(0.0);
-    gerstner(vec2(0.944, 0.330), 46.0, 0.34, p, t, disp, s);
-    gerstner(vec2(0.600, -0.800), 27.0, 0.20, p, t, disp, s);
-    gerstner(vec2(-0.287, 0.958), 17.0, 0.12, p, t, disp, s);
-    gerstner(vec2(0.874, 0.486), 11.0, 0.07, p, t, disp, s);
+    gerstner(normalize(vec2(0.944, 0.330)), 46.3, 0.30, 0.0, p, t, shortest, disp, s);
+    gerstner(normalize(vec2(0.731, -0.682)), 31.7, 0.17, 2.1, p, t, shortest, disp, s);
+    gerstner(normalize(vec2(0.281, 0.960)), 23.9, 0.12, 4.4, p, t, shortest, disp, s);
+    gerstner(normalize(vec2(0.990, -0.141)), 17.3, 0.08, 1.3, p, t, shortest, disp, s);
+    gerstner(normalize(vec2(0.616, 0.788)), 12.9, 0.06, 5.6, p, t, shortest, disp, s);
+    gerstner(normalize(vec2(0.857, -0.515)), 9.7, 0.04, 3.2, p, t, shortest, disp, s);
+    gerstner(normalize(vec2(-0.208, 0.978)), 7.1, 0.03, 0.7, p, t, shortest, disp, s);
+    gerstner(normalize(vec2(0.951, 0.309)), 5.3, 0.02, 4.9, p, t, shortest, disp, s);
     normal = normalize(vec3(-s.x, 1.0 - s.y, -s.z));
 }
 )GLSL";
@@ -207,7 +221,7 @@ void main()
     float fade = 1.0 - smoothstep(0.55 * uWaveReach, 0.95 * uWaveReach, length(gl_Vertex.xz));
     vec3 disp;
     vec3 normal;
-    oceanWaves(base.xz, uTime, disp, normal);
+    oceanWaves(base.xz, uTime, 12.0, disp, normal); // four grid cells or longer
     vec3 world = base + disp * fade;
     vBase = base.xz;
     vWave = fade;
@@ -354,7 +368,7 @@ void main()
     // Normal: the big waves, then the ripples (and rain rings) on top.
     vec3 disp;
     vec3 N;
-    oceanWaves(vBase, uTime, disp, N);
+    oceanWaves(vBase, uTime, 0.0, disp, N);
     vec2 g = rippleSlope(vBase, uTime);
     if (uRain > 0.0)
         g += rainSlope(vBase, uTime) * uRain;
@@ -435,11 +449,18 @@ void main()
     col += uLightColor * spec * shadow * (0.3 + fresnel);
 
     // Foam where the water is shallow and on the steepest crests, broken up
-    // by moving noise.
+    // by moving noise. Out at sea a crest only breaks where a gust is
+    // blowing (a slowly drifting field of patches) and where its own
+    // random threshold is passed, so whitecaps come and go here and there
+    // instead of on every crest; more of them in the rain.
     float edge = 1.0 - smoothstep(0.0, 1.2, thickness);
     float pattern = noise(P.xz * 0.9 + vec2(uTime * 0.3, uTime * 0.2)) *
                     noise(P.xz * 2.3 - vec2(uTime * 0.25));
-    float crest = smoothstep(0.38, 0.6, disp.y) * vWave * 0.5;
+    float gust = noise(P.xz * 0.011 + vec2(uTime * 0.021, uTime * 0.013)) * 0.65 +
+                 noise(P.xz * 0.037 - vec2(uTime * 0.017, -uTime * 0.029)) * 0.35;
+    gust = mix(smoothstep(0.44, 0.72, gust), 1.0, uRain * 0.6);
+    float breaking = smoothstep(0.38, 0.68, noise(P.xz * 0.13 + vec2(uTime * 0.06, -uTime * 0.04)));
+    float crest = smoothstep(0.42, 0.66, disp.y) * vWave * 0.5 * gust * breaking;
     float foam = max(edge, crest) * smoothstep(0.15, 0.45, pattern + edge * 0.35);
     vec3 foamLight = uLightColor * max(uLightDir.y, 0.0) * shadow + uZenith * 1.5 + uHorizon * 0.3;
     col = mix(col, foamLight * 0.9, foam * 0.85);
@@ -453,23 +474,51 @@ void main()
 }
 )GLSL";
 
-// Rain on the ground: up-facing surfaces above the water get a film of
-// water, pooling into puddles, that mirrors the scene with the same screen
-// space reflections as the sea. Output is blended over the scene by alpha.
+// Rain on the ground and the walls, mirrored with the same screen space
+// reflections as the sea, blended over the scene by alpha. Only where the
+// rain reaches: the scene's alpha holds how open each solid surface is to
+// the sky (AdvancedLighting), so the ground under eaves, in tunnels and
+// indoors stays dry. Floors get a film of water pooling into puddles,
+// ringed by the drops while it rains; walls a thin film running down in
+// streaks, which, as on real wet stone, shows mostly at grazing angles and
+// mirrors softly (its normal broken up a little), not like glass.
 const char *kWetFragment = R"GLSL(
 varying vec2 vUv;
 uniform mat4 uInvView;
 uniform vec2 uTexel;
 uniform float uWetness;
+uniform float uRain;     // how hard it rains now: the drops' rings
+uniform float uTime;
 uniform float uWaterLevel;
 uniform vec3 uZenith;
 uniform vec3 uHorizon;
+
+float hash12(vec2 p)
+{
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+// The slope a raindrop's ring adds to a puddle at p (world x, z): one drop
+// a cell, each at its own time, spreading and fading.
+vec2 dropRings(vec2 p, float offset)
+{
+    vec2 q = p * 0.9 + offset;
+    vec2 cell = floor(q);
+    vec2 f = fract(q) - 0.5;
+    float t = fract(uTime * 0.9 + hash12(cell + offset * 7.0));
+    float r = length(f);
+    float ring = exp(-pow((r - t * 0.45) * 22.0, 2.0)) * (1.0 - t);
+    return f / max(r, 0.001) * ring;
+}
 
 void main()
 {
     float d = texture2D(uDepth, vUv).r;
     if (d >= 1.0)
         discard;
+    float exposure = texture2D(uRefraction, vUv).a;
+    if (exposure < 0.05)
+        discard; // sheltered: dry
     vec3 P = viewPos(vUv, d);
     // Normal from the depth buffer, using the nearer neighbour on each axis.
     vec3 px = viewPos(vUv + vec2(uTexel.x, 0.0), texture2D(uDepth, vUv + vec2(uTexel.x, 0.0)).r) - P;
@@ -484,20 +533,40 @@ void main()
     mat3 invRot = mat3(uInvView[0].xyz, uInvView[1].xyz, uInvView[2].xyz);
     vec3 world = (uInvView * vec4(P, 1.0)).xyz;
     vec3 worldN = invRot * N;
-    if (worldN.y < 0.8 || world.y < uWaterLevel + 0.3)
+    if (world.y < uWaterLevel + 0.3)
         discard;
+    bool floorLike = worldN.y >= 0.8;
+    if (!floorLike && abs(worldN.y) > 0.3)
+        discard; // undersides, and the slivers along block edges
 
-    // Puddles gather in the low patches of a noise field; between them
-    // there is only a thin film.
-    float pool = noise(world.xz * 0.11) + 0.35 * noise(world.xz * 0.41);
-    float puddle = smoothstep(0.62, 0.80, pool);
-    float strength = uWetness * mix(0.22, 1.0, puddle);
+    float strength;
+    vec3 bentN = worldN;
+    if (floorLike) {
+        // Puddles gather in the low patches of a noise field; between them
+        // there is only a thin film.
+        float pool = noise(world.xz * 0.11) + 0.35 * noise(world.xz * 0.41);
+        float puddle = smoothstep(0.62, 0.80, pool);
+        strength = uWetness * exposure * mix(0.22, 1.0, puddle);
+        vec2 slope = (dropRings(world.xz, 0.0) + dropRings(world.xz, 0.5)) * 0.3;
+        bentN = normalize(worldN + vec3(slope.x, 0.0, slope.y) * uRain * exposure * mix(0.3, 1.0, puddle));
+    } else {
+        // A film running down the wall in streaks, its sheen broken up.
+        float along = dot(world.xz, vec2(-worldN.z, worldN.x));
+        float run = noise(vec2(along * 1.3, world.y * 0.12 + uTime * 0.5));
+        strength = uWetness * exposure * mix(0.4, 1.0, smoothstep(0.3, 0.75, run));
+        vec3 side = vec3(-worldN.z, 0.0, worldN.x);
+        bentN = normalize(worldN + side * (noise(vec2(along, world.y) * 2.3) - 0.5) * 0.25 +
+                          vec3(0.0, noise(vec2(along, world.y) * 1.7 + 3.1) - 0.5, 0.0) * 0.2);
+    }
+    N = normalize(bentN * invRot); // back into view space (invRot is a rotation)
 
     vec3 R = reflect(-toEye, N);
     vec4 hit = traceReflection(P + N * 0.05, R, N);
     vec3 worldR = invRot * R;
     vec3 sky = mix(uHorizon, uZenith, pow(clamp(worldR.y, 0.0, 1.0), 0.5));
-    float fresnel = 0.04 + 0.96 * pow(1.0 - max(dot(N, toEye), 0.0), 5.0);
+    // a wet wall's film is rough and catches the light at any angle a
+    // little, on top of what the water's Fresnel term mirrors
+    float fresnel = (floorLike ? 0.04 : 0.1) + 0.96 * pow(1.0 - max(dot(N, toEye), 0.0), 5.0);
     gl_FragColor = vec4(mix(sky, hit.rgb, hit.a), clamp(fresnel * strength * 1.4, 0.0, 1.0));
 }
 )GLSL";
@@ -1251,7 +1320,8 @@ void PostEffects::applySSAO()
     glUseProgram(0);
 }
 
-void PostEffects::applyWetGround(const AdvancedLighting &lighting, float wetness)
+void PostEffects::applyWetGround(const AdvancedLighting &lighting, float wetness, float rain,
+                                 float time)
 {
     // The reflections read the scene, so they need a copy of it.
     glBindFramebuffer(GL_READ_FRAMEBUFFER, m_scene.fbo);
@@ -1278,6 +1348,8 @@ void PostEffects::applyWetGround(const AdvancedLighting &lighting, float wetness
     glUniform2f(loc(p, "uTexel"), 1.0f / static_cast<float>(m_width),
                 1.0f / static_cast<float>(m_height));
     glUniform1f(loc(p, "uWetness"), wetness);
+    glUniform1f(loc(p, "uRain"), rain);
+    glUniform1f(loc(p, "uTime"), time);
     glUniform1f(loc(p, "uWaterLevel"), waterLevel);
     glUniform3fv(loc(p, "uZenith"), 1, sky.zenith);
     glUniform3fv(loc(p, "uHorizon"), 1, sky.horizon);
@@ -1764,7 +1836,7 @@ void renderAdvancedFrame(AdvancedLighting &lighting, PostEffects &effects, Light
     if (toggles.ssao)
         effects.applySSAO();
     if (frame.wetness > 0.01f && !underwater && !frame.orthographic)
-        effects.applyWetGround(lighting, frame.wetness);
+        effects.applyWetGround(lighting, frame.wetness, frame.rain, frame.time);
     if (underwater)
         effects.drawParticles(sky, frame.time);
     if (toggles.water)

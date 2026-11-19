@@ -246,6 +246,7 @@ TrainView::~TrainView()
         ClipCursor(nullptr);
     Fl::remove_system_handler(touchpadWheel);
     Fl::remove_system_handler(flyKeys);
+    Fl::remove_timeout(redrawSoon, this);
 }
 
 //************************************************************************
@@ -1534,7 +1535,13 @@ void TrainView::draw()
         m_ocean.releaseResources();
         lighting.invalidate();
         effects.invalidate();
+        m_loadingTexture = 0;
     }
+
+    // The first frames show how far the world is built, instead of a white
+    // window that does not answer until it is done.
+    if (!worldReady())
+        return;
     const bool advanced = advancedLightingOn();
 
     // Set up the view port
@@ -1900,7 +1907,11 @@ void TrainView::drawStuff(bool doingShadows)
 
     // the island's see-through water last, blended over everything behind it
     if (!doingShadows)
+    {
+        lighting.setTranslucent(true);
         m_land.drawWater(!sceneryOn());
+        lighting.setTranslucent(false);
+    }
 }
 
 //

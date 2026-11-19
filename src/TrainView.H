@@ -52,6 +52,9 @@ class CTrack;
 #include "Utilities/ArcBallCam.H"
 #include "AdvancedLighting.h"
 #include "PostEffects.h"
+#include <memory>
+#include <utility>
+
 #include "LandWorld.h"
 #include "OceanWorld.h"
 #include "TransformGizmo.h"
@@ -82,6 +85,9 @@ class TrainView : public Fl_Gl_Window
     void setProjection();
 
     // Reset the Arc ball control
+    // Swaps the island's and the sea floor's textures for a texture pack's
+    // (nullptr: built in).
+    void setTexturePack(std::shared_ptr<const TexturePack::Pack> pack);
     void resetArcball();
 
     // pick a point (for when the mouse goes down)
@@ -191,6 +197,14 @@ class TrainView : public Fl_Gl_Window
     // an overlay with a centre crosshair.
     void drawFlyHorizon();
     void drawFlyOverlay();
+
+    // While the island and the sea floor are built (at start, and when
+    // Scenery is switched): false, after drawing a loading screen with how
+    // far they have got instead of the scene (TrainViewEffects.cpp).
+    bool worldReady();
+    void drawLoadingScreen(float done, const char *stage);
+    static void redrawSoon(void *view);
+    unsigned int m_loadingTexture = 0; // the dirt behind the loading screen
 
   public:
     ArcBallCam arcball; // keep an ArcBall for the UI
