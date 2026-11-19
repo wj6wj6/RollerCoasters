@@ -2,13 +2,26 @@
 
 ## 發布前
 
-1. MSVC 與 Clang 各自 Debug／Release 的 `scripts/check.ps1 -Stage all` 全部成功。
+1. `pwsh -File scripts/check-all.ps1` 全部成功（等同 MSVC 與 Clang 各自 Debug／Release 的 `scripts/check.ps1 -Stage all`）。
 2. 使用下列 GUI 清單驗證實際 Windows 裝置，於 PR 記錄結果。
 3. 備份重要軌道檔並做一次還原驗證。
 4. 需要發布新版本時先修改 `CMakeLists.txt` 的 `project(... VERSION ...)`，合併後再建立對應 `v*` tag。
 
-PR、main push、`v*` tag 與手動觸發都執行同一個 Windows CI，tag 發布亦重新檢查。`tools` job 先準備並快取 `tools.json` 指定的工具及檢查格式，四個 `quality` job 再共用快取執行其餘檢查。
-CI 會保存測試 JUnit／CTest 日誌，以及已執行 `--version` 的安裝目錄 artifact。
+## CI
+
+repository 是公開的，GitHub 提供的標準 runner（含 Windows）不計費。CI 分成兩個 workflow，每個非 draft PR 的 push 都會兩個一起跑；只改文件（`*.md`、`docs/`）時略過：
+
+| Workflow | 何時執行 | 內容 |
+| --- | --- | --- |
+| `Linux quality`（`ci.yml`，ubuntu-24.04） | PR push、main push、手動 | 快速回饋：`check.ps1 -Stage quick`（clang-format 22.1.8、依賴指紋、repository 規範與腳本語法）；`tests/linux/` 以 clang `-Wall -Werror` 編譯平台無關的原始碼並跑 `VersionCheck` 以外的全部 CTest 檢查（xvfb）；`tests/linux/win32-syntax.sh` 用 MinGW-w64 對真正的 Windows SDK 標頭檢查所有檔案的語法 |
+| `Windows build`（`windows.yml`，windows-2022，單一 job） | PR push、main push、`v*` tag、手動 Run workflow | 完整把關：`scripts/check-all.ps1 -Jobs 0`，即格式、MSVC `/analyze`（只跑一次）、MSVC 與 Clang 的 Debug／Release 編譯、CTest、安裝與 `--version` |
+
+同一個 PR 或分支的新 push 會取消舊的執行，draft PR 不執行。`tests/linux/stubs/windows.h` 定義了 Windows SDK 會吃掉的 `far`、`near`、`DUPLICATE` 等巨集，所以這類名稱在 Linux 檢查就會失敗；沒有 Windows 的雲端環境也能在推送前跑這組檢查（見 [development.md](development.md#linux-上的檢查)）。
+Linux 檢查不是 MSVC 建置：MSVC 專屬警告、`/analyze`、連結 Win32 程式與封裝只有 Windows build 或本機 `check-all.ps1` 會驗證。
+
+在 Windows 電腦上執行 `pwsh -File scripts/check-all.ps1` 等同 Windows build，結果表寫在 `out/check-summary.md`，可貼進 PR。
+若 repository 改回私有，Actions 會依分鐘計費（Windows 比 Linux 貴數倍，額度用完時連 Linux job 都不會開始）；那時應讓 Windows build 只在 main 與手動時執行，PR 以本機 `check-all.ps1` 驗證。
+Windows build 保存 `out/check-summary.md`、JUnit／CTest 日誌（14 天），以及 MSVC 與 Clang Release 已執行 `--version` 的安裝目錄 artifact（14 天）。Linux 檢查只在失敗時保存日誌（7 天）。
 這是桌面應用程式，以 executable 的版本 smoke test 取代服務 healthcheck；沒有 Docker 或伺服器部署。
 
 ## 建立可交付目錄
