@@ -25,6 +25,7 @@
 #include "OceanWorld.h"
 #include "PixelArt.h"
 #include "WaterFlow.h"
+#include "WorldSave.h"
 #include "WorldShape.h"
 
 namespace
@@ -3840,6 +3841,7 @@ struct LandWorld::Scene
     std::thread worker;
     std::atomic<bool> gridReady{false}; // the grid is complete; the worker no longer writes it
     std::atomic<bool> cancel{false};
+    std::atomic<bool> fromSave{false}; // the grid is being read from its save
     std::atomic<int> gridPermille{0};
     std::atomic<int> chunksMeshed{0}; // of kChunkCount
     std::mutex lock;                  // guards meshed and meshingDone
@@ -3965,10 +3967,100 @@ int LandWorld::waterNearRide(const std::vector<float> &path)
     return count;
 }
 
-// Runs on the worker thread: makes the grid unless it is already there,
-// then meshes it chunk by chunk and hands each chunk over.
+namespace
+{
+// What a save of this island must have been made by (WorldSave.h): the
+// files that shape it, built when they were.
+std::string saveKey(bool flat)
+{
+    return std::string(flat ? "flat " : "island ") + __DATE__ " " __TIME__ + " | " +
+           OceanWorld::buildStamp() + " | " + WorldShape::buildStamp() + " | " +
+           WaterFlow::buildStamp() + " | " + PixelArt::buildStamp() + " | " +
+           std::to_string(kSizeX) + "x" + std::to_string(kSizeY) + "x" + std::to_string(kSizeZ);
+}
+
+const char *saveName(bool flat)
+{
+    return flat ? "flat" : "island";
+}
+
+std::vector<std::vector<unsigned char> *> gridLayers(Grid &g)
+{
+    return {&g.block, &g.plant, &g.sky, &g.warm, &g.cool, &g.carved, &g.level, &g.biome};
+}
+
+void saveExtras(WorldSave::Writer &save, const Extras &e)
+{
+    save.number(static_cast<std::uint32_t>(e.animals.size()));
+    for (const Animal &a : e.animals)
+    {
+        save.raw(&a.x, sizeof(a.x));
+        save.raw(&a.z, sizeof(a.z));
+        save.raw(&a.kind, sizeof(a.kind));
+        save.raw(&a.phase, sizeof(a.phase));
+    }
+    save.raw(e.mill, sizeof(e.mill));
+    save.raw(&e.hasMill, sizeof(e.hasMill));
+    save.raw(e.grove, sizeof(e.grove));
+    save.raw(&e.hasGrove, sizeof(e.hasGrove));
+    save.raw(e.meadow, sizeof(e.meadow));
+    save.raw(&e.hasMeadow, sizeof(e.hasMeadow));
+    save.raw(e.temple, sizeof(e.temple));
+    save.raw(&e.hasTemple, sizeof(e.hasTemple));
+}
+
+bool loadExtras(WorldSave::Reader &save, Extras &e)
+{
+    std::uint32_t count = 0;
+    if (!save.number(count) || count > 100000u)
+        return false;
+    e.animals.resize(count);
+    for (Animal &a : e.animals)
+        if (!save.raw(&a.x, sizeof(a.x)) || !save.raw(&a.z, sizeof(a.z)) ||
+            !save.raw(&a.kind, sizeof(a.kind)) || !save.raw(&a.phase, sizeof(a.phase)))
+            return false;
+    return save.raw(e.mill, sizeof(e.mill)) && save.raw(&e.hasMill, sizeof(e.hasMill)) &&
+           save.raw(e.grove, sizeof(e.grove)) && save.raw(&e.hasGrove, sizeof(e.hasGrove)) &&
+           save.raw(e.meadow, sizeof(e.meadow)) && save.raw(&e.hasMeadow, sizeof(e.hasMeadow)) &&
+           save.raw(e.temple, sizeof(e.temple)) && save.raw(&e.hasTemple, sizeof(e.hasTemple));
+}
+
+bool loadGrid(Grid &g, Extras &e, bool flat)
+{
+    WorldSave::Reader save;
+    if (!save.open(saveName(flat), saveKey(flat)))
+        return false;
+    for (std::vector<unsigned char> *layer : gridLayers(g))
+        if (!save.layer(*layer))
+            return false;
+    return loadExtras(save, e) && save.done();
+}
+
+void saveGrid(Grid &g, const Extras &e, bool flat)
+{
+    WorldSave::Writer save(saveKey(flat));
+    for (std::vector<unsigned char> *layer : gridLayers(g))
+        save.layer(*layer);
+    saveExtras(save, e);
+    save.finish(saveName(flat));
+}
+} // namespace
+
+// Runs on the worker thread: reads the grid from its save, or makes it and
+// saves it, unless it is already there; then meshes it chunk by chunk and
+// hands each chunk over.
 void LandWorld::buildScene(Scene &s, bool flat)
 {
+    if (!s.gridReady)
+    {
+        s.fromSave = true;
+        if (loadGrid(s.grid, s.extras, flat))
+        {
+            s.gridPermille = 1000;
+            s.gridReady = true;
+        }
+        s.fromSave = false;
+    }
     if (!s.gridReady)
     {
         s.grid = Grid();
@@ -3984,6 +4076,7 @@ void LandWorld::buildScene(Scene &s, bool flat)
         }
         if (s.cancel)
             return; // half built: made again from the start next time
+        saveGrid(s.grid, s.extras, flat);
         s.gridPermille = 1000;
         s.gridReady = true;
     }
@@ -4116,6 +4209,12 @@ float LandWorld::progress(bool flat) const
         static_cast<float>(s->chunksMeshed.load()) / static_cast<float>(kChunkCount);
     const float lists = static_cast<float>(s->chunks.size()) / static_cast<float>(kChunkCount);
     return 0.7f * grid + 0.2f * meshed + 0.1f * fminf(1.0f, lists * 1.25f);
+}
+
+bool LandWorld::loadingSave(bool flat) const
+{
+    const Scene *s = (flat ? m_flat : m_scenery).get();
+    return s && s->fromSave;
 }
 
 LandWorld::Scene &LandWorld::scene(bool flat)

@@ -307,7 +307,11 @@ bool TrainView::worldReady()
         return true;
 
     float done = m_land.progress(flat);
-    const char *stage = done < 0.7f ? "Generating terrain" : "Building terrain";
+    // as a sandbox game says it: reading the save, making a new world, or
+    // turning the blocks into something to draw
+    const char *stage = m_land.loadingSave(flat)
+                            ? "Loading world"
+                            : (done < 0.7f ? "Generating terrain" : "Building terrain");
     if (needOcean)
     {
         done = 0.85f * done + 0.15f * m_ocean.progress();

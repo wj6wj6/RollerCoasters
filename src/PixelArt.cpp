@@ -88,4 +88,9 @@ unsigned int upload(Image pixels, bool repeatT)
     return texture;
 }
 
+const char *buildStamp()
+{
+    return __DATE__ " " __TIME__;
+}
+
 } // namespace PixelArt

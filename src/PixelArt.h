@@ -20,6 +20,10 @@ const int kFineSize = 32; // the island's textures
 // RGBA, size x size (a power of two), row 0 at the top of the block.
 typedef std::vector<unsigned char> Image;
 
+// When this file was compiled, for the key of a saved world (WorldSave.h):
+// a rebuilt generator no longer matches the saves the old one made.
+const char *buildStamp();
+
 // Small integer hash so every texel gets a repeatable random value.
 unsigned int hash(int x, int y, unsigned int seed);
 

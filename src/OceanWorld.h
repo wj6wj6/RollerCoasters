@@ -84,6 +84,10 @@ class OceanWorld
     // (a third of the points each). LandWorld shapes the island around them.
     static std::vector<float> rideSamples();
 
+    // When this file was compiled, for the key of a saved world
+    // (WorldSave.h).
+    static const char *buildStamp();
+
     // Height of the water surface.
     static float waterLevel();
 

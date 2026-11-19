@@ -63,6 +63,10 @@ class LandWorld
     // How far the island is from ready, 0..1, for a loading screen.
     float progress(bool flat) const;
 
+    // True while the island is being read from its save (WorldSave.h)
+    // rather than generated.
+    bool loadingSave(bool flat) const;
+
     // Draws the island. flat: the level editor island instead of the
     // scenery. shadowPass: only the solid blocks, for the shadow map.
     // time (seconds) moves the water, the animals and the clouds.

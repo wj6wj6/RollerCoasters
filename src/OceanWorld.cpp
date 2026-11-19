@@ -26,6 +26,7 @@
 #include "Frustum.h"
 
 #include "LandTextures.h"
+#include "WorldSave.h"
 #include "WorldShape.h"
 #include "PixelArt.h"
 
@@ -2093,10 +2094,50 @@ int OceanWorld::rideObstructions(const std::vector<float> &path)
     return count;
 }
 
+namespace
+{
+// What the sea floor's save must have been made by (WorldSave.h).
+std::string saveKey()
+{
+    return std::string("ocean ") + OceanWorld::buildStamp() + " | " + WorldShape::buildStamp() +
+           " | " + PixelArt::buildStamp() + " | " + std::to_string(kSizeXZ) + "x" +
+           std::to_string(kSizeY);
+}
+
+bool loadGrid(Grid &g)
+{
+    WorldSave::Reader save;
+    return save.open("ocean", saveKey()) && save.layer(g.block) && save.layer(g.plant) &&
+           save.layer(g.sky) && save.layer(g.glow) && save.done();
+}
+
+void saveGrid(const Grid &g)
+{
+    WorldSave::Writer save(saveKey());
+    save.layer(g.block);
+    save.layer(g.plant);
+    save.layer(g.sky);
+    save.layer(g.glow);
+    save.finish("ocean");
+}
+} // namespace
+
+const char *OceanWorld::buildStamp()
+{
+    return __DATE__ " " __TIME__;
+}
+
 void OceanWorld::Build::run()
 {
+    // Read the sea floor from its save; make it (and save it) only when
+    // there is none from this build.
     Grid g;
-    buildWorld(g);
+    if (!loadGrid(g))
+    {
+        g = Grid();
+        buildWorld(g);
+        saveGrid(g);
+    }
     permille = 700;
 
     // In chunks of 16 x 16 columns, each with the box round its blocks, so
