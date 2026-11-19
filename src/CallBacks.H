@@ -57,6 +57,9 @@ void saveCB(Fl_Widget *, TrainWindow *tw);
 // Load the demo ride over the island and under the sea (see OceanWorld) and ride it
 void grandTourCB(Fl_Widget *, TrainWindow *tw);
 
+// A texture pack was picked (or "Open pack..."): load it for the island
+void texturePackCB(Fl_Widget *, TrainWindow *tw);
+
 // roll the control points
 // Rotate the selected control point  about x axis by one more degree
 void rpxCB(Fl_Widget *, TrainWindow *tw);

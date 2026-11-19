@@ -35,6 +35,7 @@
 #include "TrainWindow.H"
 #include "TrainView.H"
 #include "CallBacks.H"
+#include "TexturePack.h"
 #include "UiTheme.h"
 
 // The panel's cards are laid out for this height; the window starts at it
@@ -343,8 +344,8 @@ TrainWindow::TrainWindow(const int x, const int y)
 
         // ---- WORLD: water, weather, the scenery and the demo ride
         const int oceanH = 26;
-        Fl_Group *worldCard = UiTheme::beginCard(cardX, pty, cardW,
-                                                 titleH + rowH + gap + oceanH + bottomPad, "World");
+        Fl_Group *worldCard = UiTheme::beginCard(
+            cardX, pty, cardW, titleH + rowH + gap + oceanH + gap + rowH + bottomPad, "World");
         pty += titleH;
 
         waterButton = new Fl_Button(innerX, pty, colW, rowH, "Water");
@@ -366,7 +367,17 @@ TrainWindow::TrainWindow(const int x, const int y)
         ocean->tooltip("Ride the whole island: up the snow mountain, through the canyon,\n"
                        "over the volcano's crater, through the mine and under the sea.");
 
-        pty += oceanH + bottomPad;
+        pty += oceanH + gap;
+        texturePackChoice = new Fl_Choice(innerX + 58, pty, innerW - 58, rowH, "Textures");
+        UiTheme::styleChoice(texturePackChoice);
+        texturePackChoice->callback((Fl_Callback *)texturePackCB, this);
+        texturePackChoice->tooltip(
+            "The island's block textures: built in, or a texture pack.\n"
+            "Put packs (.zip or folders) in a texturepacks folder beside\n"
+            "the program, or pick \"Open pack...\" to load one from anywhere.");
+        listTexturePacks();
+
+        pty += rowH + bottomPad;
         worldCard->end();
         pty += cardGap;
 
@@ -552,4 +563,42 @@ void TrainWindow::advanceTrain(float dir)
     else
         m_Track.trainU =
             wrapTrackParameter(m_Track.trainU + step * 0.01f, static_cast<float>(pointCount));
+}
+
+//************************************************************************
+//
+// * Fill the texture pack list: "Built-in", the packs found on disk, and
+//   "Open pack..."; select the one at `select` (a path), or "Built-in".
+//========================================================================
+void TrainWindow::listTexturePacks(const std::string &select)
+//========================================================================
+{
+    texturePackChoice->clear();
+    texturePackPaths.clear();
+    texturePackChoice->add("Built-in");
+    int chosen = 0;
+    for (const TexturePack::Found &pack : TexturePack::findAll())
+    {
+        // replace() takes the name as it is: a '/' or '_' in it is no menu
+        // syntax; '&' would underline the next letter, so it is doubled
+        std::string label;
+        for (char c : pack.name)
+            label += c == '&' ? std::string("&&") : std::string(1, c);
+        const int item = texturePackChoice->add("pack");
+        texturePackChoice->replace(item, label.c_str());
+        texturePackPaths.push_back(pack.path);
+        if (pack.path == select)
+            chosen = item;
+    }
+    if (!select.empty() && chosen == 0)
+    {
+        // opened from elsewhere: listed by its own name
+        TexturePack::Pack pack;
+        const int item = texturePackChoice->add("pack");
+        texturePackChoice->replace(item, pack.open(select) ? pack.name().c_str() : select.c_str());
+        texturePackPaths.push_back(select);
+        chosen = item;
+    }
+    texturePackChoice->add("Open pack...");
+    texturePackChoice->value(chosen);
 }

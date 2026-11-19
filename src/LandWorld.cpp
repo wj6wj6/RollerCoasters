@@ -8,6 +8,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <deque>
+#include <utility>
 #include <vector>
 
 #ifdef _WIN32
@@ -20,6 +21,7 @@
 #include "LandTextures.h"
 #include "OceanWorld.h"
 #include "PixelArt.h"
+#include "TexturePack.h"
 #include "WaterFlow.h"
 #include "WorldShape.h"
 
@@ -3676,6 +3678,69 @@ void box(float x0, float y0, float z0, float x1, float y1, float z1)
     glEnd();
 }
 
+// A box with the texture bound, its picture at the scale of a block on
+// every face, as on the blocks.
+void texturedBox(float x0, float y0, float z0, float x1, float y1, float z1)
+{
+    const float k = 1.0f / kBlock;
+    glBegin(GL_QUADS);
+    glNormal3f(0, 0, 1);
+    glTexCoord2f(x0 * k, 1.0f - y0 * k);
+    glVertex3f(x0, y0, z1);
+    glTexCoord2f(x1 * k, 1.0f - y0 * k);
+    glVertex3f(x1, y0, z1);
+    glTexCoord2f(x1 * k, 1.0f - y1 * k);
+    glVertex3f(x1, y1, z1);
+    glTexCoord2f(x0 * k, 1.0f - y1 * k);
+    glVertex3f(x0, y1, z1);
+    glNormal3f(0, 0, -1);
+    glTexCoord2f(x1 * k, 1.0f - y0 * k);
+    glVertex3f(x1, y0, z0);
+    glTexCoord2f(x0 * k, 1.0f - y0 * k);
+    glVertex3f(x0, y0, z0);
+    glTexCoord2f(x0 * k, 1.0f - y1 * k);
+    glVertex3f(x0, y1, z0);
+    glTexCoord2f(x1 * k, 1.0f - y1 * k);
+    glVertex3f(x1, y1, z0);
+    glNormal3f(0, 1, 0);
+    glTexCoord2f(x0 * k, z1 * k);
+    glVertex3f(x0, y1, z1);
+    glTexCoord2f(x1 * k, z1 * k);
+    glVertex3f(x1, y1, z1);
+    glTexCoord2f(x1 * k, z0 * k);
+    glVertex3f(x1, y1, z0);
+    glTexCoord2f(x0 * k, z0 * k);
+    glVertex3f(x0, y1, z0);
+    glNormal3f(0, -1, 0);
+    glTexCoord2f(x0 * k, z0 * k);
+    glVertex3f(x0, y0, z0);
+    glTexCoord2f(x1 * k, z0 * k);
+    glVertex3f(x1, y0, z0);
+    glTexCoord2f(x1 * k, z1 * k);
+    glVertex3f(x1, y0, z1);
+    glTexCoord2f(x0 * k, z1 * k);
+    glVertex3f(x0, y0, z1);
+    glNormal3f(1, 0, 0);
+    glTexCoord2f(z1 * k, 1.0f - y0 * k);
+    glVertex3f(x1, y0, z1);
+    glTexCoord2f(z0 * k, 1.0f - y0 * k);
+    glVertex3f(x1, y0, z0);
+    glTexCoord2f(z0 * k, 1.0f - y1 * k);
+    glVertex3f(x1, y1, z0);
+    glTexCoord2f(z1 * k, 1.0f - y1 * k);
+    glVertex3f(x1, y1, z1);
+    glNormal3f(-1, 0, 0);
+    glTexCoord2f(z0 * k, 1.0f - y0 * k);
+    glVertex3f(x0, y0, z0);
+    glTexCoord2f(z1 * k, 1.0f - y0 * k);
+    glVertex3f(x0, y0, z1);
+    glTexCoord2f(z1 * k, 1.0f - y1 * k);
+    glVertex3f(x0, y1, z1);
+    glTexCoord2f(z0 * k, 1.0f - y1 * k);
+    glVertex3f(x0, y1, z0);
+    glEnd();
+}
+
 void colour(int r, int g, int b)
 {
     glColor3ub(static_cast<GLubyte>(r), static_cast<GLubyte>(g), static_cast<GLubyte>(b));
@@ -3725,31 +3790,36 @@ void drawAnimal(int kind, float stride)
     }
 }
 
-// A hot-air balloon: a stepped envelope in two colours, ropes and a basket.
-void drawBalloon(const int a[3], const int b[3])
+// A hot-air balloon: a stepped envelope of wool in two colours, oak ropes
+// and a basket of planks, as blocks a block game has; textures: the texture
+// names by LandTextures slot.
+void drawBalloon(int woolA, int woolB, const std::vector<unsigned int> &textures)
 {
     const float rings[7][2] = {{2.2f, 0.0f}, {4.2f, 1.6f},  {5.6f, 3.6f}, {6.0f, 6.0f},
                                {5.4f, 8.6f}, {4.0f, 10.8f}, {2.2f, 12.4f}};
+    glEnable(GL_TEXTURE_2D);
+    glColor3f(0.95f, 0.95f, 0.95f);
     for (int i = 0; i < 7; ++i)
     {
-        const int *c = i % 2 == 0 ? a : b;
-        colour(c[0], c[1], c[2]);
+        glBindTexture(GL_TEXTURE_2D, textures[static_cast<size_t>(i % 2 == 0 ? woolA : woolB)]);
         const float r = rings[i][0];
         const float top = i < 6 ? rings[i + 1][1] : 13.6f;
-        box(-r, rings[i][1], -r, r, top, r);
+        texturedBox(-r, rings[i][1], -r, r, top, r);
     }
-    colour(70, 50, 34);
+    glBindTexture(GL_TEXTURE_2D, textures[LandTextures::OAK_SIDE]);
     for (int k = 0; k < 4; ++k)
     {
         const float x = (k % 2 == 0) ? -1.1f : 1.0f;
         const float z = k < 2 ? -1.1f : 1.0f;
-        box(x, -3.4f, z, x + 0.1f, 0.0f, z + 0.1f);
+        texturedBox(x, -3.4f, z, x + 0.1f, 0.0f, z + 0.1f);
     }
-    colour(150, 108, 60);
-    box(-1.3f, -5.0f, -1.3f, 1.3f, -3.4f, 1.3f);
+    glBindTexture(GL_TEXTURE_2D, textures[LandTextures::PLANKS]);
+    texturedBox(-1.3f, -5.0f, -1.3f, 1.3f, -3.4f, 1.3f);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glDisable(GL_TEXTURE_2D);
     colour(255, 200, 90);
     setGlow(1.2f);
-    box(-0.4f, -1.2f, -0.4f, 0.4f, -0.5f, 0.4f); // the burner
+    box(-0.4f, -1.2f, -0.4f, 0.4f, -0.5f, 0.4f); // the burner's flame
     setGlow(0.0f);
 }
 
@@ -3886,7 +3956,8 @@ LandWorld::Scene &LandWorld::scene(bool flat)
         m_textures.assign(LandTextures::TEXTURE_COUNT, 0);
         for (int t = 0; t < LandTextures::TEXTURE_COUNT; ++t)
             m_textures[static_cast<size_t>(t)] =
-                PixelArt::upload(LandTextures::make(t), LandTextures::repeatsVertically(t));
+                PixelArt::upload(pictureOf(t), LandTextures::repeatsVertically(t));
+        m_texturesStale = false;
     }
 
     if (flat)
@@ -3938,9 +4009,32 @@ LandWorld::Scene &LandWorld::scene(bool flat)
     return s;
 }
 
+void LandWorld::setTexturePack(std::shared_ptr<const TexturePack::Pack> pack)
+{
+    m_pack = std::move(pack);
+    m_texturesStale = true;
+}
+
+PixelArt::Image LandWorld::pictureOf(int texture) const
+{
+    PixelArt::Image picture;
+    if (m_pack && m_pack->landTexture(texture, picture))
+        return picture;
+    return LandTextures::make(texture);
+}
+
 void LandWorld::draw(bool flat, bool shadowPass, float time)
 {
     glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_TEXTURE_BIT);
+    // a new pack: its pictures go into the same texture names, which the
+    // display lists bind, so nothing has to be built again
+    if (m_texturesStale && !m_textures.empty())
+    {
+        for (int t = 0; t < LandTextures::TEXTURE_COUNT; ++t)
+            PixelArt::uploadInto(m_textures[static_cast<size_t>(t)], pictureOf(t),
+                                 LandTextures::repeatsVertically(t));
+        m_texturesStale = false;
+    }
     const Scene &s = scene(flat);
     glEnable(GL_TEXTURE_2D);
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
@@ -4015,19 +4109,25 @@ void LandWorld::drawMoving(const Scene &s, float time)
     {
         glPushMatrix();
         glTranslatef(s.extras.mill[0], s.extras.mill[1], s.extras.mill[2]);
-        colour(96, 70, 44);
-        box(-0.5f, -0.5f, -3.4f, 0.5f, 0.5f, 0.3f); // the shaft, back to the tower
+        // an oak shaft and frames with white wool sails, as blocks a block
+        // game has
+        glEnable(GL_TEXTURE_2D);
+        glColor3f(0.95f, 0.95f, 0.95f);
+        glBindTexture(GL_TEXTURE_2D, m_textures[LandTextures::OAK_SIDE]);
+        texturedBox(-0.5f, -0.5f, -3.4f, 0.5f, 0.5f, 0.3f); // the shaft, back to the tower
         glRotatef(time * 22.0f, 0.0f, 0.0f, 1.0f);
         for (int blade = 0; blade < 4; ++blade)
         {
             glPushMatrix();
             glRotatef(90.0f * static_cast<float>(blade), 0.0f, 0.0f, 1.0f);
-            colour(120, 90, 54);
-            box(-0.22f, 0.0f, -0.05f, 0.22f, 11.5f, 0.3f);
-            colour(240, 236, 224);
-            box(0.22f, 2.0f, 0.0f, 2.9f, 11.0f, 0.16f);
+            glBindTexture(GL_TEXTURE_2D, m_textures[LandTextures::PLANKS]);
+            texturedBox(-0.22f, 0.0f, -0.05f, 0.22f, 11.5f, 0.3f);
+            glBindTexture(GL_TEXTURE_2D, m_textures[LandTextures::WOOL_WHITE]);
+            texturedBox(0.22f, 2.0f, 0.0f, 2.9f, 11.0f, 0.16f);
             glPopMatrix();
         }
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glDisable(GL_TEXTURE_2D);
         glPopMatrix();
     }
 
@@ -4076,9 +4176,9 @@ void LandWorld::drawMoving(const Scene &s, float time)
     // hot-air balloons, bobbing where the ride gets a good look at them
     const float spots[3][3] = {
         {-25.0f, 156.0f, 210.0f}, {375.0f, 93.0f, 240.0f}, {75.0f, 87.0f, -375.0f}};
-    const int paints[3][2][3] = {{{224, 60, 50}, {250, 240, 220}},
-                                 {{50, 120, 220}, {250, 206, 60}},
-                                 {{240, 150, 40}, {120, 60, 160}}};
+    const int paints[3][2] = {{LandTextures::WOOL_RED, LandTextures::WOOL_WHITE},
+                              {LandTextures::WOOL_BLUE, LandTextures::WOOL_YELLOW},
+                              {LandTextures::WOOL_ORANGE, LandTextures::WOOL_PURPLE}};
     for (int i = 0; i < 3; ++i)
     {
         const float fi = static_cast<float>(i);
@@ -4087,7 +4187,7 @@ void LandWorld::drawMoving(const Scene &s, float time)
                      spots[i][1] + sinf(time * 0.4f + fi) * 2.5f,
                      spots[i][2] + cosf(time * 0.09f + fi) * 9.0f);
         glRotatef(time * 4.0f + fi * 40.0f, 0.0f, 1.0f, 0.0f);
-        drawBalloon(paints[i][0], paints[i][1]);
+        drawBalloon(paints[i][0], paints[i][1], m_textures);
         glPopMatrix();
     }
 

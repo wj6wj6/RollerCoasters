@@ -3,7 +3,8 @@
 
      Comment:     The 32 x 32 pixel textures of the island's blocks and
                   plants (LandWorld), drawn in code like the others, so
-                  there are no image files to load.
+                  there are no image files to load. A texture pack the
+                  user picks can stand in for any of them (TexturePack).
 
 *************************************************************************/
 #pragma once
@@ -90,6 +91,12 @@ enum Texture
     MANGROVE_TOP,
     LEAVES_MANGROVE,
     LEAVES_BAMBOO, // the pale canopy over a bamboo thicket
+    WOOL_WHITE,    // the windmill's sail cloth and the balloons' envelopes
+    WOOL_RED,
+    WOOL_BLUE,
+    WOOL_YELLOW,
+    WOOL_ORANGE,
+    WOOL_PURPLE,
     TEXTURE_COUNT
 };
 

@@ -43,6 +43,13 @@
 #include <memory>
 #include <vector>
 
+#include "PixelArt.h"
+
+namespace TexturePack
+{
+class Pack;
+}
+
 class LandWorld
 {
   public:
@@ -75,6 +82,10 @@ class LandWorld
     {
         return m_chunksDrawn;
     }
+
+    // Swaps the island's textures for a texture pack's, where it has them
+    // (nullptr: all built in). Takes effect at the next draw().
+    void setTexturePack(std::shared_ptr<const TexturePack::Pack> pack);
 
     // A box around the blocks that cast shadows.
     static void shadowBounds(float lo[3], float hi[3]);
@@ -109,6 +120,11 @@ class LandWorld
 
     std::unique_ptr<Scene> m_scenery;
     std::unique_ptr<Scene> m_flat;
+    // the pack's picture for a texture, or the built-in one
+    PixelArt::Image pictureOf(int texture) const;
+
     std::vector<unsigned int> m_textures;
+    std::shared_ptr<const TexturePack::Pack> m_pack;
+    bool m_texturesStale = false;
     int m_chunksDrawn = 0;
 };

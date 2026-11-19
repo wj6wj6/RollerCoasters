@@ -43,12 +43,18 @@ flowchart LR
     Frame -->|drawGround / drawUnderwater / drawObjects| View
     View --> Land[LandWorld / 方塊島嶼：雪山、峽谷、火山、村莊、木棧橋]
     Land --> LandTex[LandTextures / 島嶼方塊與植物貼圖]
+    Callbacks -->|Textures 選單| Packs[TexturePack / 使用者的材質包：資料夾或 zip、方塊名稱對照、染色]
+    Packs --> Zip[ZipArchive / zip 目錄與 DEFLATE 解碼]
+    Packs -->|setTexturePack| Land
+    PackFiles[texturepacks/ 裡的材質包] --> Packs
     Land -->|rideSamples| Ocean
     View --> Ocean[OceanWorld / 方塊海床、珊瑚、遺跡、沉船、水晶隧道、海洋生物]
     LandTex --> Pixel[PixelArt / 程序貼圖（方塊 32×32）]
     Ocean --> Pixel
     Callbacks -->|Grand Tour| Ocean
 ```
+
+材質包：`World` 面板的 `Textures` 選單由 `TrainWindow::listTexturePacks()` 列出 `TexturePack::findAll()` 在搜尋資料夾（exe 旁的 `texturepacks/`，建置與安裝時建立；以及工作資料夾的 `texturepacks/` 與 `data/texturepacks/`，`main()` 啟動時已切到 exe 的資料夾）找到的 `.zip` 與資料夾。選定後 `texturePackCB()` 以 `TexturePack::Pack::open()` 開啟（zip 由 `ZipArchive` 讀目錄、自己的 DEFLATE 解碼器解壓；包在一層資料夾裡時以 `pack.mcmeta` 等標記找根目錄），交給 `TrainView::setTexturePack()` → `LandWorld::setTexturePack()`。下一次 `draw()` 對每種貼圖先問材質包（本程式格式 `textures/<名稱>.png`，再依對照表找資源包的 `block/`、`blocks/` 圖片；PNG 由 FLTK 解碼，取動畫第一格、縮成 2 的次方、灰階的草與樹葉染色、實心方塊補滿透明處），沒有就用 `LandTextures::make()`，再以 `PixelArt::uploadInto()` 寫進原本的貼圖名稱。海底世界同樣處理：`TrainView::setTexturePack()` 也交給 `OceanWorld::setTexturePack()`，`OceanWorld` 有自己的方塊名稱表（沙、石頭、深板岩、苔石磚、石英柱、珊瑚塊、海燈籠、金塊、石英、青金石、海帶、海草、珊瑚扇、紫水晶），經 `Pack::standIn()` 取圖，下次 `draw()` 寫進原本的貼圖名稱。軌道的枕木與鋼軌也由 `TrainView::setTexturePack()` 從材質包取雲杉木板與鐵塊（`TrackRenderer::setPictures()`，空的就用內建），風車葉片與熱氣球改用島上的貼圖（橡木、木板與各色羊毛 `WOOL_*`）以 `texturedBox()` 畫出，所以會動的景物也跟著材質包；只有生物、列車、雲與天空維持程式自己的顏色。顯示清單綁定的是貼圖名稱，所以換材質包不必重建島嶼或顯示清單。
 
 `TrainWindow` 持有場景狀態與 widget；`TrainView` 讀取場景與 UI 選項並繪圖。
 `TrackRenderer` 建立累積弧長表，依弧長等距擺放枕木，並以程式產生的像素材質畫方塊風鐵軌；`makeTrackFrame()` 也放在這裡，供列車與相機共用。

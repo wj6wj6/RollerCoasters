@@ -26,13 +26,19 @@
 #include "TrainView.H"
 #include "CallBacks.H"
 #include "OceanWorld.h"
+#include "LandTextures.h"
+#include "TexturePack.h"
 
 #pragma warning(push)
 #pragma warning(disable : 4312)
 #pragma warning(disable : 4311)
 #include <FL/Fl_File_Chooser.H>
+#include <FL/fl_ask.H>
 #include <FL/math.h>
 #pragma warning(pop)
+
+#include <memory>
+#include <string>
 
 //***************************************************************************
 //
@@ -323,4 +329,58 @@ void rmzCB(Fl_Widget *, TrainWindow *tw)
 //===========================================================================
 {
     rollz(tw, -1);
+}
+
+//************************************************************************
+//
+// * A texture pack was picked: "Built-in", a pack found on disk, or
+//   "Open pack..." to choose a .zip (or a folder's pack.mcmeta) anywhere.
+//   A pack that cannot be read is reported and the list goes back to what
+//   was in use.
+//========================================================================
+void texturePackCB(Fl_Widget *, TrainWindow *tw)
+//========================================================================
+{
+    static std::string current; // the path in use, empty when built in
+    const int item = tw->texturePackChoice->value();
+    const int last = tw->texturePackChoice->size() - 2; // "Open pack..."; size() counts the end
+    std::string path;
+    if (item == last)
+    {
+        const char *picked =
+            fl_file_chooser("Open a texture pack (.zip, or pack.mcmeta in a folder)",
+                            "Texture packs (*.{zip,mcmeta})", nullptr);
+        if (!picked)
+        {
+            tw->listTexturePacks(current);
+            return;
+        }
+        path = picked;
+    }
+    else if (item > 0 && static_cast<size_t>(item - 1) < tw->texturePackPaths.size())
+        path = tw->texturePackPaths[static_cast<size_t>(item - 1)];
+
+    std::shared_ptr<TexturePack::Pack> pack;
+    if (!path.empty())
+    {
+        pack = std::make_shared<TexturePack::Pack>();
+        if (!pack->open(path))
+        {
+            fl_alert("No textures this program can use were found in\n%s", path.c_str());
+            tw->listTexturePacks(current);
+            return;
+        }
+    }
+    current = path;
+    tw->trainView->setTexturePack(pack);
+    tw->listTexturePacks(current);
+    if (pack)
+    {
+        static std::string tip;
+        tip = pack->name() + ": " + std::to_string(pack->coverage()) + " of " +
+              std::to_string(LandTextures::TEXTURE_COUNT) +
+              " textures from the pack, the rest built in.";
+        tw->texturePackChoice->tooltip(tip.c_str());
+    }
+    tw->damageMe();
 }
