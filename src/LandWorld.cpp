@@ -3085,12 +3085,20 @@ void flood(const Grid &g, std::vector<unsigned char> &light, std::deque<Cell> &q
         for (const int *d : kDirs)
         {
             const int x = c.bx + d[0], j = c.j + d[1], z = c.bz + d[2];
-            if (!Grid::inside(x, j, z) || g.opaque(x, j, z))
+            if (!Grid::inside(x, j, z))
+                continue;
+            // leaves let light through, dimmed a level more (their faces
+            // inside a crown show through the gaps and are lit from it)
+            const bool leaf = isLeafBlock(g.get(x, j, z));
+            if (g.opaque(x, j, z) && !leaf)
+                continue;
+            const int here = leaf ? level - 1 : level;
+            if (here <= 0)
                 continue;
             unsigned char &s = light[Grid::index(x, j, z)];
-            if (s < level)
+            if (s < here)
             {
-                s = static_cast<unsigned char>(level);
+                s = static_cast<unsigned char>(here);
                 queue.push_back(Cell{x, j, z});
             }
         }
@@ -3173,7 +3181,8 @@ void spreadGlow(Grid &g)
                 for (const int *d : kDirs)
                 {
                     const int x = bx + d[0], y = j + d[1], z = bz + d[2];
-                    if (!Grid::inside(x, y, z) || g.opaque(x, y, z))
+                    if (!Grid::inside(x, y, z) ||
+                        (g.opaque(x, y, z) && !isLeafBlock(g.get(x, y, z))))
                         continue;
                     unsigned char &s = (isCool ? g.cool : g.warm)[Grid::index(x, y, z)];
                     if (s < level)
@@ -3590,15 +3599,16 @@ void addWaterFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
 
 // A bamboo cane's stalk is a thin square post, not just the crossed
 // pictures, so it stays solid from any side and far away; its faces show
-// the stalk's strip of the picture, shaded a little darker round the post.
+// the stalk's strip of the picture.
 // The leafy top adds a wider spray of leaves square to the crossed one.
 void addBambooStalk(bool top, bool leafy, float cx, float y0, float cz, unsigned int h, Vertex v,
                     std::vector<Vertex> &out)
 {
     const float half = 0.26f + 0.08f * static_cast<float>((h >> 4) % 4u) / 3.0f;
     const float u0 = 13.2f / 32.0f, u1 = 18.8f / 32.0f;
-    const float tint = v.color[0];
-    const float shades[4] = {1.0f, 0.82f, 0.7f, 0.9f};
+    // each side faces its own way, lit by the shader from its normal (no
+    // shade baked in as well)
+    const float normals[4][2] = {{0.0f, -1.0f}, {1.0f, 0.0f}, {0.0f, 1.0f}, {-1.0f, 0.0f}};
     const float corners[5][2] = {
         {-half, -half}, {half, -half}, {half, half}, {-half, half}, {-half, -half}};
     // the stalk's picture starts at the top's leaves halfway up the cell
@@ -3606,7 +3616,9 @@ void addBambooStalk(bool top, bool leafy, float cx, float y0, float cz, unsigned
     const float y1 = top ? y0 + kBlock * 0.5f : y0 + kBlock;
     for (int f = 0; f < 4; ++f)
     {
-        v.color[0] = v.color[1] = v.color[2] = tint * shades[f];
+        v.normal[0] = normals[f][0];
+        v.normal[1] = 0.0f;
+        v.normal[2] = normals[f][1];
         const float quad[4][4] = {{corners[f][0], y0, corners[f][1], 1.0f},
                                   {corners[f + 1][0], y0, corners[f + 1][1], 1.0f},
                                   {corners[f + 1][0], y1, corners[f + 1][1], vTop},
@@ -3623,7 +3635,10 @@ void addBambooStalk(bool top, bool leafy, float cx, float y0, float cz, unsigned
     }
     if (!top && !leafy)
         return;
-    v.color[0] = v.color[1] = v.color[2] = tint;
+    // the leaves are crossed pictures, lit as facing the sky like the plants
+    v.normal[0] = 0.0f;
+    v.normal[1] = 1.0f;
+    v.normal[2] = 0.0f;
     // only the picture's upper half, which holds the leaves and no stalk;
     // the top's spray is the widest, the ones below it smaller and turned
     const float spread = kBlock * (top ? 1.15f : 0.8f);
@@ -3748,7 +3763,7 @@ void addSnowLayer(const Grid &g, int bx, int j, int bz, Batches &batches)
             continue;
         for (int k = 0; k < 3; ++k)
             v.normal[k] = static_cast<float>(f.normal[k]);
-        v.extra[3] = sky * 0.85f;
+        v.extra[3] = sky;
         // the strip of the texture as tall as the side
         const float vLow = 1.0f - (low - y0) / kBlock, vTop = 1.0f - depth;
         for (int c = 0; c < 4; ++c)
