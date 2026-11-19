@@ -62,6 +62,7 @@ add_executable(RollerCoasters
     src/PostEffects.h src/PostEffects.cpp
     src/TexturePack.h src/TexturePack.cpp
     src/TrainModel.h src/TrainModel.cpp
+    src/TrainViewControl.cpp
     src/TrainViewEffects.cpp
     src/TransformGizmo.h src/TransformGizmo.cpp
     src/UnderwaterOptics.h
