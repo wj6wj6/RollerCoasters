@@ -1,6 +1,6 @@
 # RollerCoasters
 
-電腦圖學課程的 Windows 桌面過山車編輯器，使用 C++、FLTK 1.3.5 與 OpenGL。
+電腦圖學課程的 Windows 桌面過山車編輯器，使用 C++、FLTK 1.3.11 與 OpenGL。
 
 ## 建置與啟動
 

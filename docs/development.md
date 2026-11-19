@@ -65,7 +65,7 @@ MSVC 發布目錄是 `out/package/<Config>/`，Clang 是 `out/package/clang/<Con
 `check.ps1` 預設只用一個建置程序，避免筆電卡住；`-Jobs N` 改為 N 個，`-Jobs 0` 用上所有處理器（CI 使用）。
 
 所有第一方 C++ 編譯使用 `/W3 /WX`，分析使用 `/analyze /analyze:external-`；第三方 GLAD 分開建置。
-隨附 Debug FLTK 沒有 PDB，因此僅抑制該組態的 linker LNK4099。
+隨附 FLTK 1.3.11 的 Debug `.lib` 內含除錯資訊（`/Z7`），連結器不再需要抑制 LNK4099；VS 偵錯時呼叫堆疊可看到 FLTK 內部。重新編譯內附 FLTK 用 `pwsh -File scripts/build-fltk.ps1`，再 `-Stage vendor-lock`（見 `docs/adr/0007-fltk-1-3-11.md`）。連結內附 FLTK 需要 MSVC 19.44（VS 2022 17.14）或更新。
 初次導入 clang-format 會建立全體 `src/`、`tests/` 的一致格式基準；第三方檔案不重排。
 
 ## Hooks

@@ -21,8 +21,6 @@ if(ROLLERCOASTERS_ANALYZE)
     endif()
     target_compile_options(project_options INTERFACE /analyze /analyze:external-)
 endif()
-# The supplied Debug FLTK archives have no PDBs. Keep other linker diagnostics enabled.
-target_link_options(project_options INTERFACE "$<$<CONFIG:Debug>:/IGNORE:4099>")
 
 add_library(fltk INTERFACE)
 target_include_directories(fltk SYSTEM INTERFACE "${PROJECT_SOURCE_DIR}/include")
