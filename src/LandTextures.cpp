@@ -1068,55 +1068,6 @@ Image makeIce()
     return p;
 }
 
-// Pumpkin skin: orange ribs running down, darker in the grooves.
-void pumpkinSkin(Image &p, bool top)
-{
-    for (int y = 0; y < S; ++y)
-        for (int x = 0; x < S; ++x)
-        {
-            const int rib = top ? ((abs(x - 16) + abs(y - 16)) % 6) : (x % 6);
-            const int s = shadeOf(x, y, 291u, 5);
-            const int groove = rib == 0 ? -40 : (rib == 3 ? 14 : 0);
-            set(p, x, y, 222 + groove + s, 118 + groove / 2 + s, 22 + s);
-        }
-}
-
-// A carved pumpkin lantern: triangle eyes and a jagged grin, lit from
-// inside in warm yellow.
-Image makePumpkinFace()
-{
-    Image p = PixelArt::blank(S);
-    pumpkinSkin(p, false);
-    auto glow = [&](int x, int y) {
-        const int s = shadeOf(x, y, 293u, 10);
-        set(p, x, y, 255, 214 + s, 96 + s);
-    };
-    for (int y = 0; y < 6; ++y) // the eyes, points up
-        for (int x = -y; x <= y; ++x)
-        {
-            glow(9 + x, 8 + y);
-            glow(22 + x, 8 + y);
-        }
-    for (int x = 6; x <= 25; ++x) // the grin, with teeth
-        for (int y = 19; y <= 23; ++y)
-        {
-            const bool tooth = (x % 5 == 0 && y == 19) || (x % 5 == 3 && y == 23);
-            if (!tooth && !(y == 23 && (x < 8 || x > 23)))
-                glow(x, y);
-        }
-    return p;
-}
-
-Image makePumpkinTop()
-{
-    Image p = PixelArt::blank(S);
-    pumpkinSkin(p, true);
-    for (int y = 13; y <= 18; ++y)
-        for (int x = 14; x <= 17; ++x)
-            set(p, x, y, 84 + shadeOf(x, y, 295u, 8), 112, 40); // the stem
-    return p;
-}
-
 // A bamboo stalk the full height of the cell, so stalks stack into tall
 // canes: light on its left edge, shaded on its right, with a ring at each
 // node and now and then a small leaf.
@@ -1334,10 +1285,6 @@ Image make(int texture)
         return makeFlower(246, 140, 46, 0, 0, 0, true);
     case ICE:
         return makeIce();
-    case PUMPKIN_FACE:
-        return makePumpkinFace();
-    case PUMPKIN_TOP:
-        return makePumpkinTop();
     case BAMBOO:
         return makeBamboo(false);
     case BAMBOO_TOP:

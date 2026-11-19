@@ -115,9 +115,8 @@ enum Block
     HAY,
     FARMLAND,
     WATER,
-    ICE,    // packed ice: the ice spikes
-    JACK_O, // a carved pumpkin lantern, lit
-    MUD,    // the mangrove swamp's ground
+    ICE, // packed ice: the ice spikes
+    MUD, // the mangrove swamp's ground
     MANGROVE_LOG,
     LEAVES_MANGROVE,
     LEAVES_BAMBOO, // the canopy over a bamboo thicket
@@ -255,8 +254,6 @@ int textureOf(int block, int face)
         return T::WATER;
     case ICE:
         return T::ICE;
-    case JACK_O:
-        return face == 0 || face == 1 ? T::PUMPKIN_TOP : T::PUMPKIN_FACE;
     case MUD:
         return T::MUD;
     case MANGROVE_LOG:
@@ -309,8 +306,6 @@ float blockGlow(int block)
         return 1.0f;
     case MAGMA:
         return 0.22f;
-    case JACK_O:
-        return 0.6f;
     case ORE_DIAMOND:
         return 0.1f;
     default:
@@ -2342,7 +2337,7 @@ void buildGiantTree(Grid &g, const Clearance &clear, Extras &extras)
 }
 
 // A spruce-log cabin: a cobble footing, walls of spruce logs, lit windows,
-// a door with a pumpkin lantern beside it and a steep roof.
+// a door with a lantern on a post beside it and a steep roof.
 void buildCabin(Grid &g, int x0, int z0, int w, int d, int floor)
 {
     const int x1 = x0 + w, z1 = z0 + d, wallTop = floor + 2;
@@ -2356,7 +2351,9 @@ void buildCabin(Grid &g, int x0, int z0, int w, int d, int floor)
     }
     g.put((x0 + x1) / 2, floor, z1, DOOR);
     g.put((x0 + x1) / 2, floor + 1, z1, DOOR);
-    g.put((x0 + x1) / 2 + 1, floor, z1 + 1, JACK_O);
+    // a lantern on a post by the door
+    putFence(g, (x0 + x1) / 2 + 1, floor, z1 + 1);
+    putLamp(g, (x0 + x1) / 2 + 1, floor + 1, z1 + 1);
     for (int k = 0; z0 - 1 + k <= z1 + 1 - k; ++k)
         fill(g, x0 - 1, x1 + 1, wallTop + 1 + k, wallTop + 1 + k, z0 - 1 + k, z1 + 1 - k,
              SPRUCE_PLANKS);
@@ -2366,7 +2363,7 @@ void buildCabin(Grid &g, int x0, int z0, int w, int d, int floor)
 
 // A camp in the spruce forest at the foot of the snow mountain, where the
 // train passes in sight of it: log cabins round a campfire, lanterns on
-// posts and pumpkin lanterns by the doors, warm against the blue of dusk.
+// posts and by the doors, warm against the blue of dusk.
 // The camp's cabins round its middle: x, z of a corner, and width.
 const int kCabins[4][3] = {{-9, -9, 5}, {4, -9, 5}, {-9, 4, 4}, {4, 4, 5}};
 
@@ -3145,7 +3142,7 @@ void spreadGlow(Grid &g)
             {
                 const int block = g.block[Grid::index(bx, j, bz)];
                 // as bright as in a block game, its 15 being 14 here: a
-                // lantern, a pumpkin lantern, lava and glowstone 15, a
+                // lantern, lava and glowstone 15, a
                 // campfire's embers (magma) less
                 int level = 0;
                 bool isCool = false;
@@ -3163,8 +3160,6 @@ void spreadGlow(Grid &g)
                 if (block == LAVA)
                     level = 14;
                 else if (block == LANTERN)
-                    level = 14;
-                else if (block == JACK_O)
                     level = 14;
                 else if (block == MAGMA)
                     level = 6;

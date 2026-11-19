@@ -154,8 +154,6 @@ const Source kSources[] = {
     {T::BAMBOO_TOP, "bamboo_top", "", NONE},
     {T::VINES, "vines", "vine", FOLIAGE},
     {T::ICE, "ice", "packed_ice|ice_packed|ice", NONE},
-    {T::PUMPKIN_FACE, "pumpkin_face", "jack_o_lantern|pumpkin_face_on", NONE},
-    {T::PUMPKIN_TOP, "pumpkin_top", "pumpkin_top", NONE},
     {T::MUD, "mud", "mud|coarse_dirt|dirt", NONE},
     {T::MANGROVE_SIDE, "mangrove_side", "mangrove_log|jungle_log|log_jungle", NONE},
     {T::MANGROVE_TOP, "mangrove_top", "mangrove_log_top|jungle_log_top|log_jungle_top", NONE},

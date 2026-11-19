@@ -83,9 +83,7 @@ enum Texture
     BAMBOO_TOP, // the leafy top of a stalk
     VINES,      // hanging from the mangroves' crowns
     // more blocks (after the plants, which keep their order)
-    ICE,          // packed ice of the ice spikes
-    PUMPKIN_FACE, // a carved pumpkin lantern's face, lit
-    PUMPKIN_TOP,
+    ICE, // packed ice of the ice spikes
     MUD, // the mangrove swamp's ground
     MANGROVE_SIDE,
     MANGROVE_TOP,
