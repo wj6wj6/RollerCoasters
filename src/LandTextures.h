@@ -91,6 +91,12 @@ enum Texture
     MANGROVE_TOP,
     LEAVES_MANGROVE,
     LEAVES_BAMBOO, // the pale canopy over a bamboo thicket
+    WOOL_WHITE,    // the windmill's sail cloth and the balloons' envelopes
+    WOOL_RED,
+    WOOL_BLUE,
+    WOOL_YELLOW,
+    WOOL_ORANGE,
+    WOOL_PURPLE,
     TEXTURE_COUNT
 };
 

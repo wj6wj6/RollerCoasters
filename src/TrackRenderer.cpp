@@ -165,7 +165,10 @@ unsigned int uploadPixelTexture(std::vector<unsigned char> pixels)
     glBindTexture(GL_TEXTURE_2D, texture);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
-    int size = kTextureSize;
+    // square, a power of two on a side (a texture pack's may be larger)
+    int size = 1;
+    while (static_cast<size_t>(size) * static_cast<size_t>(size) * 4 < pixels.size())
+        size *= 2;
     int level = 0;
     while (true)
     {
@@ -388,12 +391,32 @@ void TrackRenderer::releaseTextures()
     m_ironTexture = 0;
 }
 
+void TrackRenderer::setPictures(std::vector<unsigned char> wood, std::vector<unsigned char> iron)
+{
+    m_woodPicture.swap(wood);
+    m_ironPicture.swap(iron);
+    m_picturesChanged = true;
+}
+
 void TrackRenderer::ensureTextures()
 {
+    if (m_picturesChanged)
+    {
+        // new pictures (a texture pack's, or back to the built-in ones):
+        // the old textures go, the new ones are made below
+        const GLuint old[2] = {m_woodTexture, m_ironTexture};
+        if (old[0] != 0 || old[1] != 0)
+            glDeleteTextures(2, old);
+        m_woodTexture = 0;
+        m_ironTexture = 0;
+        m_picturesChanged = false;
+    }
     if (m_woodTexture == 0)
-        m_woodTexture = uploadPixelTexture(makeWoodPixels());
+        m_woodTexture =
+            uploadPixelTexture(m_woodPicture.empty() ? makeWoodPixels() : m_woodPicture);
     if (m_ironTexture == 0)
-        m_ironTexture = uploadPixelTexture(makeIronPixels());
+        m_ironTexture =
+            uploadPixelTexture(m_ironPicture.empty() ? makeIronPixels() : m_ironPicture);
 }
 
 void TrackRenderer::draw(const CTrack &track, TrackSplineType splineType, bool doingShadows)

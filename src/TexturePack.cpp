@@ -160,6 +160,12 @@ const Source kSources[] = {
     {T::LEAVES_MANGROVE, "leaves_mangrove",
      "mangrove_leaves|jungle_leaves@mangrove|oak_leaves@mangrove|leaves_oak@mangrove", MANGROVE},
     {T::LEAVES_BAMBOO, "leaves_bamboo", "azalea_leaves|oak_leaves@lime|leaves_oak@lime", NONE},
+    {T::WOOL_WHITE, "wool_white", "white_wool|wool_colored_white", NONE},
+    {T::WOOL_RED, "wool_red", "red_wool|wool_colored_red", NONE},
+    {T::WOOL_BLUE, "wool_blue", "blue_wool|wool_colored_blue", NONE},
+    {T::WOOL_YELLOW, "wool_yellow", "yellow_wool|wool_colored_yellow", NONE},
+    {T::WOOL_ORANGE, "wool_orange", "orange_wool|wool_colored_orange", NONE},
+    {T::WOOL_PURPLE, "wool_purple", "purple_wool|wool_colored_purple", NONE},
 };
 static_assert(sizeof(kSources) / sizeof(kSources[0]) == LandTextures::TEXTURE_COUNT,
               "every island texture needs a row");
