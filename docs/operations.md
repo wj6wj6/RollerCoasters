@@ -7,23 +7,20 @@
 3. 備份重要軌道檔並做一次還原驗證。
 4. 需要發布新版本時先修改 `CMakeLists.txt` 的 `project(... VERSION ...)`，合併後再建立對應 `v*` tag。
 
-## CI 與 Actions 額度
+## CI
 
-repository 是私有的，GitHub Actions 依分鐘計費；Windows runner 每分鐘的價格比 Linux 高好幾倍。CI 因此分成兩個 workflow：
+repository 是公開的，GitHub 提供的標準 runner（含 Windows）不計費。CI 分成兩個 workflow，每個非 draft PR 的 push 都會兩個一起跑；只改文件（`*.md`、`docs/`）時略過：
 
 | Workflow | 何時執行 | 內容 |
 | --- | --- | --- |
-| `Linux quality`（`ci.yml`，ubuntu-24.04） | 每個非 draft PR 的 push、main push、手動；只改文件（`*.md`、`docs/`）時略過 | `check.ps1 -Stage quick`（clang-format 22.1.8、依賴指紋、repository 規範與腳本語法）；`tests/linux/` 以 clang `-Wall -Werror` 編譯平台無關的原始碼並跑 `VersionCheck` 以外的全部 CTest 檢查（xvfb）；`tests/linux/win32-syntax.sh` 用 MinGW-w64 對真正的 Windows SDK 標頭檢查所有檔案的語法 |
-| `Windows build`（`windows.yml`，windows-2022，單一 job） | main push（合併後）、`v*` tag、手動 Run workflow；PR 只在貼上 `windows-ci` 標籤後執行（之後每次 push 都會重跑） | `scripts/check-all.ps1 -Jobs 0`：格式、MSVC `/analyze`、MSVC 與 Clang 的 Debug／Release 編譯、CTest、安裝與 `--version` |
+| `Linux quality`（`ci.yml`，ubuntu-24.04） | PR push、main push、手動 | 快速回饋：`check.ps1 -Stage quick`（clang-format 22.1.8、依賴指紋、repository 規範與腳本語法）；`tests/linux/` 以 clang `-Wall -Werror` 編譯平台無關的原始碼並跑 `VersionCheck` 以外的全部 CTest 檢查（xvfb）；`tests/linux/win32-syntax.sh` 用 MinGW-w64 對真正的 Windows SDK 標頭檢查所有檔案的語法 |
+| `Windows build`（`windows.yml`，windows-2022，單一 job） | PR push、main push、`v*` tag、手動 Run workflow | 完整把關：`scripts/check-all.ps1 -Jobs 0`，即格式、MSVC `/analyze`（只跑一次）、MSVC 與 Clang 的 Debug／Release 編譯、CTest、安裝與 `--version` |
 
-兩者都會讓同一個 PR 或分支的新 push 取消舊的執行，draft PR 不執行。`tests/linux/stubs/windows.h` 定義了 Windows SDK 會吃掉的 `far`、`near`、`DUPLICATE` 等巨集，所以這類名稱在 Linux 檢查就會失敗。
+同一個 PR 或分支的新 push 會取消舊的執行，draft PR 不執行。`tests/linux/stubs/windows.h` 定義了 Windows SDK 會吃掉的 `far`、`near`、`DUPLICATE` 等巨集，所以這類名稱在 Linux 檢查就會失敗；沒有 Windows 的雲端環境也能在推送前跑這組檢查（見 [development.md](development.md#linux-上的檢查)）。
 Linux 檢查不是 MSVC 建置：MSVC 專屬警告、`/analyze`、連結 Win32 程式與封裝只有 Windows build 或本機 `check-all.ps1` 會驗證。
 
-合併前的驗證方式，擇一即可：
-1. 在 Windows 電腦執行 `pwsh -File scripts/check-all.ps1`，把 `out/check-summary.md` 的表格貼進 PR 的「驗證」段落。
-2. 在 PR 加上 `windows-ci` 標籤（第一次使用時在 Issues › Labels 建立），等 Windows build 通過（預估約 10 個 Windows 分鐘，原本每次 push 約 21 分鐘）。
-
-額度用完時 Actions 不會開始任何 job（Linux 也一樣），PR 頁面只會顯示等待中或失敗。只要 main 沒有把這些檢查設為必要（required status checks），就不會擋住合併；這時用上面第 1 種方式驗證。若曾設定必要檢查，請只要求 `Linux quality`。額度每月重置，也可在 GitHub 的 Billing 頁面調高預算。
+在 Windows 電腦上執行 `pwsh -File scripts/check-all.ps1` 等同 Windows build，結果表寫在 `out/check-summary.md`，可貼進 PR。
+若 repository 改回私有，Actions 會依分鐘計費（Windows 比 Linux 貴數倍，額度用完時連 Linux job 都不會開始）；那時應讓 Windows build 只在 main 與手動時執行，PR 以本機 `check-all.ps1` 驗證。
 Windows build 保存 `out/check-summary.md`、JUnit／CTest 日誌（14 天），以及 MSVC 與 Clang Release 已執行 `--version` 的安裝目錄 artifact（14 天）。Linux 檢查只在失敗時保存日誌（7 天）。
 這是桌面應用程式，以 executable 的版本 smoke test 取代服務 healthcheck；沒有 Docker 或伺服器部署。
 

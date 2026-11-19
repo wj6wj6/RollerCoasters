@@ -8,7 +8,7 @@
 
 ## 驗證
 
-一次跑完下列四項：`pwsh -File scripts/check-all.ps1`，貼上 `out/check-summary.md` 的表格；或在 PR 加上 `windows-ci` 標籤讓 Windows CI 執行。
+PR 的 `Windows build` CI 會跑下列四項；本機可用 `pwsh -File scripts/check-all.ps1` 一次跑完，並貼上 `out/check-summary.md` 的表格。
 
 - [ ] Debug：`pwsh -File scripts/check.ps1 -Stage all -Config Debug`
 - [ ] Release：`pwsh -File scripts/check.ps1 -Stage all -Config Release`

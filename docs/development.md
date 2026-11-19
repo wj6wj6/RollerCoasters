@@ -75,7 +75,7 @@ git config core.hooksPath .githooks
 ```
 
 pre-commit 執行 `quick`；commit-msg 檢查 Conventional Commits；pre-push 執行完整 Debug 檢查。
-hooks 與 CI 使用同一個 PowerShell 入口與 `tools.json`。hooks 只檢查、不修改檔案。CI 的分工與觸發條件見 [operations.md](operations.md#ci-與-actions-額度)。
+hooks 與 CI 使用同一個 PowerShell 入口與 `tools.json`。hooks 只檢查、不修改檔案。CI 的分工與觸發條件見 [operations.md](operations.md#ci)。
 
 ## Linux 上的檢查
 

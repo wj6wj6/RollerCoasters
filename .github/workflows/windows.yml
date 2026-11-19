@@ -1,12 +1,10 @@
 name: Windows build
 
 # The full MSVC / clang-cl gate: scripts/check-all.ps1, the same command as the
-# local pre-merge check. Windows minutes cost several times Linux ones, so it
-# runs in one job and only:
-#   - after a merge to main, and for v* tags (releases are rechecked);
-#   - on a PR that carries the label windows-ci (each push re-runs it);
-#   - by hand: Actions > Windows build > Run workflow, on any branch.
-# Linux quality (ci.yml) checks every PR push.
+# local pre-merge check, in one job (format and /analyze run once). The
+# repository is public, so GitHub-hosted runners cost nothing and this runs on
+# every non-draft PR push as well as main pushes, v* tags and by hand.
+# Linux quality (ci.yml) gives faster feedback on the same pushes.
 
 on:
   push:
@@ -19,7 +17,13 @@ on:
       - '.github/workflows/ci.yml'
       - 'tests/linux/**'
   pull_request:
-    types: [labeled, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/workflows/ci.yml'
+      - 'tests/linux/**'
   workflow_dispatch:
 
 permissions:
@@ -27,14 +31,11 @@ permissions:
 
 jobs:
   windows:
-    if: >-
-      github.event_name != 'pull_request' || (
-        !github.event.pull_request.draft &&
-        contains(github.event.pull_request.labels.*.name, 'windows-ci') &&
-        (github.event.action != 'labeled' || github.event.label.name == 'windows-ci'))
+    # Draft PRs are still being written; their checks start when marked ready.
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: windows-2022
     timeout-minutes: 45
-    # Job level, so that a skipped run (another label added) cancels nothing.
+    # A newer push to the same branch or PR supersedes the running build.
     concurrency:
       group: windows-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true

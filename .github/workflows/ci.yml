@@ -1,10 +1,11 @@
 name: Linux quality
 
-# Runs on every PR push and costs a fraction of a Windows run: format,
-# repository policy, the platform-neutral code and all CTest checks built with
-# clang on Linux, and a MinGW syntax pass over every file against the real
-# Windows SDK headers. MSVC, clang-cl, /analyze and packaging run in
-# windows.yml, which is opt-in for PRs (label windows-ci).
+# Fast feedback on every PR push (a few minutes, against about ten for
+# Windows): format, repository policy, the platform-neutral code and all CTest
+# checks built with clang on Linux, and a MinGW syntax pass over every file
+# against the real Windows SDK headers. MSVC, clang-cl, /analyze and packaging
+# run in windows.yml on the same pushes. tests/linux also works in a cloud
+# environment without Windows.
 
 on:
   pull_request:
