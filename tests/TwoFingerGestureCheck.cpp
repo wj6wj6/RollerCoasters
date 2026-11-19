@@ -23,9 +23,9 @@ static Result run(float vx, float vy, float growth, float jitter, int frames = 1
         cx += vx;
         cy += vy;
         spread *= 1 + growth;
-        const float n1 = ((float)std::rand() / RAND_MAX - .5f) * 2 * jitter;
-        const float n2 = ((float)std::rand() / RAND_MAX - .5f) * 2 * jitter;
-        const float n3 = ((float)std::rand() / RAND_MAX - .5f) * 2 * jitter;
+        const float n1 = ((float)std::rand() / (float)RAND_MAX - .5f) * 2 * jitter;
+        const float n2 = ((float)std::rand() / (float)RAND_MAX - .5f) * 2 * jitter;
+        const float n3 = ((float)std::rand() / (float)RAND_MAX - .5f) * 2 * jitter;
         float dx, dy, scale;
         if (gesture.update(cx + n1, cy + n2, spread + n3, 1.0f / 125, dx, dy, scale))
         {
