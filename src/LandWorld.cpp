@@ -1842,7 +1842,8 @@ void buildVillage(Grid &g, Extras &extras, const Clearance &clear)
     if (roomForBuilding(clear, wx - 1, wx + 1, floor, floor + 3, wz - 1, wz + 1))
     {
         // a ring of cobble round the water, fence posts at the corners and
-        // a cobble roof, as in a block game's village well
+        // a little hipped roof of dark oak steps, as in a block game's
+        // village well
         fill(g, wx - 1, wx + 1, floor, floor, wz - 1, wz + 1, COBBLE);
         g.put(wx, floor, wz, WATER);
         for (int dx = -1; dx <= 1; dx += 2)
@@ -1851,7 +1852,7 @@ void buildVillage(Grid &g, Extras &extras, const Clearance &clear)
                 putFence(g, wx + dx, floor + 1, wz + dz);
                 putFence(g, wx + dx, floor + 2, wz + dz);
             }
-        fill(g, wx - 1, wx + 1, floor + 3, floor + 3, wz - 1, wz + 1, COBBLE);
+        buildHipRoof(g, wx - 1, wx + 1, wz - 1, wz + 1, floor + 3, ROOF, ROOF);
     }
 
     // the wheat field, with a ditch down the middle and hay bales beside it
@@ -2060,6 +2061,34 @@ bool buildCastle(Grid &g, const Clearance &clear, int at[2])
         putFence(g, gx + side, floor + 1, gz + out);
         putLamp(g, gx + side, floor + 2, gz + out);
     }
+    // a road three wide out of the gate, following the ground until it
+    // falls away, lamp posts in pairs either side of it
+    for (int d = 2; d <= 14; ++d)
+    {
+        const int bz = gz + out * d;
+        const int top = Grid::insideColumn(gx, bz) ? g.top(gx, bz) : kMinY - 1;
+        if (top < floor - 5 || top > floor)
+            break;
+        for (int w = -1; w <= 1; ++w)
+        {
+            // gravel where it crosses the sand, a trodden path elsewhere
+            const int t = g.top(gx + w, bz);
+            if (g.get(gx + w, t, bz) == SAND && !clear.blocks(gx + w, t, bz) &&
+                g.get(gx + w, t + 1, bz) == AIR)
+                g.put(gx + w, t, bz, GRAVEL);
+            else
+                putPath(g, clear, gx + w, t, bz, w != 0);
+        }
+        if (d % 6 == 0)
+            for (int side = -2; side <= 2; side += 4)
+            {
+                const int lx = gx + side, lt = g.top(lx, bz);
+                if (lt == top && g.opaque(lx, lt, bz) &&
+                    roomForBuilding(clear, lx, lx, lt + 1, lt + 4, bz, bz) &&
+                    g.get(lx, lt + 1, bz) == AIR)
+                    buildLampPost(g, lx, bz, lt + 1);
+            }
+    }
 
     // corner towers, four wide, rising well above the wall
     buildTower(g, x0 - 1, z0 - 1, 4, floor, 10);
@@ -2223,13 +2252,29 @@ void buildLighthouse(Grid &g, const Clearance &clear, const int away[2])
     const int hfloor = g.top(hx + 2, hz + 2) + 1;
     if (hfloor >= 1 &&
         roomForBuilding(clear, hx - 1, hx + 5, hfloor - 1, hfloor + 8, hz - 1, hz + 5))
+    {
         buildHouse(g, hx, hz, hx + 4, hz + 3, hfloor, false);
+        // a path from the cottage's door to the tower's
+        int bx = hx + 2, bz = hz + 4;
+        for (int step = 0; step < 40; ++step)
+        {
+            if (Grid::insideColumn(bx, bz))
+                putPath(g, clear, bx, g.top(bx, bz), bz, false);
+            if (bx == x && bz == z + 4)
+                break;
+            if (bz != z + 4)
+                bz += bz < z + 4 ? 1 : -1;
+            else
+                bx += bx < x ? 1 : -1;
+        }
+    }
 }
 
 // A timber footbridge over the pool below the fall, three blocks above the
-// water, resting on the gorge's walls at both ends, with a few log rail
-// posts and a lantern at each end; left out if it would not reach rock on
-// both sides or the train would pass through it.
+// water, resting on the gorge's walls at both ends: a deck of planks two
+// wide between dark oak beams, a fence rail along both sides and a lantern
+// on the rail at each corner, symmetrical; left out if it would not reach
+// rock on both sides or the train would pass through it.
 void buildBridge(Grid &g, const Clearance &clear)
 {
     const int cx = (kFallX0 + kFallX1) / 2;
@@ -2245,20 +2290,28 @@ void buildBridge(Grid &g, const Clearance &clear)
     ++x1;
     if (g.get(x0, deck, z0) == AIR || g.get(x1, deck, z0) == AIR)
         return; // no rock to rest on at one end
-    if (!roomForBuilding(clear, x0, x1, deck, deck + 3, z0, z1))
+    if (!roomForBuilding(clear, x0, x1, deck, deck + 3, z0 - 1, z1 + 1))
         return;
     for (int bx = x0; bx <= x1; ++bx)
-        for (int bz = z0; bz <= z1; ++bz)
-            g.put(bx, deck, bz, PLANKS);
-    for (int bx = x0 + 1; bx < x1; bx += 3)
     {
-        g.put(bx, deck + 1, z0 - 1, OAK_LOG);
-        g.put(bx, deck, z0 - 1, PLANKS);
-        g.put(bx, deck + 1, z1 + 1, OAK_LOG);
-        g.put(bx, deck, z1 + 1, PLANKS);
+        for (int bz = z0; bz <= z1; ++bz)
+            if (g.get(bx, deck, bz) == AIR || bx == x0 || bx == x1)
+                g.put(bx, deck, bz, PLANKS);
+        // the beams either side, a rail on them over the open span
+        for (int bz = z0 - 1; bz <= z1 + 1; bz += z1 + 2 - z0)
+            if (g.get(bx, deck, bz) == AIR)
+            {
+                g.put(bx, deck, bz, DARK_OAK_LOG);
+                putFence(g, bx, deck + 1, bz);
+            }
     }
-    putLamp(g, x0, deck + 1, z0);
-    putLamp(g, x1, deck + 1, z1);
+    // a lantern on the rail at each of the four corners of the span
+    for (int bx = x0; bx <= x1; ++bx)
+        if (bx == x0 + 1 || bx == x1 - 1)
+            for (int bz = z0 - 1; bz <= z1 + 1; bz += z1 + 2 - z0)
+                if (Grid::inside(bx, deck + 1, bz) &&
+                    g.plant[Grid::index(bx, deck + 1, bz)] == FENCE)
+                    putLamp(g, bx, deck + 2, bz);
 }
 
 // ---------------------------------------------------------------------
@@ -2328,6 +2381,70 @@ void carveRide(Grid &g, const std::vector<float> &ride)
                     g.put(bx, j, bz, GRAVEL);
             }
     }
+}
+
+// Boulders: a block or two of stone, cobble or mossy cobble with a few
+// beside it, half sunk into the ground, here and there on the meadows,
+// the crags and more often in the spruce forest and among the bamboo,
+// on level ground away from the water, the buildings and the train.
+void scatterBoulders(Grid &g, const Clearance &clear)
+{
+    for (int bx = kMinBX + 3; bx < kMaxBX - 3; ++bx)
+        for (int bz = kMinBZ + 3; bz < kMaxBZ - 3; ++bz)
+        {
+            const int biome = g.biome[Grid::column(bx, bz)];
+            const unsigned int h = hash(bx, bz, 817u);
+            const unsigned int every = biome == ALPINE          ? 60u
+                                       : biome == BAMBOO_JUNGLE ? 110u
+                                       : biome == CRAG          ? 80u
+                                       : biome == MEADOW        ? 150u
+                                                                : 0u;
+            if (every == 0u || h % every != 0u)
+                continue;
+            const float vx = centerOf(bx) - kVillageX, vz = centerOf(bz) - kVillageZ;
+            if (vx * vx + vz * vz < (kVillageRadius + 10.0f) * (kVillageRadius + 10.0f))
+                continue;
+            const int top = g.top(bx, bz);
+            bool fits = top > kSeaLayer;
+            for (int dx = -1; dx <= 1 && fits; ++dx)
+                for (int dz = -1; dz <= 1 && fits; ++dz)
+                {
+                    const int t = g.top(bx + dx, bz + dz), b = g.get(bx + dx, t, bz + dz);
+                    fits = (b == GRASS || b == PODZOL || b == STONE || b == DIRT ||
+                            b == SNOWY_DIRT || b == SNOW || b == COARSE_DIRT) &&
+                           abs(t - top) <= 1;
+                    for (int j = t + 1; j <= t + 3 && fits; ++j)
+                        fits = g.get(bx + dx, j, bz + dz) == AIR &&
+                               !isFixture(g.plant[Grid::index(bx + dx, j, bz + dz)]) &&
+                               !clear.blocks(bx + dx, j, bz + dz);
+                }
+            if (!fits)
+                continue;
+            auto rock = [&](int x, int j, int z) {
+                const unsigned int r = hash(x * 3 + j, z, 819u) % 10u;
+                int b = STONE;
+                if (biome == ALPINE || biome == BAMBOO_JUNGLE)
+                    b = r < 6u ? MOSSY : COBBLE;
+                else if (biome == MEADOW)
+                    b = r < 4u ? STONE : (r < 7u ? COBBLE : MOSSY);
+                else
+                    b = r < 6u ? STONE : COBBLE;
+                g.put(x, j, z, b);
+                g.plant[Grid::index(x, j, z)] = NO_PLANT;
+            };
+            // the middle, sunk a block, one or two high above the ground
+            rock(bx, top, bz);
+            const int height = 1 + static_cast<int>((h >> 8) % 2u);
+            for (int j = 1; j <= height; ++j)
+                rock(bx, top + j, bz);
+            // some of the four beside it, a block high
+            for (int k = 0; k < 4; ++k)
+                if ((h >> (12 + k)) & 1u)
+                {
+                    const int x = bx + kFacing[k][0], z = bz + kFacing[k][1];
+                    rock(x, g.top(x, z) + 1, z);
+                }
+        }
 }
 
 // Lanterns in niches and crystals in the walls where the ride runs under a
@@ -3102,6 +3219,21 @@ void buildJungleTemple(Grid &g, const Clearance &clear, Extras &extras)
         for (int dx = -1; dx <= 1; ++dx)
             g.clearAbove(x + dx, floor + step, z + dz);
     }
+    // the stair's nosing: where a step stands out in front of the tier and
+    // nothing is on it, the block becomes a step rising to the temple
+    for (int i = 0; i < tiers * 3; ++i)
+    {
+        const int edge = stair - (i * (stair - 1)) / (tiers * 3 - 1);
+        if (edge <= base - 2 * (i / 3))
+            continue; // inside the tier
+        for (int dx = -1; dx <= 1; ++dx)
+            if (g.get(x + dx, floor + i, z + edge) != AIR &&
+                g.get(x + dx, floor + i + 1, z + edge) == AIR)
+            {
+                g.put(x + dx, floor + i, z + edge, AIR);
+                putStairs(g, x + dx, floor + i, z + edge, 3, dx == 0 ? COBBLE : STONE);
+            }
+    }
     // the shrine: four pillars under a cobble roof, a crystal in the middle
     // and a lantern on each corner of the top tier
     const int topHalf = base - 2 * (tiers - 1);
@@ -3805,6 +3937,7 @@ void buildScenery(Grid &g, Extras &extras)
     // after the carving, so the water flows round the ride's room
     spreadWater(g);
 
+    scatterBoulders(g, clear);
     plantTrees(g, clear, extras);
     plantNorthEast(g, clear, extras);
     spreadSky(g);
