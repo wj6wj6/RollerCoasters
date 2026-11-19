@@ -650,6 +650,58 @@ Image makeCoarseDirt()
     return p;
 }
 
+// A spruce trapdoor: dark boards in a frame with a cross brace and two
+// small square holes, as a block game draws one.
+Image makeTrapdoor()
+{
+    Image p = makePlanks(104, 74, 46);
+    for (int y = 0; y < S; ++y)
+        for (int x = 0; x < S; ++x)
+        {
+            const int s = shadeOf(x, y, 675u, 3);
+            const bool frame = x < 3 || x > 28 || y < 3 || y > 28;
+            const bool brace = abs(x - y) < 2 || abs(x + y - 31) < 2;
+            const bool hole = (x >= 8 && x <= 11 && y >= 14 && y <= 17) ||
+                              (x >= 20 && x <= 23 && y >= 14 && y <= 17);
+            if (hole)
+                set(p, x, y, 0, 0, 0, 0);
+            else if (frame)
+                set(p, x, y, (x < 3 || y < 3 ? 96 : 70) + s, (x < 3 || y < 3 ? 68 : 48) + s,
+                    (x < 3 || y < 3 ? 42 : 28) + s);
+            else if (brace)
+                set(p, x, y, 84 + s, 58 + s, 34 + s);
+        }
+    return p;
+}
+
+// A flower pot's picture laid out as a block game lays it out (in
+// sixteenths): the pot's side at 5..11 across, 10..16 down, its rim seen
+// from above at 5..11, 5..11 with earth inside; clear elsewhere.
+Image makeFlowerPot()
+{
+    Image p = PixelArt::blank(S);
+    for (int y = 10; y < 22; ++y)
+        for (int x = 10; x < 22; ++x)
+        {
+            const int s = shadeOf(x, y, 677u, 6);
+            const bool rim = x < 12 || x > 19 || y < 12 || y > 19;
+            if (rim)
+                set(p, x, y, 150 + s, 78 + s, 54 + s);
+            else
+                set(p, x, y, 74 + s, 52 + s, 34 + s); // the earth
+        }
+    for (int y = 20; y < S; ++y)
+        for (int x = 10; x < 22; ++x)
+        {
+            const int s = shadeOf(x, y, 679u, 6);
+            const int lit = x < 12 ? 16 : (x > 19 ? -16 : 0);
+            const bool band = y == 21 || y == 22;
+            set(p, x, y, (band ? 128 : 160) + lit + s, (band ? 64 : 84) + lit / 2 + s,
+                (band ? 44 : 58) + lit / 2 + s);
+        }
+    return p;
+}
+
 // Wool: soft cloth in one colour, its fibres in small curls of lighter and
 // darker texels.
 Image makeWool(int r, int g, int b, unsigned int seed)
@@ -1443,6 +1495,18 @@ Image make(int texture)
         return makePodzolSide();
     case COARSE_DIRT:
         return makeCoarseDirt();
+    case STONE_BRICKS:
+        return stoneBricks(128, 128, 130, false, 669u);
+    case MOSSY_BRICKS:
+        return stoneBricks(120, 124, 116, true, 671u);
+    case DARK_OAK_SIDE:
+        return makeLogSide(70, 50, 32, 673u);
+    case DARK_OAK_TOP:
+        return makeLogTop(66, 46, 28, 112, 82, 52);
+    case TRAPDOOR:
+        return makeTrapdoor();
+    case FLOWER_POT:
+        return makeFlowerPot();
     default:
         return PixelArt::blank(S);
     }

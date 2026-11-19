@@ -125,6 +125,9 @@ enum Block
     CLAY,          // the bed of the lakes and ponds
     PODZOL,        // the spruce forest's floor
     COARSE_DIRT,   // where the meadow meets the badlands and the volcano
+    STONE_BRICKS,  // dressed stone: the castle, the church, the lighthouse's base
+    MOSSY_BRICKS,  // the same, mossy, on the castle's old walls
+    DARK_OAK_LOG,  // dark timber: window frames and beams
     BLOCK_COUNT
 };
 
@@ -151,6 +154,13 @@ enum Plant
     LAMP,       // a lantern, standing on what is below or hanging from what is above
     LILY_PAD,   // floating on still water (in the water's own cell)
     SUGAR_CANE, // stalks by the water's edge; they stack
+    // the parts of buildings smaller than a block, as a block game has them;
+    // what each is made of and which way it faces is kept in Grid::level
+    // (see shapeLevel())
+    STAIRS,   // a step: a half block with a quarter block on its back half
+    SLAB,     // a half block, low or high in the cell
+    TRAPDOOR, // a thin board: closed at the top of the cell, or open against a wall
+    POT,      // a flower pot with a flower in it (Grid::level: the flower)
     PLANT_COUNT
 };
 
@@ -277,6 +287,12 @@ int textureOf(int block, int face)
         return face == 0 ? T::PODZOL_TOP : (face == 1 ? T::DIRT : T::PODZOL_SIDE);
     case COARSE_DIRT:
         return T::COARSE_DIRT;
+    case STONE_BRICKS:
+        return T::STONE_BRICKS;
+    case MOSSY_BRICKS:
+        return T::MOSSY_BRICKS;
+    case DARK_OAK_LOG:
+        return face == 2 ? T::DARK_OAK_SIDE : T::DARK_OAK_TOP;
     default:
         return T::STONE;
     }
@@ -289,6 +305,36 @@ int plantTexture(int plant)
     if (plant == SUGAR_CANE)
         return LandTextures::SUGAR_CANE;
     return LandTextures::TALL_GRASS + (plant - TALL_GRASS);
+}
+
+// The parts of buildings in plant cells (fences, lanterns, steps, slabs,
+// trapdoors, flower pots): nothing else is put where one of them is.
+bool isFixture(int plant)
+{
+    return plant == FENCE || plant == LAMP || (plant >= STAIRS && plant <= POT);
+}
+
+// The four ways a step can rise, a trapdoor lean or a corner turn, in this
+// order: +x, +z, -x, -z.
+const int kFacing[4][2] = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
+
+// What steps and slabs can be made of: their block, its index kept in
+// Grid::level.
+const int kShapeBlocks[8] = {PLANKS,       SPRUCE_PLANKS, ROOF,  COBBLE,
+                             STONE_BRICKS, MOSSY_BRICKS,  STONE, DARK_OAK_LOG};
+
+// Grid::level of a step, slab or trapdoor: bits 0..1 which way it faces
+// (kFacing), bit 2 high in the cell (an upside-down step, a high slab, a
+// closed trapdoor), bit 3 an outer corner step, bits 4..6 what it is made
+// of (kShapeBlocks).
+unsigned char shapeLevel(int facing, bool high, bool corner, int block)
+{
+    int material = 0;
+    for (int k = 0; k < 8; ++k)
+        if (kShapeBlocks[k] == block)
+            material = k;
+    return static_cast<unsigned char>((facing & 3) | (high ? 4 : 0) | (corner ? 8 : 0) |
+                                      (material << 4));
 }
 
 // Leaves are cut out (their pictures have holes), so they hide nothing
@@ -1297,100 +1343,268 @@ void footing(Grid &g, int x0, int x1, int z0, int z1, int floor)
         }
 }
 
+// Half of a, rounded down also when it is negative (a / 2 rounds towards
+// zero): the middle of a run of blocks from b0 to b1 is floorHalf(b0 + b1).
+int floorHalf(int a)
+{
+    return a >= 0 ? a / 2 : -((1 - a) / 2);
+}
+
+// Is the cell free for a part of a building: air, with at most grass or a
+// flower in it?
+bool freeCell(const Grid &g, int bx, int j, int bz)
+{
+    return Grid::inside(bx, j, bz) && g.get(bx, j, bz) == AIR &&
+           !isFixture(g.plant[Grid::index(bx, j, bz)]);
+}
+
+// A part of a building in a cell, if it is free.
+void putFixture(Grid &g, int bx, int j, int bz, int plant, unsigned char level)
+{
+    if (!freeCell(g, bx, j, bz))
+        return;
+    const size_t i = Grid::index(bx, j, bz);
+    g.plant[i] = static_cast<unsigned char>(plant);
+    g.level[i] = level;
+}
+
 // A fence post in a cell, if it is free.
 void putFence(Grid &g, int bx, int j, int bz)
 {
-    if (!Grid::inside(bx, j, bz) || g.get(bx, j, bz) != AIR)
-        return;
-    g.plant[Grid::index(bx, j, bz)] = FENCE;
+    putFixture(g, bx, j, bz, FENCE, 0);
 }
 
 // A lantern in a cell, if it is free: it stands on the block or fence below,
 // or hangs from the block above on a chain.
 void putLamp(Grid &g, int bx, int j, int bz)
 {
-    if (!Grid::inside(bx, j, bz) || g.get(bx, j, bz) != AIR)
-        return;
-    g.plant[Grid::index(bx, j, bz)] = LAMP;
+    putFixture(g, bx, j, bz, LAMP, 0);
 }
 
-// A cottage as in a block game's plains village: cobble walls framed by oak
-// log posts at the corners and in the middle of each wall, glass windows
-// between the posts (they do not light up: the lamps do), an oak door two
-// blocks high with a lantern on a fence post beside it, a gabled roof of
-// oak planks overhanging the walls by a block, and a cobble chimney. Three
-// materials and the glass: cobble, oak logs, oak planks. Walls run an even
-// number of blocks between corners (x1 - x0 and z1 - z0 of 4 or 6), so the
-// middle post and the windows either side of it are symmetrical.
+// A step of `block` rising towards kFacing[rises]; upside down if high; an
+// outer corner (its upper quarter towards kFacing[rises] and the next way
+// round) if corner.
+void putStairs(Grid &g, int bx, int j, int bz, int rises, int block, bool high = false,
+               bool corner = false)
+{
+    putFixture(g, bx, j, bz, STAIRS, shapeLevel(rises, high, corner, block));
+}
+
+// A slab of `block`, in the lower or upper half of the cell.
+void putSlab(Grid &g, int bx, int j, int bz, int block, bool high = false)
+{
+    putFixture(g, bx, j, bz, SLAB, shapeLevel(0, high, false, block));
+}
+
+// A spruce trapdoor: closed, at the top of the cell (a window sill), or
+// open against the wall towards kFacing[wall] (a shutter).
+void putTrapdoor(Grid &g, int bx, int j, int bz, int wall, bool closed)
+{
+    putFixture(g, bx, j, bz, TRAPDOOR, shapeLevel(wall, closed, false, PLANKS));
+}
+
+// A flower pot with a flower (a Plant) in it.
+void putPot(Grid &g, int bx, int j, int bz, int flower)
+{
+    putFixture(g, bx, j, bz, POT, static_cast<unsigned char>(flower));
+}
+
+// A gable roof of steps over the box b0..b1 along the ridge, a0..a1 across
+// it, eaves included, the lowest course at layer `base`: two rows of steps
+// rising from the eaves to the ridge (a row of slabs where it is odd), the
+// inside and the gable ends filled with `gable`, set back a block under
+// the steps. alongX: the ridge runs along x (a is z), else along z.
+void buildGableRoof(Grid &g, int b0, int b1, int a0, int a1, int base, bool alongX, int roof,
+                    int gable)
+{
+    auto at = [&](int a, int b, int j, int what, int rises) {
+        const int bx = alongX ? b : a, bz = alongX ? a : b;
+        if (what == STAIRS)
+            putStairs(g, bx, j, bz, rises, roof);
+        else if (what == SLAB)
+            putSlab(g, bx, j, bz, roof);
+        else if (g.get(bx, j, bz) == AIR)
+        {
+            g.put(bx, j, bz, gable);
+            g.plant[Grid::index(bx, j, bz)] = NO_PLANT;
+        }
+    };
+    const int up = alongX ? 1 : 0, down = alongX ? 3 : 2; // rising towards +a, -a
+    for (int k = 0; a0 + k <= a1 - k; ++k)
+    {
+        const int lo = a0 + k, hi = a1 - k, j = base + k;
+        for (int b = b0; b <= b1; ++b)
+        {
+            if (lo == hi)
+            {
+                at(lo, b, j, SLAB, 0);
+                continue;
+            }
+            at(lo, b, j, STAIRS, up);
+            at(hi, b, j, STAIRS, down);
+            if (b > b0 && b < b1)
+                for (int a = lo + 1; a < hi; ++a)
+                    at(a, b, j, AIR, 0);
+        }
+    }
+}
+
+// A hipped roof of steps over x0..x1, z0..z1 (eaves included), the lowest
+// course at layer `base`: rings of steps rising inwards, outer corner steps
+// at the corners (four of them make a point where two by two are left),
+// slabs on top, filled with `fill` inside.
+void buildHipRoof(Grid &g, int x0, int x1, int z0, int z1, int base, int roof, int fill)
+{
+    for (int k = 0; x0 + k <= x1 - k && z0 + k <= z1 - k; ++k)
+    {
+        const int lx = x0 + k, hx = x1 - k, lz = z0 + k, hz = z1 - k, j = base + k;
+        for (int bx = lx; bx <= hx; ++bx)
+            for (int bz = lz; bz <= hz; ++bz)
+            {
+                const bool edgeX = bx == lx || bx == hx, edgeZ = bz == lz || bz == hz;
+                if (lx == hx || lz == hz)
+                    putSlab(g, bx, j, bz, roof); // the top: a row or one block
+                else if (edgeX && edgeZ)
+                {
+                    const int corner = bx == lx ? (bz == lz ? 0 : 3) : (bz == lz ? 1 : 2);
+                    putStairs(g, bx, j, bz, corner, roof, false, true);
+                }
+                else if (edgeZ)
+                    putStairs(g, bx, j, bz, bz == lz ? 1 : 3, roof);
+                else if (edgeX)
+                    putStairs(g, bx, j, bz, bx == lx ? 0 : 2, roof);
+                else if (g.get(bx, j, bz) == AIR)
+                {
+                    g.put(bx, j, bz, fill);
+                    g.plant[Grid::index(bx, j, bz)] = NO_PLANT;
+                }
+            }
+    }
+}
+
+// The flowers that grow in beds and pots.
+const int kBedFlowers[5] = {POPPY, DANDELION, OXEYE, ALLIUM, CORNFLOWER};
+
+// Under each window pane in a wall, outside: a trapdoor for a sill, and on
+// some of them a flower pot. The panes are found in the wall's layer
+// `paneLayer` between (x0, z0) and (x1, z1) (a straight run along x or
+// z); `out` is the way out of the wall (kFacing). The pots are chosen by
+// the distance from the middle of the wall, so the two halves mirror each
+// other, as the walls do.
+void dressWindows(Grid &g, int x0, int z0, int x1, int z1, int paneLayer, int out)
+{
+    const int ox = kFacing[out][0], oz = kFacing[out][1];
+    const int sx = x1 > x0 ? 1 : (x1 < x0 ? -1 : 0), sz = z1 > z0 ? 1 : (z1 < z0 ? -1 : 0);
+    const int length = abs(x1 - x0) + abs(z1 - z0);
+    for (int k = 0, bx = x0, bz = z0; k <= length; ++k, bx += sx, bz += sz)
+    {
+        if (g.get(bx, paneLayer, bz) != WINDOW || g.get(bx, paneLayer - 1, bz) == WINDOW)
+            continue;
+        putTrapdoor(g, bx + ox, paneLayer - 1, bz + oz, (out + 2) % 4, true);
+        const int fromMiddle = abs(2 * k - length);
+        const unsigned int h = hash(fromMiddle, paneLayer, 811u);
+        if (h % 3u == 0u)
+            putPot(g, bx + ox, paneLayer, bz + oz, kBedFlowers[(h >> 4) % 5u]);
+    }
+}
+
+// Flowers along the foot of a building's walls, outside x0..x1, z0..z1,
+// here and there, leaving the door's side (doorSide: kFacing, or -1) bare
+// so the path reaches it. Chosen by the distance from the building's middle
+// lines, so the beds mirror each other.
+void flowerBeds(Grid &g, int x0, int z0, int x1, int z1, int floor, int doorSide)
+{
+    for (int bx = x0 - 1; bx <= x1 + 1; ++bx)
+        for (int bz = z0 - 1; bz <= z1 + 1; ++bz)
+        {
+            const bool ring = bx == x0 - 1 || bx == x1 + 1 || bz == z0 - 1 || bz == z1 + 1;
+            const bool corner = (bx == x0 - 1 || bx == x1 + 1) && (bz == z0 - 1 || bz == z1 + 1);
+            if (!ring || corner)
+                continue;
+            const int side = bx == x1 + 1 ? 0 : (bz == z1 + 1 ? 1 : (bx == x0 - 1 ? 2 : 3));
+            const unsigned int h = hash(abs(2 * bx - x0 - x1), abs(2 * bz - z0 - z1), 813u);
+            if (side == doorSide || h % 5u > 1u || !Grid::inside(bx, floor, bz) ||
+                g.get(bx, floor - 1, bz) != GRASS || g.get(bx, floor, bz) != AIR ||
+                g.plant[Grid::index(bx, floor, bz)] != NO_PLANT)
+                continue;
+            g.plant[Grid::index(bx, floor, bz)] =
+                static_cast<unsigned char>(kBedFlowers[(h >> 4) % 5u]);
+        }
+}
+
+// A cottage as in a block game's plains village, shaped first, then
+// coloured, then dressed: a cobble footing course, dark oak log posts at
+// the corners and in the middle of each wall, glass between the posts two
+// blocks high (they do not light up: the lamps do), a band of oak planks
+// along the top, an oak door two blocks high under a little roof of a step,
+// with a lantern on a fence post beside it; a gable roof of dark oak steps
+// overhanging the walls by a block all round, its gable ends of oak planks
+// set back under it, and a cobble chimney. Under the windows trapdoor sills,
+// some with a flower pot, and flowers at the foot of the walls. The
+// colours: the cobble's grey, dark oak, light oak, and the flowers. Walls run an even number of blocks between corners (x1 - x0 and
+// z1 - z0 of 4 or 6), so the middle post and the windows either side of it
+// are symmetrical.
 void buildHouse(Grid &g, int x0, int z0, int x1, int z1, int floor, bool doorOnX)
 {
     const int wallTop = floor + 3;
     footing(g, x0, x1, z0, z1, floor);
-    fill(g, x0, x1, floor, wallTop, z0, z1, COBBLE);
+    fill(g, x0, x1, floor, floor, z0, z1, COBBLE);
+    fill(g, x0, x1, floor + 1, wallTop - 1, z0, z1, DARK_OAK_LOG); // the posts
+    fill(g, x0, x1, wallTop, wallTop, z0, z1, PLANKS);             // a band under the eaves
     // a room inside, with a plank floor, seen through the glass
     fill(g, x0 + 1, x1 - 1, floor, wallTop, z0 + 1, z1 - 1, AIR);
     fill(g, x0 + 1, x1 - 1, floor - 1, floor - 1, z0 + 1, z1 - 1, PLANKS);
-    auto post = [&](int bx, int bz) {
-        for (int j = floor; j <= wallTop; ++j)
-            g.put(bx, j, bz, OAK_LOG);
-    };
     // posts at the corners and the middle of each wall, glass filling the
     // bays between them, two blocks high
     const int along[2] = {x1 - x0, z1 - z0};
     for (int side = 0; side < 2; ++side)
     {
         const int length = along[side];
-        for (int k = 0; k <= length; ++k)
+        for (int k = 1; k < length; ++k)
         {
-            const bool isPost = k == 0 || k == length || k * 2 == length;
-            const bool isWindow = !isPost; // the bays are one or two blocks wide
+            if (k * 2 == length)
+                continue; // the middle post
             for (int wall = 0; wall < 2; ++wall)
             {
                 const int bx = side == 0 ? x0 + k : (wall == 0 ? x0 : x1);
                 const int bz = side == 0 ? (wall == 0 ? z0 : z1) : z0 + k;
-                if (isPost)
-                    post(bx, bz);
-                else if (isWindow)
-                {
-                    g.put(bx, floor + 1, bz, WINDOW);
-                    g.put(bx, floor + 2, bz, WINDOW);
-                }
+                g.put(bx, floor + 1, bz, WINDOW);
+                g.put(bx, floor + 2, bz, WINDOW);
             }
         }
     }
-    // the door, two blocks high, in the middle of a bay on the front wall,
-    // a lantern on a post beside it
-    const int dx = doorOnX ? x1 : x0 + along[0] / 4;
-    const int dz = doorOnX ? z0 + along[1] / 4 : z1;
-    const int ox = doorOnX ? 1 : 0, oz = doorOnX ? 0 : 1; // outwards
+    // the door, two blocks high, in the middle of the front wall in place
+    // of its middle post, so the front is symmetrical, under a step for a
+    // little roof with a lantern hung under it
+    const int dx = doorOnX ? x1 : x0 + along[0] / 2;
+    const int dz = doorOnX ? z0 + along[1] / 2 : z1;
+    const int out = doorOnX ? 0 : 1; // the front faces +x or +z
+    const int ox = kFacing[out][0], oz = kFacing[out][1];
     g.put(dx, floor, dz, DOOR);
     g.put(dx, floor + 1, dz, DOOR);
-    g.put(dx, floor + 2, dz, COBBLE);
-    const int lx = dx + ox + (doorOnX ? 0 : 1), lz = dz + oz + (doorOnX ? 1 : 0);
-    if (g.get(lx, floor, lz) == AIR && g.get(lx, floor + 1, lz) == AIR)
-    {
-        putFence(g, lx, floor, lz);
-        putLamp(g, lx, floor + 1, lz);
-    }
-    // the roof: oak planks stepping in from both long sides, a block of
-    // eaves all round
+    g.put(dx, floor + 2, dz, DARK_OAK_LOG);
+    putStairs(g, dx + ox, floor + 2, dz + oz, (out + 2) % 4, ROOF);
+    putLamp(g, dx + ox, floor + 1, dz + oz);
+    // sills and pots under the windows of all four walls
+    dressWindows(g, x0, z0, x1, z0, floor + 1, 3);
+    dressWindows(g, x0, z1, x1, z1, floor + 1, 1);
+    dressWindows(g, x0, z0, x0, z1, floor + 1, 2);
+    dressWindows(g, x1, z0, x1, z1, floor + 1, 0);
+    flowerBeds(g, x0, z0, x1, z1, floor, out);
+    // the roof, along the longer side, a block of eaves all round
     const bool ridgeAlongX = along[0] >= along[1];
-    for (int k = 0;; ++k)
-    {
-        const int a0 = (ridgeAlongX ? z0 : x0) - 1 + k;
-        const int a1 = (ridgeAlongX ? z1 : x1) + 1 - k;
-        if (a0 > a1)
-            break;
-        if (ridgeAlongX)
-            fill(g, x0 - 1, x1 + 1, wallTop + 1 + k, wallTop + 1 + k, a0, a1, PLANKS);
-        else
-            fill(g, a0, a1, wallTop + 1 + k, wallTop + 1 + k, z0 - 1, z1 + 1, PLANKS);
-    }
-    // the chimney, up through the roof at the back
+    if (ridgeAlongX)
+        buildGableRoof(g, x0 - 1, x1 + 1, z0 - 1, z1 + 1, wallTop + 1, true, ROOF, PLANKS);
+    else
+        buildGableRoof(g, z0 - 1, z1 + 1, x0 - 1, x1 + 1, wallTop + 1, false, ROOF, PLANKS);
+    // the chimney, up through the roof at the back, a block above it
     const int cx = ridgeAlongX ? x0 + 1 : (x0 + x1) / 2, cz = ridgeAlongX ? (z0 + z1) / 2 : z0 + 1;
     const int roofRise = ((ridgeAlongX ? along[1] : along[0]) + 2) / 2;
     for (int j = wallTop + 1; j <= wallTop + roofRise + 2; ++j)
+    {
         g.put(cx, j, cz, COBBLE);
+        g.plant[Grid::index(cx, j, cz)] = NO_PLANT;
+    }
 }
 
 // A lamp post: on a stone brick foot, an oak fence two high with a lantern
@@ -1408,7 +1622,7 @@ void buildLampPost(Grid &g, int bx, int bz, int floor)
 void putPath(Grid &g, const Clearance &clear, int bx, int top, int bz, bool edge)
 {
     if (!Grid::insideColumn(bx, bz) || clear.blocks(bx, top, bz) || g.get(bx, top + 1, bz) != AIR ||
-        g.plant[Grid::index(bx, top + 1, bz)] == FENCE)
+        isFixture(g.plant[Grid::index(bx, top + 1, bz)]))
         return;
     const int ground = g.get(bx, top, bz);
     if (ground != GRASS && ground != DIRT && ground != GRAVEL && ground != PATH)
@@ -1499,9 +1713,9 @@ void buildVillage(Grid &g, Extras &extras, const Clearance &clear)
             return;
         buildHouse(g, x0, z0, x0 + w, z0 + d, floor, doorOnX);
         if (doorOnX)
-            pathFromDoor(x0 + w, z0 + d / 4, 1, 0);
+            pathFromDoor(x0 + w, z0 + d / 2, 1, 0);
         else
-            pathFromDoor(x0 + w / 4, z0 + d, 0, 1);
+            pathFromDoor(x0 + w / 2, z0 + d, 0, 1);
     };
 
     house(vx(-35), vz(-37), 4, 4, false);
@@ -1538,16 +1752,16 @@ void buildVillage(Grid &g, Extras &extras, const Clearance &clear)
     const int greenReach = static_cast<int>((kVillageRadius - 8.0f) / kBlock);
     int churchX = 0, churchZ = 0, churchD = 1 << 30;
     for (int x0 = cx - greenReach; x0 + 9 <= cx + greenReach; ++x0)
-        for (int z0 = cz - greenReach; z0 + 5 <= cz + greenReach; ++z0)
+        for (int z0 = cz - greenReach; z0 + 6 <= cz + greenReach; ++z0)
         {
-            const int x1 = x0 + 9, z1 = z0 + 5;
+            const int x1 = x0 + 9, z1 = z0 + 6;
             const int mx = (x0 + x1) / 2 - cx, mz = (z0 + z1) / 2 - cz;
             const int d = mx * mx + mz * mz;
             // the plot's corner furthest out, squared, in each direction
             auto outmost = [](int lo, int hi) { return lo * lo > hi * hi ? lo * lo : hi * hi; };
             const int reach = outmost(x0 - 3 - cx, x1 + 2 - cx) + outmost(z0 - 2 - cz, z1 + 2 - cz);
             if (d >= churchD || reach > greenReach * greenReach ||
-                !roomForBuilding(clear, x0 - 2, x1 + 1, floor - 1, floor + 16, z0 - 1, z1 + 1) ||
+                !roomForBuilding(clear, x0 - 3, x1 + 2, floor - 1, floor + 16, z0 - 1, z1 + 1) ||
                 !plotFree(x0 - 3, x1 + 2, z0 - 2, z1 + 2))
                 continue;
             churchD = d;
@@ -1556,15 +1770,22 @@ void buildVillage(Grid &g, Extras &extras, const Clearance &clear)
         }
     if (churchD < (1 << 30))
     {
-        const int x0 = churchX, z0 = churchZ, x1 = x0 + 9, z1 = z0 + 5;
+        // stone bricks on a cobble footing course, dark oak posts, tall
+        // windows two wide on sills, a steep roof of dark oak steps, and at
+        // the west end a bell tower with a hipped cap; symmetrical: ten
+        // long with posts every three, seven wide so the door, the windows
+        // over it and the tower stand in the middle of the ends
+        const int x0 = churchX, z0 = churchZ, x1 = x0 + 9, z1 = z0 + 6;
         footing(g, x0 - 1, x1, z0, z1, floor);
-        fill(g, x0, x1, floor, floor + 4, z0, z1, COBBLE);
+        fill(g, x0, x1, floor, floor, z0, z1, COBBLE);
+        fill(g, x0, x1, floor + 1, floor + 4, z0, z1, STONE_BRICKS);
         fill(g, x0 + 1, x1 - 1, floor, floor + 4, z0 + 1, z1 - 1, AIR); // the inside
+        fill(g, x0 + 1, x1 - 1, floor - 1, floor - 1, z0 + 1, z1 - 1, PLANKS);
         for (int bx = x0; bx <= x1; bx += 3)
-            for (int j = floor; j <= floor + 4; ++j)
+            for (int j = floor + 1; j <= floor + 4; ++j)
             {
-                g.put(bx, j, z0, OAK_LOG);
-                g.put(bx, j, z1, OAK_LOG);
+                g.put(bx, j, z0, DARK_OAK_LOG);
+                g.put(bx, j, z1, DARK_OAK_LOG);
             }
         for (int bx = x0 + 1; bx < x1; ++bx)
             if ((bx - x0) % 3 != 0)
@@ -1574,22 +1795,46 @@ void buildVillage(Grid &g, Extras &extras, const Clearance &clear)
                 g.put(bx, floor + 2, z1, WINDOW);
                 g.put(bx, floor + 3, z1, WINDOW);
             }
-        g.put(x1, floor, (z0 + z1) / 2, DOOR);
-        g.put(x1, floor + 1, (z0 + z1) / 2, DOOR);
-        pathFromDoor(x1, (z0 + z1) / 2, 1, 0);
-        for (int k = 0; z0 - 1 + k <= z1 + 1 - k; ++k)
-            fill(g, x0, x1 + 1, floor + 5 + k, floor + 5 + k, z0 - 1 + k, z1 + 1 - k, PLANKS);
-        // the bell tower
-        const int tz = (z0 + z1) / 2 - 1;
-        fill(g, x0 - 2, x0, floor, floor + 10, tz, tz + 2, COBBLE);
-        g.put(x0 - 1, floor + 9, tz, AIR); // open sides round the bell
+        dressWindows(g, x0, z0, x1, z0, floor + 2, 3);
+        dressWindows(g, x0, z1, x1, z1, floor + 2, 1);
+        // the door in the middle of the east end, under a step, a window
+        // above it, a lantern on a post either side
+        const int mz = (z0 + z1) / 2;
+        g.put(x1, floor, mz, DOOR);
+        g.put(x1, floor + 1, mz, DOOR);
+        g.put(x1, floor + 3, mz, WINDOW);
+        putStairs(g, x1 + 1, floor + 2, mz, 2, ROOF);
+        for (int side = -1; side <= 1; side += 2)
+        {
+            putFence(g, x1 + 1, floor, mz + side);
+            putLamp(g, x1 + 1, floor + 1, mz + side);
+        }
+        pathFromDoor(x1, mz, 1, 0);
+        flowerBeds(g, x0, z0, x1, z1, floor, 0);
+        // the bell tower: stone bricks with dark oak corners, open round the
+        // bell (a hung lantern), under a hipped cap
+        const int tz = mz - 1;
+        fill(g, x0 - 2, x0, floor, floor, tz, tz + 2, COBBLE);
+        fill(g, x0 - 2, x0, floor + 1, floor + 10, tz, tz + 2, STONE_BRICKS);
+        for (int j = floor + 1; j <= floor + 10; ++j)
+            for (int c = 0; c < 4; ++c)
+                g.put(c % 2 == 0 ? x0 - 2 : x0, j, c < 2 ? tz : tz + 2, DARK_OAK_LOG);
+        // open on all four sides round the bell (a hung lantern), a window
+        // in the middle of each outer face below
+        g.put(x0 - 1, floor + 9, tz, AIR);
         g.put(x0 - 1, floor + 9, tz + 2, AIR);
         g.put(x0 - 2, floor + 9, tz + 1, AIR);
         g.put(x0, floor + 9, tz + 1, AIR);
-        putLamp(g, x0 - 1, floor + 9, tz + 1); // hung in the belfry
-        fill(g, x0 - 2, x0, floor + 11, floor + 11, tz, tz + 2, PLANKS);
-        g.put(x0 - 1, floor + 12, tz + 1, PLANKS);
-        g.put(x0 - 1, floor + 13, tz + 1, OAK_LOG); // the cross's post
+        g.put(x0 - 1, floor + 9, tz + 1, AIR);
+        putLamp(g, x0 - 1, floor + 9, tz + 1);
+        g.put(x0 - 1, floor + 6, tz, WINDOW);
+        g.put(x0 - 1, floor + 6, tz + 2, WINDOW);
+        g.put(x0 - 2, floor + 6, tz + 1, WINDOW);
+        buildHipRoof(g, x0 - 3, x0 + 1, tz - 1, tz + 3, floor + 11, ROOF, STONE_BRICKS);
+        // the nave's roof, after the tower, so it stops against it, a
+        // window in the middle of the east gable
+        buildGableRoof(g, x0 - 1, x1 + 1, z0 - 1, z1 + 1, floor + 5, true, ROOF, STONE_BRICKS);
+        g.put(x1, floor + 6, mz, WINDOW);
     }
 
     // the well at the crossing
@@ -1648,9 +1893,8 @@ void buildVillage(Grid &g, Extras &extras, const Clearance &clear)
             g.put(mx - 1, j, mz + 1, OAK_LOG);
             g.put(mx + 1, j, mz + 1, OAK_LOG);
         }
-        fill(g, mx - 2, mx + 2, floor + 7, floor + 7, mz - 2, mz + 2, PLANKS);
-        fill(g, mx - 1, mx + 1, floor + 8, floor + 8, mz - 1, mz + 1, PLANKS);
-        g.put(mx, floor + 9, mz, OAK_LOG);
+        // a hipped cap of dark oak steps over the timber top
+        buildHipRoof(g, mx - 2, mx + 2, mz - 2, mz + 2, floor + 7, ROOF, PLANKS);
         g.put(mx, floor, mz + 1, DOOR);
         g.put(mx, floor + 5, mz + 1, WINDOW);
         extras.mill[0] = centerOf(mx);
@@ -1668,25 +1912,58 @@ void buildVillage(Grid &g, Extras &extras, const Clearance &clear)
             buildLampPost(g, lamp[0], lamp[1], floor);
 }
 
-// A tower: a square shaft of stone with lit windows, a stepped pointed
-// roof and a lantern on top. x0, z0: its corner; size: its width.
+// A tower: a square shaft of stone bricks on a cobble foot, mossy here and
+// there, with narrow windows, a band of upside-down steps standing out
+// under the eaves, a hipped roof of dark oak steps overhanging it by a
+// block and a lantern on top. x0, z0: its corner; size: its width.
 void buildTower(Grid &g, int x0, int z0, int size, int floor, int height)
 {
     const int x1 = x0 + size - 1, z1 = z0 + size - 1;
-    fill(g, x0, x1, floor, floor + height - 1, z0, z1, COBBLE);
+    for (int bx = x0; bx <= x1; ++bx)
+        for (int bz = z0; bz <= z1; ++bz)
+            for (int j = floor; j < floor + height; ++j)
+                g.put(bx, j, bz,
+                      j < floor + 2
+                          ? COBBLE
+                          : (hash(bx * 5 + j, bz, 467u) % 7u == 0 ? MOSSY_BRICKS : STONE_BRICKS));
+    // windows in the middle of each face: one where the face is odd, a
+    // pair where it is even (halved rounding down, as the castle stands at
+    // negative x, where / rounds towards zero and put them a block off)
     for (int j = floor + 3; j < floor + height - 1; j += 3)
+        for (int m = floorHalf(x0 + x1); m <= floorHalf(x0 + x1 + 1); ++m)
+        {
+            const int n = z0 + (m - x0); // the same place along the z faces
+            g.put(m, j, z0, WINDOW);
+            g.put(m, j, z1, WINDOW);
+            g.put(x0, j, n, WINDOW);
+            g.put(x1, j, n, WINDOW);
+        }
+    // a corbel of upside-down steps round the top, the roof on it
+    const int top = floor + height;
+    for (int bx = x0 - 1; bx <= x1 + 1; ++bx)
+        for (int bz = z0 - 1; bz <= z1 + 1; ++bz)
+        {
+            const bool ring = bx == x0 - 1 || bx == x1 + 1 || bz == z0 - 1 || bz == z1 + 1;
+            const bool corner = (bx == x0 - 1 || bx == x1 + 1) && (bz == z0 - 1 || bz == z1 + 1);
+            if (!ring || corner)
+                continue;
+            const int rises = bx == x0 - 1 ? 0 : (bx == x1 + 1 ? 2 : (bz == z0 - 1 ? 1 : 3));
+            putStairs(g, bx, top - 1, bz, rises, STONE_BRICKS, true);
+        }
+    buildHipRoof(g, x0 - 1, x1 + 1, z0 - 1, z1 + 1, top, ROOF, STONE_BRICKS);
+    if (size % 2 == 1)
     {
-        g.put((x0 + x1) / 2, j, z0, WINDOW);
-        g.put((x0 + x1) / 2, j, z1, WINDOW);
-        g.put(x0, j, (z0 + z1) / 2, WINDOW);
-        g.put(x1, j, (z0 + z1) / 2, WINDOW);
+        // an odd tower has a middle: a block at the point, a lantern on it
+        const int peak = top + (size + 1) / 2, mx = (x0 + x1) / 2, mz = (z0 + z1) / 2;
+        g.put(mx, peak, mz, ROOF);
+        g.plant[Grid::index(mx, peak, mz)] = NO_PLANT;
+        putLamp(g, mx, peak + 1, mz);
     }
-    // the roof steps in from an overhang to a point
-    int top = floor + height;
-    for (int k = -1; x0 + k <= x1 - k; ++k)
-        fill(g, x0 + k, x1 - k, top + k + 1, top + k + 1, z0 + k, z1 - k, ROOF);
-    const int peak = top + (size + 1) / 2 + 1;
-    putLamp(g, (x0 + x1) / 2, peak, (z0 + z1) / 2);
+    else
+        // an even one comes to a point of four corner steps: a lantern
+        // hangs under each corner of the eaves instead
+        for (int c = 0; c < 4; ++c)
+            putLamp(g, c % 2 == 0 ? x0 - 1 : x1 + 1, top - 1, c < 2 ? z0 - 1 : z1 + 1);
 }
 
 // The castle by the waterfall, after the user's reference: a curtain wall
@@ -1763,15 +2040,18 @@ bool buildCastle(Grid &g, const Clearance &clear, int at[2])
             const bool edge = bx == x0 || bx == x1 || bz == z0 || bz == z1;
             if (!edge)
                 continue;
-            fill(g, bx, bx, floor, wallTop, bz, bz,
-                 hash(bx * 3, bz, 463u) % 6u == 0 ? MOSSY : COBBLE);
+            for (int j = floor; j <= wallTop; ++j)
+                g.put(bx, j, bz,
+                      j == floor
+                          ? COBBLE
+                          : (hash(bx * 3 + j, bz, 463u) % 6u == 0 ? MOSSY_BRICKS : STONE_BRICKS));
             if ((bx + bz) % 2 == 0)
-                g.put(bx, wallTop + 1, bz, COBBLE);
+                g.put(bx, wallTop + 1, bz, STONE_BRICKS);
         }
     // the gate: an opening three wide and three high, lanterns either side
     const int gx = (x0 + x1) / 2, gz = gateNorth ? z1 : z0;
     fill(g, gx - 1, gx + 1, floor, floor + 2, gz, gz, AIR);
-    fill(g, gx - 1, gx + 1, floor + 3, floor + 3, gz, gz, OAK_LOG);
+    fill(g, gx - 1, gx + 1, floor + 3, floor + 3, gz, gz, DARK_OAK_LOG);
     const int out = gateNorth ? 1 : -1;
     // a lantern on a post either side of the gate
     for (int side = -2; side <= 2; side += 4)
@@ -1791,34 +2071,47 @@ bool buildCastle(Grid &g, const Clearance &clear, int at[2])
     // stone, three of timber between log posts, rows of lit windows
     const int kx0 = x0 + 3, kx1 = x1 - 3;
     const int kz0 = gateNorth ? z0 + 2 : z1 - 7, kz1 = kz0 + 5;
-    fill(g, kx0, kx1, floor, floor + 2, kz0, kz1, COBBLE);
+    fill(g, kx0, kx1, floor, floor, kz0, kz1, COBBLE);
+    fill(g, kx0, kx1, floor + 1, floor + 2, kz0, kz1, STONE_BRICKS);
     fill(g, kx0, kx1, floor + 3, floor + 8, kz0, kz1, PLANKS);
+    // the timber floors jut out over the stone on a row of upside-down steps
+    for (int bx = kx0; bx <= kx1; ++bx)
+    {
+        putStairs(g, bx, floor + 2, kz0 - 1, 1, STONE_BRICKS, true);
+        putStairs(g, bx, floor + 2, kz1 + 1, 3, STONE_BRICKS, true);
+    }
+    // log posts at the ends, a quarter and the middle (the keep is nine
+    // long), windows between them, so the front mirrors itself
+    const int keepPosts[5] = {0, 2, 4, 6, 8};
     for (int j = floor + 3; j <= floor + 8; ++j)
-        for (int bx = kx0; bx <= kx1; bx += 3)
+        for (int p : keepPosts)
         {
-            g.put(bx, j, kz0, OAK_LOG);
-            g.put(bx, j, kz1, OAK_LOG);
+            g.put(kx0 + p, j, kz0, OAK_LOG);
+            g.put(kx0 + p, j, kz1, OAK_LOG);
         }
     for (int j = floor + 1; j <= floor + 7; j += 3)
     {
-        for (int bx = kx0 + 1; bx < kx1; ++bx)
-            if ((bx - kx0) % 3 != 0)
-            {
-                g.put(bx, j, kz0, WINDOW);
-                g.put(bx, j, kz1, WINDOW);
-            }
-        g.put(kx0, j, (kz0 + kz1) / 2, WINDOW);
-        g.put(kx1, j, (kz0 + kz1) / 2, WINDOW);
+        for (int bx = kx0 + 1; bx < kx1; bx += 2)
+        {
+            g.put(bx, j, kz0, WINDOW);
+            g.put(bx, j, kz1, WINDOW);
+        }
+        // the ends are six deep: a pair of windows in the middle
+        for (int m = floorHalf(kz0 + kz1); m <= floorHalf(kz0 + kz1 + 1); ++m)
+        {
+            g.put(kx0, j, m, WINDOW);
+            g.put(kx1, j, m, WINDOW);
+        }
     }
     g.put((kx0 + kx1) / 2, floor, gateNorth ? kz1 : kz0, DOOR);
     g.put((kx0 + kx1) / 2, floor + 1, gateNorth ? kz1 : kz0, DOOR);
-    // its roof: a steep gable along x
-    for (int k = 0; kz0 - 1 + k <= kz1 + 1 - k; ++k)
-        fill(g, kx0 - 1, kx1 + 1, floor + 9 + k, floor + 9 + k, kz0 - 1 + k, kz1 + 1 - k, ROOF);
+    // its roof: a gable of dark oak steps along x, the gables of planks
+    buildGableRoof(g, kx0 - 1, kx1 + 1, kz0 - 1, kz1 + 1, floor + 9, true, ROOF, PLANKS);
 
-    // the main tower rising out of the keep
-    const int tx = (kx0 + kx1) / 2 - 1;
-    buildTower(g, tx, kz0 + 1, 4, floor, 20);
+    // the main tower rising out of the keep: five wide, in the middle of
+    // it, against its back wall
+    const int tx = (kx0 + kx1) / 2 - 2;
+    buildTower(g, tx, gateNorth ? kz0 : kz1 - 4, 5, floor, 20);
 
     // lamp posts in the court
     buildLampPost(g, x0 + 3, gateNorth ? z1 - 3 : z0 + 3, floor);
@@ -1878,7 +2171,14 @@ void buildLighthouse(Grid &g, const Clearance &clear, const int away[2])
 
     const int x = bestX, z = bestZ, floor = bestTop + 1;
     footing(g, x - 2, x + 2, z - 2, z + 2, floor);
-    fill(g, x - 2, x + 2, floor, floor, z - 2, z + 2, COBBLE);
+    fill(g, x - 2, x + 2, floor, floor, z - 2, z + 2, STONE_BRICKS);
+    // the base's edge: a ring of stone brick steps up to it
+    for (int bx = x - 3; bx <= x + 3; ++bx)
+        for (int bz = z - 3; bz <= z + 3; ++bz)
+            if ((abs(bx - x) == 3) != (abs(bz - z) == 3) && g.get(bx, floor - 1, bz) != AIR)
+                putStairs(g, bx, floor, bz,
+                          bx == x - 3 ? 0 : (bx == x + 3 ? 2 : (bz == z - 3 ? 1 : 3)),
+                          STONE_BRICKS);
     // the banded tower
     for (int j = floor + 1; j <= floor + 13; ++j)
     {
@@ -1887,10 +2187,27 @@ void buildLighthouse(Grid &g, const Clearance &clear, const int away[2])
     }
     g.put(x, floor + 1, z + 1, DOOR);
     g.put(x, floor + 2, z + 1, DOOR);
-    g.put(x, floor + 7, z - 1, WINDOW);
-    g.put(x + 1, floor + 10, z, WINDOW);
-    // the gallery, the lamp room and the cap
-    fill(g, x - 2, x + 2, floor + 14, floor + 14, z - 2, z + 2, COBBLE);
+    // windows in the middle of every face, at two heights
+    for (int j = floor + 6; j <= floor + 10; j += 4)
+    {
+        g.put(x, j, z - 1, WINDOW);
+        g.put(x, j, z + 1, WINDOW);
+        g.put(x - 1, j, z, WINDOW);
+        g.put(x + 1, j, z, WINDOW);
+    }
+    // the gallery on a ring of upside-down steps, with a fence for a rail,
+    // the lamp room and the cap
+    for (int bx = x - 2; bx <= x + 2; ++bx)
+        for (int bz = z - 2; bz <= z + 2; ++bz)
+            if ((abs(bx - x) == 2) != (abs(bz - z) == 2))
+                putStairs(g, bx, floor + 13, bz,
+                          bx == x - 2 ? 0 : (bx == x + 2 ? 2 : (bz == z - 2 ? 1 : 3)), STONE_BRICKS,
+                          true);
+    fill(g, x - 2, x + 2, floor + 14, floor + 14, z - 2, z + 2, STONE_BRICKS);
+    for (int bx = x - 2; bx <= x + 2; ++bx)
+        for (int bz = z - 2; bz <= z + 2; ++bz)
+            if (abs(bx - x) == 2 || abs(bz - z) == 2)
+                putFence(g, bx, floor + 15, bz);
     // the lamp room: glass all round, lanterns inside, one standing and
     // one hanging above it
     fill(g, x - 1, x + 1, floor + 15, floor + 16, z - 1, z + 1, WINDOW);
@@ -1898,9 +2215,7 @@ void buildLighthouse(Grid &g, const Clearance &clear, const int away[2])
     g.put(x, floor + 16, z, AIR);
     putLamp(g, x, floor + 15, z);
     putLamp(g, x, floor + 16, z);
-    fill(g, x - 2, x + 2, floor + 17, floor + 17, z - 2, z + 2, ROOF);
-    fill(g, x - 1, x + 1, floor + 18, floor + 18, z - 1, z + 1, ROOF);
-    g.put(x, floor + 19, z, ROOF);
+    buildHipRoof(g, x - 2, x + 2, z - 2, z + 2, floor + 17, ROOF, ROOF);
     // the keeper's cottage on the landward side
     const float len = sqrtf(static_cast<float>(x * x + z * z));
     const int hx = x - static_cast<int>(floorf(static_cast<float>(x) / len * 7.0f + 0.5f)) - 2;
@@ -2077,8 +2392,7 @@ bool commit(Grid &g, const Clearance &clear, const std::vector<Placed> &blocks)
     for (const Placed &p : blocks)
         if (!Grid::inside(p.bx, p.j, p.bz) || clear.blocks(p.bx, p.j, p.bz) ||
             (g.get(p.bx, p.j, p.bz) != AIR && !isGrowth(g.get(p.bx, p.j, p.bz))) ||
-            g.plant[Grid::index(p.bx, p.j, p.bz)] == FENCE ||
-            g.plant[Grid::index(p.bx, p.j, p.bz)] == LAMP)
+            isFixture(g.plant[Grid::index(p.bx, p.j, p.bz)]))
             return false;
     for (const Placed &p : blocks)
         if (g.get(p.bx, p.j, p.bz) == AIR)
@@ -2366,36 +2680,47 @@ void buildGiantTree(Grid &g, const Clearance &clear, Extras &extras)
     commit(g, clear, tree);
 }
 
-// A spruce-log cabin: a cobble footing, walls of spruce logs, lit windows,
-// a door with a lantern on a post beside it and a steep roof.
-void buildCabin(Grid &g, int x0, int z0, int w, int d, int floor)
+// A log cabin: spruce log walls on a cobble footing course, a door in the
+// middle of the front (the z1 side, or z0 if frontZ0) under a step with a
+// lantern hung under it, a window on a trapdoor sill either side of it and
+// two at the back, a gable roof of dark oak steps with spruce plank gables,
+// overhanging by a block, and a cobble chimney. Spruce, dark oak and
+// cobble. w should be even, so the door has a middle.
+void buildCabin(Grid &g, int x0, int z0, int w, int d, int floor, bool frontZ0)
 {
     const int x1 = x0 + w, z1 = z0 + d, wallTop = floor + 2;
     footing(g, x0, x1, z0, z1, floor);
-    fill(g, x0, x1, floor, wallTop, z0, z1, SPRUCE_LOG);
+    fill(g, x0, x1, floor, floor, z0, z1, COBBLE);
+    fill(g, x0, x1, floor + 1, wallTop, z0, z1, SPRUCE_LOG);
     fill(g, x0 + 1, x1 - 1, floor, wallTop, z0 + 1, z1 - 1, AIR);
-    for (int bx = x0 + 2; bx < x1; bx += 2)
+    fill(g, x0 + 1, x1 - 1, floor - 1, floor - 1, z0 + 1, z1 - 1, SPRUCE_PLANKS);
+    const int mx = (x0 + x1) / 2;
+    for (int side = -1; side <= 1; side += 2)
     {
-        g.put(bx, floor + 1, z0, WINDOW);
-        g.put(bx, floor + 1, z1, WINDOW);
+        g.put(mx + side, floor + 1, z0, WINDOW);
+        g.put(mx + side, floor + 1, z1, WINDOW);
     }
-    g.put((x0 + x1) / 2, floor, z1, DOOR);
-    g.put((x0 + x1) / 2, floor + 1, z1, DOOR);
-    // a lantern on a post by the door
-    putFence(g, (x0 + x1) / 2 + 1, floor, z1 + 1);
-    putLamp(g, (x0 + x1) / 2 + 1, floor + 1, z1 + 1);
-    for (int k = 0; z0 - 1 + k <= z1 + 1 - k; ++k)
-        fill(g, x0 - 1, x1 + 1, wallTop + 1 + k, wallTop + 1 + k, z0 - 1 + k, z1 + 1 - k,
-             SPRUCE_PLANKS);
-    g.put(x0 + 1, wallTop + 3, z0 + 1, COBBLE); // the chimney
-    g.put(x0 + 1, wallTop + 4, z0 + 1, COBBLE);
+    const int fz = frontZ0 ? z0 : z1, out = frontZ0 ? -1 : 1;
+    g.put(mx, floor, fz, DOOR);
+    g.put(mx, floor + 1, fz, DOOR);
+    putStairs(g, mx, floor + 2, fz + out, frontZ0 ? 1 : 3, ROOF);
+    putLamp(g, mx, floor + 1, fz + out);
+    dressWindows(g, x0, z0, x1, z0, floor + 1, 3);
+    dressWindows(g, x0, z1, x1, z1, floor + 1, 1);
+    buildGableRoof(g, x0 - 1, x1 + 1, z0 - 1, z1 + 1, wallTop + 1, true, ROOF, SPRUCE_PLANKS);
+    for (int j = wallTop + 1; j <= wallTop + 5; ++j) // the chimney
+    {
+        g.put(x0 + 1, j, z0 + 1, COBBLE);
+        g.plant[Grid::index(x0 + 1, j, z0 + 1)] = NO_PLANT;
+    }
 }
 
 // A camp in the spruce forest at the foot of the snow mountain, where the
 // train passes in sight of it: log cabins round a campfire, lanterns on
 // posts and by the doors, warm against the blue of dusk.
 // The camp's cabins round its middle: x, z of a corner, and width.
-const int kCabins[4][3] = {{-9, -9, 5}, {4, -9, 5}, {-9, 4, 4}, {4, 4, 5}};
+// They mirror each other across the fire, their doors facing it.
+const int kCabins[4][3] = {{-8, -8, 4}, {4, -8, 4}, {-8, 4, 4}, {4, 4, 4}};
 
 void buildTaigaCamp(Grid &g, const Clearance &clear)
 {
@@ -2462,7 +2787,7 @@ void buildTaigaCamp(Grid &g, const Clearance &clear)
     for (const int *c : kCabins)
         if (roomForBuilding(clear, x + c[0] - 1, x + c[0] + c[2] + 1, floor - 1, floor + 12,
                             z + c[1] - 1, z + c[1] + 5 + 1))
-            buildCabin(g, x + c[0], z + c[1], c[2], 4, floor);
+            buildCabin(g, x + c[0], z + c[1], c[2], 4, floor, c[1] > 0);
     const int posts[4][2] = {{x - 4, z}, {x + 4, z}, {x, z - 5}, {x, z + 5}};
     for (const int *post : posts)
         buildLampPost(g, post[0], post[1], floor);
@@ -4090,6 +4415,144 @@ void addLilyPad(const Grid &g, int bx, int j, int bz, Batches &batches)
     }
 }
 
+// A box inside a cell (in block units, 0..1) with the picture at the scale
+// of a block, as addBox(), leaving out a face that lies on the cell's side
+// against a solid block (nothing sees it).
+void addShapeBox(const Grid &g, int bx, int j, int bz, const float lo[3], const float hi[3],
+                 Batches &batches, int texture)
+{
+    const size_t i = Grid::index(bx, j, bz);
+    const float sky = skyFactor(static_cast<float>(g.sky[i]));
+    std::vector<Vertex> &out = batches[static_cast<size_t>(texture)];
+    for (const Face &f : kFaces)
+    {
+        int axis = 0;
+        while (f.normal[axis] == 0)
+            ++axis;
+        const bool outward = f.normal[axis] > 0 ? hi[axis] >= 1.0f : lo[axis] <= 0.0f;
+        if (outward && g.opaque(bx + f.normal[0], j + f.normal[1], bz + f.normal[2]))
+            continue;
+        for (int c = 0; c < 4; ++c)
+        {
+            Vertex v;
+            float p[3];
+            for (int k = 0; k < 3; ++k)
+            {
+                p[k] = f.corner[c][k] == 1 ? hi[k] : lo[k];
+                v.normal[k] = static_cast<float>(f.normal[k]);
+            }
+            v.pos[0] = (static_cast<float>(bx) + p[0]) * kBlock;
+            v.pos[1] = (static_cast<float>(j) + p[1]) * kBlock;
+            v.pos[2] = (static_cast<float>(bz) + p[2]) * kBlock;
+            const int a = f.normal[0] != 0 ? 2 : 0, b = f.normal[1] != 0 ? 2 : 1;
+            v.uv[0] = p[a];
+            v.uv[1] = 1.0f - p[b];
+            v.color[0] = v.color[1] = v.color[2] = 0.95f;
+            v.extra[0] = 0.0f;
+            v.extra[1] = -glowFactor(static_cast<float>(g.warm[i]));
+            v.extra[2] = glowFactor(static_cast<float>(g.cool[i]));
+            v.extra[3] = sky;
+            out.push_back(v);
+        }
+    }
+}
+
+// A step, a slab, a trapdoor or a flower pot (see shapeLevel()), drawn
+// with the solid blocks, so it is lit and casts shadows like them.
+void addShape(const Grid &g, int bx, int j, int bz, Batches &batches)
+{
+    const size_t i = Grid::index(bx, j, bz);
+    const int plant = g.plant[i], level = g.level[i];
+    const int facing = level & 3;
+    const bool high = (level & 4) != 0, corner = (level & 8) != 0;
+    const int texture = textureOf(kShapeBlocks[(level >> 4) & 7], 2);
+    const float y0 = high ? 0.5f : 0.0f;
+    if (plant == SLAB || plant == STAIRS)
+    {
+        const float lo[3] = {0.0f, y0, 0.0f}, hi[3] = {1.0f, y0 + 0.5f, 1.0f};
+        addShapeBox(g, bx, j, bz, lo, hi, batches, texture);
+    }
+    if (plant == STAIRS)
+    {
+        // the upper (or, upside down, the lower) half on the side it rises
+        // to, or on a corner just the quarter between that way and the next
+        float lo[3] = {0.0f, high ? 0.0f : 0.5f, 0.0f}, hi[3] = {1.0f, high ? 0.5f : 1.0f, 1.0f};
+        const int ways = corner ? 2 : 1;
+        for (int w = 0; w < ways; ++w)
+        {
+            const int *d = kFacing[(facing + w) % 4];
+            if (d[0] > 0)
+                lo[0] = 0.5f;
+            if (d[0] < 0)
+                hi[0] = 0.5f;
+            if (d[1] > 0)
+                lo[2] = 0.5f;
+            if (d[1] < 0)
+                hi[2] = 0.5f;
+        }
+        addShapeBox(g, bx, j, bz, lo, hi, batches, texture);
+    }
+    else if (plant == TRAPDOOR)
+    {
+        const float t = 3.0f / 16.0f;
+        float lo[3] = {0.0f, 0.0f, 0.0f}, hi[3] = {1.0f, 1.0f, 1.0f};
+        if (high)
+            lo[1] = 1.0f - t; // closed, at the top of the cell
+        else
+        {
+            const int *d = kFacing[facing]; // open, against that wall
+            if (d[0] > 0)
+                lo[0] = 1.0f - t;
+            if (d[0] < 0)
+                hi[0] = t;
+            if (d[1] > 0)
+                lo[2] = 1.0f - t;
+            if (d[1] < 0)
+                hi[2] = t;
+        }
+        addShapeBox(g, bx, j, bz, lo, hi, batches, LandTextures::TRAPDOOR);
+    }
+    else if (plant == POT)
+    {
+        // the pot, six sixteenths across and high, and the flower crossed
+        // above its earth
+        const float lo[3] = {5.0f / 16.0f, 0.0f, 5.0f / 16.0f};
+        const float hi[3] = {11.0f / 16.0f, 6.0f / 16.0f, 11.0f / 16.0f};
+        addShapeBox(g, bx, j, bz, lo, hi, batches, LandTextures::FLOWER_POT);
+        std::vector<Vertex> &out = batches[static_cast<size_t>(plantTexture(level))];
+        Vertex v;
+        v.normal[0] = 0.0f;
+        v.normal[1] = 1.0f;
+        v.normal[2] = 0.0f;
+        v.color[0] = v.color[1] = v.color[2] = 0.95f;
+        v.extra[0] = 0.0f;
+        v.extra[1] = -glowFactor(static_cast<float>(g.warm[i]));
+        v.extra[2] = glowFactor(static_cast<float>(g.cool[i]));
+        v.extra[3] = skyFactor(static_cast<float>(g.sky[i]));
+        const float cx = (static_cast<float>(bx) + 0.5f) * kBlock;
+        const float cz = (static_cast<float>(bz) + 0.5f) * kBlock;
+        const float y = (static_cast<float>(j) + 4.0f / 16.0f) * kBlock, r = 0.3f * kBlock;
+        const float size = 0.75f * kBlock;
+        for (int q = 0; q < 2; ++q)
+        {
+            const float sx = q == 0 ? r : -r, sz = r;
+            const float pts[4][3] = {{cx - sx, y, cz - sz},
+                                     {cx + sx, y, cz + sz},
+                                     {cx + sx, y + size, cz + sz},
+                                     {cx - sx, y + size, cz - sz}};
+            const float uv[4][2] = {{0, 1}, {1, 1}, {1, 0}, {0, 0}};
+            for (int c = 0; c < 4; ++c)
+            {
+                for (int k = 0; k < 3; ++k)
+                    v.pos[k] = pts[c][k];
+                v.uv[0] = uv[c][0];
+                v.uv[1] = uv[c][1];
+                out.push_back(v);
+            }
+        }
+    }
+}
+
 // Two quads crossing diagonally, smaller than the cell and off centre.
 void addPlant(const Grid &g, int bx, int j, int bz, Batches &batches)
 {
@@ -4546,6 +5009,8 @@ LandWorld::Scene &LandWorld::scene(bool flat)
                             addFence(s.grid, bx, j, bz, solids);
                         else if (s.grid.plant[cell] == LAMP)
                             addLantern(s.grid, bx, j, bz, solids);
+                        else if (s.grid.plant[cell] >= STAIRS && s.grid.plant[cell] <= POT)
+                            addShape(s.grid, bx, j, bz, solids);
                         else
                             addPlant(s.grid, bx, j, bz, plants);
                     }

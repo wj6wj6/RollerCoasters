@@ -179,6 +179,14 @@ const Source kSources[] = {
     {T::PODZOL_TOP, "podzol_top", "podzol_top|dirt_podzol_top", NONE},
     {T::PODZOL_SIDE, "podzol_side", "podzol_side|dirt_podzol_side", NONE},
     {T::COARSE_DIRT, "coarse_dirt", "coarse_dirt|dirt", NONE},
+    {T::STONE_BRICKS, "stone_bricks", "stone_bricks|stonebrick", NONE},
+    {T::MOSSY_BRICKS, "mossy_bricks", "mossy_stone_bricks|stonebrick_mossy|mossy_cobblestone",
+     NONE},
+    {T::DARK_OAK_SIDE, "dark_oak_side", "dark_oak_log|log_big_oak|spruce_log|log_spruce", NONE},
+    {T::DARK_OAK_TOP, "dark_oak_top",
+     "dark_oak_log_top|log_big_oak_top|spruce_log_top|log_spruce_top", NONE},
+    {T::TRAPDOOR, "trapdoor", "spruce_trapdoor|dark_oak_trapdoor|trapdoor", NONE},
+    {T::FLOWER_POT, "flower_pot", "flower_pot", NONE},
 };
 static_assert(sizeof(kSources) / sizeof(kSources[0]) == LandTextures::TEXTURE_COUNT,
               "every island texture needs a row");
@@ -222,7 +230,8 @@ const Source *sourceOf(int texture)
 bool isPlant(int texture)
 {
     return (texture >= T::TALL_GRASS && texture <= T::VINES) || texture == T::LANTERN_SMALL ||
-           texture == T::CHAIN || texture == T::LILY_PAD || texture == T::SUGAR_CANE;
+           texture == T::CHAIN || texture == T::LILY_PAD || texture == T::SUGAR_CANE ||
+           texture == T::TRAPDOOR || texture == T::FLOWER_POT;
 }
 
 bool isLeaves(int texture)
