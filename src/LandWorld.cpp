@@ -56,8 +56,8 @@ const int kMinBZ = -212, kMaxBZ = 113;
 const int kSizeX = kMaxBX - kMinBX;
 const int kSizeZ = kMaxBZ - kMinBZ;
 // The grid's extent in world units, x and z.
-const float kGridLo[2] = {static_cast<float>(kMinBX) * 2.5f, static_cast<float>(kMinBZ) * 2.5f};
-const float kGridHi[2] = {static_cast<float>(kMaxBX) * 2.5f, static_cast<float>(kMaxBZ) * 2.5f};
+const float kGridLo[2] = {static_cast<float>(kMinBX) * kBlock, static_cast<float>(kMinBZ) * kBlock};
+const float kGridHi[2] = {static_cast<float>(kMaxBX) * kBlock, static_cast<float>(kMaxBZ) * kBlock};
 const int kMinY = -2; // block layer j spans y = 2.5 j .. 2.5 j + 2.5
 const int kMaxY = 90; // the jagged peaks top out near y = 220
 const int kSizeY = kMaxY - kMinY + 1;
@@ -108,7 +108,6 @@ enum Block
     ROOF,
     WINDOW,
     DOOR,
-    LANTERN, // a full glowing block (glowstone); the scenery no longer uses it
     CRYSTAL,
     ORE_COAL,
     ORE_IRON,
@@ -248,8 +247,6 @@ int textureOf(int block, int face)
         return T::WINDOW;
     case DOOR:
         return face == 2 ? T::DOOR : T::PLANKS;
-    case LANTERN:
-        return T::LANTERN;
     case CRYSTAL:
         return T::CRYSTAL;
     case ORE_COAL:
@@ -366,8 +363,6 @@ float blockGlow(int block)
     {
     case LAVA:
         return 1.0f;
-    case LANTERN:
-        return 1.3f;
     case CRYSTAL:
         return 1.0f;
     case MAGMA:
@@ -2608,7 +2603,7 @@ bool crowded(const Grid &g, int bx, int j, int bz, int reach)
             const int b = g.get(bx + dx, j, bz + dz);
             const int above = g.get(bx + dx, j + 1, bz + dz);
             if ((b >= OAK_LOG && b <= SPRUCE_LOG) || (above >= OAK_LOG && above <= SPRUCE_LOG) ||
-                b == MUSHROOM_STEM || b == CACTUS || (b >= PLANKS && b <= LANTERN) || b == COBBLE)
+                b == MUSHROOM_STEM || b == CACTUS || (b >= PLANKS && b <= DOOR) || b == COBBLE)
                 return true;
         }
     return false;
@@ -3653,8 +3648,7 @@ void spreadGlow(Grid &g)
             {
                 const int block = g.block[Grid::index(bx, j, bz)];
                 // as bright as in a block game, its 15 being 14 here: a
-                // lantern, lava and glowstone 15, a
-                // campfire's embers (magma) less
+                // lantern and lava 15, a campfire's embers (magma) less
                 int level = 0;
                 bool isCool = false;
                 if (g.plant[Grid::index(bx, j, bz)] == LAMP)
@@ -3669,8 +3663,6 @@ void spreadGlow(Grid &g)
                     continue;
                 }
                 if (block == LAVA)
-                    level = 14;
-                else if (block == LANTERN)
                     level = 14;
                 else if (block == MAGMA)
                     level = 6;

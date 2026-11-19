@@ -123,7 +123,6 @@ const Source kSources[] = {
     {T::WINDOW, "window", "glass", NONE},
     {T::DOOR, "door", "oak_door_bottom|door_wood_lower", NONE},
     // the full glowing block: only the mine's lamps set in the rock
-    {T::LANTERN, "lantern", "glowstone", NONE},
     {T::CRYSTAL, "crystal", "sea_lantern|amethyst_block|glowstone", NONE},
     {T::ORE_COAL, "ore_coal", "coal_ore", NONE},
     {T::ORE_IRON, "ore_iron", "iron_ore", NONE},

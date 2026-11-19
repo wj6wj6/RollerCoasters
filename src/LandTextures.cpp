@@ -1408,8 +1408,6 @@ Image make(int texture)
         return makeDoor(false);
     case DOOR_TOP:
         return makeDoor(true);
-    case LANTERN:
-        return makeLantern();
     case CRYSTAL:
         return makeCrystal();
     case ORE_COAL:
