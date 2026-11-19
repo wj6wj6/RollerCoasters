@@ -1,5 +1,5 @@
 // Checks the control point editing keys against the Fly camera's keys: in Fly no flying key is
-// an editing command (so X, Shift + D and the like cannot delete or duplicate a point while
+// an editing command (so X, Shift + D and the like cannot delete or add a point while
 // flying), every editing command in Fly is a key the real FlyCam leaves alone, and the World
 // and Top keys are unchanged.
 #include "EditKeys.h"
@@ -41,25 +41,35 @@ int main()
     // World and Top: as before.
     expect(forKey('g', 0, false) == EditKeys::GRAB, "World: G moves");
     expect(forKey('r', 0, false) == EditKeys::TILT, "World: R tilts");
-    expect(forKey('d', FL_SHIFT, false) == EditKeys::DUPLICATE_POINT,
-           "World: Shift + D duplicates");
+    expect(forKey('d', FL_SHIFT, false) == EditKeys::ADD_POINT, "World: Shift + D adds a point");
     expect(forKey('d', 0, false) == EditKeys::NONE, "World: D alone does nothing");
     expect(forKey('x', 0, false) == EditKeys::REMOVE, "World: X removes");
     expect(forKey(FL_Delete, 0, false) == EditKeys::REMOVE, "World: Delete removes");
+    expect(forKey('y', FL_CTRL, false) == EditKeys::REDO, "World: Ctrl + Y redoes");
+    expect(forKey('z', FL_CTRL | FL_SHIFT, false) == EditKeys::REDO,
+           "World: Ctrl + Shift + Z redoes");
+    expect(forKey('y', 0, false) == EditKeys::NONE, "World: Y alone does nothing");
+    expect(forKey(FL_F + 4, 0, false) == EditKeys::TOGGLE_EDIT, "World: F4 turns Edit on / off");
+    expect(forKey('c', 0, false) == EditKeys::PICK_POINT, "World: C selects (middle button)");
+    expect(forKey('c', 0, true) == EditKeys::PICK_POINT, "Fly: C selects (middle button)");
+    expect(forKey('c', FL_CTRL, false) == EditKeys::NONE, "Ctrl + C is not a selection");
+    expect(forKey(FL_F + 4, 0, true) == EditKeys::TOGGLE_EDIT, "Fly: F4 turns Edit on / off");
     expect(forKey('z', FL_CTRL, false) == EditKeys::UNDO, "World: Ctrl + Z undoes");
     expect(forKey(FL_KP + '7', 0, false) == EditKeys::CAMERA_TOP, "World: numpad 7 is Top");
 
     // Fly: the editing commands that do not clash.
     expect(forKey('g', 0, true) == EditKeys::GRAB, "Fly: G moves");
     expect(forKey('r', 0, true) == EditKeys::TILT, "Fly: R tilts");
-    expect(forKey('d', FL_ALT, true) == EditKeys::DUPLICATE_POINT, "Fly: Alt + D duplicates");
+    expect(forKey('d', FL_ALT, true) == EditKeys::ADD_POINT, "Fly: Alt + D adds a point");
     expect(forKey(FL_Delete, 0, true) == EditKeys::REMOVE, "Fly: Delete removes");
     expect(forKey('z', FL_CTRL, true) == EditKeys::UNDO, "Fly: Ctrl + Z undoes");
+    expect(forKey('y', FL_CTRL, true) == EditKeys::REDO, "Fly: Ctrl + Y redoes");
+    expect(forKey('z', FL_CTRL | FL_SHIFT, true) == EditKeys::REDO, "Fly: Ctrl + Shift + Z redoes");
     expect(forKey('x', 0, true) == EditKeys::NONE, "Fly: X does not remove a point");
     expect(forKey('d', FL_SHIFT, true) == EditKeys::NONE,
-           "Fly: Shift + D flies (sink and right), it does not duplicate");
+           "Fly: Shift + D flies (sink and right), it does not add a point");
     expect(forKey('d', FL_CTRL, true) == EditKeys::NONE,
-           "Fly: Ctrl + D flies right faster, it does not duplicate");
+           "Fly: Ctrl + D flies right faster, it does not add a point");
 
     // No flying key is an editing command in Fly, whatever the modifiers.
     const int flying[] = {'w',          'a',        's',          'd',        ' ',
@@ -80,12 +90,13 @@ int main()
     Fl_Gl_Window window(400, 300);
     FlyCam camera;
     camera.setup(&window, 90);
-    const int editing[] = {'g', 'r', FL_Delete, 'z', FL_KP + '1', FL_KP + '7', FL_KP + '0'};
+    const int editing[] = {'g',         'r',         FL_Delete,   'z',      'y',
+                           FL_KP + '1', FL_KP + '7', FL_KP + '0', FL_F + 4, 'c'};
     bool untouched = true;
     for (int key : editing)
         if (flyTakes(camera, key, 0))
             untouched = false;
-    expect(untouched, "FlyCam does not use G, R, Delete, Z or the numpad camera keys");
+    expect(untouched, "FlyCam does not use G, R, C, Delete, Z, Y, F4 or the numpad camera keys");
     expect(flyTakes(camera, 'w', 0), "FlyCam still takes W (the check can see a used key)");
 
     // Key releases always reach FlyCam: a release of a held key stops the camera.

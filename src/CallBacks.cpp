@@ -25,6 +25,7 @@
 #include "TrainWindow.H"
 #include "TrainView.H"
 #include "CallBacks.H"
+#include "TrackInsert.h"
 #include "OceanWorld.h"
 #include "FileDialogs.h"
 #include "LandTextures.h"
@@ -47,6 +48,7 @@
 void resetCB(Fl_Widget *, TrainWindow *tw)
 //===========================================================================
 {
+    tw->recordHistory();
     tw->m_Track.resetPoints();
     tw->trainView->selectedCube = -1;
     tw->m_Track.trainU = 0;
@@ -98,41 +100,28 @@ void fovCB(Fl_Widget *, TrainWindow *tw)
 
 //***************************************************************************
 //
-// * Callback that adds a new point to the spline
-// idea: add the point AFTER the selected point
+// * Add Pt: the next click on the track puts a new point there, between
+//   the two points around the spot, and picks it up to drag (TrainView::
+//   beginPlacePoint, TrackInsert.h). Esc or a right click gives up.
 //===========================================================================
 void addPointCB(Fl_Widget *, TrainWindow *tw)
 //===========================================================================
 {
-    // get the number of points
-    size_t npts = tw->m_Track.points.size();
-    if (npts < 4)
-        return;
+    tw->trainView->beginPlacePoint();
+}
 
-    // Insert after the selected point. Without a selection, insert at the end
-    // of the loop between the last and first control points.
-    int selected = tw->trainView->selectedCube;
-    size_t selectedIndex = (selected >= 0 && static_cast<size_t>(selected) < npts)
-                               ? static_cast<size_t>(selected)
-                               : npts - 1;
-    size_t nextIndex = (selectedIndex + 1) % npts;
-    size_t insertIndex = selectedIndex + 1;
+//***************************************************************************
+//
+// * Undo and Redo: step back and forward through the changes to the points
+//===========================================================================
+void undoCB(Fl_Widget *, TrainWindow *tw)
+{
+    tw->undoEdit();
+}
 
-    // pick a reasonable location
-    Pnt3f npos = (tw->m_Track.points[selectedIndex].pos + tw->m_Track.points[nextIndex].pos) * .5f;
-
-    tw->m_Track.points.insert(tw->m_Track.points.begin() + insertIndex, npos);
-
-    // make it so that the train doesn't move - unless its affected by this control point
-    // it should stay between the same points
-    if (tw->m_Track.trainU >= static_cast<float>(insertIndex))
-    {
-        tw->m_Track.trainU += 1;
-        if (tw->m_Track.trainU >= static_cast<float>(npts))
-            tw->m_Track.trainU -= static_cast<float>(npts);
-    }
-
-    tw->damageMe();
+void redoCB(Fl_Widget *, TrainWindow *tw)
+{
+    tw->redoEdit();
 }
 
 //***************************************************************************
@@ -142,14 +131,16 @@ void addPointCB(Fl_Widget *, TrainWindow *tw)
 void deletePointCB(Fl_Widget *, TrainWindow *tw)
 //===========================================================================
 {
-    if (tw->m_Track.points.size() > 4)
+    // the selected point, or the last one; the train stays about where it was
+    const int count = static_cast<int>(tw->m_Track.points.size());
+    const int selected = tw->trainView->selectedCube;
+    const int index = (selected >= 0 && selected < count) ? selected : count - 1;
+    const TrackHistory::Snapshot before = TrackHistory::capture(tw->m_Track, selected);
+    if (TrackInsert::removeAt(tw->m_Track, index))
     {
-        if (tw->trainView->selectedCube >= 0)
-        {
-            tw->m_Track.points.erase(tw->m_Track.points.begin() + tw->trainView->selectedCube);
-        }
-        else
-            tw->m_Track.points.pop_back();
+        tw->pushHistory(before);
+        if (selected == index)
+            tw->trainView->selectedCube = -1;
     }
     tw->damageMe();
 }
@@ -207,6 +198,7 @@ void loadCB(Fl_Widget *, TrainWindow *tw)
     if (FileDialogs::open("Load a track", "Track files (*.txt)\t*.txt\nAll files\t*",
                           FileDialogs::besideProgram("TrackFiles"), path))
     {
+        tw->recordHistory();
         tw->m_Track.readPoints(path.c_str());
         tw->damageMe();
     }
@@ -221,6 +213,7 @@ void grandTourCB(Fl_Widget *, TrainWindow *tw)
 //===========================================================================
 {
     const std::vector<float> xyz = OceanWorld::demoTrack();
+    tw->recordHistory();
     tw->m_Track.points.clear();
     for (size_t i = 0; i + 2 < xyz.size(); i += 3)
         tw->m_Track.points.push_back(ControlPoint(Pnt3f(xyz[i], xyz[i + 1], xyz[i + 2])));
@@ -262,6 +255,7 @@ void rollx(TrainWindow *tw, float dir)
     int s = tw->trainView->selectedCube;
     if (s >= 0)
     {
+        tw->recordHistory();
         Pnt3f old = tw->m_Track.points[s].orient;
         float si = sinf(((float)M_PI_4) * dir);
         float co = cosf(((float)M_PI_4) * dir);
@@ -300,6 +294,7 @@ void rollz(TrainWindow *tw, float dir)
     int s = tw->trainView->selectedCube;
     if (s >= 0)
     {
+        tw->recordHistory();
 
         Pnt3f old = tw->m_Track.points[s].orient;
 

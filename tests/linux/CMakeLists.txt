@@ -64,6 +64,11 @@ check(TrackRoundTripCheck SOURCES src/Track.cpp src/ControlPoint.cpp LIBS Utilit
 check(TrackSpacingCheck SOURCES src/Track.cpp src/ControlPoint.cpp src/TrackRenderer.cpp
     LIBS Utilities glad)
 check(GizmoDragCheck SOURCES src/TransformGizmo.cpp LIBS glad)
+check(TrackHistoryCheck SOURCES src/TrackHistory.cpp src/Track.cpp src/ControlPoint.cpp
+    LIBS Utilities)
+check(TrackInsertCheck
+    SOURCES src/TrackInsert.cpp src/Track.cpp src/ControlPoint.cpp src/TransformGizmo.cpp
+    LIBS Utilities glad)
 check(FrustumCheck SOURCES src/Frustum.cpp LIBS glad)
 check(TexturePackCheck
     SOURCES src/TexturePack.cpp src/ZipArchive.cpp src/LandTextures.cpp src/PixelArt.cpp

@@ -13,13 +13,18 @@
                                       World / Top        Fly
                     move (grab)       G                  G
                     tilt              R                  R
-                    duplicate         Shift + D          Alt + D
+                    add a point       Shift + D          Alt + D
                     remove            Delete or X        Delete
-                    undo / redo       Ctrl + Z           Ctrl + Z
+                    undo              Ctrl + Z           Ctrl + Z
+                    redo              Ctrl + Y or        Ctrl + Y or
+                                      Ctrl + Shift + Z   Ctrl + Shift + Z
                     cameras           numpad 1 / 7 / 0   numpad 1 / 7 / 0
+                    Edit on / off     F4                 F4
+                    select (as the    C                  C
+                    middle button)
 
                   In Fly, Shift + D would sink and slide the camera and
-                  Ctrl + D would fly right faster, so duplicate takes Alt,
+                  Ctrl + D would fly right faster, so adding takes Alt,
                   which Fly does not use; X is dropped so a stray press
                   while flying cannot delete a point.
 
@@ -34,10 +39,13 @@ enum Action
     CAMERA_WORLD,
     CAMERA_TOP,
     CAMERA_TRAIN,
+    TOGGLE_EDIT,
     UNDO,
+    REDO,
     GRAB,
     TILT,
-    DUPLICATE_POINT,
+    ADD_POINT,
+    PICK_POINT,
     REMOVE
 };
 
