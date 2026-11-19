@@ -103,7 +103,7 @@ enum Block
     ROOF,
     WINDOW,
     DOOR,
-    LANTERN, // a full glowing block (glowstone): only the mine's lamps in the rock
+    LANTERN, // a full glowing block (glowstone); the scenery no longer uses it
     CRYSTAL,
     ORE_COAL,
     ORE_IRON,
@@ -2000,7 +2000,8 @@ void carveRide(Grid &g, const std::vector<float> &ride)
     }
 }
 
-// Lanterns and crystals in the walls where the ride runs under a roof.
+// Lanterns in niches and crystals in the walls where the ride runs under a
+// roof.
 // along: the B-spline ride, x, y, z for each point.
 void lightTunnels(Grid &g, const std::vector<float> &along, const Clearance &clear)
 {
@@ -2029,7 +2030,21 @@ void lightTunnels(Grid &g, const std::vector<float> &along, const Clearance &cle
         const int here = g.get(bx, j, bz);
         if (here == AIR || here == LAVA || here == WATER)
             continue;
-        g.put(bx, j, bz, hash(bx, bz, 71u) % 3u == 0 ? CRYSTAL : LANTERN);
+        // now and then a crystal grown in the rock; otherwise a lantern in
+        // a niche cut a block into the wall, opening on the tunnel, standing
+        // on its sill under a roof of rock (a glowing block set in the wall
+        // would look like a lamp left on all day)
+        const float in = kCarveRadius + 1.6f - kBlock; // the cell in front of it
+        const int fx = blockOf(x + dz / step * s * in), fz = blockOf(z - dx / step * s * in);
+        const bool opens = g.get(fx, j, fz) == AIR;
+        if (hash(bx, bz, 71u) % 3u == 0 || !opens || !g.solid(bx, j - 1, bz) ||
+            !g.solid(bx, j + 1, bz))
+        {
+            g.put(bx, j, bz, CRYSTAL);
+            continue;
+        }
+        g.put(bx, j, bz, AIR);
+        putLamp(g, bx, j, bz);
     }
 }
 
@@ -3495,8 +3510,9 @@ void addBlockFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
                         static_cast<float>(g.coolAt(samples[s][0], samples[s][1], samples[s][2]));
                     count += 1.0f;
                 }
-            // Lava and lantern light is warm: it reddens the surface and
-            // makes it glow a little, the crystals' light is the shader's.
+            // Lava and lantern light, warm: the shader casts it, strongly
+            // where it is dark and hardly at all in the sun (as minus the
+            // second extra, which a block never uses to sway).
             const float heat = glowFactor(warm / count);
 
             Vertex v;
@@ -3506,13 +3522,11 @@ void addBlockFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
             for (int k = 0; k < 3; ++k)
                 v.normal[k] = static_cast<float>(f.normal[k]);
             const float self = blockGlow(b);
-            v.color[0] = tint;
-            v.color[1] = tint * (self > 0.0f ? 1.0f : 1.0f - 0.3f * heat);
-            v.color[2] = tint * (self > 0.0f ? 1.0f : 1.0f - 0.55f * heat);
+            v.color[0] = v.color[1] = v.color[2] = tint;
             v.uv[0] = f.uv[c][0];
             v.uv[1] = f.uv[c][1];
-            v.extra[0] = self + heat * 0.5f;
-            v.extra[1] = 0.0f;
+            v.extra[0] = self;
+            v.extra[1] = self > 0.0f ? 0.0f : -heat;
             v.extra[2] = glowFactor(cool / count);
             v.extra[3] = skyFactor(sky / count) * ao[open];
             batches[static_cast<size_t>(texture)].push_back(v);
@@ -3578,7 +3592,7 @@ void addWaterFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
             v.color[k] = 1.0f;
         }
         v.extra[0] = 0.0f;
-        v.extra[1] = 0.0f;
+        v.extra[1] = -glowFactor(static_cast<float>(g.warmAt(lx, ly, lz)));
         v.extra[2] = glowFactor(static_cast<float>(g.coolAt(lx, ly, lz)));
         v.extra[3] = skyFactor(static_cast<float>(g.skyAt(lx, ly, lz)));
         for (int c = 0; c < 4; ++c)
@@ -3696,7 +3710,7 @@ void addGlassFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
             v.uv[1] = f.uv[c][1];
             v.color[0] = v.color[1] = v.color[2] = shade;
             v.extra[0] = 0.0f;
-            v.extra[1] = 0.0f;
+            v.extra[1] = -glowFactor(static_cast<float>(g.warmAt(ox, oy, oz)));
             v.extra[2] = glowFactor(static_cast<float>(g.coolAt(ox, oy, oz)));
             v.extra[3] = sky;
             out.push_back(v);
@@ -3728,7 +3742,7 @@ void addSnowLayer(const Grid &g, int bx, int j, int bz, Batches &batches)
         0.95f + 0.05f * static_cast<float>(hash(bx * 7 + j, bz, 401u) % 100u) / 100.0f;
     Vertex v;
     v.extra[0] = 0.0f;
-    v.extra[1] = 0.0f;
+    v.extra[1] = -glowFactor(static_cast<float>(g.warm[i]));
     v.extra[2] = glowFactor(static_cast<float>(g.cool[i]));
     const float sky = skyFactor(static_cast<float>(g.sky[i]));
     auto corner = [&](float x, float y, float z, float u, float w) {
@@ -3808,7 +3822,7 @@ void addBox(const Grid &g, int bx, int j, int bz, const float lo[3], const float
             v.uv[1] = 1.0f - p[b] / kBlock;
             v.color[0] = v.color[1] = v.color[2] = shade;
             v.extra[0] = 0.0f;
-            v.extra[1] = 0.0f;
+            v.extra[1] = -glowFactor(static_cast<float>(g.warm[i]));
             v.extra[2] = glowFactor(static_cast<float>(g.cool[i]));
             v.extra[3] = sky;
             out.push_back(v);
@@ -3884,7 +3898,7 @@ void addPart(const Grid &g, int bx, int j, int bz, const float lo[3], const floa
             v.uv[1] = (f.uv[c][1] > 0.5f ? uv[k][1] : uv[k][3]) / 16.0f;
             v.color[0] = v.color[1] = v.color[2] = shade;
             v.extra[0] = glow;
-            v.extra[1] = 0.0f;
+            v.extra[1] = -glowFactor(static_cast<float>(g.warm[i]));
             v.extra[2] = glowFactor(static_cast<float>(g.cool[i]));
             v.extra[3] = sky;
             out.push_back(v);
@@ -3941,6 +3955,9 @@ void addPlant(const Grid &g, int bx, int j, int bz, Batches &batches)
     v.extra[0] = 0.0f;
     v.extra[2] = glowFactor(static_cast<float>(g.cool[i]));
     v.extra[3] = skyFactor(static_cast<float>(g.sky[i]));
+    // the warm light, where the plant does not sway (its foot, or all of a
+    // plant that never sways)
+    const float heat = glowFactor(static_cast<float>(g.warm[i]));
 
     const bool crop = plant == WHEAT;
     const float size =
@@ -3966,7 +3983,7 @@ void addPlant(const Grid &g, int bx, int j, int bz, Batches &batches)
             v.pos[2] = corners[c][2];
             v.uv[0] = (c == 0 || c == 3) ? 0.0f : 1.0f;
             v.uv[1] = corners[c][3];
-            v.extra[1] = corners[c][3] > 0.5f ? 0.0f : sway;
+            v.extra[1] = corners[c][3] > 0.5f || sway <= 0.0f ? -heat : sway;
             out.push_back(v);
         }
     }
