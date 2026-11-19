@@ -50,7 +50,7 @@ enum Texture
     PLANKS,
     ROOF,
     WINDOW,
-    DOOR,
+    DOOR, // the bottom half of a door (DOOR_TOP the top)
     LANTERN,
     CRYSTAL,
     ORE_COAL,
@@ -113,6 +113,7 @@ enum Texture
     DARK_OAK_TOP,
     TRAPDOOR,   // a spruce trapdoor: window sills and shutters
     FLOWER_POT, // a clay pot, as a block game lays its picture out
+    DOOR_TOP,   // the top half of the door (DOOR is the bottom), with its windows
     TEXTURE_COUNT
 };
 

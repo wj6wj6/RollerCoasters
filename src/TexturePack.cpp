@@ -187,6 +187,7 @@ const Source kSources[] = {
      "dark_oak_log_top|log_big_oak_top|spruce_log_top|log_spruce_top", NONE},
     {T::TRAPDOOR, "trapdoor", "spruce_trapdoor|dark_oak_trapdoor|trapdoor", NONE},
     {T::FLOWER_POT, "flower_pot", "flower_pot", NONE},
+    {T::DOOR_TOP, "door_top", "oak_door_top|door_wood_upper", NONE},
 };
 static_assert(sizeof(kSources) / sizeof(kSources[0]) == LandTextures::TEXTURE_COUNT,
               "every island texture needs a row");
@@ -231,7 +232,8 @@ bool isPlant(int texture)
 {
     return (texture >= T::TALL_GRASS && texture <= T::VINES) || texture == T::LANTERN_SMALL ||
            texture == T::CHAIN || texture == T::LILY_PAD || texture == T::SUGAR_CANE ||
-           texture == T::TRAPDOOR || texture == T::FLOWER_POT;
+           texture == T::TRAPDOOR || texture == T::FLOWER_POT || texture == T::DOOR ||
+           texture == T::DOOR_TOP;
 }
 
 bool isLeaves(int texture)
