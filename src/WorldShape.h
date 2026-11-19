@@ -11,11 +11,11 @@
                   middle (heights above the sea at kLift times), which
                   gives every landmark room to be built at a larger size.
 
-                  The coast is no longer a square: a rounded square
-                  (superellipse) whose shore wanders in and out with
-                  noise, giving bays and headlands. inland() is the
-                  distance from the shore, positive on land. No OpenGL
-                  here, so it can be tested on its own.
+                  The coast is a rounded square (superellipse) whose
+                  shore wanders in and out with noise, giving bays and
+                  headlands. inland() is the distance from the shore,
+                  positive on land. No OpenGL here, so it can be tested
+                  on its own.
 
 *************************************************************************/
 #pragma once
