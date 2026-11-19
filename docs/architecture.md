@@ -81,7 +81,11 @@ flowchart LR
 天空 shader 在地平線畫一圈帶狀光暈，朝太陽方向是橘金、背向太陽偏玫瑰紫，高處轉藍紫，雲的底部染成金色與粉色。太陽與月亮都是方塊遊戲式的方形，
 月亮有 8×8 的深淺斑塊與光暈；太陽下山後改由月亮（在太陽對側升起）投影，月光是偏藍的冷光，搭配藍色的月光環境光，最後輸出的曝光在夜晚略為提高，所以夜景暗但看得清楚。
 `Rain` 經 `TrainViewEffects` 緩慢改變 `LightingFrame` 的 `rain` 與 `wetness`：天空轉陰，光照 shader 讓濕表面變暗並提高高光，
-水窪遮罩內另以全螢幕 pass 重用同一段 SSR 做鏡面反射，水面法線加上雨滴漣漪。
+濕的程度乘上該處對天空的開放程度（頂點的天光 `vExtra.w`，露天為 1；屋簷下、樹下較低，隧道與屋內為 0），牆面再依往下流動的雜訊分成一道道水痕。
+光照 shader 把這個開放程度寫進場景 frame buffer 的 alpha（實心面；會擺動的植物寫 0；畫島上半透明的水與玻璃時 `AdvancedLighting::setTranslucent()` 讓 alpha 維持原本的透明度，用於混合），
+所以 `LandWorld` 畫植物時，只有固定管線（沒有 shader）才開 alpha test，否則植物會被這個 alpha 丟掉。
+濕地反射的全螢幕 pass（`PostEffects::applyWetGround()`）讀這個 alpha，雨淋不到的像素直接略過；朝上的面在水窪遮罩內重用同一段 SSR 做鏡面反射，下雨時法線加上每格一滴、各自時間擴散的雨滴圓環；
+直立的面是較弱、依水痕變化的水膜，法線加入少量雜訊使倒影柔和，菲涅耳的基礎反射率較高（0.1，粗糙的水膜在任何角度都有一點光澤），斜看時最亮。水面法線另有雨滴漣漪。
 光照 shader 是 GLSL 1.20，直接讀固定管線的 `gl_Vertex`、`gl_Normal`、`gl_Color` 與 texture unit 0，所以既有 `glBegin` 繪圖程式不需修改；
 未綁貼圖時 unit 0 的預設 texture 0 是一個白色 texel。shader 或 frame buffer 建立失敗時自動退回原本畫法。
 

@@ -151,6 +151,12 @@ class AdvancedLighting
     // flat colour. Does nothing when the shader is not active.
     void setUnlit(bool unlit);
 
+    // While see-through surfaces (the island's water and glass) are drawn:
+    // their alpha blends them. Otherwise the alpha of a solid surface carries
+    // how open it is to the rain, for the wet ground pass (PostEffects).
+    // Does nothing when the shader is not active.
+    void setTranslucent(bool translucent);
+
     bool active() const
     {
         return m_active;
@@ -196,6 +202,7 @@ class AdvancedLighting
     int m_locWaterLevel;
     int m_locBlockLightColor;
     int m_locWetness;
+    int m_locTranslucent;
 
     // Results of prepare(), kept between the shadow and the main passes.
     SkyState m_sky;

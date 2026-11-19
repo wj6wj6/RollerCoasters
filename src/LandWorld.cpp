@@ -4048,9 +4048,16 @@ void LandWorld::draw(bool flat, bool shadowPass, float time)
         }
     if (!shadowPass)
     {
-        // the fixed pipeline cuts the plants out here; the shader does it itself
-        glEnable(GL_ALPHA_TEST);
-        glAlphaFunc(GL_GREATER, 0.5f);
+        // the fixed pipeline cuts the plants out here; the shader does it
+        // itself, and uses the alpha it writes for something else (how open
+        // a surface is to the rain), so the test stays off under it
+        GLint program = 0;
+        glGetIntegerv(GL_CURRENT_PROGRAM, &program);
+        if (program == 0)
+        {
+            glEnable(GL_ALPHA_TEST);
+            glAlphaFunc(GL_GREATER, 0.5f);
+        }
         for (const LandChunk &c : s.chunks)
             if (view.sees(c.lo, c.hi))
                 glCallList(c.plant);
