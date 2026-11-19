@@ -52,15 +52,16 @@ enum Tint
     CHERRY,
     LIME,
     WATER,
-    SEA
+    SEA,
+    LILY // a block game's lily pads are this green
 };
 
 void tintColour(int which, int &r, int &g, int &b)
 {
-    static const int colours[11][3] = {{255, 255, 255}, {145, 189, 89},  {119, 171, 47},
+    static const int colours[12][3] = {{255, 255, 255}, {145, 189, 89},  {119, 171, 47},
                                        {128, 167, 85},  {97, 153, 97},   {146, 198, 72},
                                        {232, 132, 44},  {246, 172, 208}, {150, 204, 84},
-                                       {63, 118, 228},  {52, 140, 190}};
+                                       {63, 118, 228},  {52, 140, 190},  {32, 128, 48}};
     r = colours[which][0];
     g = colours[which][1];
     b = colours[which][2];
@@ -172,6 +173,12 @@ const Source kSources[] = {
     {T::WOOL_YELLOW, "wool_yellow", "yellow_wool|wool_colored_yellow", NONE},
     {T::WOOL_ORANGE, "wool_orange", "orange_wool|wool_colored_orange", NONE},
     {T::WOOL_PURPLE, "wool_purple", "purple_wool|wool_colored_purple", NONE},
+    {T::LILY_PAD, "lily_pad", "lily_pad|waterlily", LILY},
+    {T::SUGAR_CANE, "sugar_cane", "sugar_cane|reeds", GRASS},
+    {T::CLAY, "clay", "clay", NONE},
+    {T::PODZOL_TOP, "podzol_top", "podzol_top|dirt_podzol_top", NONE},
+    {T::PODZOL_SIDE, "podzol_side", "podzol_side|dirt_podzol_side", NONE},
+    {T::COARSE_DIRT, "coarse_dirt", "coarse_dirt|dirt", NONE},
 };
 static_assert(sizeof(kSources) / sizeof(kSources[0]) == LandTextures::TEXTURE_COUNT,
               "every island texture needs a row");
@@ -182,12 +189,12 @@ void candidate(const std::string &entry, std::string &name, int &colour)
 {
     static const char *const names[] = {"",       "grass",    "foliage", "birch",
                                         "spruce", "mangrove", "autumn",  "cherry",
-                                        "lime",   "water",    "sea"};
+                                        "lime",   "water",    "sea",     "lily"};
     const size_t at = entry.find('@');
     name = entry.substr(0, at);
     colour = NONE;
     if (at != std::string::npos)
-        for (int k = 1; k < 11; ++k)
+        for (int k = 1; k < 12; ++k)
             if (entry.compare(at + 1, std::string::npos, names[k]) == 0)
                 colour = k;
 }
@@ -215,7 +222,7 @@ const Source *sourceOf(int texture)
 bool isPlant(int texture)
 {
     return (texture >= T::TALL_GRASS && texture <= T::VINES) || texture == T::LANTERN_SMALL ||
-           texture == T::CHAIN;
+           texture == T::CHAIN || texture == T::LILY_PAD || texture == T::SUGAR_CANE;
 }
 
 bool isLeaves(int texture)

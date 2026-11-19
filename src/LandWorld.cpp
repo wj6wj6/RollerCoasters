@@ -122,6 +122,9 @@ enum Block
     LEAVES_BAMBOO, // the canopy over a bamboo thicket
     PATH,          // a trodden dirt path
     SPRUCE_PLANKS, // dark planks
+    CLAY,          // the bed of the lakes and ponds
+    PODZOL,        // the spruce forest's floor
+    COARSE_DIRT,   // where the meadow meets the badlands and the volcano
     BLOCK_COUNT
 };
 
@@ -146,6 +149,8 @@ enum Plant
     SNOW_LAYER, // fallen snow, 1 to 8 eighths of a block deep (Grid::level)
     FENCE,      // an oak fence: a post, and rails to the fences and blocks beside it
     LAMP,       // a lantern, standing on what is below or hanging from what is above
+    LILY_PAD,   // floating on still water (in the water's own cell)
+    SUGAR_CANE, // stalks by the water's edge; they stack
     PLANT_COUNT
 };
 
@@ -266,6 +271,12 @@ int textureOf(int block, int face)
         return face == 0 ? T::PATH_TOP : (face == 1 ? T::DIRT : T::PATH_SIDE);
     case SPRUCE_PLANKS:
         return T::SPRUCE_PLANKS;
+    case CLAY:
+        return T::CLAY;
+    case PODZOL:
+        return face == 0 ? T::PODZOL_TOP : (face == 1 ? T::DIRT : T::PODZOL_SIDE);
+    case COARSE_DIRT:
+        return T::COARSE_DIRT;
     default:
         return T::STONE;
     }
@@ -273,6 +284,10 @@ int textureOf(int block, int face)
 
 int plantTexture(int plant)
 {
+    if (plant == LILY_PAD)
+        return LandTextures::LILY_PAD;
+    if (plant == SUGAR_CANE)
+        return LandTextures::SUGAR_CANE;
     return LandTextures::TALL_GRASS + (plant - TALL_GRASS);
 }
 
@@ -3262,6 +3277,111 @@ void crustLava(Grid &g)
 // ---------------------------------------------------------------------
 // Building the world: no OpenGL here, so tests can use it.
 // ---------------------------------------------------------------------
+// The edges of things, as a block game's world has them: lily pads on the
+// still water of the lakes and ponds, sugar cane on the banks beside it
+// and clay on their beds; podzol on the spruce forest's floor; and coarse
+// dirt and gravel where the meadow meets the badlands and the volcano. All
+// of it clear of the train.
+void dressEdges(Grid &g, const Clearance &clear)
+{
+    const int sides[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+    for (int bx = kMinBX + 1; bx < kMaxBX - 1; ++bx)
+        for (int bz = kMinBZ + 1; bz < kMaxBZ - 1; ++bz)
+        {
+            const unsigned int h = hash(bx, bz, 673u);
+            const int top = g.top(bx, bz);
+            if (top < kMinY || top >= kMaxY - 3)
+                continue;
+            const int ground = g.get(bx, top, bz);
+            const int biome = g.biome[Grid::column(bx, bz)];
+            const float cx = centerOf(bx), cz = centerOf(bz);
+
+            // still water above the sea: a pad now and then, clay below
+            // (top() counts the water as the top: its bed is under it)
+            if (ground == WATER)
+            {
+                const int surface = top;
+                int bed = top;
+                while (bed > kMinY && g.get(bx, bed, bz) == WATER)
+                    --bed;
+                const int floorBlock = g.get(bx, bed, bz);
+                if (surface <= kSeaLayer || g.get(bx, surface + 1, bz) != AIR)
+                    continue;
+                if ((floorBlock == SAND || floorBlock == DIRT || floorBlock == GRAVEL ||
+                     floorBlock == GRASS) &&
+                    valueNoise(cx * 0.12f, cz * 0.12f, 679u) > 0.5f)
+                    g.put(bx, bed, bz, CLAY); // in patches, as a lake bed has it
+                const size_t cell = Grid::index(bx, surface, bz);
+                // only out on open water (not in a well or a ditch), and not
+                // on the hot spring
+                int open = 0;
+                for (const auto &d : sides)
+                    open += g.get(bx + d[0], surface, bz + d[1]) == WATER ? 1 : 0;
+                if (g.level[cell] == 0 && open >= 3 && biome != MESA && h % 9u == 0u &&
+                    !clear.blocks(bx, surface + 1, bz))
+                    g.plant[cell] = LILY_PAD;
+                continue;
+            }
+
+            // a bank beside still water: sugar cane, one to three high
+            const size_t above = Grid::index(bx, top + 1, bz);
+            if ((ground == GRASS || ground == SAND) && g.get(bx, top + 1, bz) == AIR &&
+                g.plant[above] == NO_PLANT && biome != ALPINE)
+            {
+                bool shore = false;
+                for (const auto &d : sides)
+                {
+                    const int x = bx + d[0], z = bz + d[1];
+                    if (g.get(x, top, z) == WATER && g.get(x, top + 1, z) == AIR &&
+                        top > kSeaLayer && g.level[Grid::index(x, top, z)] == 0)
+                        shore = true;
+                }
+                if (shore && h % 4u == 0u)
+                {
+                    const int height = 1 + static_cast<int>((h >> 8) % 3u);
+                    for (int k = 1; k <= height; ++k)
+                    {
+                        const size_t c = Grid::index(bx, top + k, bz);
+                        if (g.get(bx, top + k, bz) != AIR || g.plant[c] != NO_PLANT ||
+                            clear.blocks(bx, top + k, bz))
+                            break;
+                        g.plant[c] = SUGAR_CANE;
+                    }
+                    continue;
+                }
+            }
+
+            // the spruce forest's floor
+            if (biome == ALPINE && ground == GRASS &&
+                valueNoise(cx * 0.06f, cz * 0.06f, 675u) > 0.42f)
+            {
+                g.put(bx, top, bz, PODZOL);
+                continue;
+            }
+
+            // the meadow turning to the badlands' or the volcano's ground
+            if (ground == GRASS && (biome == MEADOW || biome == ALPINE))
+            {
+                int closest = 99;
+                for (int dx = -4; dx <= 4; ++dx)
+                    for (int dz = -4; dz <= 4; ++dz)
+                    {
+                        if (!Grid::insideColumn(bx + dx, bz + dz))
+                            continue;
+                        const int other = g.biome[Grid::column(bx + dx, bz + dz)];
+                        if (other == MESA || other == VOLCANO)
+                        {
+                            const int d = abs(dx) > abs(dz) ? abs(dx) : abs(dz);
+                            closest = d < closest ? d : closest;
+                        }
+                    }
+                if (closest <= 4 &&
+                    valueNoise(cx * 0.2f, cz * 0.2f, 677u) * 5.0f > static_cast<float>(closest))
+                    g.put(bx, top, bz, h % 5u == 0u ? GRAVEL : COARSE_DIRT);
+            }
+        }
+}
+
 // Where snow lies, per column, from the bare terrain: 2 on snowy ground
 // and high up on the mountains and crags, where it settles on whatever is
 // there, the rock ledges too; 1 lower on the
@@ -3364,6 +3484,7 @@ void buildScenery(Grid &g, Extras &extras)
     plantNorthEast(g, clear, extras);
     spreadSky(g);
     plantFlowers(g, clear, extras);
+    dressEdges(g, clear);
     snowfall(g, clear, cover);
     spreadGlow(g);
     placeAnimals(g, clear, extras);
@@ -3935,6 +4056,40 @@ void addLantern(const Grid &g, int bx, int j, int bz, Batches &batches)
     addPart(g, bx, j, bz, chainLo, chainHi, chain, 0.0f, batches, LandTextures::CHAIN);
 }
 
+// A lily pad: one flat leaf just above the still water in its cell, a
+// little smaller than the cell and turned a random way.
+void addLilyPad(const Grid &g, int bx, int j, int bz, Batches &batches)
+{
+    const size_t i = Grid::index(bx, j, bz);
+    const unsigned int h = hash(bx, bz, 671u);
+    std::vector<Vertex> &out = batches[static_cast<size_t>(LandTextures::LILY_PAD)];
+    Vertex v;
+    v.normal[0] = 0.0f;
+    v.normal[1] = 1.0f;
+    v.normal[2] = 0.0f;
+    v.color[0] = v.color[1] = v.color[2] = 0.9f + 0.1f * static_cast<float>(h % 10u) / 10.0f;
+    v.extra[0] = 0.0f;
+    v.extra[1] = -glowFactor(static_cast<float>(g.warm[i]));
+    v.extra[2] = glowFactor(static_cast<float>(g.cool[i]));
+    v.extra[3] = skyFactor(static_cast<float>(g.skyAt(bx, j + 1, bz)));
+    const float cx = (static_cast<float>(bx) + 0.5f) * kBlock;
+    const float cz = (static_cast<float>(bz) + 0.5f) * kBlock;
+    const float y = (static_cast<float>(j) + 8.0f / 9.0f) * kBlock + 0.03f;
+    const float a = static_cast<float>(h % 360u) * 3.14159265f / 180.0f;
+    const float r = kBlock * 0.62f;
+    const float uv[4][2] = {{0, 1}, {1, 1}, {1, 0}, {0, 0}};
+    for (int c = 0; c < 4; ++c)
+    {
+        const float ca = a + 0.785398f + 1.570796f * static_cast<float>(c);
+        v.pos[0] = cx + cosf(ca) * r;
+        v.pos[1] = y;
+        v.pos[2] = cz - sinf(ca) * r;
+        v.uv[0] = uv[c][0];
+        v.uv[1] = uv[c][1];
+        out.push_back(v);
+    }
+}
+
 // Two quads crossing diagonally, smaller than the cell and off centre.
 void addPlant(const Grid &g, int bx, int j, int bz, Batches &batches)
 {
@@ -3942,7 +4097,8 @@ void addPlant(const Grid &g, int bx, int j, int bz, Batches &batches)
     const int plant = g.plant[i];
     // bamboo and vines stack into columns: a whole cell tall, in the same
     // place in every cell of the column and still, so they join up
-    const bool stacked = plant == BAMBOO || plant == BAMBOO_TOP || plant == VINES;
+    const bool stacked =
+        plant == BAMBOO || plant == BAMBOO_TOP || plant == VINES || plant == SUGAR_CANE;
     const unsigned int h = stacked ? hash(bx, bz * 13, 411u) : hash(bx, bz * 13 + j, 411u);
     const float tint = 0.86f + 0.14f * static_cast<float>(h % 100u) / 100.0f;
     std::vector<Vertex> &out = batches[static_cast<size_t>(plantTexture(plant))];
@@ -4375,7 +4531,11 @@ LandWorld::Scene &LandWorld::scene(bool flat)
                         low = j < low ? j : low;
                         high = j > high ? j : high;
                         if (b == WATER)
+                        {
                             addWaterFaces(s.grid, bx, j, bz, water);
+                            if (s.grid.plant[cell] == LILY_PAD)
+                                addLilyPad(s.grid, bx, j, bz, plants);
+                        }
                         else if (b == WINDOW)
                             addGlassFaces(s.grid, bx, j, bz, water);
                         else if (b != AIR)

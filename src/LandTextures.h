@@ -101,6 +101,12 @@ enum Texture
     WOOL_YELLOW,
     WOOL_ORANGE,
     WOOL_PURPLE,
+    LILY_PAD,   // floating on still water
+    SUGAR_CANE, // stalks by the water's edge; they stack
+    CLAY,       // the bed of the lakes and ponds
+    PODZOL_TOP, // the spruce forest's floor
+    PODZOL_SIDE,
+    COARSE_DIRT, // where the meadow meets the badlands and the volcano
     TEXTURE_COUNT
 };
 

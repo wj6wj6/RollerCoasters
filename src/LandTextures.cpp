@@ -556,6 +556,100 @@ Image makeRoof()
     return p;
 }
 
+// A lily pad seen from above: a round green leaf with a notch cut to its
+// middle and darker veins, see-through round it.
+Image makeLilyPad()
+{
+    Image p = PixelArt::blank(S);
+    for (int y = 0; y < S; ++y)
+        for (int x = 0; x < S; ++x)
+        {
+            const float dx = static_cast<float>(x) - 15.5f, dy = static_cast<float>(y) - 15.5f;
+            const float r = sqrtf(dx * dx + dy * dy);
+            const bool notch = dx > 0.0f && fabsf(dy) < dx * 0.35f;
+            if (r > 14.5f || notch)
+                continue;
+            const int s = shadeOf(x, y, 655u, 10);
+            const bool vein = (x + y) % 7 == 0 || (x - y + 64) % 9 == 0;
+            set(p, x, y, (vein ? 38 : 50) + s, (vein ? 104 : 128) + s, (vein ? 30 : 40) + s);
+        }
+    return p;
+}
+
+// Sugar cane: three pale green stalks with darker joints and narrow leaves,
+// the full height of the cell, so the stalks stack.
+Image makeSugarCane()
+{
+    Image p = PixelArt::blank(S);
+    const int stalks[3] = {6, 15, 24};
+    for (int k = 0; k < 3; ++k)
+        for (int y = 0; y < S; ++y)
+            for (int dx = 0; dx < 3; ++dx)
+            {
+                const int x = stalks[k] + dx;
+                const bool joint = (y + k * 5) % 10 == 0;
+                const int s = shadeOf(x, y, 657u, 8);
+                set(p, x, y, (joint ? 112 : 150) + s - dx * 14, (joint ? 150 : 196) + s - dx * 14,
+                    (joint ? 70 : 96) + s - dx * 10);
+            }
+    // a leaf now and then
+    for (int k = 0; k < 4; ++k)
+        for (int t = 0; t < 7; ++t)
+            set(p, 9 + k * 5 + t / 2, 4 + k * 7 + t, 98, 160, 60);
+    return p;
+}
+
+// Podzol: dark brown earth strewn with needles and bits of bark.
+Image makePodzolTop()
+{
+    Image p = makeDirt();
+    for (int y = 0; y < S; ++y)
+        for (int x = 0; x < S; ++x)
+        {
+            const unsigned int h = PixelArt::hash(x, y, 659u) % 9u;
+            const int s = shadeOf(x, y, 661u, 8);
+            if (h < 2u)
+                set(p, x, y, 112 + s, 78 + s, 36 + s); // needles
+            else if (h < 5u)
+                set(p, x, y, 74 + s, 50 + s, 26 + s);
+            else
+                set(p, x, y, 92 + s, 64 + s, 34 + s);
+        }
+    return p;
+}
+
+// The podzol's side: dirt, with the needle litter along the top.
+Image makePodzolSide()
+{
+    Image p = makeDirt();
+    const Image top = makePodzolTop();
+    for (int y = 0; y < 5; ++y)
+        for (int x = 0; x < S; ++x)
+            if (y < 3 || PixelArt::hash(x, y, 663u) % 2u == 0)
+            {
+                const size_t i = static_cast<size_t>((y * S + x) * 4);
+                set(p, x, y, top[i], top[i + 1], top[i + 2]);
+            }
+    return p;
+}
+
+// Coarse dirt: dirt with gravelly stones in it.
+Image makeCoarseDirt()
+{
+    Image p = makeDirt();
+    for (int y = 0; y < S; ++y)
+        for (int x = 0; x < S; ++x)
+        {
+            const unsigned int h = PixelArt::hash(x / 2, y / 2, 665u) % 7u;
+            const int s = shadeOf(x, y, 667u, 10);
+            if (h == 0u)
+                set(p, x, y, 120 + s, 112 + s, 104 + s);
+            else if (h == 1u)
+                set(p, x, y, 84 + s, 66 + s, 50 + s);
+        }
+    return p;
+}
+
 // Wool: soft cloth in one colour, its fibres in small curls of lighter and
 // darker texels.
 Image makeWool(int r, int g, int b, unsigned int seed)
@@ -1337,6 +1431,18 @@ Image make(int texture)
         return makeWool(240, 118, 20, 649u);
     case WOOL_PURPLE:
         return makeWool(122, 42, 172, 651u);
+    case LILY_PAD:
+        return makeLilyPad();
+    case SUGAR_CANE:
+        return makeSugarCane();
+    case CLAY:
+        return sand(160, 166, 178, 653u);
+    case PODZOL_TOP:
+        return makePodzolTop();
+    case PODZOL_SIDE:
+        return makePodzolSide();
+    case COARSE_DIRT:
+        return makeCoarseDirt();
     default:
         return PixelArt::blank(S);
     }
