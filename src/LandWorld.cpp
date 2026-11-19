@@ -1343,6 +1343,13 @@ void footing(Grid &g, int x0, int x1, int z0, int z1, int floor)
         }
 }
 
+// Half of a, rounded down also when it is negative (a / 2 rounds towards
+// zero): the middle of a run of blocks from b0 to b1 is floorHalf(b0 + b1).
+int floorHalf(int a)
+{
+    return a >= 0 ? a / 2 : -((1 - a) / 2);
+}
+
 // Is the cell free for a part of a building: air, with at most grass or a
 // flower in it?
 bool freeCell(const Grid &g, int bx, int j, int bz)
@@ -1920,9 +1927,10 @@ void buildTower(Grid &g, int x0, int z0, int size, int floor, int height)
                           ? COBBLE
                           : (hash(bx * 5 + j, bz, 467u) % 7u == 0 ? MOSSY_BRICKS : STONE_BRICKS));
     // windows in the middle of each face: one where the face is odd, a
-    // pair where it is even
+    // pair where it is even (halved rounding down, as the castle stands at
+    // negative x, where / rounds towards zero and put them a block off)
     for (int j = floor + 3; j < floor + height - 1; j += 3)
-        for (int m = (x0 + x1) / 2; m <= (x0 + x1 + 1) / 2; ++m)
+        for (int m = floorHalf(x0 + x1); m <= floorHalf(x0 + x1 + 1); ++m)
         {
             const int n = z0 + (m - x0); // the same place along the z faces
             g.put(m, j, z0, WINDOW);
@@ -2088,8 +2096,12 @@ bool buildCastle(Grid &g, const Clearance &clear, int at[2])
             g.put(bx, j, kz0, WINDOW);
             g.put(bx, j, kz1, WINDOW);
         }
-        g.put(kx0, j, (kz0 + kz1) / 2, WINDOW);
-        g.put(kx1, j, (kz0 + kz1) / 2, WINDOW);
+        // the ends are six deep: a pair of windows in the middle
+        for (int m = floorHalf(kz0 + kz1); m <= floorHalf(kz0 + kz1 + 1); ++m)
+        {
+            g.put(kx0, j, m, WINDOW);
+            g.put(kx1, j, m, WINDOW);
+        }
     }
     g.put((kx0 + kx1) / 2, floor, gateNorth ? kz1 : kz0, DOOR);
     g.put((kx0 + kx1) / 2, floor + 1, gateNorth ? kz1 : kz0, DOOR);
