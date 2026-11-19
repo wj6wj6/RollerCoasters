@@ -95,6 +95,12 @@ enum Texture
     LANTERN_SMALL, // a lantern as a block game draws it: the parts laid out as
                    // its lantern picture lays them out (see addLantern())
     CHAIN,         // what a hanging lantern hangs from
+    WOOL_WHITE,    // the windmill's sail cloth and the balloons' envelopes
+    WOOL_RED,
+    WOOL_BLUE,
+    WOOL_YELLOW,
+    WOOL_ORANGE,
+    WOOL_PURPLE,
     TEXTURE_COUNT
 };
 

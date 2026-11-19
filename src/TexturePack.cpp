@@ -166,6 +166,12 @@ const Source kSources[] = {
     // the lanterns of the buildings: the picture as the game lays it out
     {T::LANTERN_SMALL, "lantern_small", "lantern", NONE},
     {T::CHAIN, "chain", "chain|iron_chain", NONE},
+    {T::WOOL_WHITE, "wool_white", "white_wool|wool_colored_white", NONE},
+    {T::WOOL_RED, "wool_red", "red_wool|wool_colored_red", NONE},
+    {T::WOOL_BLUE, "wool_blue", "blue_wool|wool_colored_blue", NONE},
+    {T::WOOL_YELLOW, "wool_yellow", "yellow_wool|wool_colored_yellow", NONE},
+    {T::WOOL_ORANGE, "wool_orange", "orange_wool|wool_colored_orange", NONE},
+    {T::WOOL_PURPLE, "wool_purple", "purple_wool|wool_colored_purple", NONE},
 };
 static_assert(sizeof(kSources) / sizeof(kSources[0]) == LandTextures::TEXTURE_COUNT,
               "every island texture needs a row");

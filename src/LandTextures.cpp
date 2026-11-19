@@ -556,6 +556,20 @@ Image makeRoof()
     return p;
 }
 
+// Wool: soft cloth in one colour, its fibres in small curls of lighter and
+// darker texels.
+Image makeWool(int r, int g, int b, unsigned int seed)
+{
+    Image p = PixelArt::blank(S);
+    for (int y = 0; y < S; ++y)
+        for (int x = 0; x < S; ++x)
+        {
+            const int s = shadeOf(x / 2, y / 2, seed, 14) + shadeOf(x, y, seed + 1u, 6);
+            set(p, x, y, r + s, g + s, b + s);
+        }
+    return p;
+}
+
 // Four lit panes in a wooden frame.
 // A glass window: a thin oak frame round four panes of pale glass, a
 // little more than half opaque (it is blended over what is behind it, and
@@ -1311,6 +1325,18 @@ Image make(int texture)
         return makeSmallLantern();
     case CHAIN:
         return makeChain();
+    case WOOL_WHITE:
+        return makeWool(234, 236, 236, 641u);
+    case WOOL_RED:
+        return makeWool(176, 46, 38, 643u);
+    case WOOL_BLUE:
+        return makeWool(60, 68, 170, 645u);
+    case WOOL_YELLOW:
+        return makeWool(248, 198, 40, 647u);
+    case WOOL_ORANGE:
+        return makeWool(240, 118, 20, 649u);
+    case WOOL_PURPLE:
+        return makeWool(122, 42, 172, 651u);
     default:
         return PixelArt::blank(S);
     }
