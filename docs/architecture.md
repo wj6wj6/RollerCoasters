@@ -62,6 +62,7 @@ flowchart LR
     LandWorker <-->|讀／寫 data/saves/*.world| Save[WorldSave / 世界存檔]
     OceanWorker <-->|讀／寫| Save
     Land --> LandTex[LandTextures / 島嶼方塊與植物貼圖]
+    Land --> Mobs[Mobs / 羊、豬、牛的方塊模型與皮膚]
     Land --> Cull[Frustum / 分塊視錐剔除]
     Land --> Shape[WorldShape / 世界尺寸與海岸線]
     Land --> Flow[WaterFlow / 水流擴散]
@@ -73,6 +74,7 @@ flowchart LR
     Callbacks -->|Textures 選單| Packs[TexturePack / 資料夾或 zip 材質包]
     Packs --> Zip[ZipArchive / zip 目錄與 DEFLATE 解碼]
     Packs -->|setTexturePack| Land
+    Packs -->|entityPicture：entity 資料夾的動物圖| Mobs
     Packs -->|setTexturePack| Ocean
     PackFiles[texturepacks/ 裡的材質包] --> Packs
     Callbacks -->|Grand Tour| Ocean
@@ -106,6 +108,7 @@ flowchart LR
 | `src/WorldSave.h` | 島與海床網格的存檔（`data/saves/*.world`，run-length 編碼），key 是生成程式的建置時間與網格尺寸。 |
 | `src/CellQueue.h` | 光照 flood fill 用的單一 vector 佇列（取代 MSVC Debug 下很慢的 `std::deque`）。 |
 | `src/LandTextures.h/.cpp` | 島嶼方塊與植物的程序貼圖。 |
+| `src/Mobs.h/.cpp` | 島上的羊、豬、牛：照方塊遊戲模型以像素為單位的方塊與其貼圖配置（box UV）、內建皮膚、上傳與繪製；由 `MobsCheck` 測試模型每一面都落在皮膚上。 |
 | `src/OceanWorld.h/.cpp` | 海床、海底景物、海洋生物，以及 `Grand Tour` 的控制點與取樣。 |
 | `src/WorldShape.h/.cpp` | 世界尺寸、放大倍率與海岸線（陸地與海底共用）。 |
 | `src/WaterFlow.h/.cpp` | 方塊遊戲式的水流擴散規則。 |

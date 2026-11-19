@@ -102,6 +102,12 @@ class Pack
     // Does the pack have any of `blocks` (without reading them)?
     bool hasAny(const std::string &blocks) const;
 
+    // An animal's picture (assets/minecraft/textures/entity/<name>.png), as
+    // it is: the first of `names` the pack has ('|' between them) whose
+    // size passes `fits`. False when it has none.
+    bool entityPicture(const std::string &names, bool (*fits)(int width, int height), int &width,
+                       int &height, std::vector<unsigned char> &rgba) const;
+
   private:
     bool readFile(const std::string &relative, ZipArchive::Bytes &out) const;
     bool hasFile(const std::string &relative) const;
