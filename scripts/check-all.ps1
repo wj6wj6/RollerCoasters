@@ -12,7 +12,11 @@ param(
     [ValidateSet('msvc', 'clang')]
     [string[]] $Compiler = @('msvc', 'clang'),
     [ValidateSet('Debug', 'Release')]
-    [string[]] $Config = @('Debug', 'Release')
+    [string[]] $Config = @('Debug', 'Release'),
+    # Leave out the checks that run once for all pairs (format, repository
+    # policy, MSVC /analyze): the Windows workflow runs them in a job of
+    # their own beside one job for each compiler and configuration.
+    [switch] $NoShared
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -34,8 +38,10 @@ function Invoke-Check {
     return $passed
 }
 
-$null = Invoke-Check 'Format, repository policy, script syntax' @('-Stage', 'quick')
-$null = Invoke-Check 'MSVC /analyze (Debug)' @('-Stage', 'lint', '-Config', 'Debug')
+if (!$NoShared) {
+    $null = Invoke-Check 'Format, repository policy, script syntax' @('-Stage', 'quick')
+    $null = Invoke-Check 'MSVC /analyze (Debug)' @('-Stage', 'lint', '-Config', 'Debug')
+}
 foreach ($compilerName in $Compiler) {
     foreach ($configName in $Config) {
         $label = "$compilerName $configName"
