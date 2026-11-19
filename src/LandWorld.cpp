@@ -709,7 +709,8 @@ struct Grid
     bool opaque(int bx, int j, int bz) const
     {
         const int b = get(bx, j, bz);
-        return b != AIR && b != WATER && b != WINDOW;
+        // a door is a thin board in its cell, so it hides nothing beside it
+        return b != AIR && b != WATER && b != WINDOW && b != DOOR;
     }
     int skyAt(int bx, int j, int bz) const
     {
@@ -1905,6 +1906,7 @@ void buildVillage(Grid &g, Extras &extras, const Clearance &clear)
         // a hipped cap of dark oak steps over the timber top
         buildHipRoof(g, mx - 2, mx + 2, mz - 2, mz + 2, floor + 7, ROOF, PLANKS);
         g.put(mx, floor, mz + 1, DOOR);
+        g.put(mx, floor + 1, mz + 1, DOOR);
         g.put(mx, floor + 5, mz + 1, WINDOW);
         extras.mill[0] = centerOf(mx);
         extras.mill[1] = static_cast<float>(floor + 6) * kBlock;
@@ -4696,6 +4698,29 @@ void addShape(const Grid &g, int bx, int j, int bz, Batches &batches)
     }
 }
 
+// A door as a block game has it: a board three sixteenths thick standing at
+// one side of its cell, the bottom or top half of the door's picture by
+// whether there is door below. It closes the doorway on the inside, so the
+// doorway is set back in the wall: the wall runs along the axis where the
+// cells either side are built (wall or window), and the inside is the side
+// that gets less sky.
+void addDoor(const Grid &g, int bx, int j, int bz, Batches &batches)
+{
+    const bool wallAlongX = g.get(bx - 1, j, bz) != AIR || g.get(bx + 1, j, bz) != AIR;
+    const int ax = wallAlongX ? 0 : 1, az = wallAlongX ? 1 : 0; // across the wall
+    const int skyPlus = g.skyAt(bx + ax, j, bz + az), skyMinus = g.skyAt(bx - ax, j, bz - az);
+    const bool insidePlus = skyPlus < skyMinus;
+    const float t = 3.0f / 16.0f;
+    float lo[3] = {0.0f, 0.0f, 0.0f}, hi[3] = {1.0f, 1.0f, 1.0f};
+    const int axis = wallAlongX ? 2 : 0;
+    if (insidePlus)
+        lo[axis] = 1.0f - t;
+    else
+        hi[axis] = t;
+    const bool top = g.get(bx, j - 1, bz) == DOOR;
+    addShapeBox(g, bx, j, bz, lo, hi, batches, top ? LandTextures::DOOR_TOP : LandTextures::DOOR);
+}
+
 // Two quads crossing diagonally, smaller than the cell and off centre.
 void addPlant(const Grid &g, int bx, int j, int bz, Batches &batches)
 {
@@ -5144,6 +5169,8 @@ LandWorld::Scene &LandWorld::scene(bool flat)
                         }
                         else if (b == WINDOW)
                             addGlassFaces(s.grid, bx, j, bz, water);
+                        else if (b == DOOR)
+                            addDoor(s.grid, bx, j, bz, solids);
                         else if (b != AIR)
                             addBlockFaces(s.grid, bx, j, bz, solids);
                         else if (s.grid.plant[cell] == SNOW_LAYER)

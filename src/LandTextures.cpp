@@ -825,30 +825,47 @@ Image makePathSide()
     return p;
 }
 
-Image makeDoor()
+// An oak door as a block game draws one, a block of it at a time: a frame
+// of darker boards round raised panels; the top half has four window panes
+// (see-through), the bottom half two tall panels and the iron knob.
+Image makeDoor(bool top)
 {
-    Image p = makePlanks();
-    for (int y = 2; y < S; ++y)
-        for (int x = 6; x < 26; ++x)
+    Image p = PixelArt::blank(S);
+    for (int y = 0; y < S; ++y)
+        for (int x = 0; x < S; ++x)
         {
-            const int s = shadeOf(x, y, 111u, 4);
-            const bool edge = x <= 7 || x >= 24 || y <= 3;
-            const bool pane = y >= 6 && y <= 13 && ((x >= 10 && x <= 14) || (x >= 17 && x <= 21));
-            const bool plank = x == 15 || x == 16;
-            if (edge)
-                set(p, x, y, 70, 48, 26);
-            else if (pane)
-                set(p, x, y, 58 + (x + y) % 3 * 6, 68, 86);
-            else if (plank)
-                set(p, x, y, 100, 68, 36);
+            const int s = shadeOf(x, y, top ? 113u : 111u, 4);
+            const bool frame = x < 3 || x > 28 || (top ? y < 3 : y > 28);
+            const bool bar = x == 15 || x == 16 || (top ? y == 15 || y == 16 : y == 15);
+            const bool pane = top && !frame && !bar && x >= 5 && x <= 26 && y >= 5 && y <= 26;
+            const bool panelEdge = !top && !frame && !bar &&
+                                   (x == 5 || x == 26 || x == 13 || x == 18 || y == 3 || y == 13 ||
+                                    y == 17 || y == 27);
+            if (pane)
+                continue; // a window: see-through
+            if (frame || bar)
+                set(p, x, y, (x < 3 || y < 3 ? 120 : 92) + s, (x < 3 || y < 3 ? 86 : 64) + s,
+                    (x < 3 || y < 3 ? 48 : 34) + s);
+            else if (panelEdge)
+                set(p, x, y, 96 + s, 66 + s, 36 + s);
             else
-                set(p, x, y, 128 + s, 88 + s, 48 + s);
+                set(p, x, y, 150 + s, 110 + s, 64 + s);
         }
-    for (int y = 19; y <= 22; ++y)
-    {
-        set(p, 20, y, 236, 200, 80);
-        set(p, 21, y, 180, 148, 56);
-    }
+    // the window panes' frames, and the knob on the bottom half
+    if (top)
+        for (int k = 3; k < S - 3; ++k)
+        {
+            set(p, 4, k, 92, 64, 34);
+            set(p, 27, k, 92, 64, 34);
+            set(p, k, 4, 92, 64, 34);
+            set(p, k, 27, 92, 64, 34);
+        }
+    else
+        for (int y = 5; y <= 7; ++y)
+        {
+            set(p, 24, y, 96, 96, 100);
+            set(p, 25, y, 60, 60, 64);
+        }
     return p;
 }
 
@@ -1388,7 +1405,9 @@ Image make(int texture)
     case WINDOW:
         return makeWindow();
     case DOOR:
-        return makeDoor();
+        return makeDoor(false);
+    case DOOR_TOP:
+        return makeDoor(true);
     case LANTERN:
         return makeLantern();
     case CRYSTAL:
