@@ -49,7 +49,7 @@ enum Action
     REMOVE
 };
 
-// key: an FLTK key (Fl::event_key()); state: Fl::event_state(); fly: the Fly
-// camera is on.
+// key: InputEvent::key (a Key:: code or a lower case letter); state: the Mod::
+// bits (Utilities/Input.H); fly: the Fly camera is on.
 Action forKey(int key, int state, bool fly);
 } // namespace EditKeys

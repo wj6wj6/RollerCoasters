@@ -46,6 +46,8 @@ add_library(Utilities
     src/Utilities/ArcBallCam.H src/Utilities/ArcBallCam.cpp
     src/Utilities/FlyCam.H src/Utilities/FlyCam.cpp
     src/Utilities/HeadLook.H src/Utilities/HeadLook.cpp
+    src/Utilities/Input.H
+    src/Utilities/Platform.H src/Utilities/PlatformFltk.H src/Utilities/PlatformFltk.cpp
     src/Utilities/Pnt3f.H src/Utilities/Pnt3f.cpp
     src/Utilities/TwoFingerGesture.H src/Utilities/TwoFingerGesture.cpp)
 target_link_libraries(Utilities PUBLIC project_options fltk)

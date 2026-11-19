@@ -1,6 +1,6 @@
-#include <FL/Fl.H>
-#include <FL/Fl_Gl_Window.H>
 #include "FlyCam.H"
+#include "Platform.H"
+#include "TestViewport.h"
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -20,10 +20,9 @@ static float distanceFrom(const FlyCam &camera, float x, float y, float z)
     return std::sqrt((px - x) * (px - x) + (py - y) * (py - y) + (pz - z) * (pz - z));
 }
 
-static void key(FlyCam &camera, int event, int code)
+static void key(FlyCam &camera, InputType type, int code)
 {
-    Fl::e_keysym = code;
-    camera.handle(event);
+    camera.handle(keyEvent(type, code));
 }
 
 // Press a key, run the event loop, release it. Returns the time from just
@@ -33,9 +32,9 @@ static double pump(double seconds);
 static double holdKey(FlyCam &camera, int code, double seconds)
 {
     const auto start = std::chrono::steady_clock::now();
-    key(camera, FL_KEYDOWN, code);
+    key(camera, InputType::KeyDown, code);
     pump(seconds);
-    key(camera, FL_KEYUP, code);
+    key(camera, InputType::KeyUp, code);
     return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 }
 
@@ -44,14 +43,14 @@ static double holdKey(FlyCam &camera, int code, double seconds)
 // CI machine may skip a tick, so allow 0.1 s of missing motion.
 static const float lateSeconds = .1f;
 
-// Run the real FLTK event loop (and its timeouts) for a while.
+// Run the real event loop (and its timers) for a while.
 static double pump(double seconds)
 {
     const auto start = std::chrono::steady_clock::now();
     for (;;)
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(4));
-        Fl::check();
+        platform::processPending();
         const double elapsed =
             std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
         if (elapsed >= seconds)
@@ -107,16 +106,16 @@ static bool checkViewMatrix()
 static bool checkHeldKey(int code, bool fast, float pitch, float expectX, float expectY,
                          float expectZ, const char *name)
 {
-    Fl_Gl_Window window(600, 600);
+    TestViewport window(600, 600);
     FlyCam camera;
     camera.setup(&window);
     camera.setPose(0, 30, 0, 0, pitch);
     camera.setSpeed(20);
     if (fast)
-        key(camera, FL_KEYDOWN, FL_Control_L);
+        key(camera, InputType::KeyDown, Key::ControlL);
     const double held = holdKey(camera, code, .5);
     if (fast)
-        key(camera, FL_KEYUP, FL_Control_L);
+        key(camera, InputType::KeyUp, Key::ControlL);
     float x, y, z;
     camera.position(x, y, z);
     pump(.1);
@@ -137,17 +136,17 @@ static bool checkHeldKey(int code, bool fast, float pitch, float expectX, float 
 
 static bool checkTurnKeysAndPitchLimit()
 {
-    Fl_Gl_Window window(600, 600);
+    TestViewport window(600, 600);
     FlyCam camera;
     camera.setup(&window);
     camera.setPose(0, 50, 0, 0, 0);
-    const double held = holdKey(camera, FL_Right, .3);
+    const double held = holdKey(camera, Key::Right, .3);
     pump(.05);
     const float expected = FlyCam::turnDegreesPerSecond * (float)held;
     const bool turn = camera.yaw() <= expected + 1e-3f &&
                       camera.yaw() >= expected - FlyCam::turnDegreesPerSecond * lateSeconds;
 
-    holdKey(camera, FL_Up, 1.5);
+    holdKey(camera, Key::Up, 1.5);
     pump(.05);
     float fx, fy, fz;
     camera.forward(fx, fy, fz);
@@ -159,20 +158,16 @@ static bool checkTurnKeysAndPitchLimit()
 
 static bool checkDragLook()
 {
-    Fl_Gl_Window window(600, 600);
+    TestViewport window(600, 600);
     FlyCam camera;
     camera.setup(&window);
     camera.setPose(0, 50, 0, 0, 0);
-    Fl::e_x = 300;
-    Fl::e_y = 300;
-    Fl::e_state = FL_BUTTON1;
-    camera.beginDrag();
-    Fl::e_x = 400;
-    Fl::e_y = 260;
-    const bool taken = camera.handle(FL_DRAG) == 1;
+    camera.beginDrag(300, 300);
+    const bool taken = camera.handle(mouseEvent(InputType::Drag, 400, 260, 0, Mod::Button1)) == 1;
     const float yaw = camera.yaw(), pitch = camera.pitch();
-    const bool released = camera.handle(FL_RELEASE) == 1 && camera.handle(FL_DRAG) == 0;
-    Fl::e_state = 0;
+    const bool released =
+        camera.handle(mouseEvent(InputType::Release, 400, 260, Mouse::Left)) == 1 &&
+        camera.handle(mouseEvent(InputType::Drag, 400, 260)) == 0;
     const bool pass = taken && released && approx(yaw, 100 * FlyCam::dragDegreesPerPixel, 1e-3f) &&
                       approx(pitch, 40 * FlyCam::dragDegreesPerPixel, 1e-3f);
     std::printf("%s: dragging right/up turns right/up (yaw %.2f, pitch %.2f) and ends on release\n",
@@ -182,7 +177,7 @@ static bool checkDragLook()
 
 static bool checkMouseLook()
 {
-    Fl_Gl_Window window(600, 600);
+    TestViewport window(600, 600);
     FlyCam camera;
     camera.setup(&window);
     camera.setPose(0, 50, 0, 0, 0);
@@ -199,7 +194,7 @@ static bool checkMouseLook()
 
 static bool checkScroll()
 {
-    Fl_Gl_Window window(600, 600);
+    TestViewport window(600, 600);
     FlyCam camera;
     camera.setup(&window);
     camera.setPose(0, 50, 0, 0, 0);
@@ -215,27 +210,23 @@ static bool checkScroll()
 
     // Spreading two fingers arrives as Ctrl + wheel up and flies forward.
     camera.setPose(0, 50, 0, 0, 0);
-    camera.scroll(0, -.5f, FL_CTRL, true);
+    camera.scroll(0, -.5f, Mod::Ctrl, true);
     float x, y, z;
     camera.position(x, y, z);
     const bool pinch = approx(z, -.5f * notch, 1e-4f) && approx(x, 0, 1e-5f);
 
     // Alt + scroll slides sideways and up without turning.
     camera.setPose(0, 50, 0, 0, 0);
-    camera.scroll(1, -1, FL_ALT, true);
+    camera.scroll(1, -1, Mod::Alt, true);
     camera.position(x, y, z);
     const bool slide = approx(x, notch, 1e-4f) && approx(y, 50 + notch, 1e-4f) &&
                        approx(z, 0, 1e-5f) && camera.yaw() == 0;
 
     // Like a spectator, a mouse wheel notch up flies faster (and stays put).
     camera.setPose(0, 50, 0, 0, 0);
-    Fl::e_dx = 0;
-    Fl::e_dy = -1;
-    Fl::e_state = 0;
-    const bool taken = camera.handle(FL_MOUSEWHEEL) == 1;
+    const bool taken = camera.handle(wheelEvent(0, -1)) == 1;
     const bool faster = approx(camera.speed(), 20 * FlyCam::wheelSpeedStep, 1e-3f);
-    Fl::e_dy = 2;
-    camera.handle(FL_MOUSEWHEEL);
+    camera.handle(wheelEvent(0, 2));
     const bool slower = approx(camera.speed(), 20 / FlyCam::wheelSpeedStep, 1e-3f);
     const bool wheel =
         taken && faster && slower && distanceFrom(camera, 0, 50, 0) < 1e-5f && camera.pitch() == 0;
@@ -243,7 +234,7 @@ static bool checkScroll()
 
     // Shift is the sink key, so Shift + touchpad scroll still looks around.
     camera.setPose(0, 50, 0, 0, 0);
-    camera.scroll(1, 0, FL_SHIFT, true);
+    camera.scroll(1, 0, Mod::Shift, true);
     const bool shiftLooks = approx(camera.yaw(), FlyCam::scrollDegrees, 1e-3f) &&
                             distanceFrom(camera, 0, 50, 0) < 1e-5f;
 
@@ -272,14 +263,14 @@ static bool checkScroll()
 
 static bool checkSpeedKeysAndUnfocus()
 {
-    Fl_Gl_Window window(600, 600);
+    TestViewport window(600, 600);
     FlyCam camera;
     camera.setup(&window);
     camera.setSpeed(20);
-    key(camera, FL_KEYDOWN, '=');
+    key(camera, InputType::KeyDown, '=');
     const bool faster = approx(camera.speed(), 25, 1e-4f);
-    key(camera, FL_KEYDOWN, '-');
-    key(camera, FL_KEYDOWN, '-');
+    key(camera, InputType::KeyDown, '-');
+    key(camera, InputType::KeyDown, '-');
     const float slowed = camera.speed();
     const bool slower = approx(slowed, 16, 1e-4f);
     camera.setSpeed(1000);
@@ -287,9 +278,9 @@ static bool checkSpeedKeysAndUnfocus()
 
     // Losing focus while a key is held must not leave the camera drifting.
     camera.setPose(0, 50, 0, 0, 0);
-    key(camera, FL_KEYDOWN, 'w');
+    key(camera, InputType::KeyDown, 'w');
     pump(.1);
-    camera.handle(FL_UNFOCUS);
+    camera.handle(simpleEvent(InputType::Unfocus));
     float x, y, z;
     camera.position(x, y, z);
     pump(.1);
@@ -302,26 +293,26 @@ static bool checkSpeedKeysAndUnfocus()
 
 static bool checkBounds()
 {
-    Fl_Gl_Window window(600, 600);
+    TestViewport window(600, 600);
     FlyCam camera;
     camera.setup(&window);
     // Sinking below the floor stops at eye height; flying far stops at the edge.
     camera.setPose(0, 5, 0, 0, -60);
-    camera.scroll(0, -100, FL_CTRL, true); // a big pinch dives along the view
+    camera.scroll(0, -100, Mod::Ctrl, true); // a big pinch dives along the view
     float x, y, z;
     camera.position(x, y, z);
     const bool ground = approx(y, FlyCam::minHeight, 1e-4f);
     // A track under the sea lowers the ground; raising it again waits for the
     // next move instead of making the view jump.
     camera.setGround(-50);
-    camera.scroll(0, -100, FL_CTRL, true);
+    camera.scroll(0, -100, Mod::Ctrl, true);
     camera.position(x, y, z);
     const bool seaFloor = approx(y, -50 + FlyCam::minHeight, 1e-4f);
     camera.setGround(0);
     float x2, y2, z2;
     camera.position(x2, y2, z2);
     const bool noJump = approx(y2, y, 1e-4f);
-    camera.scroll(0, -1, FL_CTRL, true);
+    camera.scroll(0, -1, Mod::Ctrl, true);
     camera.position(x2, y2, z2);
     const bool raised = approx(y2, FlyCam::minHeight, 1e-4f);
     camera.setPose(1000, 1000, -1000, 0, 0);
@@ -336,7 +327,7 @@ static bool checkBounds()
 
 static bool checkFieldOfView()
 {
-    Fl_Gl_Window window(600, 600);
+    TestViewport window(600, 600);
     FlyCam camera;
     camera.setup(&window, 90);
     const bool start = approx(camera.fieldOfViewDegrees(), 90, 1e-4f);
@@ -359,16 +350,16 @@ static bool checkScanCodes()
         FlyCam::keyForScanCode(0x11, false) == 'w' && FlyCam::keyForScanCode(0x1E, false) == 'a' &&
         FlyCam::keyForScanCode(0x1F, false) == 's' && FlyCam::keyForScanCode(0x20, false) == 'd';
     const bool upDown = FlyCam::keyForScanCode(0x39, false) == ' ' &&
-                        FlyCam::keyForScanCode(0x2A, false) == FL_Shift_L &&
-                        FlyCam::keyForScanCode(0x36, false) == FL_Shift_R &&
+                        FlyCam::keyForScanCode(0x2A, false) == Key::ShiftL &&
+                        FlyCam::keyForScanCode(0x36, false) == Key::ShiftR &&
                         FlyCam::keyForScanCode(0x12, false) == 'e' &&
                         FlyCam::keyForScanCode(0x10, false) == 'q';
     const bool other =
-        FlyCam::keyForScanCode(0x1D, false) == FL_Control_L &&
-        FlyCam::keyForScanCode(0x1D, true) == FL_Control_R &&
+        FlyCam::keyForScanCode(0x1D, false) == Key::ControlL &&
+        FlyCam::keyForScanCode(0x1D, true) == Key::ControlR &&
         FlyCam::keyForScanCode(0x21, false) == 'f' && FlyCam::keyForScanCode(0x13, false) == 'r' &&
         FlyCam::keyForScanCode(0x22, false) == 'g' && FlyCam::keyForScanCode(0x2E, false) == 'c' &&
-        FlyCam::keyForScanCode(0x47, true) == FL_Home &&
+        FlyCam::keyForScanCode(0x47, true) == Key::Home &&
         FlyCam::keyForScanCode(0x47, false) == 0 && // numpad 7: Top camera
         FlyCam::keyForScanCode(0x2D, false) == 0 && // X never reaches Fly
         FlyCam::keyForScanCode(0x2C, false) == 0;   // Z is not a flying key
@@ -380,7 +371,7 @@ static bool checkScanCodes()
 
 static bool checkLookAt()
 {
-    Fl_Gl_Window window(600, 600);
+    TestViewport window(600, 600);
     FlyCam camera;
     camera.setup(&window);
     // Facing -Z; the target is behind and below on the right: turn the short way.
@@ -419,7 +410,7 @@ int main()
     bool back = checkHeldKey('s', false, -30, 0, 0, 1, "S");
     bool left = checkHeldKey('a', false, 0, -1, 0, 0, "A");
     bool up = checkHeldKey(' ', false, 0, 0, 1, 0, "Space");
-    bool down = checkHeldKey(FL_Shift_L, false, 0, 0, -1, 0, "Shift");
+    bool down = checkHeldKey(Key::ShiftL, false, 0, 0, -1, 0, "Shift");
     bool upAlt = checkHeldKey('e', false, 0, 0, 1, 0, "E");
     bool downAlt = checkHeldKey('q', false, 0, 0, -1, 0, "Q");
     bool fast = checkHeldKey('d', true, 0, 1, 0, 0, "Ctrl + D");

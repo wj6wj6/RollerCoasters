@@ -10,14 +10,10 @@
 #include <math.h>
 #include <windows.h>
 
-#pragma warning(push)
-#pragma warning(disable : 4311) // convert void* to long
-#pragma warning(disable : 4312) // convert long to void*
-#include <FL/Fl.H>
-#include <FL/Fl_Gl_Window.H>
 #include <GL/GL.h>
 #include <GL/GLU.h>
-#pragma warning(pop)
+
+#include "Platform.H"
 
 namespace
 {
@@ -39,11 +35,11 @@ FlyCam::FlyCam()
 
 FlyCam::~FlyCam()
 {
-    Fl::remove_timeout(tick, this);
-    Fl::remove_timeout(turnTick, this);
+    platform::removeTimeout(tick, this);
+    platform::removeTimeout(turnTick, this);
 }
 
-void FlyCam::setup(Fl_Gl_Window *window, float fov)
+void FlyCam::setup(Viewport *window, float fov)
 {
     stop();
     wind = window;
@@ -193,13 +189,13 @@ void FlyCam::lookAt(float x, float y, float z)
     turnPitch = pitch - pitchDegrees;
     turnStart = std::chrono::steady_clock::now();
     if (!turnActive)
-        Fl::add_timeout(tickSeconds, turnTick, this);
+        platform::addTimeout(tickSeconds, turnTick, this);
     turnActive = true;
 }
 
 void FlyCam::endTurn()
 {
-    Fl::remove_timeout(turnTick, this);
+    platform::removeTimeout(turnTick, this);
     turnActive = false;
 }
 
@@ -219,7 +215,7 @@ void FlyCam::turnTick(void *data)
     camera->pitchDegrees = camera->turnFromPitch + camera->turnPitch * eased;
     camera->redraw();
     if (t < 1)
-        Fl::repeat_timeout(tickSeconds, turnTick, data);
+        platform::repeatTimeout(tickSeconds, turnTick, data);
     else
         camera->turnActive = false;
 }
@@ -227,7 +223,7 @@ void FlyCam::turnTick(void *data)
 void FlyCam::redraw() const
 {
     if (wind)
-        wind->damage(1);
+        wind->requestRedraw();
 }
 
 int FlyCam::keyFor(int key)
@@ -244,23 +240,23 @@ int FlyCam::keyFor(int key)
         return Right;
     case ' ':
     case 'e':
-    case FL_Page_Up:
+    case Key::PageUp:
         return Up;
-    case FL_Shift_L:
-    case FL_Shift_R:
+    case Key::ShiftL:
+    case Key::ShiftR:
     case 'q':
-    case FL_Page_Down:
+    case Key::PageDown:
         return Down;
-    case FL_Left:
+    case Key::Left:
         return TurnLeft;
-    case FL_Right:
+    case Key::Right:
         return TurnRight;
-    case FL_Up:
+    case Key::Up:
         return LookUp;
-    case FL_Down:
+    case Key::Down:
         return LookDown;
-    case FL_Control_L:
-    case FL_Control_R:
+    case Key::ControlL:
+    case Key::ControlR:
         return Fast;
     }
     return -1;
@@ -292,16 +288,16 @@ int FlyCam::keyForScanCode(unsigned scan, bool extended)
         return 'c'; // selects the control point at the crosshair (TrainView)
     case 0x47:
         // Home goes back to the World view. Without the E0 prefix this is
-        // numpad 7, which TrainView reads as the Top camera through FLTK.
-        return extended ? FL_Home : 0;
+        // numpad 7, which TrainView reads as the Top camera from its key events.
+        return extended ? Key::Home : 0;
     case 0x39:
         return ' ';
     case 0x2A:
-        return FL_Shift_L;
+        return Key::ShiftL;
     case 0x36:
-        return FL_Shift_R;
+        return Key::ShiftR;
     case 0x1D:
-        return extended ? FL_Control_R : FL_Control_L;
+        return extended ? Key::ControlR : Key::ControlL;
     }
     return 0;
 }
@@ -337,7 +333,7 @@ void FlyCam::tick(void *data)
         seconds = longestStep;
     camera->step(seconds);
     if (camera->anyMotionHeld())
-        Fl::repeat_timeout(tickSeconds, tick, data);
+        platform::repeatTimeout(tickSeconds, tick, data);
     else
         camera->timerActive = false;
 }
@@ -345,27 +341,27 @@ void FlyCam::tick(void *data)
 void FlyCam::stop()
 {
     endTurn();
-    Fl::remove_timeout(tick, this);
+    platform::removeTimeout(tick, this);
     timerActive = false;
     dragging = false;
     for (bool &key : held)
         key = false;
 }
 
-void FlyCam::beginDrag()
+void FlyCam::beginDrag(int x, int y)
 {
     dragging = true;
-    lastX = Fl::event_x();
-    lastY = Fl::event_y();
+    lastX = x;
+    lastY = y;
 }
 
 void FlyCam::scroll(float dx, float dy, int state, bool precise)
 {
     const float wheelDistance = moveSpeed * scrollSeconds;
-    if (state & FL_CTRL)
+    if (state & Mod::Ctrl)
         // Spreading two fingers (or Ctrl + wheel up) flies forward.
         move(-dy * wheelDistance, 0, 0);
-    else if (state & FL_ALT)
+    else if (state & Mod::Alt)
         move(0, dx * wheelDistance, -dy * wheelDistance);
     else if (precise)
         look(dx * scrollDegrees, -dy * scrollDegrees);
@@ -397,23 +393,23 @@ void FlyCam::touchpadGesture(float dx, float dy, float scale, bool slide)
     redraw();
 }
 
-int FlyCam::handle(int event)
+int FlyCam::handle(const InputEvent &event)
 {
-    switch (event)
+    switch (event.type)
     {
-    case FL_PUSH:
-        if (Fl::event_button() == FL_RIGHT_MOUSE)
+    case InputType::Push:
+        if (event.button == Mouse::Right)
         {
-            beginDrag();
+            beginDrag(event.x, event.y);
             return 1;
         }
         break;
 
-    case FL_DRAG:
+    case InputType::Drag:
         if (dragging)
         {
-            const int x = Fl::event_x();
-            const int y = Fl::event_y();
+            const int x = event.x;
+            const int y = event.y;
             // Drag right to turn right, drag up to look up.
             look((float)(x - lastX) * dragDegreesPerPixel,
                  (float)(lastY - y) * dragDegreesPerPixel);
@@ -424,7 +420,7 @@ int FlyCam::handle(int event)
         }
         break;
 
-    case FL_RELEASE:
+    case InputType::Release:
         if (dragging)
         {
             dragging = false;
@@ -432,14 +428,14 @@ int FlyCam::handle(int event)
         }
         break;
 
-    case FL_KEYDOWN: {
-        const int key = Fl::event_key();
-        if (key == '=' || key == '+' || key == FL_KP + '+')
+    case InputType::KeyDown: {
+        const int key = event.key;
+        if (key == '=' || key == '+' || key == Key::Keypad + '+')
         {
             setSpeed(moveSpeed * 1.25f);
             return 1;
         }
-        if (key == '-' || key == FL_KP + '-')
+        if (key == '-' || key == Key::Keypad + '-')
         {
             setSpeed(moveSpeed / 1.25f);
             return 1;
@@ -452,13 +448,13 @@ int FlyCam::handle(int event)
         {
             timerActive = true;
             lastTick = std::chrono::steady_clock::now();
-            Fl::add_timeout(tickSeconds, tick, this);
+            platform::addTimeout(tickSeconds, tick, this);
         }
         return 1;
     }
 
-    case FL_KEYUP: {
-        const int index = keyFor(Fl::event_key());
+    case InputType::KeyUp: {
+        const int index = keyFor(event.key);
         if (index < 0)
             return 0;
         held[index] = false;
@@ -466,15 +462,17 @@ int FlyCam::handle(int event)
         return 1;
     }
 
-    // A key released while another window has focus never sends FL_KEYUP.
-    case FL_UNFOCUS:
-    case FL_HIDE:
+    // A key released while another window has focus never sends KeyUp.
+    case InputType::Unfocus:
+    case InputType::Hide:
         stop();
         break;
 
-    case FL_MOUSEWHEEL:
-        scroll((float)Fl::event_dx(), (float)Fl::event_dy(), Fl::event_state(), false);
+    case InputType::Wheel:
+        scroll(event.dx, event.dy, event.state, false);
         return 1;
+    default:
+        break;
     }
     return 0;
 }
@@ -484,7 +482,7 @@ void FlyCam::setProjection(bool doClear) const
     glMatrixMode(GL_PROJECTION);
     if (doClear)
         glLoadIdentity();
-    const double aspect = (double)wind->w() / (double)wind->h();
+    const double aspect = (double)wind->viewWidth() / (double)wind->viewHeight();
     gluPerspective(fieldOfView, aspect, .1, 3000);
 
     glMatrixMode(GL_MODELVIEW);
