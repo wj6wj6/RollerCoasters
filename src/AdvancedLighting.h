@@ -203,6 +203,8 @@ class AdvancedLighting
     int m_locBlockLightColor;
     int m_locWetness;
     int m_locTranslucent;
+    int m_locDaylight;
+    float m_daylight = 1.0f; // 1 in full day, 0 at night: how much the block lights wash out
 
     // Results of prepare(), kept between the shadow and the main passes.
     SkyState m_sky;

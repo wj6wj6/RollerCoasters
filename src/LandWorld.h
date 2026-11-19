@@ -69,7 +69,7 @@ class LandWorld
     // over what is behind them.
     void drawWater(bool flat);
 
-    // Stands the track on wooden trestles, one every 9 units along it
+    // Stands the track on wooden trestles, one every 16 units along it
     // wherever it is above the water and well above the ground; off the
     // island the posts go down to the sea bed. path: points along the whole
     // track about a unit apart, x, y, z for each. The trestles are worked

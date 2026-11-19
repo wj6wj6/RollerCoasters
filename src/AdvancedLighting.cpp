@@ -33,7 +33,9 @@ uniform float uTime;
 varying vec3 vWorldPos;
 varying vec3 vWorldNormal;
 varying vec4 vColor;
-varying vec4 vExtra; // emissive, sway, block light, sky light (see OceanWorld)
+// emissive; sway (when positive) or the warm light of lava and lanterns on
+// a block that does not sway (as minus that); cool block light; sky light
+varying vec4 vExtra;
 
 void main()
 {
@@ -96,6 +98,7 @@ uniform float uWaterLevel;     // very low when there is no water
 uniform vec3 uBlockLightColor; // glow cast by crystals
 uniform float uWetness;        // 0 dry, 1 soaked by rain
 uniform int uTranslucent;      // 1 while the see-through water and glass are drawn
+uniform float uDaylight;       // 1 in full day, 0 at night
 
 varying vec3 vWorldPos;
 varying vec3 vWorldNormal;
@@ -207,9 +210,18 @@ void main()
         color = albedo * ambient;
         color += blinnPhong(albedo, n, l, v, wet) * sun;
     }
-    // Light from nearby crystals, and the crystals' own glow.
-    color += albedo * uBlockLightColor * vExtra.z;
-    color += albedo * vExtra.x * 3.0;
+    // Light sources look like ornaments by day and like lamps by night (and
+    // in tunnels and under cover at any hour): how much the light they cast
+    // shows depends on how dark it is where it falls, the sky light there
+    // times the daylight; their own glow is kept stronger, as a lamp that is
+    // lit still looks lit in the sun, only less so.
+    float dark = 1.0 - uDaylight * vExtra.w;
+    float spill = mix(0.1, 1.0, dark);
+    float own = mix(0.45, 1.0, dark);
+    float warm = max(-vExtra.y, 0.0);
+    color += albedo * vec3(1.0, 0.62, 0.32) * warm * 1.6 * spill; // lava, lanterns
+    color += albedo * uBlockLightColor * vExtra.z * spill;       // crystals, sea lanterns
+    color += albedo * vExtra.x * 3.0 * own;
 
     if (uHeadlightOn != 0) {
         vec3 toLamp = uHeadPos - vWorldPos;
@@ -461,6 +473,7 @@ bool AdvancedLighting::init()
     m_locBlockLightColor = glGetUniformLocation(m_program, "uBlockLightColor");
     m_locWetness = glGetUniformLocation(m_program, "uWetness");
     m_locTranslucent = glGetUniformLocation(m_program, "uTranslucent");
+    m_locDaylight = glGetUniformLocation(m_program, "uDaylight");
 
     // Textured drawing code (glBindTexture on unit 0) keeps working through the
     // shader. Untextured code leaves the default texture object 0 bound, so
@@ -550,6 +563,8 @@ void AdvancedLighting::prepare(const LightingFrame &frame)
     const float day = smoothstep(-0.04f, 0.16f, sun[1]);
     const float dusk =
         (1.0f - smoothstep(0.04f, 0.42f, sun[1])) * smoothstep(-0.16f, -0.02f, sun[1]);
+    // the lamps come on as the sun sets, and earlier under a rain sky
+    m_daylight = smoothstep(0.02f, 0.3f, sun[1]) * (1.0f - 0.45f * clamp01(frame.rain));
 
     // The sun lights the scene by day: deep orange on the horizon, golden
     // a little higher, white by mid morning. The moon (opposite side, cool
@@ -772,6 +787,7 @@ void AdvancedLighting::begin(const LightingFrame &frame)
                                      : 0.0009f + 0.0016f * clamp01(frame.rain));
     glUniform1f(m_locWetness, clamp01(frame.wetness));
     glUniform1i(m_locTranslucent, 0);
+    glUniform1f(m_locDaylight, m_daylight);
     glUniform1f(m_locWaterLevel, frame.waterLevel);
     const float crystalLight[3] = {0.12f, 0.55f, 0.75f};
     glUniform3fv(m_locBlockLightColor, 1, crystalLight);
