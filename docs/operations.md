@@ -76,5 +76,5 @@ Get-FileHash -Algorithm SHA256 backups/my-track-before-change.txt, data/my-track
 ## 回復版本與排錯
 
 保留前一版可用的發布目錄；新版本異常時關閉程式，使用前一版 executable 與已驗證的軌道備份。
-建置失敗先確認使用 x64 MSVC／clang-cl 與 `tools.json` 指定的原生工具版本。Clang 模式先執行 `scripts/setup-tools.ps1 -WithClang`。不要混用 MinGW 或其他架構的 libraries。
+建置失敗先確認使用 x64 MSVC／clang-cl 與 `tools.json` 指定的原生工具版本。內附 FLTK 1.3.11 以 MSVC 19.44（VS 2022 17.14）編譯，連結時出現與 FLTK `.lib` 有關的未解析符號或「由較新編譯器建立」時，更新 Visual Studio，或執行 `pwsh -File scripts/build-fltk.ps1` 用本機版本重新編譯（之後 `-Stage vendor-lock`）。Clang 模式先執行 `scripts/setup-tools.ps1 -WithClang`。不要混用 MinGW 或其他架構的 libraries。
 CI 失敗保留 test-results artifact；日誌與 issue 附件避免包含使用者私密路徑與軌道內容。
