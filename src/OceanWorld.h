@@ -105,6 +105,11 @@ class OceanWorld
     // posts of a track over the sea stand.
     static float seaFloor(float x, float z);
 
+    // Is the sea bed at (x, z) left for the island to draw? The sea's
+    // blocks are twice the island's, so near the shore one of them can be
+    // left to the island while part of it is not on the island.
+    static bool leftToIsland(float x, float z);
+
     // For tests: how many of the given points (x, y, z for each, a path the
     // train follows) have a block or a plant within the train's reach. The
     // demo ride gives 0 for every spline type.

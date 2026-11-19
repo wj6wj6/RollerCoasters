@@ -3979,6 +3979,26 @@ struct BuildProgress
     }
 };
 
+// Sand under the shallow water at the shore where neither world would
+// draw a sea bed: the sea leaves its blocks whose middle is on the island
+// to the island, but its blocks are twice the size, so at the inner
+// corners of the coast part of such a block is not on the island, and
+// there the water looked down into a deep blue hole. The sand stands a
+// block under the island's lowest layer of land, well under the sea's
+// surface, and goes in last so nothing is set on it.
+void fillShoreGaps(Grid &g)
+{
+    for (int bx = kMinBX; bx < kMaxBX; ++bx)
+        for (int bz = kMinBZ; bz < kMaxBZ; ++bz)
+        {
+            if (onIsland(bx, bz) || !OceanWorld::leftToIsland(centerOf(bx), centerOf(bz)))
+                continue;
+            for (int j = kMinY; j <= kSeaLayer - 2; ++j)
+                if (g.get(bx, j, bz) == AIR && !g.carved[Grid::index(bx, j, bz)])
+                    g.put(bx, j, bz, SAND);
+        }
+}
+
 void buildScenery(Grid &g, Extras &extras, const BuildProgress &progress = BuildProgress())
 {
     const std::vector<float> ride = OceanWorld::rideSamples();
@@ -4050,6 +4070,7 @@ void buildScenery(Grid &g, Extras &extras, const BuildProgress &progress = Build
         return;
     spreadGlow(g);
     placeAnimals(g, clear, extras);
+    fillShoreGaps(g);
     step(150);
 }
 
@@ -4231,12 +4252,20 @@ float waterHeight(const Grid &g, int bx, int j, int bz)
     return static_cast<float>(8 - level) / 9.0f;
 }
 
+// The first extra value of a water vertex (otherwise how much it glows):
+// negative marks it as water for the shader, which ripples the water's
+// surface and bobs the corners on its open surface a little, as the sea's
+// waves do (AdvancedLighting).
+const float kWaterSurface = -1.0f;
+const float kWaterBody = -0.5f;
+
 // The faces of a water block: towards the air, and the part of a side that
 // stands above lower water next to it. Lit by the light of the open cell
 // each face looks into.
 void addWaterFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
 {
     const float top = waterHeight(g, bx, j, bz);
+    const bool open = g.get(bx, j + 1, bz) != WATER; // its top is the surface
     // Where it meets the sea it takes the sea's colour; everywhere else,
     // falling or still, it is the same water.
     const int texture = j <= kSeaLayer ? LandTextures::SEA_WATER : LandTextures::WATER;
@@ -4275,7 +4304,6 @@ void addWaterFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
             v.normal[k] = static_cast<float>(f.normal[k]);
             v.color[k] = 1.0f;
         }
-        v.extra[0] = 0.0f;
         v.extra[1] = -glowFactor(static_cast<float>(g.warmAt(lx, ly, lz)));
         v.extra[2] = glowFactor(static_cast<float>(g.coolAt(lx, ly, lz)));
         v.extra[3] = skyFactor(static_cast<float>(g.skyAt(lx, ly, lz)));
@@ -4284,6 +4312,8 @@ void addWaterFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
             const float y = f.normal[1] > 0
                                 ? top
                                 : (f.normal[1] < 0 ? 0.0f : (f.corner[c][1] == 1 ? top : bottom));
+            // the shader moves the corners at the open surface (kWaterSurface)
+            v.extra[0] = open && y == top ? kWaterSurface : kWaterBody;
             v.pos[0] = static_cast<float>(bx + f.corner[c][0]) * kBlock;
             v.pos[1] = (static_cast<float>(j) + y) * kBlock;
             v.pos[2] = static_cast<float>(bz + f.corner[c][2]) * kBlock;
