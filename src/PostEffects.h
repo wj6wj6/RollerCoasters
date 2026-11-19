@@ -83,8 +83,9 @@ class PostEffects
     void setUnderwaterCamera(const float cameraPos[3], const SkyState &sky);
     void applySSAO();
     void drawParticles(const SkyState &sky, float time);
-    // Mirror-like reflections on rain-soaked ground (wetness 0..1).
-    void applyWetGround(const AdvancedLighting &lighting, float wetness);
+    // Reflections on rain-soaked ground and walls (wetness 0..1), only where
+    // the scene's alpha says the rain reaches; rain 0..1 rings the puddles.
+    void applyWetGround(const AdvancedLighting &lighting, float wetness, float rain, float time);
     // rain 0..1 adds drop rings to the surface.
     void drawWater(const AdvancedLighting &lighting, float time, bool orthographic, bool underwater,
                    float rain);

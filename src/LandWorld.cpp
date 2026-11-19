@@ -5234,9 +5234,15 @@ void LandWorld::draw(bool flat, bool shadowPass, float time)
     const Frustum view = Frustum::current();
     m_chunksDrawn = 0;
     // the fixed pipeline cuts the leaves and plants out here; the shader
-    // does it itself
-    glEnable(GL_ALPHA_TEST);
-    glAlphaFunc(GL_GREATER, 0.5f);
+    // does it itself, and uses the alpha it writes for something else (how
+    // open a surface is to the rain), so the test stays off under it
+    GLint program = 0;
+    glGetIntegerv(GL_CURRENT_PROGRAM, &program);
+    if (program == 0)
+    {
+        glEnable(GL_ALPHA_TEST);
+        glAlphaFunc(GL_GREATER, 0.5f);
+    }
     for (const LandChunk &c : s.chunks)
         if (view.sees(c.lo, c.hi))
         {

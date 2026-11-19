@@ -474,23 +474,51 @@ void main()
 }
 )GLSL";
 
-// Rain on the ground: up-facing surfaces above the water get a film of
-// water, pooling into puddles, that mirrors the scene with the same screen
-// space reflections as the sea. Output is blended over the scene by alpha.
+// Rain on the ground and the walls, mirrored with the same screen space
+// reflections as the sea, blended over the scene by alpha. Only where the
+// rain reaches: the scene's alpha holds how open each solid surface is to
+// the sky (AdvancedLighting), so the ground under eaves, in tunnels and
+// indoors stays dry. Floors get a film of water pooling into puddles,
+// ringed by the drops while it rains; walls a thin film running down in
+// streaks, which, as on real wet stone, shows mostly at grazing angles and
+// mirrors softly (its normal broken up a little), not like glass.
 const char *kWetFragment = R"GLSL(
 varying vec2 vUv;
 uniform mat4 uInvView;
 uniform vec2 uTexel;
 uniform float uWetness;
+uniform float uRain;     // how hard it rains now: the drops' rings
+uniform float uTime;
 uniform float uWaterLevel;
 uniform vec3 uZenith;
 uniform vec3 uHorizon;
+
+float hash12(vec2 p)
+{
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+// The slope a raindrop's ring adds to a puddle at p (world x, z): one drop
+// a cell, each at its own time, spreading and fading.
+vec2 dropRings(vec2 p, float offset)
+{
+    vec2 q = p * 0.9 + offset;
+    vec2 cell = floor(q);
+    vec2 f = fract(q) - 0.5;
+    float t = fract(uTime * 0.9 + hash12(cell + offset * 7.0));
+    float r = length(f);
+    float ring = exp(-pow((r - t * 0.45) * 22.0, 2.0)) * (1.0 - t);
+    return f / max(r, 0.001) * ring;
+}
 
 void main()
 {
     float d = texture2D(uDepth, vUv).r;
     if (d >= 1.0)
         discard;
+    float exposure = texture2D(uRefraction, vUv).a;
+    if (exposure < 0.05)
+        discard; // sheltered: dry
     vec3 P = viewPos(vUv, d);
     // Normal from the depth buffer, using the nearer neighbour on each axis.
     vec3 px = viewPos(vUv + vec2(uTexel.x, 0.0), texture2D(uDepth, vUv + vec2(uTexel.x, 0.0)).r) - P;
@@ -505,20 +533,40 @@ void main()
     mat3 invRot = mat3(uInvView[0].xyz, uInvView[1].xyz, uInvView[2].xyz);
     vec3 world = (uInvView * vec4(P, 1.0)).xyz;
     vec3 worldN = invRot * N;
-    if (worldN.y < 0.8 || world.y < uWaterLevel + 0.3)
+    if (world.y < uWaterLevel + 0.3)
         discard;
+    bool floorLike = worldN.y >= 0.8;
+    if (!floorLike && abs(worldN.y) > 0.3)
+        discard; // undersides, and the slivers along block edges
 
-    // Puddles gather in the low patches of a noise field; between them
-    // there is only a thin film.
-    float pool = noise(world.xz * 0.11) + 0.35 * noise(world.xz * 0.41);
-    float puddle = smoothstep(0.62, 0.80, pool);
-    float strength = uWetness * mix(0.22, 1.0, puddle);
+    float strength;
+    vec3 bentN = worldN;
+    if (floorLike) {
+        // Puddles gather in the low patches of a noise field; between them
+        // there is only a thin film.
+        float pool = noise(world.xz * 0.11) + 0.35 * noise(world.xz * 0.41);
+        float puddle = smoothstep(0.62, 0.80, pool);
+        strength = uWetness * exposure * mix(0.22, 1.0, puddle);
+        vec2 slope = (dropRings(world.xz, 0.0) + dropRings(world.xz, 0.5)) * 0.3;
+        bentN = normalize(worldN + vec3(slope.x, 0.0, slope.y) * uRain * exposure * mix(0.3, 1.0, puddle));
+    } else {
+        // A film running down the wall in streaks, its sheen broken up.
+        float along = dot(world.xz, vec2(-worldN.z, worldN.x));
+        float run = noise(vec2(along * 1.3, world.y * 0.12 + uTime * 0.5));
+        strength = uWetness * exposure * mix(0.4, 1.0, smoothstep(0.3, 0.75, run));
+        vec3 side = vec3(-worldN.z, 0.0, worldN.x);
+        bentN = normalize(worldN + side * (noise(vec2(along, world.y) * 2.3) - 0.5) * 0.25 +
+                          vec3(0.0, noise(vec2(along, world.y) * 1.7 + 3.1) - 0.5, 0.0) * 0.2);
+    }
+    N = normalize(bentN * invRot); // back into view space (invRot is a rotation)
 
     vec3 R = reflect(-toEye, N);
     vec4 hit = traceReflection(P + N * 0.05, R, N);
     vec3 worldR = invRot * R;
     vec3 sky = mix(uHorizon, uZenith, pow(clamp(worldR.y, 0.0, 1.0), 0.5));
-    float fresnel = 0.04 + 0.96 * pow(1.0 - max(dot(N, toEye), 0.0), 5.0);
+    // a wet wall's film is rough and catches the light at any angle a
+    // little, on top of what the water's Fresnel term mirrors
+    float fresnel = (floorLike ? 0.04 : 0.1) + 0.96 * pow(1.0 - max(dot(N, toEye), 0.0), 5.0);
     gl_FragColor = vec4(mix(sky, hit.rgb, hit.a), clamp(fresnel * strength * 1.4, 0.0, 1.0));
 }
 )GLSL";
@@ -1272,7 +1320,8 @@ void PostEffects::applySSAO()
     glUseProgram(0);
 }
 
-void PostEffects::applyWetGround(const AdvancedLighting &lighting, float wetness)
+void PostEffects::applyWetGround(const AdvancedLighting &lighting, float wetness, float rain,
+                                 float time)
 {
     // The reflections read the scene, so they need a copy of it.
     glBindFramebuffer(GL_READ_FRAMEBUFFER, m_scene.fbo);
@@ -1299,6 +1348,8 @@ void PostEffects::applyWetGround(const AdvancedLighting &lighting, float wetness
     glUniform2f(loc(p, "uTexel"), 1.0f / static_cast<float>(m_width),
                 1.0f / static_cast<float>(m_height));
     glUniform1f(loc(p, "uWetness"), wetness);
+    glUniform1f(loc(p, "uRain"), rain);
+    glUniform1f(loc(p, "uTime"), time);
     glUniform1f(loc(p, "uWaterLevel"), waterLevel);
     glUniform3fv(loc(p, "uZenith"), 1, sky.zenith);
     glUniform3fv(loc(p, "uHorizon"), 1, sky.horizon);
@@ -1785,7 +1836,7 @@ void renderAdvancedFrame(AdvancedLighting &lighting, PostEffects &effects, Light
     if (toggles.ssao)
         effects.applySSAO();
     if (frame.wetness > 0.01f && !underwater && !frame.orthographic)
-        effects.applyWetGround(lighting, frame.wetness);
+        effects.applyWetGround(lighting, frame.wetness, frame.rain, frame.time);
     if (underwater)
         effects.drawParticles(sky, frame.time);
     if (toggles.water)
