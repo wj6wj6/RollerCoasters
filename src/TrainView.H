@@ -51,6 +51,7 @@ class CTrack;
 
 #include "Utilities/ArcBallCam.H"
 #include "AdvancedLighting.h"
+#include "AppControl.h"
 #include "PostEffects.h"
 #include <memory>
 #include <utility>
@@ -75,6 +76,7 @@ class TrainView : public Fl_Gl_Window, public Viewport
     // overrides of important window things
     int handle(int) override;
     void draw() override;
+    void drawFrame(); // the scene; draw() adds the command line checks
 
     // Mouse and keyboard input, already turned into InputEvent (handle() does
     // that for FLTK's events). Returns 1 when the view used the event.
@@ -93,6 +95,20 @@ class TrainView : public Fl_Gl_Window, public Viewport
     {
         damage(1);
     }
+
+    // --doctor and --screenshot (AppControl.h, TrainViewControl.cpp): main()
+    // starts them; automationResult is the exit code once they finish.
+    void startAutomation(const AppControl::Options *options);
+    void finishAutomatedFrame();
+    void finishAutomation(int result);
+    const AppControl::Options *automation = nullptr;
+    int automationFrames = 0;
+    int automationResult = -1;
+    // Did the last drawFrame() show the scene, not the loading screen? Only
+    // those frames count, so a screenshot is never of the progress bar.
+    bool frameShowsScene = false;
+    double automationStart = 0; // seconds, when the run started
+    double worldSeconds = 0;    // until the first frame of the scene
 
     // all of the actual drawing happens in this routine
     // it has to be encapsulated, since we draw differently if

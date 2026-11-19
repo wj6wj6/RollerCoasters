@@ -1,8 +1,16 @@
 # 架構與資料流
 
+本文件說明模組責任、事件與資料流，以及跨模組必須維持的約定。
+各景物的尺寸、配色與擺放規則寫在對應函式的註解裡，不在此重複；操作方式見 [README](../README.md)。
+
 ```mermaid
 flowchart LR
-    Main[main / 版本參數] --> Window[TrainWindow / 控制面板]
+    Main[main] --> Control[AppControl / 命令列、軌道檔檢查、畫面判讀、PNG]
+    Script[scripts/control-app.ps1] -->|--doctor / --screenshot| Main
+    Main -->|applyOptions| Window
+    Main --> Window[TrainWindow / 控制面板]
+    View -->|每幀結束| ViewControl[TrainViewControl / 讀回畫面、回報、關閉視窗]
+    ViewControl --> Control
     Window --> View[TrainView / OpenGL 畫布]
     Window --> Track[CTrack / 控制點與 trainU]
     Window --> Theme[UiTheme / 深灰面板與圓角控制項樣式]
@@ -11,18 +19,18 @@ flowchart LR
     View --> Track
     View --> Rails[TrackRenderer / 鐵軌、枕木與弧長表]
     Rails --> Track
-    View --> Train[TrainModel / 蒸汽火車頭、五節礦車、方塊人乘客與車燈]
+    View --> Train[TrainModel / 火車頭、礦車、乘客與車燈]
     Train --> Track
-    View --> Gizmo[TransformGizmo / 控制點移動把手的挑選、拖曳與繪製]
-    View --> Keys[EditKeys / 按鍵對應的編輯指令，依是否在 Fly 相機]
-    View --> Insert[TrackInsert / 在點擊的軌道位置新增控制點]
+    View --> Gizmo[TransformGizmo / 控制點移動把手]
+    View --> Insert[TrackInsert / 在點擊的軌道位置新增、刪除控制點]
+    Insert --> Track
     Callbacks --> History[TrackHistory / 控制點的上一步與下一步]
     View --> History
     History --> Track
-    Insert --> Track
+    View --> Keys[EditKeys / 按鍵對應的編輯指令]
     FltkEvents[FLTK 事件 / Fl::event_*] -->|platform::fltkEvent| Input[InputEvent / 自己的滑鼠鍵盤事件 Input.H]
     Input -->|handleInput| View
-    View --> Camera[ArcBallCam / 相機與手勢平滑]
+    View --> Camera[ArcBallCam / World 相機與手勢平滑]
     View --> Fly[FlyCam / 觀察者自由相機]
     View --> Head[HeadLook / Train 視角轉頭]
     Camera -->|進入 Fly 時的視角| Fly
@@ -32,130 +40,144 @@ flowchart LR
     Timer --> Fly
     Wheel[Windows 滾輪訊息 / system handler] -->|原始位移| Camera
     Wheel -->|Fly 模式| Fly
-    Touchpad[TouchpadGestures / Raw Input 手指座標 + Direct Manipulation] -->|移動 + 縮放比例| Camera
-    Touchpad -->|Fly 模式| Fly
     Wheel -->|Train 模式的觸控板捲動| Head
+    Touchpad[TouchpadGestures / Raw Input + Direct Manipulation] --> TwoFinger[TwoFingerGesture / 兩指濾波]
+    TwoFinger -->|移動 + 縮放比例| Camera
+    Touchpad -->|Fly 模式| Fly
     Touchpad -->|Train 模式| Head
     Touchpad -->|Update 計時| Timer
     Track <-->|readPoints / writePoints| File[使用者軌道文字檔]
-    Callbacks -->|Load / Save / Open pack| Dialogs[FileDialogs / 系統的開啟、另存新檔視窗與檔案總管]
+    Callbacks -->|Load / Save / Open pack| Dialogs[FileDialogs / 系統檔案視窗與檔案總管]
     View --> GL[GLAD / OpenGL / GLU]
+    View --> Land[LandWorld / 方塊島嶼與木棧橋]
+    View --> Ocean[OceanWorld / 海床、海底景物與生物]
     View --> Effects[TrainViewEffects / 讀取光影 widget]
     Effects --> Frame[renderAdvancedFrame]
-    Frame --> Lighting[AdvancedLighting / 跟著鏡頭的 shadow map、逐像素光照、頭燈]
-    Land --> Cull[Frustum / 分塊視錐剔除]
-    Land --> Shape[WorldShape / 世界尺寸與不規則海岸線]
-    Ocean --> Shape
-    Ocean --> Cull
-    Frame --> Post[PostEffects / 天空、波浪水面與 SSR、雨與濕地反射、SSAO、Bloom、god rays、ACES]
+    Frame --> Lighting[AdvancedLighting / shadow map、逐像素光照、頭燈]
+    Frame --> Post[PostEffects / 天空、水面、雨、SSAO、Bloom、色調映射]
     Frame -->|drawGround / drawUnderwater / drawObjects| View
-    View --> Land[LandWorld / 方塊島嶼：雪山、峽谷、火山、村莊、木棧橋]
     View -->|worldReady：未建好前畫載入畫面| Loading[載入畫面 / 泥土背景、階段文字、進度條]
     Land -->|背景執行緒：生成網格、切塊 mesh| LandWorker[LandWorld::buildScene]
     LandWorker -->|prepare：每幀約 30 ms 編 display list| Land
     Ocean -->|背景執行緒：生成網格與 mesh| OceanWorker[OceanWorld::Build::run]
     OceanWorker -->|prepare：編 display list| Ocean
-    LandWorker <-->|讀／寫 data/saves/*.world| Save[WorldSave / 世界存檔，key 為生成程式的建置時間]
+    LandWorker <-->|讀／寫 data/saves/*.world| Save[WorldSave / 世界存檔]
     OceanWorker <-->|讀／寫| Save
     Land --> LandTex[LandTextures / 島嶼方塊與植物貼圖]
-    Callbacks -->|Textures 選單| Packs[TexturePack / 使用者的材質包：資料夾或 zip、方塊名稱對照、染色]
+    Land --> Cull[Frustum / 分塊視錐剔除]
+    Land --> Shape[WorldShape / 世界尺寸與海岸線]
+    Land --> Flow[WaterFlow / 水流擴散]
+    Land -->|rideSamples| Ocean
+    Ocean --> Shape
+    Ocean --> Cull
+    LandTex --> Pixel[PixelArt / 程序貼圖]
+    Ocean --> Pixel
+    Callbacks -->|Textures 選單| Packs[TexturePack / 資料夾或 zip 材質包]
     Packs --> Zip[ZipArchive / zip 目錄與 DEFLATE 解碼]
     Packs -->|setTexturePack| Land
+    Packs -->|setTexturePack| Ocean
     PackFiles[texturepacks/ 裡的材質包] --> Packs
-    Land -->|rideSamples| Ocean
-    View --> Ocean[OceanWorld / 方塊海床、珊瑚、遺跡、沉船、水晶隧道、海洋生物]
-    LandTex --> Pixel[PixelArt / 程序貼圖（方塊 32×32）]
-    Ocean --> Pixel
     Callbacks -->|Grand Tour| Ocean
 ```
 
-檔案：Load、Save 與 `Open pack...` 經 `FileDialogs` 開系統自己的檔案視窗（`Fl_Native_File_Chooser`，Windows 上是檔案總管的「開啟」與「另存新檔」），`Open texturepacks folder` 以 `ShellExecuteW` 用檔案總管打開資料夾。
+## 模組責任
 
-材質包：`World` 面板的 `Textures` 按鈕（`Fl_Menu_Button`，每次按下都重新列出）由 `TrainWindow::listTexturePacks()` 列出 `TexturePack::findAll()` 在搜尋資料夾（exe 旁的 `texturepacks/`，建置與安裝時建立；以及工作資料夾的 `texturepacks/` 與 `data/texturepacks/`，`main()` 啟動時已切到 exe 的資料夾）找到的 `.zip` 與資料夾。選定後 `texturePackCB()` 以 `TexturePack::Pack::open()` 開啟（zip 由 `ZipArchive` 讀目錄、自己的 DEFLATE 解碼器解壓；包在一層資料夾裡時以 `pack.mcmeta` 等標記找根目錄），交給 `TrainView::setTexturePack()` → `LandWorld::setTexturePack()`。下一次 `draw()` 對每種貼圖先問材質包（本程式格式 `textures/<名稱>.png`，再依對照表找資源包的 `block/`、`blocks/` 圖片；PNG 由 FLTK 解碼，取動畫第一格、縮成 2 的次方、灰階的草與樹葉染色、實心方塊補滿透明處），沒有就用 `LandTextures::make()`，再以 `PixelArt::uploadInto()` 寫進原本的貼圖名稱。海底世界同樣處理：`TrainView::setTexturePack()` 也交給 `OceanWorld::setTexturePack()`，`OceanWorld` 有自己的方塊名稱表（沙、石頭、深板岩、苔石磚、雕紋石磚、珊瑚塊、紫水晶、海燈籠、金塊、海晶石、暗海晶石、海帶、海草、珊瑚扇、海鞘），經 `Pack::standIn()` 取圖，下次 `draw()` 寫進原本的貼圖名稱。軌道的枕木與鋼軌也由 `TrainView::setTexturePack()` 從材質包取雲杉木板與鐵塊（`TrackRenderer::setPictures()`，空的就用內建），風車葉片與熱氣球改用島上的貼圖（橡木、木板與各色羊毛 `WOOL_*`）以 `texturedBox()` 畫出，所以會動的景物也跟著材質包；只有生物、列車、雲與天空維持程式自己的顏色。顯示清單綁定的是貼圖名稱，所以換材質包不必重建島嶼或顯示清單。
+| 路徑 | 職責 |
+|---|---|
+| `src/main.cpp` | 解析命令列，切到 exe 所在資料夾，建立 `TrainWindow` 並啟動 FLTK 事件迴圈；自動模式結束後回傳結果。 |
+| `src/AppControl.h/.cpp` | 命令列（`--doctor`、`--screenshot` 與場景參數）的解析、軌道檔格式檢查、資料夾檢查、畫面判讀與 PNG 寫入；不需要視窗，由 `AppControlCheck` 測試。 |
+| `src/TrainViewControl.cpp` | 自動模式下每幀結束時：`--doctor` 回報 OpenGL 與 shader 路徑，`--screenshot` 從 back buffer 讀回畫面、存檔並判斷是否真的畫出東西，然後關閉視窗。 |
+| `src/TrainWindow.H/.cpp` | 主視窗與控制面板；持有唯一的 `CTrack`、widget 與 `advanceTrain()`。 |
+| `src/CallBacks.H/.cpp` | 按鈕、滑桿、idle 更新、軌道載入儲存與材質包選單。 |
+| `src/UiTheme.h/.cpp` | 控制面板配色與圓角控制項樣式。 |
+| `src/TrainView.H/.cpp` | OpenGL 畫布：相機投影、場景繪製、控制點選取與編輯、Windows 輸入訊息。 |
+| `src/TrainViewEffects.cpp` | 把光影 widget 的狀態轉成 `LightingFrame`，並呼叫 `renderAdvancedFrame()`。 |
+| `src/AdvancedLighting.h/.cpp` | 跟著鏡頭的 shadow map、GLSL 逐像素光照、日夜與頭燈。 |
+| `src/PostEffects.h/.cpp` | 浮點 frame buffer 與後製：天空、水面與 SSR、雨與濕地反射、SSAO、Bloom、god rays、ACES。 |
+| `src/UnderwaterOptics.h` | 水下吸收、caustics 與水色常數，三個 shader 共用。 |
+| `src/MatrixMath.h` | 光影程式用的 column-major 4×4 矩陣輔助函式。 |
+| `src/Track.H/.cpp` | 控制點容器、三種樣條的位置與切線、`trainU`、軌道文字檔讀寫。 |
+| `src/ControlPoint.H/.cpp` | 控制點位置、方向向量與標記繪製。 |
+| `src/TrackRenderer.H/.cpp` | 鐵軌與枕木繪製、累積弧長表、`makeTrackFrame()`。 |
+| `src/TrainModel.h/.cpp` | 列車模型；`Chase` 相機用的列車長度與沿軌道往回取點。 |
+| `src/TransformGizmo.h/.cpp` | 控制點移動把手的挑選、拖曳換算（純數學）與繪製。 |
+| `src/TrackInsert.h/.cpp` | 找出點擊處的軌道參數，在該處插入控制點（軌道仍經過點擊處）、刪除控制點並重新對應 `trainU`；純數學，由 `TrackInsertCheck` 測試。 |
+| `src/TrackHistory.h/.cpp` | 控制點的上一步／下一步：每次修改前存一份整條軌道（點、`trainU`、選取）的快照；由 `TrackHistoryCheck` 測試。 |
+| `src/EditKeys.h/.cpp` | 編輯指令的鍵位表；Fly 相機下避開飛行鍵。 |
+| `src/LandWorld.h/.cpp` | 方塊島嶼：地形與生態、建築、水、沿 `Grand Tour` 挖出淨空、光照烘焙、會動的景物、木棧橋；在背景執行緒建造。 |
+| `src/WorldSave.h` | 島與海床網格的存檔（`data/saves/*.world`，run-length 編碼），key 是生成程式的建置時間與網格尺寸。 |
+| `src/CellQueue.h` | 光照 flood fill 用的單一 vector 佇列（取代 MSVC Debug 下很慢的 `std::deque`）。 |
+| `src/LandTextures.h/.cpp` | 島嶼方塊與植物的程序貼圖。 |
+| `src/OceanWorld.h/.cpp` | 海床、海底景物、海洋生物，以及 `Grand Tour` 的控制點與取樣。 |
+| `src/WorldShape.h/.cpp` | 世界尺寸、放大倍率與海岸線（陸地與海底共用）。 |
+| `src/WaterFlow.h/.cpp` | 方塊遊戲式的水流擴散規則。 |
+| `src/Frustum.h/.cpp` | 從目前矩陣取出視錐平面，做分塊剔除。 |
+| `src/PixelArt.h/.cpp` | 程序貼圖的雜湊、繪圖與上傳輔助函式。 |
+| `src/TexturePack.h/.cpp` | 找出並開啟材質包，對照方塊名稱、染色並交出貼圖。 |
+| `src/ZipArchive.h/.cpp` | 讀取 zip 目錄，以自己的 DEFLATE 解碼器解壓。 |
+| `src/FileDialogs.h/.cpp` | 系統檔案視窗（`Fl_Native_File_Chooser`）與用檔案總管開資料夾。 |
+| `src/TouchpadGestures.H/.cpp` | Raw Input 讀精準觸控板的手指座標；Direct Manipulation 接手手勢並作為備援。 |
+| `src/Utilities/TwoFingerGesture.*` | 兩指位移與張開比例的 1-euro 濾波與起動門檻。 |
+| `src/Utilities/Input.H` | 自己的輸入事件 `InputEvent`、`Key::`／`Mod::`／`Mouse::` 常數（數值與 FLTK 相同），以及相機用的 `Viewport` 介面。 |
+| `src/Utilities/Platform.H`、`PlatformFltk.*` | 計時器與事件迴圈（`platform::addTimeout()` 等），目前以 FLTK 實作；`platform::fltkEvent()` 把 FLTK 事件轉成 `InputEvent`。見 [ADR 0008](adr/0008-own-input-and-timer-layer.md)。 |
+| `src/Utilities/ArcBallCam.*` | World 相機；以 `platform::` timer 分攤滾輪縮放。 |
+| `src/Utilities/FlyCam.*` | Fly 觀察者相機。 |
+| `src/Utilities/HeadLook.*` | Train 相機相對於列車的轉頭。 |
+| `src/Utilities/Pnt3f.*`、`3DUtils.*` | 三維向量型別與 OpenGL 輔助函式（課程原始碼）。 |
 
-造景的方塊原則：島上與海底的每一種方塊與植物都對應到方塊遊戲有的方塊（材質包對照表裡有名稱），新造景也只用這些方塊蓋，所以套用完整的材質包（例如 Classic Faithful 32x）時整個場景都是材質包的圖；只有會動的生物（魚、動物、水母）、雲、熱氣球、鐵軌與列車不在此列。海底原本自創的物件因此改成方塊遊戲有的：環形閘門用海晶石與暗海晶石，巨蚌改成珊瑚丘（兩種珊瑚塊與頂上發光的海鞘），燈改成海燈籠，水晶改成紫水晶塊，遺跡的柱子用雕紋石磚，海星拿掉。
+## 事件與更新
 
-光源：建築的燈是 `LAMP`（植物格），由 `addLantern()` 照方塊遊戲的燈籠模型畫出（6/16 寬、7/16 高的燈身加燈帽，貼圖取材質包 `lantern.png` 對應的部位）：下方是方塊或柵欄就立著，否則吊在上方方塊下並畫出鏈子（`chain`）。`spreadGlow()` 把燈籠、熔岩與螢石都當成最亮的 14（方塊遊戲的 15），燈籠所在格也算亮；岩山隧道的燈改成在岩壁鑿出一格壁龕、燈籠立在龕裡（偶爾是長在岩石裡的水晶），場景不再用全格發光的 `LANTERN`（螢石）；營火的火心是岩漿塊。
+- 控制面板 callback 直接修改 `TrainWindow::m_Track`，再呼叫 `damageMe()` 要求重畫。
+- `Run` 開啟時，FLTK idle callback `runButtonCB()` 最多每秒 30 次呼叫 `advanceTrain()`；左右鍵以正負方向呼叫同一函式。
+- `ArcLength` 開啟時，`advanceByArcLength()` 沿參數小步前進、累加歐氏距離，每次呼叫即時計算；關閉時直接改變 `trainU`，所以世界空間速度會隨區段長度變化。
+- 光影動畫（雨、時間）由每秒 30 次的 `animateEffectsCB` timeout 推進。
+- 世界在背景執行緒建造：`TrainView::draw()` 先呼叫 `worldReady()`，它對目前要畫的島與（`Water` 與 `Light+` 都開時）海床呼叫 `prepare()`。第一次呼叫時各開一條 `std::thread` 生成網格並逐塊產生頂點；display list 只能在主執行緒建立，所以 `prepare()` 每幀最多花約 30 ms 編譯已完成的塊，其餘時間畫載入畫面，並以 timeout 約每 1/30 秒重畫，直到全部完成。
+- 新增控制點（`Add Pt`、`Shift` + `D`）先進入放置模式，`TrackInsert::pick()` 找滑鼠附近的軌道參數，點下時 `insertAt()` 插點並進入拖曳。Fly 相機在滑鼠鎖定且 `Edit` 開啟時是建造狀態（`flyBuilding()`）：左鍵刪準心對到的點、中鍵或 `C` 選取、右鍵在準心前方放點；`G` 以 `beginCarry()`／`updateCarry()` 讓點跟著視角移動。
+- 修改控制點的每條路徑（新增、刪除、`Load`、`Reset`、`Grand Tour`、R±X／Z、`Transform` 欄位、拖曳與 `G`／`R`）都先存 `TrackHistory` 快照；拖曳只在點真的改變時才存入。
+- 相機的平滑、按住按鍵移動與觸控板慣性都走 `platform::` timer（目前由 FLTK 實作），依實際經過時間計算，與幀率無關。
+- 滑鼠與鍵盤事件：`TrainView::handle()` 以 `platform::fltkEvent()` 把當下的 FLTK 事件轉成 `InputEvent`，交給 `TrainView::handleInput()`；相機、控制點編輯與 Train 轉頭的處理函式只吃 `InputEvent`，不讀 `Fl::event_*()`。
+- 自動模式（`--doctor`／`--screenshot`）：`main()` 先以 `TrainWindow::applyOptions()` 設定場景（軌道檔先經 `checkTrackFile()`，壞檔直接失敗、不跳對話框），`TrainView::draw()` 畫完 `drawFrame()` 後呼叫 `finishAutomatedFrame()`。`--doctor` 在第一幀就回報；`--screenshot` 只計算真正畫出場景的幀（`frameShowsScene`，載入畫面不算），達到指定幀數才讀回畫面、寫 PNG、印出 `PASS`／`FAIL` 行與場景出現所花的秒數，再關閉視窗讓 `Fl::run()` 返回。300 秒內場景沒有出現也算失敗。結束碼：0 通過、1 檢查失敗、2 命令列錯誤。
 
-所有光源都照「白天像裝飾、晚上像真正的光源」：光影 shader 依該處有多暗（`1 − uDaylight × 天光`）決定光源投到周圍的光有多強，白天在戶外只剩一成，夜晚、黃昏後、雨天與隧道、屋內、海底這些暗處全亮；光源本身的發光白天保留四成五，看得出是點著的燈但不刺眼。`uDaylight` 由 `AdvancedLighting` 依太陽高度算出（日落時漸漸點亮，下雨提早）。燈籠與熔岩的暖光不再烘焙成頂點顏色的偏紅，而是以負的第二個 extra（方塊不擺動，正值才是擺動）交給 shader，乘上暖色 (1.0, 0.62, 0.32)；水晶、海燈籠與海鞘的冷光同樣依明暗調整。
+## 跨模組約定
 
-門（`DOOR`）仍是方塊，但不遮擋旁邊的面（`Grid::opaque()` 排除它），由 `addDoor()` 畫成 3/16 厚的門板：門框所在的軸看左右兩格是否有方塊（牆或窗），門板靠在天光較少的那一側（屋內），所以門洞退進牆內一格、看得到門框側面；下面也是門的那一格用門的上半（`DOOR_TOP`，窗格是鏤空的），其餘用下半（`DOOR`）。材質包分別對應 `oak_door_top`、`oak_door_bottom`。風車的門改為兩格高。
+改動下列任一項時，要同時檢查所列的其他模組與測試。
 
-建築的小構件：樓梯（`STAIRS`）、半磚（`SLAB`）、活板門（`TRAPDOOR`）與花盆（`POT`）和柵欄、燈籠一樣放在植物格（方塊仍是 `AIR`），材料與方向存在 `Grid::level`（`shapeLevel()`：第 0–1 位元是朝向 `kFacing`、第 2 位元表示在格子上半（倒置樓梯、上半磚、關起的活板門）、第 3 位元表示外角樓梯、第 4–6 位元是 `kShapeBlocks` 的材料；花盆存花的種類）。`isFixture()` 判斷這些構件，`commit()`（種樹）、`putPath()` 與 `freeCell()` 都不會蓋掉它們；積雪不落在它們上面（和方塊遊戲一樣，樓梯上沒有雪層）。`addShape()` 把它們畫成與實心方塊同一批的盒子（`addShapeBox()`，貼圖照方塊比例對齊世界座標，貼著實心方塊的面省略），所以有光照與陰影；樓梯是下半格加上升側的上半格，外角樓梯只有兩個方向之間的四分之一。`buildGableRoof()` 用兩排樓梯從屋簷往屋脊爬升（寬度是奇數時屋脊是一排半磚），內部與山牆用指定方塊填滿並退縮在樓梯下一格；`buildHipRoof()` 一圈圈往內收、四角用外角樓梯、頂上是半磚（剩 2×2 時是整塊的小平頂，角塔的燈籠立在上面）。`dressWindows()` 在每扇窗下方牆外放關起的活板門當窗台、約三分之一放花盆，`flowerBeds()` 在牆腳（門那一側除外）零星種花。建築照「先形狀、再配色、最後細節」：每棟 2～3 種主要材料加少量點綴（房屋：圓石、深色橡木、橡木；教堂與城堡：石磚、圓石、深色橡木；營地小屋：雲杉原木、雲杉木板、圓石），屋頂都是深色橡木樓梯。建築左右對稱：教堂 7 格寬、房屋的門開在正面中央（取代中間的柱子），燈籠吊在正面兩個角的屋簷下（營地小屋相同），不放在門正前方擋路、營地小屋 4 格寬且門都朝營火、燈塔四面同高開窗、塔（`buildTower()`）奇數寬時窗在正中間並在尖頂放燈籠、偶數寬時開成對的窗並在四個簷角各吊一盞燈籠、城堡主塔 5 格寬置中；`dressWindows()` 與 `flowerBeds()` 依離立面中線的距離挑花盆與花，所以左右鏡射。見 [ADR 0006](adr/0006-building-parts-in-plant-cells.md)。
+**座標與樣條**
+- 世界座標 Y 軸朝上；列車模型本地 +Z 是車頭方向。
+- `trainU` 是樣條參數，不是距離；每個整數區段對應一個控制點區段，依控制點數回繞成閉環。少於 4 點時位置回傳原點，編輯操作會維持至少 4 點。
+- Linear、Cardinal（Catmull-Rom）與 B-spline（預設）共用參數週期與閉環索引。
+- `evaluateTangent()` 以 `u ± 0.001` 差分估算；`makeTrackFrame()` 以世界上方協助建立方向框架，車體、鐵軌與 Train／Chase 相機共用。遇到完整翻轉的軌道，側向會突然翻轉，屆時要改用平行傳輸框架。
+- 列車方向由切線決定；`ControlPoint::orient` 會存檔，但目前不參與計算。
 
-村莊與材質：`buildHouse()` 照方塊遊戲平原村莊的配置蓋房子（圓石牆基、四角與牆中央的深色橡木原木柱、柱間兩格高的玻璃窗、牆頂一圈橡木板、空心的屋內與木地板、兩格高的門與門上當小屋簷的樓梯、深色橡木樓梯的山形屋頂出簷一格、退縮的橡木板山牆、圓石煙囪），教堂與鐘樓、城堡（`buildTower()` 的角塔頂端有一圈倒置石磚樓梯挑簷，主堡的木造樓層由倒置樓梯撐出）、燈塔（台階底座、倒置樓梯撐出的瞭望台與柵欄欄杆）、營地小屋（`buildCabin()`）與風車頂都改用這些構件，`putPath()` 鋪三格寬、夾雜礫石的泥土小路（`PATH` 方塊）並從每戶門口接到主路，燈與井柱用 `FENCE`（植物格，由 `addFence()` 畫成柱子與接到相鄰柵欄或方塊的兩根橫木），教堂改在綠地上離中心最近、不壓到麥田、井、風車與房子的空地。窗戶（`WINDOW`）不再發光也不算光源；它不遮擋旁邊的面（`Grid::opaque()` 排除玻璃），由 `addGlassFaces()` 放進與水同一批半透明網格，在 `drawWater()` 混合，所以看得到屋內。樹葉的貼圖有鏤空（`isLeafBlock()`）：相鄰方塊朝樹葉的面也會畫，兩片樹葉之間只畫一面，實心方塊以 alpha test（shader 本來就丟掉 alpha 小於一半的像素）切出空隙，像精緻樹葉；材質包的樹葉保留透明處，只把透明像素的顏色換成平均色（`bleedHoles()`），遠處 mipmap 不會發黑。光線（天光與燈光）可以穿過樹葉，每穿過一片多暗一級（像方塊遊戲會濾光的樹葉），所以從葉間空隙看到的樹冠內側面是亮的，不是全黑。水邊與林地由 `dressEdges()` 在種完花後處理：靜水（水位 0、海平面以上、至少 3 個水鄰格）的水面依雜湊放 `LILY_PAD`（植物格，由 `addLilyPad()` 畫成貼著水面的平板，放進植物批次、在水的那一段畫），湖底與池底的沙、泥土、礫石與草依雜訊成片轉成 `CLAY`；靜水旁的草地與沙岸放 1–3 格高的 `SUGAR_CANE`（與竹子一樣疊高的植物）；雲杉林（`ALPINE`）的草地依雜訊轉成 `PODZOL`；草原與雲杉林在惡地或火山 4 格內的草地，依距離與雜訊轉成 `COARSE_DIRT` 或礫石，交界是參差的一帶。這些都避開列車淨空，材質包對照表裡都有對應的方塊名稱（睡蓮葉依方塊遊戲染成綠色）。這類小物件（柵欄、燈籠、玻璃、竹竿、雪層側面）不在頂點顏色裡另外寫死依朝向的明暗：明暗一律由光影 shader 依法線計算，和一般方塊相同，否則會暗兩次。
+**相機**
+- 所有透視相機共用 `FOV` 滑桿的視角（`TrainView::setFieldOfView()`），所以切到 Fly 時直接沿用上一幀的 modelview 矩陣，畫面不跳動；上一幀是 Top 時改從 `topViewCentre()` 上方往下看。
+- Fly 與 Train 模式的按鍵經掃描碼 system handler（`FlyCam::keyForScanCode()`）組成 `InputEvent` 送進 `TrainView::handleInput()`，輸入法開啟或使用其他鍵盤配置時按鍵位置仍有效。編輯鍵由 `EditKeys::forKey()` 決定，不能與飛行鍵衝突（`EditKeysCheck`）。
+- FLTK 1.3 會把滾輪訊息捨入為整格，所以 `TrainView.cpp` 直接讀 `WM_MOUSEWHEEL`／`WM_MOUSEHWHEEL` 的原始位移。觸控板的設計見 [ADR 0003](adr/0003-touchpad-direct-manipulation.md)。
 
-`TrainWindow` 持有場景狀態與 widget；`TrainView` 讀取場景與 UI 選項並繪圖。
-`TrackRenderer` 建立累積弧長表，依弧長等距擺放枕木，並以程式產生的像素材質畫方塊風鐵軌；`makeTrackFrame()` 也放在這裡，供列車與相機共用。
-`CallBacks` 處理按鈕、軌道載入儲存與列車更新。
-滑鼠與鍵盤事件不直接以 FLTK 的 `Fl::event_*()` 讀取：`TrainView::handle()` 用 `platform::fltkEvent()`（`Utilities/PlatformFltk.cpp`）把當下的 FLTK 事件轉成 `InputEvent`（`Utilities/Input.H`：事件種類、滑鼠位置、按鈕、按鍵、修飾鍵、滾輪位移、連點次數），再交給 `TrainView::handleInput()`；`ArcBallCam`、`FlyCam`、編輯與 Train 轉頭的處理函式都只吃 `InputEvent`。相機以 `Viewport` 介面取得畫面大小與要求重畫，計時器與事件迴圈走 `Utilities/Platform.H`（`platform::addTimeout()` 等，目前以 FLTK 實作）。按鍵與修飾鍵的數值與 FLTK 相同，由 `PlatformFltk.cpp` 的 `static_assert` 確保。這是換掉 FLTK 的第一步，見 [ADR 0008](adr/0008-own-input-and-timer-layer.md)。
-`TrainView::handleInput()` 處理控制點編輯：`TransformGizmo` 以上一幀的相機矩陣做純數學運算（滑鼠射線對軸取最近點、對平面取交點），
-不需要 OpenGL context，所以由 `GizmoDragCheck` 測試；編輯進行中的事件會先於相機處理，結果同步到 `Transform` 面板。
-新增控制點（`Add Pt`、`Shift` + `D`）先進入放置模式：`TrackInsert::pick()` 把軌道取樣投影到螢幕，找滑鼠附近的軌道參數 u；
-左鍵點下時 `TrackInsert::insertAt()` 把新點插在 u 前後兩點之間，位置解成「軌道仍經過點擊處」（Linear／Cardinal 直接放在該處，
-B-spline 以 `(6S - P前 - P後) / 4` 反解），方向由前後兩點內插，`trainU` 依被切開的段重新對應，接著選取新點並進入拖曳。
-Fly 相機在滑鼠鎖定且 `Edit` 開啟時是建造狀態（`flyBuilding()`，照 Minecraft）：`flyBuildClick()` 左鍵以 `TrackInsert::removeAt()` 刪準心對到的點（`TrackInsert::pickPoint()`），
-中鍵（或 `C`，`pointUnderMouse()`；World／Top 則選游標下的點）選取，右鍵以 `TrackInsert::insertNear()` 把新點放在準心前方 `m_placeDepth` 處、插在最近的軌道段；滾輪（system handler 與 `InputType::Wheel` 兩條路徑）調整距離而不改飛行速度。`Del Pt` 也用 `removeAt()`，刪點時列車留在原處附近。
-這些都是純數學，由 `TrackInsertCheck` 測試。
-上一步／下一步由 `TrainWindow` 持有的 `TrackHistory` 負責：每次修改控制點前存一份整條軌道（點、`trainU`、選取）的快照，
-新增、刪除、`Load`、`Reset`、`Grand Tour`、R±X／Z、`Transform` 欄位在 `CallBacks`／`TrainWindow` 記錄；拖曳與 `G`／`R` 在 `beginEdit()` 先拍快照，
-`endEdit()` 只在控制點真的改變時才存入，新增後的拖曳併入新增那一步。快照比逐筆記錄差異簡單，也不會因索引改變而錯位；由 `TrackHistoryCheck` 測試。
-哪個鍵是哪個編輯指令由 `EditKeys::forKey()` 決定：Fly 相機下避開所有飛行鍵（新增改 `Alt` + `D`、刪除只留 `Delete`），
-所以 Fly 模式的 `handle()` 先問 `editKey()`、再交給 `FlyCam`，飛行鍵不會被編輯搶走，`Home` 取代 `R` 回到 World 視角。`R` 等編輯開始時 `FlyCam` 停止並解除滑鼠鎖定；Fly 下的 `G` 則不停相機：`beginCarry()` 記下控制點在相機座標（右、上、前）中的位置，每幀 `updateCarry()` 依目前相機放回去，所以點跟著視角與飛行移動，滾輪沿視線調整距離；編輯中 `editEvent()` 只吃按下，按鍵放開（`InputType::KeyUp`）仍交給 `FlyCam`。掃描碼 system handler 也送出 `G`、`R`、`C` 與 `Home`，並以 `GetKeyState` 補上修飾鍵狀態，兩條路徑的鍵位一致。`EditKeysCheck` 測試這張對照表與正式 `FlyCam` 不衝突。
-`ArcBallCam` 用 `platform::` timer 分攤滑鼠滾輪的整格縮放（左右傾斜為旋轉）；觸控板的細小位移則立即套用。FLTK 1.3 會把滾輪訊息捨入為整格，因此 `TrainView.cpp` 以 system handler 直接讀取 Windows `WM_MOUSEWHEEL`／`WM_MOUSEHWHEEL` 的原始位移。
-`FlyCam` 是 Fly 相機按鈕的觀察者模式：記錄位置、yaw 與 pitch（水平線固定），按住移動鍵時以 `platform::` timer 依實際經過時間移動，因此速度單位是每秒世界單位，與幀率無關。每次進入時 `TrainView` 以最後一幀由 World、Train 或 Chase 畫出的 modelview 矩陣（`drawEditOverlay()` 每幀記下）作為起點，所以畫面不跳動；按住 Fly 按鈕的期間 FLTK 已把 Fly 設為開啟、舊相機還沒關，這時重畫的 Fly 畫面不算；上一幀是 Top 正交視角時，改放在 Top 畫面中心（`topViewCentre()`；造景開啟時 Top 以主島與東北陸地的範圍置中）上方、讓同樣寬度的地面填滿畫面的高度往下看。`FOV` 滑桿經 `TrainView::setFieldOfView()` 同時設定 `ArcBallCam`、`FlyCam` 與 Train／Chase 的 `gluPerspective`，視角都相同，所以接續時不需要視角差補償；World 相機重設時的距離依視角換算，維持原本 40 度、250 單位時的取景。失去焦點或切換相機時清除按住的按鍵，避免相機持續漂移。為了不迷失方向，`FlyCam` 把相機限制在場景周圍的方框內（`TrainView` 以 `setGround()` 把最低點設為 y = −200，可以跟著潛到地面以下的軌道），按鍵前進保持水平，並提供平滑的 `lookAt()`（F 鍵轉向列車）；Fly 模式下 `TrainView` 另外畫中央準星，`Light+` 關閉時再畫延伸到地平線的地面（開啟時已有天空與海面），並關閉觸控板放開後的慣性旋轉。操作仿照方塊遊戲的觀察者模式：在畫面點一下後 `TrainView` 隱藏游標、以 `ClipCursor` 限制在畫面內，每次 `InputType::Move` 把游標相對中心的位移交給 `FlyCam::mouseLook()` 再用 `SetCursorPos` 拉回中心；Esc、失去焦點或切換相機時放開。滑鼠滾輪改變飛行速度。Fly 模式下 `TrainView` 以 `ImmAssociateContextEx` 關閉視窗的輸入法，並另掛一個 FLTK system handler，依 `WM_KEYDOWN`／`WM_KEYUP` 的掃描碼（`FlyCam::keyForScanCode()`）把飛行按鍵組成 `InputEvent` 直接交給 `TrainView::handleInput()`，因此注音等輸入法把按鍵變成 `VK_PROCESSKEY` 時，或使用其他鍵盤配置時，按鍵位置仍然有效。
-`HeadLook` 是 Train 相機的轉頭：記錄相對於列車的 yaw 與 pitch（yaw 可轉一整圈，pitch 限制在 ±85 度），`TrainView::setProjection()` 先以 `makeTrackFrame()` 取得列車的前方、側面與上方，再由 `HeadLook::apply()` 轉成視線與視線的上方，所以轉頭後畫面仍跟著列車前進與轉彎。Train 模式下 `TrainView::handleTrainLook()` 把左鍵或右鍵拖曳交給 `HeadLook`（不再做控制點點選，因為控制點不顯示），雙擊回正並清除點擊計數，避免下一次按下被當成第三擊；觸控板雙指移動與精準捲動也送給 `HeadLook`，並關閉放開後的慣性；R 鍵沿用 Fly 的掃描碼 system handler，因此注音開著也能回正。
-`TouchpadGestures` 以 Raw Input 讀取精準觸控板每根手指的座標，自行把兩指的共同位移與張開比例同時送給 `ArcBallCam`（Fly 模式送給 `FlyCam`：轉頭與前進同時作用）；Direct Manipulation 只負責接手手勢，避免 Windows 另外送出滾輪訊息，並在原始報告不可用時作為備援。見 [ADR 0003](adr/0003-touchpad-direct-manipulation.md)。
-`Utilities` 包含相機、幾何點與 OpenGL 輔助函式。
+**場景與列車淨空**
+- `Grand Tour` 的控制點以最初的座標寫在 `OceanWorld`，取用時乘上 `WorldShape::kScale`（水平）與 `kLift`（海面以上高度）。
+- 陸地與海底都沿 `rideSamples()` 的三種樣條挖出淨空；`LandWorld::rideObstructions()`、`waterNearRide()` 與 `OceanWorld::rideObstructions()` 以正式 `CTrack` 檢查，對應測試是 `LandRideClearanceCheck` 與 `OceanRideClearanceCheck`。新增景物必須避開淨空。
+- 海岸線由 `WorldShape::inland()` 決定，陸地與海底共用，兩邊才會吻合。
+- 海洋生物與會動的景物，位置都是時間的函數，不保存狀態。
+- 世界存檔的 key 由影響該世界的每個原始檔以 `buildStamp()` 回傳編譯時間組成：重新編譯生成程式就會重新生成，檔案損壞或格式不符時當作沒有存檔。改變生成結果的修改必須讓 key 改變。存檔先寫 `.tmp` 再改名。
 
-`Light+` 開啟時，`TrainView::draw()` 改呼叫 `renderAdvancedFrame()`：
-先從太陽方向把物體畫進 2048² 深度貼圖（shadow map）。陰影範圍跟著鏡頭：以鏡頭前方約 80 單位處為中心、半徑 `kShadowReach`（150 單位），中心以陰影貼圖的格點為單位移動，移動時陰影邊緣不會閃爍，範圍邊緣淡出；Top 正交視角仍涵蓋整個場景。世界再大，陰影的解析度都不變。水面開啟時再以水平面鏡射相機畫一次反射，
-接著把場景畫進 16-bit 浮點 frame buffer，依序做 SSAO、濕地反射（下雨時）、水面、雨絲、Bloom 與 god rays，最後 ACES 色調映射到視窗。
-水面是跟著鏡頭移動的細分網格：頂點 shader 疊加 Gerstner 波位移，片段 shader 用同一組波的解析法線加上多層捲動噪點。波共有 8 道，波長（46.3 到 5.3 單位）彼此不成簡單比例、方向分散在風向兩側、各有相位，疊起來不會出現週期性的浪峰格子；網格每格 3 單位，頂點只跟著 12 單位以上的波移動（較短的波只影響法線，避免頂點取樣不足而閃動）。浪峰的白浪乘上兩層緩慢飄移的大尺度雜訊（陣風區）與一層隨機門檻，所以只在部分區域、部分浪峰出現，下雨時陣風區擴大；
-倒影先在螢幕空間沿反射方向對深度緩衝做光線步進（SSR），沒打中時用平面反射，再依 Schlick 菲涅耳與折射混合。
-`Time` 由 `AdvancedLighting::prepare()` 依太陽仰角換算：太陽貼近地平線時陽光是深橘、稍高時金黃、上午後轉白，天空環境光在這段黃金時刻偏暖粉；
-天空 shader 在地平線畫一圈帶狀光暈，朝太陽方向是橘金、背向太陽偏玫瑰紫，高處轉藍紫，雲的底部染成金色與粉色。太陽與月亮都是方塊遊戲式的方形，
-月亮有 8×8 的深淺斑塊與光暈；太陽下山後改由月亮（在太陽對側升起）投影，月光是偏藍的冷光，搭配藍色的月光環境光，最後輸出的曝光在夜晚略為提高，所以夜景暗但看得清楚。
-`Rain` 經 `TrainViewEffects` 緩慢改變 `LightingFrame` 的 `rain` 與 `wetness`：天空轉陰，光照 shader 讓濕表面變暗並提高高光，
-濕的程度乘上該處對天空的開放程度（頂點的天光 `vExtra.w`，露天為 1；屋簷下、樹下較低，隧道與屋內為 0），牆面再依往下流動的雜訊分成一道道水痕。
-光照 shader 把這個開放程度寫進場景 frame buffer 的 alpha（實心面；會擺動的植物寫 0；畫島上半透明的水與玻璃時 `AdvancedLighting::setTranslucent()` 讓 alpha 維持原本的透明度，用於混合），
-所以 `LandWorld` 畫植物時，只有固定管線（沒有 shader）才開 alpha test，否則植物會被這個 alpha 丟掉。
-濕地反射的全螢幕 pass（`PostEffects::applyWetGround()`）讀這個 alpha，雨淋不到的像素直接略過；朝上的面在水窪遮罩內重用同一段 SSR 做鏡面反射，下雨時法線加上每格一滴、各自時間擴散的雨滴圓環；
-直立的面是較弱、依水痕變化的水膜，法線加入少量雜訊使倒影柔和，菲涅耳的基礎反射率較高（0.1，粗糙的水膜在任何角度都有一點光澤），斜看時最亮。水面法線另有雨滴漣漪。
-光照 shader 是 GLSL 1.20，直接讀固定管線的 `gl_Vertex`、`gl_Normal`、`gl_Color` 與 texture unit 0，所以既有 `glBegin` 繪圖程式不需修改；
-未綁貼圖時 unit 0 的預設 texture 0 是一個白色 texel。shader 或 frame buffer 建立失敗時自動退回原本畫法。
+**繪製**
+- 島與海床以 16×16 欄為一塊，各自編成 display list；`Frustum` 用當下的矩陣剔除，所以陰影與反射 pass 也只畫自己看得到的塊。
+- 顯示清單綁定貼圖名稱：換材質包時只改寫貼圖內容（`PixelArt::uploadInto()`），不重建島嶼。
+- 場景中的每種方塊與植物都要對應到材質包對照表裡的方塊名稱；只有生物、雲、熱氣球、鐵軌與列車維持程式自己的顏色。小構件（樓梯、半磚、柵欄、燈籠等）放在植物格，見 [ADR 0006](adr/0006-building-parts-in-plant-cells.md)。材質包格式見 [ADR 0005](adr/0005-texture-packs.md)。
+- 光照烘焙（天光、發光方塊、ambient occlusion）寫進頂點的 texture unit 1 座標；依朝向的明暗一律由 shader 依法線計算，不寫進頂點顏色，否則會暗兩次。
+- 光照 shader 是 GLSL 1.20，直接讀固定管線的 `gl_Vertex`、`gl_Normal`、`gl_Color` 與 texture unit 0，既有的 `glBegin` 繪圖不需修改。shader 或 frame buffer 建立失敗時自動退回固定管線。
+- 場景 frame buffer 的 alpha 存「對天空的開放程度」，供濕地反射使用；所以開啟 shader 時植物不能用 alpha test。
+- 半透明的水與玻璃最後畫：先寫深度，再在最近的水面混合顏色，不進 shadow map。
+- `Scenery` 關閉時改建平坦的編輯用島；固定管線的平面陰影只在這個模式使用。
 
-`Water` 開啟時另外畫 `OceanWorld`：海床是 272×21×272 的方塊格（±680 單位），海底景物、生物路線與遺跡同樣依最初的配置放大，外海小島是沙岸加草地丘陵（水線附近與水面以上只用沙，不露出岩石），建好後以 16×16 欄為一塊各自編成 display list（島外更遠的海床另成一份，永遠畫出）。海床大多深於 y = −15，讓大型生物在上方游；島西側朝夕陽的方向例外，`onShelf()` 圍出一片淺礁台（海床頂在 y = −10），上面鋪一層粉紅、紅、橘為主的珊瑚塊（y = −10 到 −5），離海面約 4 單位，從岸上與列車上透過海水看得到，海洋生物的路線都不經過那裡。珊瑚塊有微弱的自發光（`blockGlow()`），夜晚看得出顏色；淺礁不用黃色珊瑚，因為夜晚的藍色月光會把它照成萊姆綠。
-建置時先算 Minecraft 式的光照：天光沿開放的柱子直灌而下、每往旁邊一格少一級，水晶自己發光，
-角落再加 ambient occlusion，結果放進 texture unit 1 的座標（x 發光、y 擺動、z 水晶光、w 天光），所以隧道深處自然變暗。
-岩拱、閘門與隧道是沿著 `Grand Tour` 的三種 spline 挖出來的，植物另外避開軌道周圍的淨空帶，
-`OceanWorld::rideObstructions()` 與測試 `OceanRideClearanceCheck` 用正式的 `CTrack` 取樣檢查列車不會碰到方塊或植物。
-魚群、鯊魚、海龜、魟魚、鯨魚與水母每格以方塊即時畫出，大型生物只在景物高度上限之上活動。
-牠們的位置是時間的函數，不需保存狀態：沿軌道的魚群取軌道曲線上方的位置（軌道周圍已挖空，必定是開放水域），
-開闊水域的魚群與大型生物用幾個週期互不整除的正弦波相加，在各自的橢圓水域內不重複地遊走且不會游出範圍；魚群成員保持隊形並朝同一方向。
-光照 shader 對水面以下的像素依深度吸收陽光（紅光最先消失）並乘上 caustics；
-鏡頭在水下時改走水下流程：不畫反射，水面改從下方畫（Snell 窗），加上漂浮微粒與氣泡，
-再以半解析度沿視線 ray march shadow map 算出光束，最後全解析度套上水霧。
-caustics、吸收係數與水體顏色放在 `UnderwaterOptics.h`，三個 shader 共用；水下光束 pass 同時算出頭燈的光錐。
+## 軌道檔
 
-世界的尺寸與海岸線在 `WorldShape`：除了主島，東北方（海底路線不經過的那一側）還有一塊新大陸，中心 (360, −360)、半徑約 150 單位，岸線同樣以雜訊推移，`inlandMain()`、`inlandNorthEast()` 各自傳回離岸距離，`inland()` 取兩者較大者；`LandWorld` 的網格因此不再對稱，欄的範圍是 x −113 到 211、z −212 到 112（`kMinBX` 等常數），只往東北延伸。新大陸的地形由 `northEastSite()` 產生：朝海峽的一側是海平面高度的紅樹林沼澤（`MANGROVE`，泥巴地、沒放水的地方墊到水面高度，所以水窪不會外流，軌道周圍不放水），往東北升成竹林丘陵（`BAMBOO_JUNGLE`）；`plantNorthEast()` 種紅樹（彼此至少隔 7 格，樹冠不連成一片；氣根、樹冠、藤蔓）與竹子（竹節植物一格一格疊高，同一欄位置一致、不擺動，所以連成整根；竹竿畫成細方柱，四面取貼圖的竹竿部分並略加明暗，遠看仍是實心；靠近竹梢的幾格與竹梢另畫加寬的葉叢。竹林生態裡，`buildJungleTemple()` 先在列車看得到、整座（含南面石階）都在淨空外、最平坦的空地蓋一座四層階梯金字塔（苔石、圓石與石頭混砌，底下以圓石墊到地面，南面三格寬的石階，頂上四柱神龕圍著發光的水晶、四角燈籠，各層邊緣垂下藤蔓），位置記在 `Extras::temple`，`plantNorthEast()` 在它周圍 `kTempleClearing` 格內不種竹子與大樹，留出邊緣參差的空地；所有竹子長完後，`bambooCanopy()` 在每根竹梢四周與上方的空格放淡綠的 `LEAVES_BAMBOO` 方塊，遠看竹叢是細竿撐起的葉冠，不會只剩一根根細線）。`Grand Tour` 在原本陸地段的最後接上 14 個控制點，從岩山直接往北出海（不再先繞回岩山南側形成髮夾彎），去程經主島北岸與新大陸北側的海面，回程走南邊跨海峽的棧橋。示範軌道每個控制點的夾角都不小於 90 度（火山口上方原本 83 度的轉彎拆成兩個點），所以三種 spline 都沒有銳角的急彎：以 5–20 單位為間隔量，cardinal 與 B-spline 最急處約 150 度。最初的配置是 200 單位見方的島、海底路線繞在外圈，現在所有水平距離放大 `kScale`（2.5）倍、海面以上的高度放大 `kLift`（1.5）倍，方塊大小不變，所以每個地標都由更多方塊組成。海岸線是圓角方形（|x|⁴ + |z|⁴ = 250⁴）再以雜訊往內外推移最多 24 單位，`WorldShape::inland()` 傳回離岸距離，陸地與海底共用，所以兩邊吻合。
-`Grand Tour` 的控制點定義在 `OceanWorld`（前 25 點是海底段，其後是陸地段），以最初的座標寫成，`trackPoint()` 取用時放大；`OceanWorld::rideSamples()` 把整圈以三種 spline 取樣。
-`LandWorld` 用這些取樣點建島：先由雜訊與幾個地形函式（雪山、火山與火山口、岩山、惡地台地與峽谷，皆以最初的座標寫成，`siteAt()` 把世界座標除以 `kScale` 查詢、高度乘 `kLift`，草原、雪山與岩山再疊上小尺度的起伏）算出每一格的高度與生態，
-填入方塊後放上熔岩湖與熔岩河（河岸與火山口邊緣的地表依離熔岩的距離轉為岩漿塊）、村莊、池塘、雪山北麓的瀑布峽谷（崖頂溪流、水潭與流到北岸的河，只放水源）與漂浮島，再沿路線挖出淨空管（比列車需要的空間大），在瀑布附近找需要最少地基、整座都在列車淨空外的位置蓋城堡（15×13 格：城牆與城垛、四座角塔、朝瀑布的城門、礫石中庭、木石主堡與 20 格高的主塔，地面有落差時以石頭地基墊起），沿海岸每 3 度找最突出、草原生態、遠離熔岩且離城堡 60 格以上的岬角蓋紅白條紋燈塔（燈室是玻璃圍起來的燈籠）與守塔人小屋，村莊在草地旁第一個有空間的位置蓋教堂與鐘樓；接著在列車看得到、但整片（湖再外推 3 格，因為軌道 6 單位內不能有水）都在淨空外的開闊草原挖一座湖（水面放在四周最低的地面高度，所以不會外溢），蓋一棵巨大的橡樹，並在村莊外圍的平坦草原開幾塊麥田；在雪山腳下（草原與雲杉林交界）找平坦、列車看得到的地方蓋營地：中間的廣場與營火以圓形範圍檢查淨空，四間原木小屋逐棟檢查，至少三間放得下才蓋，整地時跳過列車經過的角落；之後在雪山高處的雪地立冰刺、在惡地台地立風蝕岩柱（下寬上窄的陶土柱，加一層硬帽）。雪山的高度函式加上山脊雜訊（`1 − |2n − 1|`）與岩峰，成為尖峭的山脊；湖周圍 `kGroveRadius` 內的樹都是櫻花並鋪滿花瓣，`drawMoving()` 畫出飄落的花瓣；巨橡樹周圍 `kMeadowRadius` 內少種樹、花成片開成花海；每棟小屋門邊立一根柵欄柱，上面放燈籠（`LAMP`；不用南瓜燈）；積雪是薄雪層而不是方塊：地形建好後 `snowCover()` 記下每欄的積雪程度（雪地、雪塊與雪山／岩山 44×`kLift` 以上為全面積雪，雪山 30×`kLift` 以上只有樹上積雪），所有景物放完後 `snowfall()` 在這些欄最上面的表面放 `SNOW_LAYER`（植物格，厚度以八分之一格為單位存在 `Grid::level`：地面依雜訊 1–3 層、樹葉／屋頂／岩石 1–2 層；不放在水、熔岩、冰、發光方塊上或列車淨空內），由 `addSnowLayer()` 畫成與實心方塊同一批的薄板（頂面與高出鄰格積雪的側面），所以有光照、陰影；雲杉頂端與岩山頂不再放雪方塊；惡地的水池改成黃、橘、紅環帶的溫泉，水潭上架一座兩端都搭在峽谷岩壁上的木橋（木板橋面兩側是深色橡木邊樑與柵欄欄杆，四個角的欄杆上各一盞燈籠，左右對稱），
-挖剩的薄頂會移除、軌道正下方鋪碎石，有頂的路段在牆上嵌燈籠或水晶。接著 `WaterFlow` 依方塊遊戲的規則讓水從所有水源流開（先往下；旁邊每格水位加一、最多 7；方向權重初始 999，4 格內找得到落差就取最短路徑長度，只往最小權重流；海平面以下由大海吸收），結果寫回每格的水位，水面高度依水位畫出，海面那一層（`kSeaLayer`）用海水色，其餘（含下落的水）都用同一張靜態水貼圖。網格在島外多一圈空格子（`kHalf` = 41，`onIsland()` 判斷），水能從島邊落到海面。水的位置都選在不會靠近軌道的地方，`LandWorld::waterNearRide()` 與 `LandRideClearanceCheck` 確認軌道左右 6、下方 6 到上方 10 單位內沒有水；`WaterFlowCheck` 單獨測試流動規則。種樹前先由 `scatterBoulders()` 在草原、岩山、雲杉林與竹林的平地上零星放半埋的石頭（3×3 範圍內地面高低差不超過一格、上方三格是空的、不在淨空內、離村莊綠地 10 單位以外），城堡由 `buildCastle()` 從城門往外鋪一段三格寬的路（沙地上用礫石）並成對放路燈，燈塔的守塔人小屋有小路接到燈塔門口，叢林神殿大階梯每一階突出的前緣改成樓梯，井的屋頂是 3×3 的樓梯四坡屋頂；最後才種樹與花草（只種在淨空帶之外），再由 `dressEdges()` 整理水邊與林地（睡蓮葉、甘蔗、黏土、灰化土、粗泥）。
-方塊貼圖由 `LandTextures` 在程式裡逐格畫成 32×32（不讀圖檔）：石頭、圓石、礫石、樹葉用平鋪的雜訊與不規則格子做出塊狀，再依格子邊界加深色輪廓、左上亮邊、右下陰影，明暗分成幾個固定階層，保持像素感；海底的方塊（沙、石、石磚、木板、珊瑚、金塊等）也用同一組函式，只換顏色，海底植物維持 16×16。
-光照烘焙與 `OceanWorld` 相同（天光、發光方塊、ambient occlusion）；熔岩與燈籠的暖光寫進頂點顏色與發光量，水晶的冷光用 shader 既有的方塊光。
-`LandWorld::rideObstructions()` 與測試 `LandRideClearanceCheck` 用正式的 `CTrack` 取樣，檢查三種 spline 下列車都不會碰到方塊或植物。
-島的網格同樣以 16×16 欄為一塊，每塊有自己的方塊、植物與水的 display list 和包住實際方塊的邊界框。`Frustum` 從目前的投影 × modelview 矩陣取出六個平面，`LandWorld::draw()`、`drawWater()` 與 `OceanWorld::draw()` 只畫看得到的塊；因為用的是當下的矩陣，陰影 pass（光源視角）與水面反射 pass（鏡射視角）也自動只畫各自看得到的部分。這讓之後放大世界時，每幀的繪製量只跟畫面裡的範圍有關。`FrustumCheck` 單獨測試剔除的判斷。
-水方塊是半透明的靜態水：不遮擋旁邊的面、不擋天光也不算 ambient occlusion，網格另外編成 display list，由 `TrainView::drawStuff()` 在最後畫上：先只寫入水的深度，再在最近的水面上以 alpha 混合畫顏色，所以只看得到水體正面，方塊之間的內部平面與背面不會透出（不進 shadow map，目標的 alpha 保持不變）；挖軌道時被切斷而懸空的水會移除。會動的東西（風車、動物、雲、熱氣球）每格以方塊即時畫出；`TrainView::drawSupports()` 以目前 spline（含 B-spline）每約 1 單位取一點、控制點不變時沿用，交給 `LandWorld::drawSupports()` 每 16 單位規劃一座木棧橋（同一條路線只規劃一次）：
-左右兩根柱各自從自己的落點往下找地面（穿過水、立在熔岩裡；島外立在 `OceanWorld::seaFloor()` 的海床上），柱頂貼齊枕木底；只有被另一段軌道擋住的那一根柱不立，兩根都在時才加橫撐。山體也畫進 shadow map，所以會投影。
-世界在背景執行緒建造，視窗不會在第一幀卡住：`TrainView::draw()` 先呼叫 `worldReady()`，它對目前要畫的島（`Scenery` 開或關）呼叫 `LandWorld::prepare()`，對海床呼叫 `OceanWorld::prepare()`。第一次呼叫時各自開一條 `std::thread` 生成方塊網格（`buildScenery()` 每完成一段回報進度、並檢查是否要取消）並逐塊產生頂點；display list 只能在擁有 OpenGL context 的主執行緒建立，所以 `prepare()` 每幀把已完成的塊編成 display list，最多花約 30 ms，就回去畫一張方塊遊戲風格的載入畫面（變暗的泥土貼圖、`Generating terrain`／`Building terrain` 與綠色進度條），並以 `platform::` timer 約每 1/30 秒重畫，直到島（`Water` 與 `Light+` 都開時也包括海床）全部完成。OpenGL context 重建時只丟掉 display list，網格保留，`prepare()` 只重做 mesh。
-生成好的網格像方塊遊戲一樣存檔（`WorldSave.h`）：背景執行緒先嘗試讀 `data/saves/island.world`（平坦島 `flat.world`、海床 `ocean.world`，相對於 exe 所在資料夾），讀到才略過生成，讀不到就生成後寫入（先寫 `.tmp` 再改名，避免半個檔案）；讀檔時載入畫面顯示 `Loading world`。每層方塊資料以 run-length 編碼，整座島約 2 MB。存檔開頭有 key：影響該世界的每個原始檔各自以 `buildStamp()` 回傳編譯時的 `__DATE__ __TIME__`，加上網格尺寸，所以只要重新編譯了生成程式，舊存檔就不再相符而重新生成；檔案損壞、截斷或格式不符時同樣當作沒有存檔。光照的 flood fill 用 `CellQueue`（單一 vector 的佇列）取代 `std::deque`：MSVC 的 `std::deque` 對大於 8 bytes 的元素每個都配置一塊 heap，上千萬次配置是 Debug 建置啟動慢的主因之一。
-`Scenery` 關閉時 `LandWorld` 改建平坦的編輯用島；固定管線（`Light+` 關閉）的平面陰影只在這個模式使用。
-`Train`／`Chase` 相機由 `TrainView::setProjection()` 從軌道座標系算出；`Chase` 用 `TrainModel::parameterBehind()` 沿軌道往回取最後一節礦車後方的點，抬高後看向火車頭，所以會留在為軌道挖出的空間裡。
+第一行是控制點數（4–65535），之後每行是 `x y z`，或 `x y z orientX orientY orientZ`；未提供方向時使用 `(0, 1, 0)`。
+載入後 `trainU` 歸零。格式變更必須維持舊檔可讀，`TrackRoundTripCheck` 以正式讀寫函式驗證；備份與還原流程見 [維運文件](operations.md)。
 
-軌道格式首行為控制點數，其後每行是位置 `x y z` 與可選方向 `x y z`。
-載入後 `trainU` 歸零。個人資料與來源程式分開保存；應以複本驗證讀取與還原。
+## 擴充方向
 
-工程決策見 [ADR 0001](adr/0001-windows-quality-gates.md)。
-Clang 工具鏈選擇見 [ADR 0002](adr/0002-clang-cl-build.md)。
+目前 `TrainWindow` 只持有一條 `CTrack`，`TrainView::drawStuff()` 直接列出要畫的東西。加入多條軌道或其他遊樂設施前，建議先把世界狀態從視窗移出（例如 `ParkWorld` 持有軌道、設施與景物集合），每種設施各自實作 `update(dt)` 與 `draw(renderPass)`，不要把特定設施的邏輯塞進 `TrainView`；速度也應改用實際時間差 `dt`。
+
+工程決策見 [ADR 0001](adr/0001-windows-quality-gates.md)；Clang 工具鏈見 [ADR 0002](adr/0002-clang-cl-build.md)；Visual Studio 版本見 [ADR 0004](adr/0004-any-visual-studio-version.md)。

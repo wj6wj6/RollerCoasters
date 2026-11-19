@@ -51,7 +51,6 @@ enum Texture
     ROOF,
     WINDOW,
     DOOR, // the bottom half of a door (DOOR_TOP the top)
-    LANTERN,
     CRYSTAL,
     ORE_COAL,
     ORE_IRON,
