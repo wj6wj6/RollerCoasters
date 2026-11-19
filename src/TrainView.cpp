@@ -1506,6 +1506,16 @@ void TrainView::drawEditOverlay()
 //========================================================================
 void TrainView::draw()
 {
+    drawFrame();
+    finishAutomatedFrame();
+}
+
+//************************************************************************
+//
+// * Draw one frame of the scene from the selected camera
+//========================================================================
+void TrainView::drawFrame()
+{
     // a point carried in Fly follows the camera, which may have flown since
     if (m_carrying)
         updateCarry();
@@ -1540,8 +1550,10 @@ void TrainView::draw()
 
     // The first frames show how far the world is built, instead of a white
     // window that does not answer until it is done.
+    frameShowsScene = false;
     if (!worldReady())
         return;
+    frameShowsScene = true;
     const bool advanced = advancedLightingOn();
 
     // Set up the view port

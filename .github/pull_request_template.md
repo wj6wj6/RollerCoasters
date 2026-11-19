@@ -16,7 +16,7 @@ PR 的 `Windows build` CI 會跑下列四項；本機可用 `pwsh -File scripts/
 - [ ] Clang Release：`pwsh -File scripts/check.ps1 -Stage all -Compiler clang -Config Release`
 - [ ] 文件、架構圖與 ADR 已依變更同步（不適用請說明）
 
-GUI／裝置驗證、未執行的檢查與原因：
+畫面驗證（`.agents/skills/verify-app/SKILL.md`）：`control-app.ps1 doctor`／`smoke` 結果、相關截圖、手動檢查的裝置與結果；未執行的檢查與原因：
 
 ## 風險與回復
 

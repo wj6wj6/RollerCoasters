@@ -50,6 +50,7 @@ target_link_libraries(Utilities PUBLIC project_options fltk)
 
 add_executable(RollerCoasters
     src/AdvancedLighting.h src/AdvancedLighting.cpp
+    src/AppControl.h src/AppControl.cpp
     src/Frustum.h src/Frustum.cpp
     src/LandTextures.h src/LandTextures.cpp
     src/LandWorld.h src/LandWorld.cpp
@@ -59,6 +60,7 @@ add_executable(RollerCoasters
     src/PostEffects.h src/PostEffects.cpp
     src/TexturePack.h src/TexturePack.cpp
     src/TrainModel.h src/TrainModel.cpp
+    src/TrainViewControl.cpp
     src/TrainViewEffects.cpp
     src/TransformGizmo.h src/TransformGizmo.cpp
     src/UnderwaterOptics.h
@@ -142,6 +144,14 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     target_link_libraries(TrackSpacingCheck PRIVATE Utilities glad)
     add_test(NAME TrackSpacingCheck COMMAND TrackSpacingCheck)
     set_tests_properties(TrackSpacingCheck PROPERTIES TIMEOUT 10 LABELS integration)
+
+    add_executable(AppControlCheck tests/AppControlCheck.cpp src/AppControl.cpp
+        src/Track.cpp src/ControlPoint.cpp
+        src/TexturePack.cpp src/ZipArchive.cpp src/LandTextures.cpp src/PixelArt.cpp)
+    target_include_directories(AppControlCheck PRIVATE src)
+    target_link_libraries(AppControlCheck PRIVATE Utilities glad)
+    add_test(NAME AppControlCheck COMMAND AppControlCheck)
+    set_tests_properties(AppControlCheck PROPERTIES TIMEOUT 30 LABELS integration)
 
     add_executable(TrackHistoryCheck tests/TrackHistoryCheck.cpp
         src/TrackHistory.cpp src/Track.cpp src/ControlPoint.cpp)
