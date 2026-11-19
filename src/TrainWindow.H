@@ -43,6 +43,7 @@
 
 // we need to know what is in the world to show
 #include "Track.H"
+#include "TrackHistory.h"
 
 // other things we just deal with as pointers, to avoid circular references
 class TrainView;
@@ -84,9 +85,19 @@ class TrainWindow : public Fl_Double_Window
     // a Transform field was edited
     static void transformCB(Fl_Widget *widget, void *data);
 
+    // Undo and redo for the control points (TrackHistory.h). Call
+    // recordHistory() just before changing the points, or pushHistory()
+    // with a snapshot taken before a change that has happened.
+    void recordHistory();
+    void pushHistory(const TrackHistory::Snapshot &before);
+    void undoEdit();
+    void redoEdit();
+    void updateHistoryButtons(); // greys out Undo / Redo with nothing to do
+
   public:
     // keep track of the stuff in the world
     CTrack m_Track;
+    TrackHistory m_history; // undo and redo for the control points
 
     // the widgets that make up the Window
     TrainView *trainView;
@@ -95,6 +106,8 @@ class TrainWindow : public Fl_Double_Window
 
     // utility buttons
     Fl_Button *resetButton;
+    Fl_Button *undoButton = nullptr;
+    Fl_Button *redoButton = nullptr;
 
     // which viewpoint are we drawing from
     Fl_Button *worldCam;

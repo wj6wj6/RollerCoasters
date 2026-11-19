@@ -22,6 +22,11 @@ flowchart LR
     View --> Train[TrainModel / 火車頭、礦車、乘客與車燈]
     Train --> Track
     View --> Gizmo[TransformGizmo / 控制點移動把手]
+    View --> Insert[TrackInsert / 在點擊的軌道位置新增、刪除控制點]
+    Insert --> Track
+    Callbacks --> History[TrackHistory / 控制點的上一步與下一步]
+    View --> History
+    History --> Track
     View --> Keys[EditKeys / 按鍵對應的編輯指令]
     View --> Camera[ArcBallCam / World 相機與手勢平滑]
     View --> Fly[FlyCam / 觀察者自由相機]
@@ -49,6 +54,13 @@ flowchart LR
     Frame --> Lighting[AdvancedLighting / shadow map、逐像素光照、頭燈]
     Frame --> Post[PostEffects / 天空、水面、雨、SSAO、Bloom、色調映射]
     Frame -->|drawGround / drawUnderwater / drawObjects| View
+    View -->|worldReady：未建好前畫載入畫面| Loading[載入畫面 / 泥土背景、階段文字、進度條]
+    Land -->|背景執行緒：生成網格、切塊 mesh| LandWorker[LandWorld::buildScene]
+    LandWorker -->|prepare：每幀約 30 ms 編 display list| Land
+    Ocean -->|背景執行緒：生成網格與 mesh| OceanWorker[OceanWorld::Build::run]
+    OceanWorker -->|prepare：編 display list| Ocean
+    LandWorker <-->|讀／寫 data/saves/*.world| Save[WorldSave / 世界存檔]
+    OceanWorker <-->|讀／寫| Save
     Land --> LandTex[LandTextures / 島嶼方塊與植物貼圖]
     Land --> Cull[Frustum / 分塊視錐剔除]
     Land --> Shape[WorldShape / 世界尺寸與海岸線]
@@ -87,8 +99,12 @@ flowchart LR
 | `src/TrackRenderer.H/.cpp` | 鐵軌與枕木繪製、累積弧長表、`makeTrackFrame()`。 |
 | `src/TrainModel.h/.cpp` | 列車模型；`Chase` 相機用的列車長度與沿軌道往回取點。 |
 | `src/TransformGizmo.h/.cpp` | 控制點移動把手的挑選、拖曳換算（純數學）與繪製。 |
+| `src/TrackInsert.h/.cpp` | 找出點擊處的軌道參數，在該處插入控制點（軌道仍經過點擊處）、刪除控制點並重新對應 `trainU`；純數學，由 `TrackInsertCheck` 測試。 |
+| `src/TrackHistory.h/.cpp` | 控制點的上一步／下一步：每次修改前存一份整條軌道（點、`trainU`、選取）的快照；由 `TrackHistoryCheck` 測試。 |
 | `src/EditKeys.h/.cpp` | 編輯指令的鍵位表；Fly 相機下避開飛行鍵。 |
-| `src/LandWorld.h/.cpp` | 方塊島嶼：地形與生態、建築、水、沿 `Grand Tour` 挖出淨空、光照烘焙、會動的景物、木棧橋。 |
+| `src/LandWorld.h/.cpp` | 方塊島嶼：地形與生態、建築、水、沿 `Grand Tour` 挖出淨空、光照烘焙、會動的景物、木棧橋；在背景執行緒建造。 |
+| `src/WorldSave.h` | 島與海床網格的存檔（`data/saves/*.world`，run-length 編碼），key 是生成程式的建置時間與網格尺寸。 |
+| `src/CellQueue.h` | 光照 flood fill 用的單一 vector 佇列（取代 MSVC Debug 下很慢的 `std::deque`）。 |
 | `src/LandTextures.h/.cpp` | 島嶼方塊與植物的程序貼圖。 |
 | `src/OceanWorld.h/.cpp` | 海床、海底景物、海洋生物，以及 `Grand Tour` 的控制點與取樣。 |
 | `src/WorldShape.h/.cpp` | 世界尺寸、放大倍率與海岸線（陸地與海底共用）。 |
@@ -111,8 +127,11 @@ flowchart LR
 - `Run` 開啟時，FLTK idle callback `runButtonCB()` 最多每秒 30 次呼叫 `advanceTrain()`；左右鍵以正負方向呼叫同一函式。
 - `ArcLength` 開啟時，`advanceByArcLength()` 沿參數小步前進、累加歐氏距離，每次呼叫即時計算；關閉時直接改變 `trainU`，所以世界空間速度會隨區段長度變化。
 - 光影動畫（雨、時間）由每秒 30 次的 `animateEffectsCB` timeout 推進。
+- 世界在背景執行緒建造：`TrainView::draw()` 先呼叫 `worldReady()`，它對目前要畫的島與（`Water` 與 `Light+` 都開時）海床呼叫 `prepare()`。第一次呼叫時各開一條 `std::thread` 生成網格並逐塊產生頂點；display list 只能在主執行緒建立，所以 `prepare()` 每幀最多花約 30 ms 編譯已完成的塊，其餘時間畫載入畫面，並以 timeout 約每 1/30 秒重畫，直到全部完成。
+- 新增控制點（`Add Pt`、`Shift` + `D`）先進入放置模式，`TrackInsert::pick()` 找滑鼠附近的軌道參數，點下時 `insertAt()` 插點並進入拖曳。Fly 相機在滑鼠鎖定且 `Edit` 開啟時是建造狀態（`flyBuilding()`）：左鍵刪準心對到的點、中鍵或 `C` 選取、右鍵在準心前方放點；`G` 以 `beginCarry()`／`updateCarry()` 讓點跟著視角移動。
+- 修改控制點的每條路徑（新增、刪除、`Load`、`Reset`、`Grand Tour`、R±X／Z、`Transform` 欄位、拖曳與 `G`／`R`）都先存 `TrackHistory` 快照；拖曳只在點真的改變時才存入。
 - 相機的平滑、按住按鍵移動與觸控板慣性都走 FLTK timeout，依實際經過時間計算，與幀率無關。
-- 自動模式（`--doctor`／`--screenshot`）：`main()` 先以 `TrainWindow::applyOptions()` 設定場景（軌道檔先經 `checkTrackFile()`，壞檔直接失敗、不跳對話框），`TrainView::draw()` 畫完 `drawFrame()` 後呼叫 `finishAutomatedFrame()`；達到指定幀數就讀回畫面、寫 PNG、印出 `PASS`／`FAIL` 行，再關閉視窗讓 `Fl::run()` 返回。120 秒內沒有畫出任何一幀也算失敗。結束碼：0 通過、1 檢查失敗、2 命令列錯誤。
+- 自動模式（`--doctor`／`--screenshot`）：`main()` 先以 `TrainWindow::applyOptions()` 設定場景（軌道檔先經 `checkTrackFile()`，壞檔直接失敗、不跳對話框），`TrainView::draw()` 畫完 `drawFrame()` 後呼叫 `finishAutomatedFrame()`。`--doctor` 在第一幀就回報；`--screenshot` 只計算真正畫出場景的幀（`frameShowsScene`，載入畫面不算），達到指定幀數才讀回畫面、寫 PNG、印出 `PASS`／`FAIL` 行與場景出現所花的秒數，再關閉視窗讓 `Fl::run()` 返回。300 秒內場景沒有出現也算失敗。結束碼：0 通過、1 檢查失敗、2 命令列錯誤。
 
 ## 跨模組約定
 
@@ -135,6 +154,7 @@ flowchart LR
 - 陸地與海底都沿 `rideSamples()` 的三種樣條挖出淨空；`LandWorld::rideObstructions()`、`waterNearRide()` 與 `OceanWorld::rideObstructions()` 以正式 `CTrack` 檢查，對應測試是 `LandRideClearanceCheck` 與 `OceanRideClearanceCheck`。新增景物必須避開淨空。
 - 海岸線由 `WorldShape::inland()` 決定，陸地與海底共用，兩邊才會吻合。
 - 海洋生物與會動的景物，位置都是時間的函數，不保存狀態。
+- 世界存檔的 key 由影響該世界的每個原始檔以 `buildStamp()` 回傳編譯時間組成：重新編譯生成程式就會重新生成，檔案損壞或格式不符時當作沒有存檔。改變生成結果的修改必須讓 key 改變。存檔先寫 `.tmp` 再改名。
 
 **繪製**
 - 島與海床以 16×16 欄為一塊，各自編成 display list；`Frustum` 用當下的矩陣剔除，所以陰影與反射 pass 也只畫自己看得到的塊。

@@ -75,6 +75,8 @@ add_executable(RollerCoasters
     src/ControlPoint.H src/ControlPoint.cpp
     src/main.cpp src/Object.H
     src/Track.H src/Track.cpp
+    src/TrackHistory.h src/TrackHistory.cpp
+    src/TrackInsert.h src/TrackInsert.cpp
     src/TouchpadGestures.H src/TouchpadGestures.cpp
     src/TrackRenderer.H src/TrackRenderer.cpp
     src/TrainView.H src/TrainView.cpp
@@ -152,6 +154,20 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     target_link_libraries(AppControlCheck PRIVATE Utilities glad)
     add_test(NAME AppControlCheck COMMAND AppControlCheck)
     set_tests_properties(AppControlCheck PROPERTIES TIMEOUT 30 LABELS integration)
+
+    add_executable(TrackHistoryCheck tests/TrackHistoryCheck.cpp
+        src/TrackHistory.cpp src/Track.cpp src/ControlPoint.cpp)
+    target_include_directories(TrackHistoryCheck PRIVATE src)
+    target_link_libraries(TrackHistoryCheck PRIVATE Utilities)
+    add_test(NAME TrackHistoryCheck COMMAND TrackHistoryCheck)
+    set_tests_properties(TrackHistoryCheck PROPERTIES TIMEOUT 10 LABELS integration)
+
+    add_executable(TrackInsertCheck tests/TrackInsertCheck.cpp
+        src/TrackInsert.cpp src/Track.cpp src/ControlPoint.cpp src/TransformGizmo.cpp)
+    target_include_directories(TrackInsertCheck PRIVATE src)
+    target_link_libraries(TrackInsertCheck PRIVATE Utilities glad)
+    add_test(NAME TrackInsertCheck COMMAND TrackInsertCheck)
+    set_tests_properties(TrackInsertCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
     add_executable(TexturePackCheck tests/TexturePackCheck.cpp
         src/TexturePack.cpp src/ZipArchive.cpp src/LandTextures.cpp src/PixelArt.cpp)

@@ -59,6 +59,7 @@ class CTrack;
 #include "LandWorld.h"
 #include "OceanWorld.h"
 #include "TransformGizmo.h"
+#include "TrackHistory.h"
 #include "Utilities/FlyCam.H"
 #include "Utilities/HeadLook.H"
 #include "TrackRenderer.H"
@@ -84,6 +85,11 @@ class TrainView : public Fl_Gl_Window
     const AppControl::Options *automation = nullptr;
     int automationFrames = 0;
     int automationResult = -1;
+    // Did the last drawFrame() show the scene, not the loading screen? Only
+    // those frames count, so a screenshot is never of the progress bar.
+    bool frameShowsScene = false;
+    double automationStart = 0; // seconds, when the run started
+    double worldSeconds = 0;    // until the first frame of the scene
 
     // all of the actual drawing happens in this routine
     // it has to be encapsulated, since we draw differently if
@@ -119,8 +125,42 @@ class TrainView : public Fl_Gl_Window
     void endEdit(bool keep);
     bool editEvent(int event);
     bool editKey(int key);
-    void undoEdit();
+    // ends a move, tilt or point placing in progress, keeping what was done
+    void finishEdits();
     void drawEditOverlay();
+
+    // Adding a point (Add Pt, Shift + D, Alt + D in Fly): the mouse shows
+    // where on the track the new point would go, a left click puts it there
+    // and picks it up to drag, Esc or a right click gives up. See TrackInsert.h.
+    void beginPlacePoint();
+    void endPlacePoint();
+    void updatePlaceHover(int mouseX, int mouseY);
+    bool placeEvent(int event);
+    void flyBuildClick(int button);
+    void updateFlyPlace();
+
+  public:
+    // Building in Fly (mouse captured, Edit on), as in Minecraft: left click
+    // removes the point at the crosshair, right places one at the crosshair
+    // the wheel's distance ahead, middle selects (the system wheel handler in
+    // TrainView.cpp asks these).
+    bool flyBuilding() const;
+    bool wheelSetsDepth() const; // building, or carrying a point (G)
+
+    // G in Fly picks up the point at the crosshair (or the selected one) to
+    // carry along with the view until G again or a left click; the wheel sets
+    // its distance, Esc puts it back.
+    void beginCarry();
+    void updateCarry();
+    void endCarry(bool keep);
+    bool carryEvent(int event);
+    void flyAxes(float right[3], float up[3], float forward[3]) const;
+    // the control point at the Fly crosshair, or -1
+    int crosshairPoint() const;
+    // the point the middle button or C selects (crosshair in Fly, else mouse)
+    int pointUnderMouse() const;
+    static constexpr float kCrosshairReach = 18.0f; // pixels
+    void adjustPlaceDepth(float wheelDy);
 
     // shader lighting, shadow maps and post effects (TrainViewEffects.cpp)
     bool advancedLightingOn();
@@ -174,6 +214,14 @@ class TrainView : public Fl_Gl_Window
     void drawFlyHorizon();
     void drawFlyOverlay();
 
+    // While the island and the sea floor are built (at start, and when
+    // Scenery is switched): false, after drawing a loading screen with how
+    // far they have got instead of the scene (TrainViewEffects.cpp).
+    bool worldReady();
+    void drawLoadingScreen(float done, const char *stage);
+    static void redrawSoon(void *view);
+    unsigned int m_loadingTexture = 0; // the dirt behind the loading screen
+
   public:
     ArcBallCam arcball; // keep an ArcBall for the UI
     FlyCam flyCam;      // free-moving observer camera
@@ -212,11 +260,20 @@ class TrainView : public Fl_Gl_Window
     EditMode m_editMode = EDIT_IDLE;
     TransformGizmo::Handle m_editHandle = TransformGizmo::NONE;
     TransformGizmo::Handle m_hoverHandle = TransformGizmo::NONE;
-    int m_editStartX = 0, m_editStartY = 0; // mouse when the edit began
-    ControlPoint m_editStart;               // the point when the edit began
-    bool m_undoValid = false;
-    int m_undoIndex = -1;
-    ControlPoint m_undoPoint;
+    int m_editStartX = 0, m_editStartY = 0;      // mouse when the edit began
+    ControlPoint m_editStart;                    // the point when the edit began
+    TrackHistory::Snapshot m_editBefore;         // the track when the edit began (undo)
+    bool m_editJoinsInsert = false;              // dragging a point just added: one undo step
+    bool m_placing = false;                      // adding a point: waiting for a click on the track
+    bool m_placeHit = false;                     // ... and the mouse is over the track
+    float m_placeU = 0.0f;                       // where on the track (track parameter)
+    Pnt3f m_placeSpot;                           // ... and where that is in the world
+    float m_placeDepth = 30.0f;                  // Fly: a new point goes this far ahead of the eye
+    bool m_carrying = false;                     // a point picked up with G in Fly
+    float m_carryOffset[3] = {0.0f, 0.0f, 0.0f}; // ... where in the view (right, up, ahead)
+    TrackHistory::Snapshot m_carryBefore;        // ... and the track before (undo)
+    static constexpr float kPlaceDepthMin = 2.0f;
+    static constexpr float kPlaceDepthMax = 1500.0f;
 
     // Weather, eased towards the Rain button (TrainViewEffects.cpp).
     float m_rain = 0.0f;         // 0 dry sky, 1 pouring

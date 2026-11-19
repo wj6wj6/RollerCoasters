@@ -6,11 +6,12 @@
 | --- | --- |
 | `main.cpp`、`TrainWindow.*`、`UiTheme.*`、`CallBacks.cpp`（Run、Reset、Grand Tour） | [startup-and-panel.md](startup-and-panel.md) |
 | `ArcBallCam.*`、`FlyCam.*`、`HeadLook.*`、`TouchpadGestures.*`、`TwoFingerGesture.*`、`TrainView.cpp` 的輸入處理 | [cameras-and-input.md](cameras-and-input.md) |
-| `TransformGizmo.*`、`EditKeys.*`、`TrainView.cpp` 的編輯 | [editing.md](editing.md) |
+| `TransformGizmo.*`、`EditKeys.*`、`TrackInsert.*`、`TrackHistory.*`、`TrainView.cpp` 的編輯 | [editing.md](editing.md) |
 | `Track.*`、`FileDialogs.*`、`CallBacks.cpp` 的 Load／Save | [track-files.md](track-files.md) |
 | `TrainModel.*`、`TrackRenderer.*` | [train-and-rails.md](train-and-rails.md) |
 | `AdvancedLighting.*`、`PostEffects.*`、`TrainViewEffects.cpp`、`UnderwaterOptics.h` | [lighting-and-weather.md](lighting-and-weather.md) |
-| `LandWorld.*`、`LandTextures.*`、`WaterFlow.*`、`WorldShape.*`、`Frustum.*` | [island.md](island.md) |
+| `LandWorld.*`、`LandTextures.*`、`WaterFlow.*`、`WorldShape.*`、`Frustum.*`、`CellQueue.h` | [island.md](island.md) |
+| `WorldSave.h`、`worldReady()`／載入畫面 | [startup-and-panel.md](startup-and-panel.md) |
 | `OceanWorld.*` | [underwater.md](underwater.md) |
 | `TexturePack.*`、`ZipArchive.*` | [texture-packs.md](texture-packs.md) |
 | `AppControl.*`、`TrainViewControl.cpp`、`scripts/control-app.ps1` | 本頁「驗證工具本身」 |

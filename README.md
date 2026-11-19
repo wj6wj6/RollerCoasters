@@ -8,7 +8,9 @@
 
 最簡單的方式：clone 後在 Visual Studio 選「開啟資料夾」（或在檔案總管對資料夾按右鍵「使用 Visual Studio 開啟」），
 Visual Studio 會讀取 `CMakePresets.json`，選 `Visual Studio (any version) / x64` 與 `Debug`，啟動項目選 `RollerCoasters.exe` 後按 F5。
-VS Code 搭配 CMake Tools 擴充也一樣選這個 preset。這個 preset 不綁定 Visual Studio 版本，由 IDE 自行載入已安裝的 x64 編譯器。
+VS Code 搭配 CMake Tools 擴充也一樣選這個 preset。
+世界（約 1000 萬格方塊）在啟動時於背景生成，期間顯示載入畫面與進度條；Release 約一兩秒（依電腦而定），Debug 沒有最佳化又有執行期檢查，會慢上數倍到十幾倍，只想看效果或展示時改選 `Release`。
+第一次生成後，島與海床會像方塊遊戲的存檔一樣存到 exe 旁的 `data\saves\`（`island.world`、`flat.world`、`ocean.world`，各約 2 MB），之後啟動顯示 `Loading world` 直接讀檔，不再重新生成。重新建置任何會影響世界的原始檔（`LandWorld`、`OceanWorld`、`WorldShape`、`WaterFlow`、`PixelArt`）後存檔自動失效並重新生成；想強制重新生成就刪掉 `data\saves\`。這個 preset 不綁定 Visual Studio 版本，由 IDE 自行載入已安裝的 x64 編譯器。
 
 命令列建置與完整檢查，以下命令均在此 repository 根目錄執行：
 
@@ -54,7 +56,7 @@ pwsh -File scripts/check.ps1 -Stage all -Compiler clang -Config Release
   - 轉頭：在畫面上用左鍵或右鍵拖曳（往右拖看右邊、往上拖看上面），觸控板單指按住拖曳或雙指移動也可以（雙指時畫面跟著手指走，和 World、Fly 一樣，放開就停）。左右可以轉一整圈往後看，上下最多 85 度。
   - 回到正前方：雙擊畫面，或按 R／Home（R 依實體按鍵位置讀取，開著注音也有效）。每次切換到 Train 都從正前方開始。
 - Fly（觀察者模式，操作仿照方塊遊戲的觀察者模式）：每次切換到 Fly，都從當下的畫面接續，畫面不跳動；World、Train、Chase 都一樣（Train 的傾斜會擺正，因為 Fly 保持水平線），從 Top 切換則在 Top 畫面中央上方往下看。
-  - 滑鼠看：在畫面空白處點一下，滑鼠游標隱藏，移動滑鼠（或在觸控板上滑一根手指）直接轉視角；按 Esc 放開滑鼠。點到控制點仍是選取與拖曳。
+  - 滑鼠看：在畫面空白處點一下，滑鼠游標隱藏，移動滑鼠（或在觸控板上滑一根手指）直接轉視角；按 Esc 放開滑鼠。點到控制點仍是選取與拖曳；滑鼠鎖定且 `Edit` 開啟時，滑鼠鍵照 Minecraft 的方式建造（見下方「在 Fly 相機下建造」）。
   - 移動：按住 W／A／S／D 水平前後左右（低頭時也不會鑽進地面）、空白鍵上升、Shift 下降（E／Q、Page Up／Page Down 也可以）；按住 Ctrl 加速 2.5 倍。
   - 輸入法：Fly 模式會暫時關閉這個視窗的輸入法（例如注音），離開 Fly 自動恢復；W／A／S／D、空白鍵、Shift、Ctrl、E／Q、F、`Home`，以及編輯用的 G、R 依實體按鍵位置讀取，所以中文輸入法或其他鍵盤配置下也能飛。
   - 速度：滑鼠滾輪往上變快、往下變慢；也可用 +／- 鍵或 `Camera` 面板的 `Fly` 滑桿（每秒移動單位）。
@@ -67,13 +69,24 @@ pwsh -File scripts/check.ps1 -Stage all -Compiler clang -Config Release
   `Ride`（Run、前後步進、ArcLength、Speed）、`Camera`（World／Train／Chase／Top／Fly、Fly 速度與 FOV）、
   `Track`（Spline Type、Edit、Add／Delete Point、Load／Save／Reset、R±X／R±Z）、`Transform`（選取控制點的 X／Y／Z，可直接輸入）、
   `Lighting`（Light+、Shadows、Headlight、Bloom、SSAO、Time）、`World`（Water、Rain、Scenery、Grand Tour、Textures）。Load／Save 讀寫軌道文字檔，開的是 Windows 檔案總管的「開啟」／「另存新檔」視窗（存檔時會自動補上 `.txt`，覆蓋舊檔前會先詢問），預設位置是 exe 旁邊的 `TrackFiles\`（build 與安裝時建立，程式啟動時會切到 exe 所在資料夾，不論從 Visual Studio、雙擊或終端機啟動都一樣）。
-- 編輯控制點（先開啟 `Edit`，World 與 Top 相機）：`Edit` 關閉時控制點不顯示也不能選取。左鍵點選，選到的控制點變橘色並出現移動把手。
+- 編輯控制點（先開啟 `Edit`，快捷鍵 `F4`，像方塊遊戲切換遊戲模式；World、Top 與 Fly 相機）：`Edit` 關閉時控制點不顯示也不能選取。左鍵點選，選到的控制點變橘色並出現移動把手；中鍵也能選取（只選不拖），沒有中鍵的觸控板按 `C` 選游標下的點（Fly 鎖定滑鼠時選準心對到的點）。
   - 拖紅／綠／藍箭頭沿 X／Y／Z 軸移動，拖小方塊在該平面內移動，直接拖控制點則平行於畫面移動。
   - 鍵盤操作與 3D 建模軟體相同：`G` 移動、`R` 傾斜（改變控制點的上方向），之後按 `X`／`Y`／`Z` 鎖定軸，`Shift` + `X`／`Y`／`Z` 鎖定另外兩軸的平面；
     左鍵或 Enter 確定，右鍵或 Esc 取消並還原。按住 `Ctrl` 以 1 單位（傾斜時 5 度）吸附。
-  - `Shift` + `D` 複製控制點並立刻移動，`Delete` 或 `X` 刪除，`Ctrl` + `Z` 復原上一次變更（再按一次重做）。
-  - 在 Fly 相機下編輯：飛行鍵（W／A／S／D、空白鍵、Shift、Ctrl、E／Q）一律用來飛行，不會觸發編輯。`G`、`R`、`Ctrl` + `Z` 照常；
-    複製改用 `Alt` + `D`（`Shift` + `D` 是下降加右移，`Ctrl` + `D` 是加速右移），刪除只用 `Delete`（`X` 在 Fly 下不刪點，避免飛行時誤按）。
+  - 新增控制點：按 `Add Pt`（或 `Shift` + `D`），把滑鼠移到軌道上會出現黃色預覽點，左鍵點下就插在那裡，新點自動選取，按住不放可直接拖曳；
+    `Esc` 或右鍵取消，點到軌道以外的地方仍可照常旋轉相機。新點插在點擊處前後兩個控制點之間，軌道仍經過點擊處，所以形狀幾乎不變；
+    傾斜方向取前後兩點的內插，列車留在原本的位置。`Edit` 關閉或正在坐車時按 `Add Pt` 會自動開啟 `Edit` 並切到 World 相機。
+  - 在 Fly 相機下建造（滑鼠鎖定、`Edit` 開啟；`Add Pt` 或 `Alt` + `D` 會直接鎖定滑鼠），操作照 Minecraft：
+    - 準心對到的控制點外圍出現白框；左鍵敲掉（刪除）它，中鍵或 `C` 選取它，右鍵在準心處放一個新點。
+    - 搬動：按 `G` 拿起準心對到的點（沒對到就是已選取的點）並直接拉到準心上、保持原本的距離，畫面不會停，照常轉視角、飛行，點固定在畫面同一處跟著走，滾輪調遠近；再按 `G` 或左鍵放下（一步 `Ctrl` + `Z`），`Esc` 放回原位。（World／Top 的 `G` 仍是跟著游標移動。）
+    - 準心前方的黃點是右鍵會放的位置，黃線連到它會接上的軌道段；滾輪調遠近（往上推遠、往下拉近），左上角顯示距離。建造時滾輪不改飛行速度，速度用 `+`／`-` 或 Fly 滑桿。
+    - 新點放在黃點那個位置，插在離它最近那段軌道的前後兩點之間；刪點時列車留在原處附近。每次放、敲都是一步，`Ctrl` + `Z` 可復原。`Edit` 關閉時滑鼠鍵不做事、滾輪照常調速度。
+  - `Delete` 或 `X` 刪除。
+  - 上一步／下一步：`Ctrl` + `Z` 或 `Track` 面板的 `Undo` 回到上一步，`Ctrl` + `Y`、`Ctrl` + `Shift` + `Z` 或 `Redo` 到下一步，可以連續往回、往前（最多 200 步）。
+    新增、刪除、移動、傾斜控制點，`Transform` 欄位、R±X／R±Z，以及 `Load`、`Reset`、`Grand Tour` 都算一步；新增後直接拖曳算同一步。
+    復原時選取也一起回到當時的點；列車留在原處，只有點數改變時（新增、刪除、載入）才回到當時的位置。做了新的修改後就不能再到下一步。
+  - 在 Fly 相機下編輯：飛行鍵（W／A／S／D、空白鍵、Shift、Ctrl、E／Q）一律用來飛行，不會觸發編輯。`G`、`R`、`Ctrl` + `Z`／`Ctrl` + `Y` 照常；
+    新增改用 `Alt` + `D`（`Shift` + `D` 是下降加右移，`Ctrl` + `D` 是加速右移），刪除只用 `Delete`（`X` 在 Fly 下不刪點，避免飛行時誤按）。
     按 `G`／`R` 開始編輯時相機會停住、滑鼠鎖定解除，讓控制點跟著滑鼠走，`Shift` + `X`／`Y`／`Z` 也能鎖定平面；結束後仍按著的飛行鍵會繼續飛。
   - 數字鍵盤 `1`／`7`／`0` 切換 World／Top／Train 相機。畫面左上角會顯示目前相機、選取的控制點與操作中的數值。
   - 控制點是編輯輔助，不投射陰影。

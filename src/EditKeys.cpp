@@ -23,14 +23,23 @@ EditKeys::Action EditKeys::forKey(int key, int state, bool fly)
         return CAMERA_TOP;
     if (key == FL_KP + '0')
         return CAMERA_TRAIN;
+    // like the game mode switch of a block game: building on or off; a
+    // function key, so an input method such as Zhuyin cannot swallow it
+    if (key == FL_F + 4)
+        return TOGGLE_EDIT;
     if (key == 'z' && (state & FL_CTRL) != 0)
-        return UNDO;
+        return (state & FL_SHIFT) != 0 ? REDO : UNDO;
+    if (key == 'y' && (state & FL_CTRL) != 0)
+        return REDO;
+    // what the middle button does, for touchpads without one
+    if (key == 'c' && (state & (FL_CTRL | FL_ALT)) == 0)
+        return PICK_POINT;
     if (key == 'g')
         return GRAB;
     if (key == 'r')
         return TILT;
     if (key == 'd' && (state & (fly ? FL_ALT : FL_SHIFT)) != 0)
-        return DUPLICATE_POINT;
+        return ADD_POINT;
     if (key == FL_Delete || (key == 'x' && !fly))
         return REMOVE;
     return NONE;

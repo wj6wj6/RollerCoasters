@@ -14,6 +14,7 @@
 *************************************************************************/
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdio>
 #include <string>
@@ -36,9 +37,16 @@
 
 namespace
 {
-// A frame that never comes (the window was not mapped, the driver hangs)
-// still ends the run.
-const double kGiveUpSeconds = 120.0;
+// A frame that never comes (the window was not mapped, the driver hangs,
+// the world never finishes building) still ends the run. Generous: a Debug
+// build makes a new world in well over a minute.
+const double kGiveUpSeconds = 300.0;
+
+double secondsNow()
+{
+    using namespace std::chrono;
+    return duration<double>(steady_clock::now().time_since_epoch()).count();
+}
 
 std::string glString(GLenum name)
 {
@@ -61,7 +69,11 @@ void giveUpCB(void *view)
     TrainView *trainView = static_cast<TrainView *>(view);
     if (trainView->automationResult >= 0)
         return;
-    AppControl::report({{"frame", false, "no frame was drawn in time"}}, stdout);
+    AppControl::report({{"frame", false,
+                         trainView->automationFrames == 0
+                             ? "the scene never appeared (still loading, or no frame drawn)"
+                             : "no frame was drawn in time"}},
+                       stdout);
     trainView->finishAutomation(AppControl::kFail);
 }
 } // namespace
@@ -75,6 +87,7 @@ void TrainView::startAutomation(const AppControl::Options *options)
     automation = options;
     automationFrames = 0;
     automationResult = -1;
+    automationStart = secondsNow();
     if (automation)
         Fl::add_timeout(kGiveUpSeconds, giveUpCB, this);
 }
@@ -99,8 +112,8 @@ void TrainView::finishAutomatedFrame()
 {
     if (!automation || automationResult >= 0)
         return;
-    ++automationFrames;
 
+    // --doctor needs only the OpenGL context, so it does not wait for the world
     if (automation->mode == AppControl::Mode::Doctor)
     {
         std::vector<AppControl::Check> checks;
@@ -123,6 +136,11 @@ void TrainView::finishAutomatedFrame()
         return;
     }
 
+    // the loading screen redraws itself until the world is built
+    if (!frameShowsScene)
+        return;
+    if (++automationFrames == 1)
+        worldSeconds = secondsNow() - automationStart;
     if (automationFrames < automation->frames)
     {
         // the next frame: the scenery and the textures settle over the first few
@@ -151,6 +169,9 @@ void TrainView::finishAutomatedFrame()
     std::string error;
     const bool saved = AppControl::writePng(automation->output, rgb, width, height, error);
     checks.push_back({"screenshot", saved, saved ? automation->output : error});
+    char built[64];
+    std::snprintf(built, sizeof built, "the scene appeared after %.1f s", worldSeconds);
+    checks.push_back({"world", true, built});
     checks.push_back({"frame", AppControl::looksDrawn(stats), AppControl::describe(stats)});
     checks.push_back({"shader lighting", !tw->lightingButton->value() || lighting.init(),
                       tw->lightingButton->value()
