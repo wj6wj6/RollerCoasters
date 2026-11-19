@@ -490,8 +490,13 @@ Image makeLeaves(int r, int g, int b, unsigned int seed)
     Image p = PixelArt::blank(S);
     const Cells cells(6, seed, 1.0f);
     lumps(cells, 0.7f, seed + 1u, [&](int x, int y, int tone, int) {
+        // between the clumps, holes (the leaves are cut out, as fancy
+        // leaves are) with a few dark twigs; the holes keep the leaves'
+        // colour, so far away, where the texels are averaged, they do not
+        // darken the crown
         if (tone == -40)
-            set(p, x, y, r * 2 / 5, g * 2 / 5, b * 2 / 5);
+            set(p, x, y, r * 3 / 4, g * 3 / 4, b * 3 / 4,
+                hash(x, y, seed + 3u) % 5u == 0 ? 255 : 0);
         else
         {
             const int t = tone * 3 / 4 + (hash(x, y, seed + 2u) % 6u == 0 ? -26 : 0);
@@ -551,53 +556,316 @@ Image makeRoof()
     return p;
 }
 
-// Four lit panes in a wooden frame.
-Image makeWindow()
+// A lily pad seen from above: a round green leaf with a notch cut to its
+// middle and darker veins, see-through round it.
+Image makeLilyPad()
 {
-    Image p = makePlanks();
-    for (int y = 4; y < 28; ++y)
-        for (int x = 4; x < 28; ++x)
+    Image p = PixelArt::blank(S);
+    for (int y = 0; y < S; ++y)
+        for (int x = 0; x < S; ++x)
         {
-            const bool bar =
-                (x >= 15 && x <= 16) || (y >= 15 && y <= 16) || x < 6 || x > 25 || y < 6 || y > 25;
-            if (bar)
-                set(p, x, y, x < 6 || y < 6 ? 96 : 72, x < 6 || y < 6 ? 70 : 50,
-                    x < 6 || y < 6 ? 42 : 30);
-            else
-            {
-                // warm light, brighter in the middle of each pane
-                const int cx = x < 16 ? 10 : 21, cy = y < 16 ? 10 : 21;
-                const int d = (x - cx) * (x - cx) + (y - cy) * (y - cy);
-                set(p, x, y, 255, 236 - d, 150 - d * 2);
-            }
+            const float dx = static_cast<float>(x) - 15.5f, dy = static_cast<float>(y) - 15.5f;
+            const float r = sqrtf(dx * dx + dy * dy);
+            const bool notch = dx > 0.0f && fabsf(dy) < dx * 0.35f;
+            if (r > 14.5f || notch)
+                continue;
+            const int s = shadeOf(x, y, 655u, 10);
+            const bool vein = (x + y) % 7 == 0 || (x - y + 64) % 9 == 0;
+            set(p, x, y, (vein ? 38 : 50) + s, (vein ? 104 : 128) + s, (vein ? 30 : 40) + s);
         }
     return p;
 }
 
-Image makeDoor()
+// Sugar cane: three pale green stalks with darker joints and narrow leaves,
+// the full height of the cell, so the stalks stack.
+Image makeSugarCane()
 {
-    Image p = makePlanks();
-    for (int y = 2; y < S; ++y)
-        for (int x = 6; x < 26; ++x)
+    Image p = PixelArt::blank(S);
+    const int stalks[3] = {6, 15, 24};
+    for (int k = 0; k < 3; ++k)
+        for (int y = 0; y < S; ++y)
+            for (int dx = 0; dx < 3; ++dx)
+            {
+                const int x = stalks[k] + dx;
+                const bool joint = (y + k * 5) % 10 == 0;
+                const int s = shadeOf(x, y, 657u, 8);
+                set(p, x, y, (joint ? 112 : 150) + s - dx * 14, (joint ? 150 : 196) + s - dx * 14,
+                    (joint ? 70 : 96) + s - dx * 10);
+            }
+    // a leaf now and then
+    for (int k = 0; k < 4; ++k)
+        for (int t = 0; t < 7; ++t)
+            set(p, 9 + k * 5 + t / 2, 4 + k * 7 + t, 98, 160, 60);
+    return p;
+}
+
+// Podzol: dark brown earth strewn with needles and bits of bark.
+Image makePodzolTop()
+{
+    Image p = makeDirt();
+    for (int y = 0; y < S; ++y)
+        for (int x = 0; x < S; ++x)
         {
-            const int s = shadeOf(x, y, 111u, 4);
-            const bool edge = x <= 7 || x >= 24 || y <= 3;
-            const bool pane = y >= 6 && y <= 13 && ((x >= 10 && x <= 14) || (x >= 17 && x <= 21));
-            const bool plank = x == 15 || x == 16;
-            if (edge)
-                set(p, x, y, 70, 48, 26);
-            else if (pane)
-                set(p, x, y, 58 + (x + y) % 3 * 6, 68, 86);
-            else if (plank)
-                set(p, x, y, 100, 68, 36);
+            const unsigned int h = PixelArt::hash(x, y, 659u) % 9u;
+            const int s = shadeOf(x, y, 661u, 8);
+            if (h < 2u)
+                set(p, x, y, 112 + s, 78 + s, 36 + s); // needles
+            else if (h < 5u)
+                set(p, x, y, 74 + s, 50 + s, 26 + s);
             else
-                set(p, x, y, 128 + s, 88 + s, 48 + s);
+                set(p, x, y, 92 + s, 64 + s, 34 + s);
         }
-    for (int y = 19; y <= 22; ++y)
-    {
-        set(p, 20, y, 236, 200, 80);
-        set(p, 21, y, 180, 148, 56);
-    }
+    return p;
+}
+
+// The podzol's side: dirt, with the needle litter along the top.
+Image makePodzolSide()
+{
+    Image p = makeDirt();
+    const Image top = makePodzolTop();
+    for (int y = 0; y < 5; ++y)
+        for (int x = 0; x < S; ++x)
+            if (y < 3 || PixelArt::hash(x, y, 663u) % 2u == 0)
+            {
+                const size_t i = static_cast<size_t>((y * S + x) * 4);
+                set(p, x, y, top[i], top[i + 1], top[i + 2]);
+            }
+    return p;
+}
+
+// Coarse dirt: dirt with gravelly stones in it.
+Image makeCoarseDirt()
+{
+    Image p = makeDirt();
+    for (int y = 0; y < S; ++y)
+        for (int x = 0; x < S; ++x)
+        {
+            const unsigned int h = PixelArt::hash(x / 2, y / 2, 665u) % 7u;
+            const int s = shadeOf(x, y, 667u, 10);
+            if (h == 0u)
+                set(p, x, y, 120 + s, 112 + s, 104 + s);
+            else if (h == 1u)
+                set(p, x, y, 84 + s, 66 + s, 50 + s);
+        }
+    return p;
+}
+
+// A spruce trapdoor: dark boards in a frame with a cross brace and two
+// small square holes, as a block game draws one.
+Image makeTrapdoor()
+{
+    Image p = makePlanks(104, 74, 46);
+    for (int y = 0; y < S; ++y)
+        for (int x = 0; x < S; ++x)
+        {
+            const int s = shadeOf(x, y, 675u, 3);
+            const bool frame = x < 3 || x > 28 || y < 3 || y > 28;
+            const bool brace = abs(x - y) < 2 || abs(x + y - 31) < 2;
+            const bool hole = (x >= 8 && x <= 11 && y >= 14 && y <= 17) ||
+                              (x >= 20 && x <= 23 && y >= 14 && y <= 17);
+            if (hole)
+                set(p, x, y, 0, 0, 0, 0);
+            else if (frame)
+                set(p, x, y, (x < 3 || y < 3 ? 96 : 70) + s, (x < 3 || y < 3 ? 68 : 48) + s,
+                    (x < 3 || y < 3 ? 42 : 28) + s);
+            else if (brace)
+                set(p, x, y, 84 + s, 58 + s, 34 + s);
+        }
+    return p;
+}
+
+// A flower pot's picture laid out as a block game lays it out (in
+// sixteenths): the pot's side at 5..11 across, 10..16 down, its rim seen
+// from above at 5..11, 5..11 with earth inside; clear elsewhere.
+Image makeFlowerPot()
+{
+    Image p = PixelArt::blank(S);
+    for (int y = 10; y < 22; ++y)
+        for (int x = 10; x < 22; ++x)
+        {
+            const int s = shadeOf(x, y, 677u, 6);
+            const bool rim = x < 12 || x > 19 || y < 12 || y > 19;
+            if (rim)
+                set(p, x, y, 150 + s, 78 + s, 54 + s);
+            else
+                set(p, x, y, 74 + s, 52 + s, 34 + s); // the earth
+        }
+    for (int y = 20; y < S; ++y)
+        for (int x = 10; x < 22; ++x)
+        {
+            const int s = shadeOf(x, y, 679u, 6);
+            const int lit = x < 12 ? 16 : (x > 19 ? -16 : 0);
+            const bool band = y == 21 || y == 22;
+            set(p, x, y, (band ? 128 : 160) + lit + s, (band ? 64 : 84) + lit / 2 + s,
+                (band ? 44 : 58) + lit / 2 + s);
+        }
+    return p;
+}
+
+// Wool: soft cloth in one colour, its fibres in small curls of lighter and
+// darker texels.
+Image makeWool(int r, int g, int b, unsigned int seed)
+{
+    Image p = PixelArt::blank(S);
+    for (int y = 0; y < S; ++y)
+        for (int x = 0; x < S; ++x)
+        {
+            const int s = shadeOf(x / 2, y / 2, seed, 14) + shadeOf(x, y, seed + 1u, 6);
+            set(p, x, y, r + s, g + s, b + s);
+        }
+    return p;
+}
+
+// Four lit panes in a wooden frame.
+// A glass window: a thin oak frame round four panes of pale glass, a
+// little more than half opaque (it is blended over what is behind it, and
+// the shader cuts out anything less than half), with a few glints; it
+// does not shine by itself.
+Image makeWindow()
+{
+    Image p = PixelArt::blank(S);
+    for (int y = 0; y < S; ++y)
+        for (int x = 0; x < S; ++x)
+        {
+            const bool frame = x < 2 || x > 29 || y < 2 || y > 29;
+            const bool bar = x == 15 || x == 16 || y == 15 || y == 16;
+            if (frame || bar)
+            {
+                const int s = shadeOf(x, y, 557u, 4);
+                const bool lit = frame ? (x < 2 || y < 2) : (x == 15 || y == 15);
+                set(p, x, y, (lit ? 120 : 92) + s, (lit ? 88 : 66) + s, (lit ? 50 : 36) + s);
+                continue;
+            }
+            const int glint = (x + y) % 11 == 0 || (x + y) % 11 == 1 ? 1 : 0;
+            if (glint)
+                set(p, x, y, 236, 244, 248, 200);
+            else
+                set(p, x, y, 168, 196, 212, 140);
+        }
+    return p;
+}
+
+// A lantern's parts laid out as a block game's lantern picture lays them
+// out (in sixteenths): the body's sides at 0..6 across, 2..9 down, its top
+// and bottom at 0..6, 9..15, the cap's sides at 1..5, 0..2. Dark iron
+// frames round warm glowing glass.
+Image makeSmallLantern()
+{
+    Image p = PixelArt::blank(S);
+    for (int y = 0; y < S; ++y)
+        for (int x = 0; x < S; ++x)
+        {
+            const int s = shadeOf(x, y, 631u, 6);
+            if (x < 12 && y >= 4 && y < 18)
+            {
+                // a side: iron at the top, bottom and edges, glass between
+                const bool iron = x < 2 || x > 9 || y < 6 || y > 15 || x == 5 || x == 6;
+                if (iron)
+                    set(p, x, y, 58 + s, 52 + s, 56 + s);
+                else
+                {
+                    const int d = (y - 11) * (y - 11);
+                    set(p, x, y, 255, 214 - d * 2, 120 - d * 4);
+                }
+            }
+            else if (x < 12 && y >= 18 && y < 30)
+                set(p, x, y, 70 + s, 64 + s, 68 + s); // the top and bottom plates
+            else if (x >= 2 && x < 10 && y < 4)
+                set(p, x, y, 50 + s, 46 + s, 50 + s); // the cap
+        }
+    return p;
+}
+
+// A chain: dark iron links one above the other, in the left of the picture.
+Image makeChain()
+{
+    Image p = PixelArt::blank(S);
+    for (int y = 0; y < S; ++y)
+        for (int x = 0; x < 6; ++x)
+        {
+            const bool link =
+                (y / 4) % 2 == 0 ? (x == 1 || x == 4 || y % 4 == 0) : (x >= 2 && x <= 3);
+            if (link)
+                set(p, x, y, 74 + (y % 4) * 6, 72 + (y % 4) * 6, 80 + (y % 4) * 6);
+        }
+    return p;
+}
+
+// A trodden dirt path: packed tan earth with darker grit and a few pale
+// stones.
+Image makePathTop()
+{
+    Image p = PixelArt::blank(S);
+    for (int y = 0; y < S; ++y)
+        for (int x = 0; x < S; ++x)
+        {
+            const int s = shadeOf(x, y, 563u, 10);
+            const unsigned int h = PixelArt::hash(x, y, 569u) % 23u;
+            if (h == 0)
+                set(p, x, y, 168 + s, 156 + s, 132 + s); // a pebble
+            else if (h < 4)
+                set(p, x, y, 104 + s, 78 + s, 44 + s); // grit
+            else
+                set(p, x, y, 148 + s, 116 + s, 70 + s);
+        }
+    return p;
+}
+
+// The path's side: dirt, with the trodden earth along the top.
+Image makePathSide()
+{
+    Image p = makeDirt();
+    const Image top = makePathTop();
+    for (int y = 0; y < 4; ++y)
+        for (int x = 0; x < S; ++x)
+        {
+            const size_t i = static_cast<size_t>((y * S + x) * 4);
+            set(p, x, y, top[i], top[i + 1], top[i + 2]);
+        }
+    return p;
+}
+
+// An oak door as a block game draws one, a block of it at a time: a frame
+// of darker boards round raised panels; the top half has four window panes
+// (see-through), the bottom half two tall panels and the iron knob.
+Image makeDoor(bool top)
+{
+    Image p = PixelArt::blank(S);
+    for (int y = 0; y < S; ++y)
+        for (int x = 0; x < S; ++x)
+        {
+            const int s = shadeOf(x, y, top ? 113u : 111u, 4);
+            const bool frame = x < 3 || x > 28 || (top ? y < 3 : y > 28);
+            const bool bar = x == 15 || x == 16 || (top ? y == 15 || y == 16 : y == 15);
+            const bool pane = top && !frame && !bar && x >= 5 && x <= 26 && y >= 5 && y <= 26;
+            const bool panelEdge = !top && !frame && !bar &&
+                                   (x == 5 || x == 26 || x == 13 || x == 18 || y == 3 || y == 13 ||
+                                    y == 17 || y == 27);
+            if (pane)
+                continue; // a window: see-through
+            if (frame || bar)
+                set(p, x, y, (x < 3 || y < 3 ? 120 : 92) + s, (x < 3 || y < 3 ? 86 : 64) + s,
+                    (x < 3 || y < 3 ? 48 : 34) + s);
+            else if (panelEdge)
+                set(p, x, y, 96 + s, 66 + s, 36 + s);
+            else
+                set(p, x, y, 150 + s, 110 + s, 64 + s);
+        }
+    // the window panes' frames, and the knob on the bottom half
+    if (top)
+        for (int k = 3; k < S - 3; ++k)
+        {
+            set(p, 4, k, 92, 64, 34);
+            set(p, 27, k, 92, 64, 34);
+            set(p, k, 4, 92, 64, 34);
+            set(p, k, 27, 92, 64, 34);
+        }
+    else
+        for (int y = 5; y <= 7; ++y)
+        {
+            set(p, 24, y, 96, 96, 100);
+            set(p, 25, y, 60, 60, 64);
+        }
     return p;
 }
 
@@ -977,55 +1245,6 @@ Image makeIce()
     return p;
 }
 
-// Pumpkin skin: orange ribs running down, darker in the grooves.
-void pumpkinSkin(Image &p, bool top)
-{
-    for (int y = 0; y < S; ++y)
-        for (int x = 0; x < S; ++x)
-        {
-            const int rib = top ? ((abs(x - 16) + abs(y - 16)) % 6) : (x % 6);
-            const int s = shadeOf(x, y, 291u, 5);
-            const int groove = rib == 0 ? -40 : (rib == 3 ? 14 : 0);
-            set(p, x, y, 222 + groove + s, 118 + groove / 2 + s, 22 + s);
-        }
-}
-
-// A carved pumpkin lantern: triangle eyes and a jagged grin, lit from
-// inside in warm yellow.
-Image makePumpkinFace()
-{
-    Image p = PixelArt::blank(S);
-    pumpkinSkin(p, false);
-    auto glow = [&](int x, int y) {
-        const int s = shadeOf(x, y, 293u, 10);
-        set(p, x, y, 255, 214 + s, 96 + s);
-    };
-    for (int y = 0; y < 6; ++y) // the eyes, points up
-        for (int x = -y; x <= y; ++x)
-        {
-            glow(9 + x, 8 + y);
-            glow(22 + x, 8 + y);
-        }
-    for (int x = 6; x <= 25; ++x) // the grin, with teeth
-        for (int y = 19; y <= 23; ++y)
-        {
-            const bool tooth = (x % 5 == 0 && y == 19) || (x % 5 == 3 && y == 23);
-            if (!tooth && !(y == 23 && (x < 8 || x > 23)))
-                glow(x, y);
-        }
-    return p;
-}
-
-Image makePumpkinTop()
-{
-    Image p = PixelArt::blank(S);
-    pumpkinSkin(p, true);
-    for (int y = 13; y <= 18; ++y)
-        for (int x = 14; x <= 17; ++x)
-            set(p, x, y, 84 + shadeOf(x, y, 295u, 8), 112, 40); // the stem
-    return p;
-}
-
 // A bamboo stalk the full height of the cell, so stalks stack into tall
 // canes: light on its left edge, shaded on its right, with a ring at each
 // node and now and then a small leaf.
@@ -1186,7 +1405,9 @@ Image make(int texture)
     case WINDOW:
         return makeWindow();
     case DOOR:
-        return makeDoor();
+        return makeDoor(false);
+    case DOOR_TOP:
+        return makeDoor(true);
     case LANTERN:
         return makeLantern();
     case CRYSTAL:
@@ -1243,10 +1464,6 @@ Image make(int texture)
         return makeFlower(246, 140, 46, 0, 0, 0, true);
     case ICE:
         return makeIce();
-    case PUMPKIN_FACE:
-        return makePumpkinFace();
-    case PUMPKIN_TOP:
-        return makePumpkinTop();
     case BAMBOO:
         return makeBamboo(false);
     case BAMBOO_TOP:
@@ -1263,6 +1480,52 @@ Image make(int texture)
         return makeLeaves(62, 116, 40, 333u);
     case LEAVES_BAMBOO:
         return makeLeaves(118, 176, 62, 335u);
+    case PATH_TOP:
+        return makePathTop();
+    case PATH_SIDE:
+        return makePathSide();
+    case SPRUCE_PLANKS:
+        return makePlanks(112, 80, 50);
+    case LANTERN_SMALL:
+        return makeSmallLantern();
+    case CHAIN:
+        return makeChain();
+    case WOOL_WHITE:
+        return makeWool(234, 236, 236, 641u);
+    case WOOL_RED:
+        return makeWool(176, 46, 38, 643u);
+    case WOOL_BLUE:
+        return makeWool(60, 68, 170, 645u);
+    case WOOL_YELLOW:
+        return makeWool(248, 198, 40, 647u);
+    case WOOL_ORANGE:
+        return makeWool(240, 118, 20, 649u);
+    case WOOL_PURPLE:
+        return makeWool(122, 42, 172, 651u);
+    case LILY_PAD:
+        return makeLilyPad();
+    case SUGAR_CANE:
+        return makeSugarCane();
+    case CLAY:
+        return sand(160, 166, 178, 653u);
+    case PODZOL_TOP:
+        return makePodzolTop();
+    case PODZOL_SIDE:
+        return makePodzolSide();
+    case COARSE_DIRT:
+        return makeCoarseDirt();
+    case STONE_BRICKS:
+        return stoneBricks(128, 128, 130, false, 669u);
+    case MOSSY_BRICKS:
+        return stoneBricks(120, 124, 116, true, 671u);
+    case DARK_OAK_SIDE:
+        return makeLogSide(70, 50, 32, 673u);
+    case DARK_OAK_TOP:
+        return makeLogTop(66, 46, 28, 112, 82, 52);
+    case TRAPDOOR:
+        return makeTrapdoor();
+    case FLOWER_POT:
+        return makeFlowerPot();
     default:
         return PixelArt::blank(S);
     }

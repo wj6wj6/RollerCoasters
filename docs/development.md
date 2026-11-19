@@ -37,7 +37,7 @@ CMake preset 不寫死 Visual Studio 版本（見 [ADR 0004](adr/0004-any-visual
 合併前一次跑完下面四個組態（格式與 `/analyze` 只跑一次），並把結果表寫到 `out/check-summary.md`：
 
 ```powershell
-pwsh -File scripts/check-all.ps1          # 加 -Jobs 0 用上所有核心
+pwsh -File scripts/check-all.ps1          # 加 -Jobs 0 用上所有核心；-Compiler／-Config 只跑其中幾組，-NoShared 略過格式與 /analyze（CI 的 matrix job 用）
 ```
 
 也可以逐一執行：
@@ -82,7 +82,7 @@ hooks 與 CI 使用同一個 PowerShell 入口與 `tools.json`。hooks 只檢查
 沒有 Windows 時（例如雲端環境），可以先跑 Linux CI 的同一組檢查：
 
 ```sh
-tests/linux/install-packages.sh           # Ubuntu 24.04：apt 套件與 tools.json 版本的 clang-format
+tests/linux/install-packages.sh           # Ubuntu 24.04：apt 套件與 tools.json 版本的 clang-format（--only core 不裝 MinGW）
 pwsh -File scripts/check.ps1 -Stage quick
 CC=clang CXX=clang++ cmake -S tests/linux -B out/build/linux -G Ninja
 cmake --build out/build/linux

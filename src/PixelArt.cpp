@@ -52,6 +52,12 @@ unsigned int upload(Image pixels, bool repeatT)
 {
     GLuint texture = 0;
     glGenTextures(1, &texture);
+    uploadInto(texture, pixels, repeatT);
+    return texture;
+}
+
+void uploadInto(unsigned int texture, Image pixels, bool repeatT)
+{
     glBindTexture(GL_TEXTURE_2D, texture);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
@@ -85,7 +91,9 @@ unsigned int upload(Image pixels, bool repeatT)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, repeatT ? GL_REPEAT : GL_CLAMP_TO_EDGE);
-    return texture;
+    // the last level is 1 x 1: a smaller picture put in place of a larger
+    // one leaves the larger one's extra levels unused
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, level);
 }
 
 const char *buildStamp()

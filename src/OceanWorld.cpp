@@ -18,6 +18,7 @@
 #include <chrono>
 #include <memory>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "OceanWorld.h"
@@ -29,6 +30,7 @@
 #include "WorldSave.h"
 #include "WorldShape.h"
 #include "PixelArt.h"
+#include "TexturePack.h"
 
 namespace
 {
@@ -85,10 +87,10 @@ enum Block
     CORAL_YELLOW,
     CORAL_RED,
     CRYSTAL,
-    LANTERN, // glowing lamp block
+    LANTERN, // a sea lantern: the lamps under water
     GOLD,
-    MARBLE,
-    LAPIS,
+    PRISMARINE, // the ring gates, as an ocean monument's
+    DARK_PRISMARINE,
     GRASS,     // on the islet above the sea
     GRASS_TOP, // only its top face's texture, never a block
     BLOCK_COUNT
@@ -106,7 +108,6 @@ enum Plant
     ANEMONE,
     GLOW_BUD,
     CRYSTAL_SPIKE,
-    STARFISH,
     PLANT_COUNT
 };
 
@@ -355,28 +356,6 @@ Image makeCrystalSpike()
                     set(p, centers[k] + dx, y, 200, 250, 255);
                 else
                     set(p, centers[k] + dx, y, 80, 210, 240);
-            }
-        }
-    return p;
-}
-
-Image makeStarfish()
-{
-    Image p = PixelArt::blank();
-    for (int y = 0; y < S; ++y)
-        for (int x = 0; x < S; ++x)
-        {
-            const float dx = static_cast<float>(x) - 7.5f;
-            const float dy = static_cast<float>(y) - 7.5f;
-            const float r = sqrtf(dx * dx + dy * dy);
-            const float a = atan2f(dy, dx);
-            const float arm = 2.2f + 5.6f * powf(fabsf(cosf(2.5f * a)), 3.0f);
-            if (r < arm)
-            {
-                if (hash(x, y, 131u) % 5u == 0)
-                    set(p, x, y, 250, 190, 120); // bumps
-                else
-                    set(p, x, y, 226, 104, 58);
             }
         }
     return p;
@@ -870,7 +849,8 @@ void buildGate(Grid &g, float u, bool portal)
                 if (radius < inner || radius >= outer)
                     continue;
                 const float turn = (atan2f(v, s) + 3.14159265f) / 6.2831853f;
-                g.put(bx, j, bz, static_cast<int>(turn * 12.0f) % 2 == 0 ? MARBLE : LAPIS);
+                g.put(bx, j, bz,
+                      static_cast<int>(turn * 12.0f) % 2 == 0 ? PRISMARINE : DARK_PRISMARINE);
             }
         }
 }
@@ -962,28 +942,33 @@ void buildShallowReef(Grid &g)
         }
 }
 
-// A giant open clam with a glowing pearl, hinge towards (hx, hz).
-void buildClam(Grid &g, int bx, int bz, int hx, int hz)
+// A coral head by the ride: a mound of coral blocks of two kinds, a few
+// fans growing on it and sea pickles glowing on top (as a block game's
+// reefs have them), so the ride passes small lit spots.
+void buildCoralHead(Grid &g, int bx, int bz, int hx, int hz)
 {
     const int base = g.top(bx, bz);
     if (base < kMinY || base > kSceneryTop - 4 || g.get(bx, base, bz) == ISLAND)
         return;
+    const unsigned int h = hash(bx, bz, 241u);
+    const int kinds[5] = {CORAL_PINK, CORAL_ORANGE, CORAL_VIOLET, CORAL_YELLOW, CORAL_RED};
+    const int a = kinds[h % 5u], b = kinds[(h / 5u + 1u + h % 5u) % 5u];
     for (int dx = -1; dx <= 1; ++dx)
         for (int dz = -1; dz <= 1; ++dz)
         {
-            g.put(bx + dx, base + 1, bz + dz, MARBLE);
-            // The upper shell stands open along the hinge side.
-            if (dx * hx + dz * hz == 1)
-            {
-                g.put(bx + dx, base + 2, bz + dz, MARBLE);
-                if (dx * hz == 0 && dz * hx == 0)
-                    g.put(bx + dx, base + 3, bz + dz, MARBLE);
-            }
+            if (abs(dx) + abs(dz) == 2 && hash(bx + dx, bz + dz, 243u) % 2u == 0)
+                continue; // a ragged edge
+            g.put(bx + dx, base + 1, bz + dz, (dx + dz + 2) % 2 == 0 ? a : b);
         }
-    g.put(bx, base + 2, bz, LANTERN);
+    // a higher crown, leaning away from the ride
+    g.put(bx, base + 2, bz, a);
+    g.put(bx - hx, base + 2, bz - hz, b);
+    const size_t top = Grid::index(bx, base + 3, bz);
+    if (Grid::inside(bx, base + 3, bz) && g.get(bx, base + 3, bz) == AIR)
+        g.plant[top] = GLOW_BUD;
 }
 
-void buildClams(Grid &g)
+void buildCoralHeads(Grid &g)
 {
     struct Spot
     {
@@ -1001,7 +986,8 @@ void buildClams(Grid &g)
         const bool alongX = fabsf(left[0]) > fabsf(left[2]);
         const int hx = alongX ? (left[0] * static_cast<float>(toRide) > 0.0f ? -1 : 1) : 0;
         const int hz = alongX ? 0 : (left[2] * static_cast<float>(toRide) > 0.0f ? -1 : 1);
-        buildClam(g, blockOf(c[0] + left[0] * s.side), blockOf(c[2] + left[2] * s.side), hx, hz);
+        buildCoralHead(g, blockOf(c[0] + left[0] * s.side), blockOf(c[2] + left[2] * s.side), hx,
+                       hz);
     }
 }
 
@@ -1092,56 +1078,90 @@ void buildRuins(Grid &g)
     g.put(cx - 1, kDeepestTop + 5, cz - 1, GOLD);
 }
 
-// A wrecked ship lying beside the ride: stern castle, masts, and a breach
-// in the side that shows the lamp-lit gold in the hold.
+// A wrecked ship lying beside the ride, as a block game's shipwrecks are
+// built: a hull of planks with a pointed bow, sides that flare out from a
+// narrower bottom, a main deck broken open over the hold, a raised stern
+// castle with a railing of posts, the sides rotted to different heights,
+// the stump of the snapped main mast, and sand drifted against one side
+// and into the hold. A breach in the side shows the lamp-lit gold inside.
 void buildWreck(Grid &g)
 {
     const int x0 = scaledColumn(-21) - 6, x1 = x0 + 13; // bow to stern
-    const int z0 = 43 + kRuinsShift, z1 = z0 + 6;
+    const int z0 = 43 + kRuinsShift, zc = z0 + 3;       // the ship's middle line
     const int keel = kDeepestTop + 1;
     for (int bx = x0; bx <= x1; ++bx)
     {
-        const int fromBow = bx - x0;
-        const int fromStern = x1 - bx;
-        // The hull narrows towards the ends.
-        const int inset =
-            fromBow == 0 ? 3 : (fromBow == 1 ? 2 : ((fromBow == 2 || fromStern == 0) ? 1 : 0));
-        const bool castle = fromStern <= 3;
-        for (int bz = z0 + inset; bz <= z1 - inset; ++bz)
+        const int fromBow = bx - x0, fromStern = x1 - bx;
+        // half the width at the gunwale: to a point at the bow, a little
+        // narrower at the stern
+        const int half = fromBow == 0     ? 0
+                         : fromBow == 1   ? 1
+                         : fromBow == 2   ? 2
+                         : fromStern == 0 ? 2
+                                          : 3;
+        const bool castle = fromStern <= 3, bow = fromBow <= 1;
+        // where the side ends: level with the castle's deck, rotted lower
+        // here and there amidships (the castle's railing reaches
+        // kSceneryTop)
+        int top = keel + 3;
+        if (!castle && !bow && hash(bx, z0, 211u) % 3u == 0)
+            --top;
+        for (int dz = -half; dz <= half; ++dz)
         {
-            const bool side =
-                bz == z0 + inset || bz == z1 - inset || fromBow == 0 || fromStern == 0;
-            const bool breach = bz == z0 && (fromBow == 6 || fromBow == 7);
-            g.put(bx, keel, bz, PLANKS);
-            if (!side)
+            const int bz = zc + dz;
+            const int reach = dz < 0 ? -dz : dz;
+            // the bottom, a block narrower: the sides flare out above it
+            if (reach < half || half == 0)
+                g.put(bx, keel, bz, PLANKS);
+            const bool side = reach == half || fromStern == 0;
+            const bool breach = dz == -half && (fromBow == 6 || fromBow == 7);
+            if (side && !breach)
+                for (int j = keel + 1; j <= top; ++j)
+                    if (j > keel + 1 || reach < half || half == 0)
+                        g.put(bx, j, bz, PLANKS);
+            if (side && reach == half && half > 0)
+                g.put(bx, keel + 1, bz, PLANKS); // the turn of the bilge
+            if (side)
+                continue;
+            // the decks: the main deck, broken open over the hold; the
+            // stern castle's raised deck, with its railing of posts
+            const bool hole = fromBow >= 5 && fromBow <= 8 && reach <= 1;
+            if (castle)
             {
-                if (castle)
-                    g.put(bx, keel + 3, bz, PLANKS); // what is left of the deck
-                continue;
+                g.put(bx, keel + 3, bz, PLANKS);
+                if (fromStern == 3 && dz != 0)
+                    for (int j = keel + 1; j <= keel + 2; ++j)
+                        g.put(bx, j, bz, PLANKS); // the castle's front wall, a door in it
             }
-            if (breach)
-                continue;
-            // The sides have rotted to different heights.
-            const int height = castle ? 4 : (hash(bx, bz, 211u) % 4u == 0 ? 1 : 2);
-            for (int k = 1; k <= height; ++k)
-                g.put(bx, keel + k, bz, (castle && k == height) ? LOG : PLANKS);
+            else if (!hole && fromBow >= 2)
+                g.put(bx, keel + 2, bz, PLANKS);
         }
+        if (castle)
+            for (int dz = -half; dz <= half; dz += half > 0 ? half * 2 : 1)
+                if ((bx + dz) % 2 == 0)
+                    g.put(bx, keel + 4, zc + dz, PLANKS); // railing posts
     }
-    // The hold, seen through the breach.
-    g.put(x0 + 6, keel + 1, z0 + 1, GOLD);
-    g.put(x0 + 7, keel + 1, z0 + 1, GOLD);
-    g.put(x0 + 7, keel + 2, z0 + 1, GOLD);
-    g.put(x0 + 7, keel + 1, z0 + 2, GOLD);
-    g.put(x0 + 6, keel + 1, z0 + 2, LANTERN);
-    // Main mast with its yard, and the fore mast snapped off and lying outside.
-    for (int j = keel + 1; j <= kSceneryTop; ++j)
-        g.put(x0 + 5, j, z0 + 3, LOG);
-    for (int bz = z0 + 1; bz <= z1 - 1; ++bz)
-        g.put(x0 + 5, kSceneryTop - 1, bz, LOG);
-    g.put(x0 + 2, keel + 1, z0 + 3, LOG);
-    g.put(x0 + 2, keel + 2, z0 + 3, LOG);
-    for (int bx = x0 + 1; bx <= x0 + 4; ++bx)
-        g.put(bx, keel, z1 + 2, LOG);
+    // sand drifted against the side away from the breach, and into the hold
+    for (int bx = x0 + 2; bx <= x1 - 1; ++bx)
+    {
+        if (hash(bx, z0, 223u) % 4u != 0)
+            g.put(bx, keel + 1, zc + 4, SAND);
+        g.put(bx, keel, zc + 4, SAND);
+    }
+    for (int bx = x0 + 5; bx <= x0 + 8; ++bx)
+        if (hash(bx, z0, 227u) % 2u == 0)
+            g.put(bx, keel + 1, zc + 1, SAND);
+    // the hold, seen through the breach and the broken deck
+    g.put(x0 + 6, keel + 1, zc - 2, GOLD);
+    g.put(x0 + 7, keel + 1, zc - 2, GOLD);
+    g.put(x0 + 7, keel + 2, zc - 2, GOLD);
+    g.put(x0 + 6, keel + 1, zc - 1, LANTERN);
+    // the main mast, snapped off above the deck, and a piece of it on the
+    // sea bed beside the ship
+    for (int j = keel + 1; j <= keel + 4; ++j)
+        g.put(x0 + 4, j, zc, LOG);
+    g.put(x0 + 3, keel, zc - 5, LOG);
+    g.put(x0 + 2, keel, zc - 5, LOG);
 }
 
 // Removes every block the train could touch, for all three spline types:
@@ -1209,7 +1229,8 @@ void decorate(Grid &g, const Clearance &clear)
                 const int ground = g.get(bx, j, bz);
                 const int above = j + 1;
                 if (ground == AIR || ground == ISLAND || ground == LOG || ground == LANTERN ||
-                    ground == GOLD || ground == CRYSTAL || ground == MARBLE || ground == LAPIS)
+                    ground == GOLD || ground == CRYSTAL || ground == PRISMARINE ||
+                    ground == DARK_PRISMARINE)
                     continue;
                 if (g.solid(bx, above, bz) || clear.blocks(bx, above, bz))
                     continue;
@@ -1240,7 +1261,6 @@ void decorate(Grid &g, const Clearance &clear)
                 {
                     const float grass = 0.04f + 0.42f * meadow;
                     plant = r < grass            ? SEAGRASS
-                            : r < grass + 0.012f ? STARFISH
                             : r < grass + 0.030f ? TUBE_CORAL
                             : r < grass + 0.044f ? GLOW_BUD
                                                  : NO_PLANT;
@@ -1424,7 +1444,7 @@ void buildWorld(Grid &g)
     buildRocks(g);
     buildReefs(g);
     buildShallowReef(g);
-    buildClams(g);
+    buildCoralHeads(g);
     buildRuins(g);
     buildWreck(g);
     for (float u : kDiveGates)
@@ -1568,27 +1588,6 @@ void addPlant(const Grid &g, int bx, int j, int bz, Batches &batches)
     const float x0 = static_cast<float>(bx) * kBlock;
     const float y0 = static_cast<float>(j) * kBlock;
     const float z0 = static_cast<float>(bz) * kBlock;
-
-    if (plant == STARFISH)
-    {
-        // Lies flat on the sand, turned a random way.
-        const float a = static_cast<float>(h % 360u) * 3.14159265f / 180.0f;
-        const float cx = x0 + kBlock * 0.5f, cz = z0 + kBlock * 0.5f;
-        const float r = kBlock * 0.38f;
-        const float uv[4][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
-        v.extra[1] = 0.0f;
-        for (int c = 0; c < 4; ++c)
-        {
-            const float ca = a + 0.785398f + 1.570796f * static_cast<float>(c);
-            v.pos[0] = cx + cosf(ca) * r;
-            v.pos[1] = y0 + 0.06f;
-            v.pos[2] = cz + sinf(ca) * r;
-            v.uv[0] = uv[c][0];
-            v.uv[1] = uv[c][1];
-            out.push_back(v);
-        }
-        return;
-    }
 
     // How far up a kelp stalk this cell is, for the sway.
     float swayBottom = 0.0f, swayTop = 0.0f;
@@ -2094,6 +2093,260 @@ int OceanWorld::rideObstructions(const std::vector<float> &path)
     return count;
 }
 
+// Prismarine, as an ocean monument's stone: mottled teal and sea green;
+// dark prismarine in dark teal panels with a lighter grid between them.
+Image makePrismarine(bool dark)
+{
+    const int side = PixelArt::kFineSize;
+    Image p = PixelArt::blank(side);
+    for (int y = 0; y < side; ++y)
+        for (int x = 0; x < side; ++x)
+        {
+            const int s = shadeOf(x / 2, y / 2, dark ? 613u : 617u, 18);
+            if (dark)
+            {
+                const bool seam = x % 16 == 0 || y % 16 == 0;
+                if (seam)
+                    set(p, x, y, 60 + s / 2, 110 + s / 2, 96 + s / 2);
+                else
+                    set(p, x, y, 36 + s, 78 + s, 70 + s);
+            }
+            else
+            {
+                const unsigned int h = hash(x / 3, y / 3, 619u) % 5u;
+                const int green = h == 0 ? 20 : (h == 1 ? -14 : 0);
+                set(p, x, y, 92 + s - green, 156 + s + green, 140 + s);
+            }
+        }
+    return p;
+}
+
+// A sea lantern: a pale glowing core in four quarters, a frame of sea
+// green stone round it.
+Image makeSeaLantern()
+{
+    const int side = PixelArt::kFineSize;
+    Image p = PixelArt::blank(side);
+    for (int y = 0; y < side; ++y)
+        for (int x = 0; x < side; ++x)
+        {
+            const bool frame = x < 3 || x > 28 || y < 3 || y > 28;
+            const bool cross = x == 15 || x == 16 || y == 15 || y == 16;
+            const int s = shadeOf(x, y, 621u, 10);
+            if (frame)
+                set(p, x, y, 104 + s, 164 + s, 152 + s);
+            else if (cross)
+                set(p, x, y, 196 + s, 232 + s, 226 + s);
+            else
+            {
+                const int cx = x < 16 ? 9 : 22, cy = y < 16 ? 9 : 22;
+                const int d = (x - cx) * (x - cx) + (y - cy) * (y - cy);
+                set(p, x, y, 236 - d * 2, 250 - d, 246 - d);
+            }
+        }
+    return p;
+}
+
+// Chiseled stone bricks: a carved ring in the middle of a block of stone
+// bricks, for the ruins' columns and gate posts.
+Image makeChiseledBricks()
+{
+    Image p = LandTextures::stoneBricks(140, 146, 138, true, 623u);
+    for (int y = 4; y < 28; ++y)
+        for (int x = 4; x < 28; ++x)
+        {
+            const int dx = x - 16, dy = y - 16, d = dx * dx + dy * dy;
+            const int s = shadeOf(x, y, 627u, 8);
+            if (d >= 64 && d < 121)
+                set(p, x, y, 92 + s, 98 + s, 92 + s); // the carved ring
+            else if (d < 64 || (x > 5 && x < 26 && y > 5 && y < 26))
+                set(p, x, y, 150 + s, 156 + s, 148 + s);
+        }
+    return p;
+}
+
+namespace
+{
+// The built-in picture of each texture slot.
+Image builtInPicture(int t)
+{
+    switch (t)
+    {
+    case SAND:
+        return LandTextures::sand(226, 216, 180, 21u);
+    case STONE:
+        return LandTextures::stone(122, 127, 134, 31u);
+    case CAVE_ROCK:
+        return LandTextures::stone(68, 75, 90, 41u);
+    case BRICK:
+        return LandTextures::stoneBricks(146, 154, 144, true, 51u);
+    case PILLAR:
+        return makeChiseledBricks();
+    case PLANKS:
+        return LandTextures::planks(116, 82, 50, true); // wet, nailed
+    case LOG:
+        return LandTextures::bark(92, 66, 44, 81u);
+    case CORAL_PINK:
+        return LandTextures::coral(226, 96, 140, 501u);
+    case CORAL_ORANGE:
+        return LandTextures::coral(236, 142, 62, 511u);
+    case CORAL_VIOLET:
+        return LandTextures::coral(146, 92, 204, 521u);
+    case CORAL_YELLOW:
+        return LandTextures::coral(232, 204, 70, 531u);
+    case CORAL_RED:
+        return LandTextures::coral(214, 62, 58, 541u);
+    case CRYSTAL:
+        return LandTextures::crystal();
+    case LANTERN:
+        return makeSeaLantern();
+    case GOLD:
+        return LandTextures::gold();
+    case PRISMARINE:
+        return makePrismarine(false);
+    case DARK_PRISMARINE:
+        return makePrismarine(true);
+    case GRASS:
+        return LandTextures::make(LandTextures::GRASS_SIDE);
+    case GRASS_TOP:
+        return LandTextures::make(LandTextures::GRASS_TOP);
+    default:
+        break;
+    }
+    switch (t - BLOCK_COUNT)
+    {
+    case SEAGRASS:
+        return makeSeagrass();
+    case KELP:
+        return makeKelp();
+    case FAN_CORAL:
+        return makeFanCoral(214, 72, 104);
+    case FAN_CORAL_GOLD:
+        return makeFanCoral(226, 170, 52);
+    case FAN_CORAL_VIOLET:
+        return makeFanCoral(150, 96, 214);
+    case TUBE_CORAL:
+        return makeTubeCoral();
+    case ANEMONE:
+        return makeAnemone();
+    case GLOW_BUD:
+        return makeGlowBud();
+    case CRYSTAL_SPIKE:
+        return makeCrystalSpike();
+    default:
+        return PixelArt::blank();
+    }
+}
+
+// The block pictures of a texture pack that stand for each texture slot,
+// best first, as in TexturePack.cpp's table ("name@colour" for a block that
+// stands in, tinted). Empty: the built-in picture stays.
+const char *packBlocks(int t, TexturePack::Pack::Use &use)
+{
+    using Use = TexturePack::Pack::Use;
+    use = Use::SOLID;
+    switch (t)
+    {
+    case SAND:
+        return "sand";
+    case STONE:
+        return "stone";
+    case CAVE_ROCK:
+        return "deepslate|cobbled_deepslate|andesite|stone_andesite";
+    case BRICK:
+        return "mossy_stone_bricks|stonebrick_mossy|stone_bricks|stonebrick";
+    case PILLAR:
+        return "chiseled_stone_bricks|stonebrick_carved|stone_bricks|stonebrick";
+    case PLANKS:
+        return "dark_oak_planks|planks_big_oak|oak_planks|planks_oak";
+    case LOG:
+        return "oak_log|log_oak";
+    case CORAL_PINK:
+        return "brain_coral_block";
+    case CORAL_ORANGE:
+        return "horn_coral_block@autumn|fire_coral_block@autumn";
+    case CORAL_VIOLET:
+        return "bubble_coral_block";
+    case CORAL_YELLOW:
+        return "horn_coral_block";
+    case CORAL_RED:
+        return "fire_coral_block";
+    case CRYSTAL:
+        return "amethyst_block|sea_lantern";
+    case LANTERN:
+        return "sea_lantern|glowstone";
+    case GOLD:
+        return "gold_block";
+    case PRISMARINE:
+        return "prismarine|prismarine_rough";
+    case DARK_PRISMARINE:
+        return "dark_prismarine|prismarine_dark";
+    case GRASS:
+        return "grass_block_side|grass_side";
+    case GRASS_TOP:
+        use = Use::GRASS;
+        return "grass_block_top|grass_top";
+    default:
+        break;
+    }
+    use = Use::PLANT;
+    switch (t - BLOCK_COUNT)
+    {
+    case SEAGRASS:
+        return "seagrass|tall_seagrass_bottom";
+    case KELP:
+        return "kelp_plant|kelp";
+    case FAN_CORAL:
+        return "brain_coral_fan|brain_coral";
+    case FAN_CORAL_GOLD:
+        return "horn_coral_fan|horn_coral";
+    case FAN_CORAL_VIOLET:
+        return "bubble_coral_fan|bubble_coral";
+    case TUBE_CORAL:
+        return "tube_coral|tube_coral_fan";
+    case ANEMONE:
+        return "fire_coral|fire_coral_fan";
+    case GLOW_BUD:
+        return "sea_pickle|glow_lichen";
+    case CRYSTAL_SPIKE:
+        return "amethyst_cluster|large_amethyst_bud";
+    default:
+        return "";
+    }
+}
+} // namespace
+
+void OceanWorld::setTexturePack(std::shared_ptr<const TexturePack::Pack> pack)
+{
+    m_pack = std::move(pack);
+    m_texturesStale = true;
+}
+
+// Puts each slot's picture (the pack's, or the built-in one) into its
+// texture: new names when fresh, otherwise into the names the display
+// lists already bind, so nothing has to be built again.
+void OceanWorld::uploadTextures(bool fresh)
+{
+    if (fresh)
+        m_textures.assign(kTextureCount, 0);
+    for (int t = 0; t < kTextureCount; ++t)
+    {
+        if (t == AIR || t == ISLAND || t == plantTexture(NO_PLANT))
+            continue;
+        Image picture;
+        TexturePack::Pack::Use use;
+        const char *blocks = packBlocks(t, use);
+        if (!(m_pack && *blocks != '\0' && m_pack->standIn(blocks, use, picture)))
+            picture = builtInPicture(t);
+        const bool repeat = t == plantTexture(KELP) || t == SAND;
+        if (fresh)
+            m_textures[static_cast<size_t>(t)] = PixelArt::upload(picture, repeat);
+        else
+            PixelArt::uploadInto(m_textures[static_cast<size_t>(t)], picture, repeat);
+    }
+    m_texturesStale = false;
+}
+
 namespace
 {
 // What the sea floor's save must have been made by (WorldSave.h).
@@ -2196,29 +2449,7 @@ bool OceanWorld::prepare()
         return false;
     m_build->worker.join();
 
-    m_textures.assign(kTextureCount, 0);
-    const Image images[kTextureCount] = {
-        PixelArt::blank(), // AIR (unused)
-        PixelArt::blank(), // ISLAND (never drawn)
-        // the blocks share the island's 32 x 32 style
-        LandTextures::sand(226, 216, 180, 21u), LandTextures::stone(122, 127, 134, 31u),
-        LandTextures::stone(68, 75, 90, 41u), // cave rock
-        LandTextures::stoneBricks(146, 154, 144, true, 51u), LandTextures::pillar(),
-        LandTextures::planks(116, 82, 50, true), // wet, nailed
-        LandTextures::bark(92, 66, 44, 81u), LandTextures::coral(226, 96, 140, 501u),
-        LandTextures::coral(236, 142, 62, 511u), LandTextures::coral(146, 92, 204, 521u),
-        LandTextures::coral(232, 204, 70, 531u), LandTextures::coral(214, 62, 58, 541u),
-        LandTextures::crystal(), LandTextures::lantern(), LandTextures::gold(),
-        LandTextures::marble(), LandTextures::lapis(), LandTextures::make(LandTextures::GRASS_SIDE),
-        LandTextures::make(LandTextures::GRASS_TOP),
-        PixelArt::blank(), // NO_PLANT
-        makeSeagrass(), makeKelp(), makeFanCoral(214, 72, 104), makeFanCoral(226, 170, 52),
-        makeFanCoral(150, 96, 214), makeTubeCoral(), makeAnemone(), makeGlowBud(),
-        makeCrystalSpike(), makeStarfish()};
-    for (int t = 0; t < kTextureCount; ++t)
-        if (t != AIR && t != ISLAND && t != plantTexture(NO_PLANT))
-            m_textures[static_cast<size_t>(t)] =
-                PixelArt::upload(images[t], t == plantTexture(KELP) || t == SAND);
+    uploadTextures(true);
 
     m_chunks = m_build->chunks;
     for (size_t i = 0; i < m_chunks.size(); ++i)
@@ -2244,6 +2475,8 @@ void OceanWorld::draw(bool shadowPass, float time)
     glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_TEXTURE_BIT);
     while (!prepare())
         std::this_thread::sleep_for(std::chrono::milliseconds(1)); // a caller that cannot wait
+    if (m_texturesStale)
+        uploadTextures(false);
     glEnable(GL_TEXTURE_2D);
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
     const Frustum view = Frustum::current();

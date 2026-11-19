@@ -30,5 +30,7 @@ Thumbs.db
 !.env.example
 /data/
 /backups/
+# texture packs the user downloads (TexturePack.h): theirs, never committed
+/texturepacks/
 /logs/
 CMakeUserPresets.json

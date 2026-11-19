@@ -15,6 +15,7 @@
 class Fl_Box;
 class Fl_Browser;
 class Fl_Button;
+class Fl_Menu_Button;
 class Fl_Group;
 class Fl_Value_Input;
 class Fl_Value_Slider;
@@ -69,6 +70,7 @@ void styleToggle(Fl_Button *button); // toggle or radio: blue when on
 void styleAccentButton(Fl_Button *button);
 void styleSlider(Fl_Value_Slider *slider);
 void styleBrowser(Fl_Browser *browser);
+void styleMenuButton(Fl_Menu_Button *menu); // a button that drops down a list
 void styleNumberField(Fl_Value_Input *field, Fl_Color labelColor);
 void styleCaption(Fl_Widget *widget, Fl_Color color, Fl_Fontsize size);
 } // namespace UiTheme

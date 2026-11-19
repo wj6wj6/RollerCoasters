@@ -33,7 +33,9 @@ uniform float uTime;
 varying vec3 vWorldPos;
 varying vec3 vWorldNormal;
 varying vec4 vColor;
-varying vec4 vExtra; // emissive, sway, block light, sky light (see OceanWorld)
+// emissive; sway (when positive) or the warm light of lava and lanterns on
+// a block that does not sway (as minus that); cool block light; sky light
+varying vec4 vExtra;
 
 void main()
 {
@@ -95,6 +97,8 @@ uniform float uTime;
 uniform float uWaterLevel;     // very low when there is no water
 uniform vec3 uBlockLightColor; // glow cast by crystals
 uniform float uWetness;        // 0 dry, 1 soaked by rain
+uniform int uTranslucent;      // 1 while the see-through water and glass are drawn
+uniform float uDaylight;       // 1 in full day, 0 at night
 
 varying vec3 vWorldPos;
 varying vec3 vWorldNormal;
@@ -122,6 +126,20 @@ float shadowAt(vec3 p, vec3 n)
     return mix(lit / 12.0, 1.0, smoothstep(0.42, 0.5, edge));
 }
 
+// A smooth value noise in 0..1, for the water running down wet walls.
+float hash12(vec2 p)
+{
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+float valueNoise(vec2 p)
+{
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), f.x),
+               mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+
 // wet: a film of water makes the surface smoother, so the highlight gets
 // both tighter and much brighter.
 vec3 blinnPhong(vec3 albedo, vec3 n, vec3 l, vec3 v, float wet)
@@ -144,12 +162,22 @@ void main()
     vec4 base = vColor * texel;
     vec3 albedo = pow(base.rgb, vec3(2.2));
 
-    // Wet surfaces are darker and glossy: everything the rain reaches (the
-    // tops most), and always the band just above the water line.
+    // Wet surfaces are darker and glossy: whatever the rain reaches, and
+    // always the band just above the water line. How open a surface is to
+    // the sky (its sky light, 1 out in the open) says how much rain reaches
+    // it: under eaves and trees less, in tunnels and indoors none. Walls are
+    // wet in streaks where the water runs down them.
+    float exposure = smoothstep(0.5, 0.95, vExtra.w);
     float wet = 0.0;
     if (vWorldPos.y > uWaterLevel) {
         float shore = 1.0 - smoothstep(0.2, 1.8, vWorldPos.y - uWaterLevel);
-        wet = max(uWetness * (0.45 + 0.55 * max(n.y, 0.0)), shore * 0.8);
+        float rain = uWetness * exposure * (0.6 + 0.4 * max(n.y, 0.0));
+        if (abs(n.y) < 0.5) {
+            float along = dot(vWorldPos.xz, vec2(-n.z, n.x));
+            float run = valueNoise(vec2(along * 1.3, vWorldPos.y * 0.12 + uTime * 0.5));
+            rain *= mix(0.7, 1.15, smoothstep(0.3, 0.75, run));
+        }
+        wet = max(rain, shore * 0.8);
         albedo *= mix(1.0, 0.6, wet);
     }
 
@@ -182,9 +210,18 @@ void main()
         color = albedo * ambient;
         color += blinnPhong(albedo, n, l, v, wet) * sun;
     }
-    // Light from nearby crystals, and the crystals' own glow.
-    color += albedo * uBlockLightColor * vExtra.z;
-    color += albedo * vExtra.x * 3.0;
+    // Light sources look like ornaments by day and like lamps by night (and
+    // in tunnels and under cover at any hour): how much the light they cast
+    // shows depends on how dark it is where it falls, the sky light there
+    // times the daylight; their own glow is kept stronger, as a lamp that is
+    // lit still looks lit in the sun, only less so.
+    float dark = 1.0 - uDaylight * vExtra.w;
+    float spill = mix(0.1, 1.0, dark);
+    float own = mix(0.45, 1.0, dark);
+    float warm = max(-vExtra.y, 0.0);
+    color += albedo * vec3(1.0, 0.62, 0.32) * warm * 1.6 * spill; // lava, lanterns
+    color += albedo * uBlockLightColor * vExtra.z * spill;       // crystals, sea lanterns
+    color += albedo * vExtra.x * 3.0 * own;
 
     if (uHeadlightOn != 0) {
         vec3 toLamp = uHeadPos - vWorldPos;
@@ -198,9 +235,13 @@ void main()
 
     float dist = length(cameraPos - vWorldPos) * uFogDensity;
     if (uHdr != 0) {
-        // Tone mapping happens in the final post pass.
+        // Tone mapping happens in the final post pass. The alpha of solid
+        // surfaces carries how open they are to the rain, for the wet ground
+        // pass; see-through ones keep their own, which blends them. Plants
+        // that sway (grass, flowers) get no film: their blades are no wall.
         color = mix(uFogColor, color, exp(-dist * dist));
-        gl_FragColor = vec4(color, base.a);
+        float rainMask = vExtra.y > 0.0 ? 0.002 : max(exposure, 0.002);
+        gl_FragColor = vec4(color, uTranslucent != 0 ? base.a : rainMask);
         return;
     }
 
@@ -431,6 +472,8 @@ bool AdvancedLighting::init()
     m_locWaterLevel = glGetUniformLocation(m_program, "uWaterLevel");
     m_locBlockLightColor = glGetUniformLocation(m_program, "uBlockLightColor");
     m_locWetness = glGetUniformLocation(m_program, "uWetness");
+    m_locTranslucent = glGetUniformLocation(m_program, "uTranslucent");
+    m_locDaylight = glGetUniformLocation(m_program, "uDaylight");
 
     // Textured drawing code (glBindTexture on unit 0) keeps working through the
     // shader. Untextured code leaves the default texture object 0 bound, so
@@ -520,6 +563,8 @@ void AdvancedLighting::prepare(const LightingFrame &frame)
     const float day = smoothstep(-0.04f, 0.16f, sun[1]);
     const float dusk =
         (1.0f - smoothstep(0.04f, 0.42f, sun[1])) * smoothstep(-0.16f, -0.02f, sun[1]);
+    // the lamps come on as the sun sets, and earlier under a rain sky
+    m_daylight = smoothstep(0.02f, 0.3f, sun[1]) * (1.0f - 0.45f * clamp01(frame.rain));
 
     // The sun lights the scene by day: deep orange on the horizon, golden
     // a little higher, white by mid morning. The moon (opposite side, cool
@@ -741,6 +786,8 @@ void AdvancedLighting::begin(const LightingFrame &frame)
                                      ? 0.0f
                                      : 0.0009f + 0.0016f * clamp01(frame.rain));
     glUniform1f(m_locWetness, clamp01(frame.wetness));
+    glUniform1i(m_locTranslucent, 0);
+    glUniform1f(m_locDaylight, m_daylight);
     glUniform1f(m_locWaterLevel, frame.waterLevel);
     const float crystalLight[3] = {0.12f, 0.55f, 0.75f};
     glUniform3fv(m_locBlockLightColor, 1, crystalLight);
@@ -794,4 +841,10 @@ void AdvancedLighting::setUnlit(bool unlit)
 {
     if (m_active)
         glUniform1i(m_locUnlit, unlit ? 1 : 0);
+}
+
+void AdvancedLighting::setTranslucent(bool translucent)
+{
+    if (m_active)
+        glUniform1i(m_locTranslucent, translucent ? 1 : 0);
 }

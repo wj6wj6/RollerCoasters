@@ -59,13 +59,16 @@ add_executable(RollerCoasters
     src/OceanWorld.h src/OceanWorld.cpp
     src/PixelArt.h src/PixelArt.cpp
     src/PostEffects.h src/PostEffects.cpp
+    src/TexturePack.h src/TexturePack.cpp
     src/TrainModel.h src/TrainModel.cpp
     src/TrainViewEffects.cpp
     src/TransformGizmo.h src/TransformGizmo.cpp
     src/UnderwaterOptics.h
     src/WaterFlow.h src/WaterFlow.cpp
     src/WorldShape.h src/WorldShape.cpp
+    src/ZipArchive.h src/ZipArchive.cpp
     src/CallBacks.H src/CallBacks.cpp
+    src/FileDialogs.h src/FileDialogs.cpp
     src/EditKeys.h src/EditKeys.cpp
     src/ControlPoint.H src/ControlPoint.cpp
     src/main.cpp src/Object.H
@@ -83,6 +86,7 @@ target_link_libraries(RollerCoasters PRIVATE Utilities glad hid imm32)
 # the build makes the folder and Visual Studio debugs from the exe's folder.
 add_custom_command(TARGET RollerCoasters POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:RollerCoasters>/TrackFiles"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:RollerCoasters>/texturepacks"
     VERBATIM)
 set_target_properties(RollerCoasters PROPERTIES
     VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:RollerCoasters>")
@@ -139,6 +143,13 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     add_test(NAME TrackSpacingCheck COMMAND TrackSpacingCheck)
     set_tests_properties(TrackSpacingCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
+    add_executable(TexturePackCheck tests/TexturePackCheck.cpp
+        src/TexturePack.cpp src/ZipArchive.cpp src/LandTextures.cpp src/PixelArt.cpp)
+    target_include_directories(TexturePackCheck PRIVATE src)
+    target_link_libraries(TexturePackCheck PRIVATE Utilities glad)
+    add_test(NAME TexturePackCheck COMMAND TexturePackCheck)
+    set_tests_properties(TexturePackCheck PROPERTIES TIMEOUT 10 LABELS integration)
+
     add_executable(GizmoDragCheck tests/GizmoDragCheck.cpp src/TransformGizmo.cpp)
     target_include_directories(GizmoDragCheck PRIVATE src)
     target_link_libraries(GizmoDragCheck PRIVATE glad)
@@ -147,7 +158,7 @@ if(ROLLERCOASTERS_BUILD_TESTS)
 
     add_executable(OceanRideClearanceCheck tests/OceanRideClearanceCheck.cpp
         src/OceanWorld.cpp src/Frustum.cpp src/LandTextures.cpp src/PixelArt.cpp src/WorldShape.cpp
-        src/Track.cpp src/ControlPoint.cpp)
+        src/TexturePack.cpp src/ZipArchive.cpp src/Track.cpp src/ControlPoint.cpp)
     target_include_directories(OceanRideClearanceCheck PRIVATE src)
     target_link_libraries(OceanRideClearanceCheck PRIVATE Utilities glad)
     add_test(NAME OceanRideClearanceCheck COMMAND OceanRideClearanceCheck)
@@ -155,7 +166,8 @@ if(ROLLERCOASTERS_BUILD_TESTS)
 
     add_executable(LandRideClearanceCheck tests/LandRideClearanceCheck.cpp
         src/LandWorld.cpp src/Frustum.cpp src/LandTextures.cpp src/OceanWorld.cpp src/PixelArt.cpp
-        src/WaterFlow.cpp src/WorldShape.cpp src/Track.cpp src/ControlPoint.cpp)
+        src/TexturePack.cpp src/WaterFlow.cpp src/WorldShape.cpp src/ZipArchive.cpp
+        src/Track.cpp src/ControlPoint.cpp)
     target_include_directories(LandRideClearanceCheck PRIVATE src)
     target_link_libraries(LandRideClearanceCheck PRIVATE Utilities glad)
     add_test(NAME LandRideClearanceCheck COMMAND LandRideClearanceCheck)
@@ -176,3 +188,5 @@ install(TARGETS RollerCoasters RUNTIME DESTINATION .)
 install(FILES README.md CONTRIBUTING.md AGENTS.md DESTINATION .)
 install(DIRECTORY docs/ DESTINATION docs)
 install(DIRECTORY DESTINATION TrackFiles)
+# where the user puts texture packs (TexturePack.h); none is shipped
+install(DIRECTORY DESTINATION texturepacks)
