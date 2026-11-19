@@ -1,6 +1,6 @@
 name: Linux quality
 
-# Fast feedback on every PR push (a few minutes, against about ten for
+# Fast feedback on every PR push (a few minutes, against about six for
 # Windows): format, repository policy, the platform-neutral code and all CTest
 # checks built with clang on Linux, and a MinGW syntax pass over every file
 # against the real Windows SDK headers. MSVC, clang-cl, /analyze and packaging
@@ -37,14 +37,15 @@ jobs:
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
+      # Ubuntu mirrors can be slow enough to time the job out, so the .deb
+      # files are cached; the script falls back to apt when they don't fit.
+      - uses: actions/cache@v4
+        with:
+          path: ~/apt-debs
+          key: apt-debs-ubuntu-24.04-${{ hashFiles('tests/linux/install-packages.sh') }}
       - name: Install packages
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends \
-            clang ninja-build libfltk1.3-dev libglu1-mesa-dev xvfb xauth g++-mingw-w64-x86-64-posix
-          # The clang-format version pinned in tools.json, from its PyPI wheel.
-          version=$(jq -r '."clang-format".version' tools.json)
-          pipx install "clang-format==$version"
+        timeout-minutes: 10
+        run: tests/linux/install-packages.sh ~/apt-debs
       - name: Format, repository policy and script syntax
         shell: pwsh
         run: ./scripts/check.ps1 -Stage quick

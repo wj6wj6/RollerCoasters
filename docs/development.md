@@ -82,8 +82,7 @@ hooks 與 CI 使用同一個 PowerShell 入口與 `tools.json`。hooks 只檢查
 沒有 Windows 時（例如雲端環境），可以先跑 Linux CI 的同一組檢查：
 
 ```sh
-sudo apt-get install clang ninja-build libfltk1.3-dev libglu1-mesa-dev xvfb g++-mingw-w64-x86-64-posix
-pipx install clang-format==22.1.8          # 版本同 tools.json
+tests/linux/install-packages.sh           # Ubuntu 24.04：apt 套件與 tools.json 版本的 clang-format
 pwsh -File scripts/check.ps1 -Stage quick
 CC=clang CXX=clang++ cmake -S tests/linux -B out/build/linux -G Ninja
 cmake --build out/build/linux
