@@ -384,26 +384,38 @@ Image makeAnemone()
     return p;
 }
 
-// A cluster of small glowing bulbs on short stems.
+// A sea pickle's skin, laid out as a block game lays it out so a texture
+// pack's sea_pickle fits the same model: the top of a pickle at columns
+// 4-7 and the bottom at 8-11 of rows 1-4, the glowing sprouts at columns
+// 0-3 and 12-15 of rows 0-4, and the sides in a band from row 5 down, four
+// columns to a side.
 Image makeGlowBud()
 {
     Image p = PixelArt::blank();
-    const int xs[3] = {3, 8, 12};
-    const int tops[3] = {9, 6, 10};
-    for (int k = 0; k < 3; ++k)
-    {
-        for (int y = tops[k] + 3; y < S; ++y)
-            set(p, xs[k], y, 60, 120, 96);
-        for (int dy = 0; dy < 3; ++dy)
-            for (int dx = -1; dx <= 1; ++dx)
-            {
-                const bool corner = dx != 0 && dy != 1;
-                if (corner)
-                    set(p, xs[k] + dx, tops[k] + dy, 110, 230, 190);
-                else
-                    set(p, xs[k] + dx, tops[k] + dy, 215, 255, 220);
-            }
-    }
+    for (int y = 5; y < S; ++y)
+        for (int x = 0; x < S; ++x)
+        {
+            const bool spot = hash(x, y, 431u) % 7u == 0u;
+            const bool rim = x % 4 == 0 || x % 4 == 3;
+            const int shade = y == 5 ? 30 : (spot ? -26 : (rim ? -12 : 0));
+            set(p, x, y, 96 + shade, 132 + shade, 52 + shade / 2);
+        }
+    for (int y = 1; y < 5; ++y)
+        for (int x = 0; x < 4; ++x)
+        {
+            const bool edge = x == 0 || x == 3 || y == 1 || y == 4;
+            set(p, 4 + x, y, edge ? 104 : 140, edge ? 142 : 176, edge ? 58 : 82); // top
+            set(p, 8 + x, y, 70, 98, 40);                                         // bottom
+        }
+    const int sprout[2][5] = {{1, 2, 1, 2, 1}, {2, 1, 2, 1, 2}};
+    for (int k = 0; k < 2; ++k)
+        for (int y = 0; y < 5; ++y)
+        {
+            const int x = (k == 0 ? 0 : 12) + sprout[k][y];
+            set(p, x, y, 236, 250, 196);
+            if (y < 2)
+                set(p, x + (k == 0 ? 1 : -1), y, 200, 240, 150);
+        }
     return p;
 }
 
@@ -1630,6 +1642,84 @@ void addPlant(const Grid &g, int bx, int j, int bz, Batches &batches)
     }
 }
 
+// A clump of one to four sea pickles as a block game models them: small
+// boxes four pixels square and four to seven tall, each with two crossed
+// sprouts on top that glow brighter than the body. The boxes sit where the
+// game puts them for that count, so a clump of three is not a row.
+void addSeaPickle(const Grid &g, int bx, int j, int bz, Batches &batches)
+{
+    struct Pickle
+    {
+        int x, z, height; // in sixteenths of the block
+    };
+    static const Pickle kClumps[4][4] = {{{6, 6, 6}},
+                                         {{3, 3, 6}, {8, 8, 4}},
+                                         {{6, 9, 6}, {2, 2, 4}, {8, 2, 6}},
+                                         {{2, 2, 6}, {9, 10, 4}, {9, 2, 6}, {2, 8, 7}}};
+    const size_t i = Grid::index(bx, j, bz);
+    const int count = 1 + static_cast<int>(hash(bx, bz * 13 + j, 433u) % 4u);
+    std::vector<Vertex> &out = batches[static_cast<size_t>(plantTexture(GLOW_BUD))];
+    const float px = kBlock / 16.0f;
+    const float x0 = static_cast<float>(bx) * kBlock;
+    const float y0 = static_cast<float>(j) * kBlock;
+    const float z0 = static_cast<float>(bz) * kBlock;
+
+    Vertex v;
+    v.color[0] = v.color[1] = v.color[2] = 1.0f;
+    v.extra[1] = 0.0f;
+    v.extra[2] = glowFactor(static_cast<float>(g.glow[i]));
+    v.extra[3] = skyFactor(static_cast<float>(g.sky[i]));
+    // One quad: corners in pixels from the cell's corner, the normal, the
+    // texture rectangle (u0, v0, u1, v1 in pixels) and how much it glows.
+    auto quad = [&](const float (&c)[4][3], float nx, float ny, float nz, const float (&r)[4],
+                    float glow) {
+        const float uv[4][2] = {{r[0], r[3]}, {r[2], r[3]}, {r[2], r[1]}, {r[0], r[1]}};
+        v.normal[0] = nx;
+        v.normal[1] = ny;
+        v.normal[2] = nz;
+        v.extra[0] = glow;
+        for (int k = 0; k < 4; ++k)
+        {
+            v.pos[0] = x0 + c[k][0] * px;
+            v.pos[1] = y0 + c[k][1] * px;
+            v.pos[2] = z0 + c[k][2] * px;
+            v.uv[0] = uv[k][0] / 16.0f;
+            v.uv[1] = uv[k][1] / 16.0f;
+            out.push_back(v);
+        }
+    };
+    const float body = 0.45f, sprout = 1.0f;
+    for (int k = 0; k < count; ++k)
+    {
+        const Pickle &p = kClumps[count - 1][k];
+        const float a = static_cast<float>(p.x), b = static_cast<float>(p.z);
+        const float h = static_cast<float>(p.height), a1 = a + 4.0f, b1 = b + 4.0f;
+        const float top[4] = {4.0f, 1.0f, 8.0f, 5.0f}, under[4] = {8.0f, 1.0f, 12.0f, 5.0f};
+        quad({{a, h, b1}, {a1, h, b1}, {a1, h, b}, {a, h, b}}, 0.0f, 1.0f, 0.0f, top, body);
+        quad({{a, 0.0f, b}, {a1, 0.0f, b}, {a1, 0.0f, b1}, {a, 0.0f, b1}}, 0.0f, -1.0f, 0.0f, under,
+             body);
+        // The sides, each from its own four columns of the band under row 5.
+        const float sides[4][4][3] = {{{a, 0.0f, b1}, {a1, 0.0f, b1}, {a1, h, b1}, {a, h, b1}},
+                                      {{a1, 0.0f, b1}, {a1, 0.0f, b}, {a1, h, b}, {a1, h, b1}},
+                                      {{a1, 0.0f, b}, {a, 0.0f, b}, {a, h, b}, {a1, h, b}},
+                                      {{a, 0.0f, b}, {a, 0.0f, b1}, {a, h, b1}, {a, h, b}}};
+        const float normals[4][3] = {{0, 0, 1}, {1, 0, 0}, {0, 0, -1}, {-1, 0, 0}};
+        for (int s = 0; s < 4; ++s)
+        {
+            const float u = 4.0f * static_cast<float>(s);
+            const float r[4] = {u, 5.0f, u + 4.0f, 5.0f + h};
+            quad(sides[s], normals[s][0], normals[s][1], normals[s][2], r, body);
+        }
+        // Two sprouts crossing over the middle of the top, five pixels tall.
+        const float sprouts[2][4][3] = {
+            {{a, h, b}, {a1, h, b1}, {a1, h + 5.0f, b1}, {a, h + 5.0f, b}},
+            {{a, h, b1}, {a1, h, b}, {a1, h + 5.0f, b}, {a, h + 5.0f, b1}}};
+        const float sproutUv[2][4] = {{0.0f, 0.0f, 4.0f, 5.0f}, {12.0f, 0.0f, 16.0f, 5.0f}};
+        for (int s = 0; s < 2; ++s)
+            quad(sprouts[s], 0.0f, 1.0f, 0.0f, sproutUv[s], sprout);
+    }
+}
+
 // The flat far sea bed beyond the grid, out to the horizon.
 void addFarFloor(Batches &batches)
 {
@@ -2307,7 +2397,7 @@ const char *packBlocks(int t, TexturePack::Pack::Use &use)
     case ANEMONE:
         return "fire_coral|fire_coral_fan";
     case GLOW_BUD:
-        return "sea_pickle|glow_lichen";
+        return "sea_pickle";
     case CRYSTAL_SPIKE:
         return "amethyst_cluster|large_amethyst_bud";
     default:
@@ -2413,7 +2503,9 @@ void OceanWorld::Build::run()
                             continue;
                         low = j < low ? j : low;
                         high = j > high ? j : high;
-                        if (isPlant)
+                        if (isPlant && g.plant[Grid::index(bx, j, bz)] == GLOW_BUD)
+                            addSeaPickle(g, bx, j, bz, plant);
+                        else if (isPlant)
                             addPlant(g, bx, j, bz, plant);
                         else
                             addBlockFaces(g, bx, j, bz, solid);
