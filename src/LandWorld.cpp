@@ -709,7 +709,8 @@ struct Grid
     bool opaque(int bx, int j, int bz) const
     {
         const int b = get(bx, j, bz);
-        return b != AIR && b != WATER && b != WINDOW;
+        // a door is a thin board in its cell, so it hides nothing beside it
+        return b != AIR && b != WATER && b != WINDOW && b != DOOR;
     }
     int skyAt(int bx, int j, int bz) const
     {
@@ -1536,14 +1537,15 @@ void flowerBeds(Grid &g, int x0, int z0, int x1, int z1, int floor, int doorSide
 // coloured, then dressed: a cobble footing course, dark oak log posts at
 // the corners and in the middle of each wall, glass between the posts two
 // blocks high (they do not light up: the lamps do), a band of oak planks
-// along the top, an oak door two blocks high under a little roof of a step,
-// with a lantern on a fence post beside it; a gable roof of dark oak steps
-// overhanging the walls by a block all round, its gable ends of oak planks
-// set back under it, and a cobble chimney. Under the windows trapdoor sills,
-// some with a flower pot, and flowers at the foot of the walls. The
-// colours: the cobble's grey, dark oak, light oak, and the flowers. Walls run an even number of blocks between corners (x1 - x0 and
-// z1 - z0 of 4 or 6), so the middle post and the windows either side of it
-// are symmetrical.
+// along the top, an oak door two blocks high in the middle of the front
+// under a little roof of a step, a lantern hung under the eaves at each
+// front corner; a gable roof of dark oak steps overhanging the walls by a
+// block all round, its gable ends of oak planks set back under it, and a
+// cobble chimney. Under the windows trapdoor sills, some with a flower pot,
+// and flowers at the foot of the walls. The colours: the cobble's grey,
+// dark oak, light oak, and the flowers. Walls run an even number of blocks
+// between corners (x1 - x0 and z1 - z0 of 4 or 6), so the middle post and
+// the windows either side of it are symmetrical.
 void buildHouse(Grid &g, int x0, int z0, int x1, int z1, int floor, bool doorOnX)
 {
     const int wallTop = floor + 3;
@@ -1575,7 +1577,8 @@ void buildHouse(Grid &g, int x0, int z0, int x1, int z1, int floor, bool doorOnX
     }
     // the door, two blocks high, in the middle of the front wall in place
     // of its middle post, so the front is symmetrical, under a step for a
-    // little roof with a lantern hung under it
+    // little roof; a lantern hangs under the eaves at each front corner,
+    // high over the corner posts, out of the way of the door
     const int dx = doorOnX ? x1 : x0 + along[0] / 2;
     const int dz = doorOnX ? z0 + along[1] / 2 : z1;
     const int out = doorOnX ? 0 : 1; // the front faces +x or +z
@@ -1584,7 +1587,13 @@ void buildHouse(Grid &g, int x0, int z0, int x1, int z1, int floor, bool doorOnX
     g.put(dx, floor + 1, dz, DOOR);
     g.put(dx, floor + 2, dz, DARK_OAK_LOG);
     putStairs(g, dx + ox, floor + 2, dz + oz, (out + 2) % 4, ROOF);
-    putLamp(g, dx + ox, floor + 1, dz + oz);
+    for (int side = 0; side < 2; ++side)
+    {
+        if (doorOnX)
+            putLamp(g, x1 + 1, wallTop, side == 0 ? z0 : z1);
+        else
+            putLamp(g, side == 0 ? x0 : x1, wallTop, z1 + 1);
+    }
     // sills and pots under the windows of all four walls
     dressWindows(g, x0, z0, x1, z0, floor + 1, 3);
     dressWindows(g, x0, z1, x1, z1, floor + 1, 1);
@@ -1897,6 +1906,7 @@ void buildVillage(Grid &g, Extras &extras, const Clearance &clear)
         // a hipped cap of dark oak steps over the timber top
         buildHipRoof(g, mx - 2, mx + 2, mz - 2, mz + 2, floor + 7, ROOF, PLANKS);
         g.put(mx, floor, mz + 1, DOOR);
+        g.put(mx, floor + 1, mz + 1, DOOR);
         g.put(mx, floor + 5, mz + 1, WINDOW);
         extras.mill[0] = centerOf(mx);
         extras.mill[1] = static_cast<float>(floor + 6) * kBlock;
@@ -2798,8 +2808,9 @@ void buildGiantTree(Grid &g, const Clearance &clear, Extras &extras)
 }
 
 // A log cabin: spruce log walls on a cobble footing course, a door in the
-// middle of the front (the z1 side, or z0 if frontZ0) under a step with a
-// lantern hung under it, a window on a trapdoor sill either side of it and
+// middle of the front (the z1 side, or z0 if frontZ0) under a step, a
+// lantern under the eaves at each front corner (not in the doorway), a
+// window on a trapdoor sill either side of the door and
 // two at the back, a gable roof of dark oak steps with spruce plank gables,
 // overhanging by a block, and a cobble chimney. Spruce, dark oak and
 // cobble. w should be even, so the door has a middle.
@@ -2821,7 +2832,8 @@ void buildCabin(Grid &g, int x0, int z0, int w, int d, int floor, bool frontZ0)
     g.put(mx, floor, fz, DOOR);
     g.put(mx, floor + 1, fz, DOOR);
     putStairs(g, mx, floor + 2, fz + out, frontZ0 ? 1 : 3, ROOF);
-    putLamp(g, mx, floor + 1, fz + out);
+    putLamp(g, x0, wallTop, fz + out);
+    putLamp(g, x1, wallTop, fz + out);
     dressWindows(g, x0, z0, x1, z0, floor + 1, 3);
     dressWindows(g, x0, z1, x1, z1, floor + 1, 1);
     buildGableRoof(g, x0 - 1, x1 + 1, z0 - 1, z1 + 1, wallTop + 1, true, ROOF, SPRUCE_PLANKS);
@@ -4686,6 +4698,29 @@ void addShape(const Grid &g, int bx, int j, int bz, Batches &batches)
     }
 }
 
+// A door as a block game has it: a board three sixteenths thick standing at
+// one side of its cell, the bottom or top half of the door's picture by
+// whether there is door below. It closes the doorway on the inside, so the
+// doorway is set back in the wall: the wall runs along the axis where the
+// cells either side are built (wall or window), and the inside is the side
+// that gets less sky.
+void addDoor(const Grid &g, int bx, int j, int bz, Batches &batches)
+{
+    const bool wallAlongX = g.get(bx - 1, j, bz) != AIR || g.get(bx + 1, j, bz) != AIR;
+    const int ax = wallAlongX ? 0 : 1, az = wallAlongX ? 1 : 0; // across the wall
+    const int skyPlus = g.skyAt(bx + ax, j, bz + az), skyMinus = g.skyAt(bx - ax, j, bz - az);
+    const bool insidePlus = skyPlus < skyMinus;
+    const float t = 3.0f / 16.0f;
+    float lo[3] = {0.0f, 0.0f, 0.0f}, hi[3] = {1.0f, 1.0f, 1.0f};
+    const int axis = wallAlongX ? 2 : 0;
+    if (insidePlus)
+        lo[axis] = 1.0f - t;
+    else
+        hi[axis] = t;
+    const bool top = g.get(bx, j - 1, bz) == DOOR;
+    addShapeBox(g, bx, j, bz, lo, hi, batches, top ? LandTextures::DOOR_TOP : LandTextures::DOOR);
+}
+
 // Two quads crossing diagonally, smaller than the cell and off centre.
 void addPlant(const Grid &g, int bx, int j, int bz, Batches &batches)
 {
@@ -5134,6 +5169,8 @@ LandWorld::Scene &LandWorld::scene(bool flat)
                         }
                         else if (b == WINDOW)
                             addGlassFaces(s.grid, bx, j, bz, water);
+                        else if (b == DOOR)
+                            addDoor(s.grid, bx, j, bz, solids);
                         else if (b != AIR)
                             addBlockFaces(s.grid, bx, j, bz, solids);
                         else if (s.grid.plant[cell] == SNOW_LAYER)
