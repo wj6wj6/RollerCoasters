@@ -46,6 +46,10 @@
 
 // other things we just deal with as pointers, to avoid circular references
 class TrainView;
+namespace AppControl
+{
+struct Options;
+}
 
 // if we're also making the sample solution, then we need to know
 // about the stuff we don't tell students
@@ -130,6 +134,10 @@ class TrainWindow : public Fl_Double_Window
     std::string texturePackPath;               // the pack in use, empty when built in
     std::string texturePackLabel;              // "Textures: <name>"
     void listTexturePacks(const std::string &select = std::string());
+    // Sets the scene up as the command line asks (AppControl.h): the track,
+    // texture pack, camera, switches and hour. False, with a message, if a
+    // file cannot be used; nothing is shown in a dialog.
+    bool applyOptions(const AppControl::Options &options, std::string &error);
     Fl_Button *editButton;  // show the control points for editing
     Fl_Button *bloomButton; // bloom and god rays
     Fl_Button *ssaoButton;  // screen space ambient occlusion

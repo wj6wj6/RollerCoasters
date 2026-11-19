@@ -5,7 +5,12 @@
 
 ```mermaid
 flowchart LR
-    Main[main / 版本參數] --> Window[TrainWindow / 控制面板]
+    Main[main] --> Control[AppControl / 命令列、軌道檔檢查、畫面判讀、PNG]
+    Script[scripts/control-app.ps1] -->|--doctor / --screenshot| Main
+    Main -->|applyOptions| Window
+    Main --> Window[TrainWindow / 控制面板]
+    View -->|每幀結束| ViewControl[TrainViewControl / 讀回畫面、回報、關閉視窗]
+    ViewControl --> Control
     Window --> View[TrainView / OpenGL 畫布]
     Window --> Track[CTrack / 控制點與 trainU]
     Window --> Theme[UiTheme / 深灰面板與圓角控制項樣式]
@@ -65,7 +70,9 @@ flowchart LR
 
 | 路徑 | 職責 |
 |---|---|
-| `src/main.cpp` | 處理 `--version`，切到 exe 所在資料夾，建立 `TrainWindow` 並啟動 FLTK 事件迴圈。 |
+| `src/main.cpp` | 解析命令列，切到 exe 所在資料夾，建立 `TrainWindow` 並啟動 FLTK 事件迴圈；自動模式結束後回傳結果。 |
+| `src/AppControl.h/.cpp` | 命令列（`--doctor`、`--screenshot` 與場景參數）的解析、軌道檔格式檢查、資料夾檢查、畫面判讀與 PNG 寫入；不需要視窗，由 `AppControlCheck` 測試。 |
+| `src/TrainViewControl.cpp` | 自動模式下每幀結束時：`--doctor` 回報 OpenGL 與 shader 路徑，`--screenshot` 從 back buffer 讀回畫面、存檔並判斷是否真的畫出東西，然後關閉視窗。 |
 | `src/TrainWindow.H/.cpp` | 主視窗與控制面板；持有唯一的 `CTrack`、widget 與 `advanceTrain()`。 |
 | `src/CallBacks.H/.cpp` | 按鈕、滑桿、idle 更新、軌道載入儲存與材質包選單。 |
 | `src/UiTheme.h/.cpp` | 控制面板配色與圓角控制項樣式。 |
@@ -105,6 +112,7 @@ flowchart LR
 - `ArcLength` 開啟時，`advanceByArcLength()` 沿參數小步前進、累加歐氏距離，每次呼叫即時計算；關閉時直接改變 `trainU`，所以世界空間速度會隨區段長度變化。
 - 光影動畫（雨、時間）由每秒 30 次的 `animateEffectsCB` timeout 推進。
 - 相機的平滑、按住按鍵移動與觸控板慣性都走 FLTK timeout，依實際經過時間計算，與幀率無關。
+- 自動模式（`--doctor`／`--screenshot`）：`main()` 先以 `TrainWindow::applyOptions()` 設定場景（軌道檔先經 `checkTrackFile()`，壞檔直接失敗、不跳對話框），`TrainView::draw()` 畫完 `drawFrame()` 後呼叫 `finishAutomatedFrame()`；達到指定幀數就讀回畫面、寫 PNG、印出 `PASS`／`FAIL` 行，再關閉視窗讓 `Fl::run()` 返回。120 秒內沒有畫出任何一幀也算失敗。結束碼：0 通過、1 檢查失敗、2 命令列錯誤。
 
 ## 跨模組約定
 

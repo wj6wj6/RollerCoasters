@@ -68,6 +68,10 @@ check(FrustumCheck SOURCES src/Frustum.cpp LIBS glad)
 check(TexturePackCheck
     SOURCES src/TexturePack.cpp src/ZipArchive.cpp src/LandTextures.cpp src/PixelArt.cpp
     LIBS Utilities glad)
+check(AppControlCheck
+    SOURCES src/AppControl.cpp src/Track.cpp src/ControlPoint.cpp src/TexturePack.cpp
+        src/ZipArchive.cpp src/LandTextures.cpp src/PixelArt.cpp
+    LIBS Utilities glad)
 check(OceanRideClearanceCheck TIMEOUT 120
     SOURCES src/OceanWorld.cpp src/Frustum.cpp src/LandTextures.cpp src/PixelArt.cpp
         src/WorldShape.cpp src/TexturePack.cpp src/ZipArchive.cpp src/Track.cpp

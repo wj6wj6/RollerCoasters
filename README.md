@@ -117,4 +117,5 @@ pwsh -File scripts/check.ps1 -Stage all -Config Release
 - [貢獻流程](CONTRIBUTING.md)
 - [架構與資料流](docs/architecture.md)
 - [發布、備份與手動驗證](docs/operations.md)
+- [驗證流程與功能地圖](.agents/skills/verify-app/SKILL.md)（`scripts/control-app.ps1`）
 - [AI 開發規範](AGENTS.md)

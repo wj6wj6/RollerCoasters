@@ -1002,7 +1002,16 @@ void TrainView::drawEditOverlay()
 //========================================================================
 void TrainView::draw()
 {
+    drawFrame();
+    finishAutomatedFrame();
+}
 
+//************************************************************************
+//
+// * Draw one frame of the scene from the selected camera
+//========================================================================
+void TrainView::drawFrame()
+{
     //*********************************************************************
     //
     // * Set up basic opengl informaiton

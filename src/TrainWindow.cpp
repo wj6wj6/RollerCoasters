@@ -29,11 +29,13 @@
 #include <FL/Fl_Box.H>
 
 // for using the real time clock
+#include <memory>
 #include <time.h>
 #include <math.h>
 
 #include "TrainWindow.H"
 #include "TrainView.H"
+#include "AppControl.h"
 #include "CallBacks.H"
 #include "TexturePack.h"
 #include "UiTheme.h"
@@ -594,6 +596,84 @@ void TrainWindow::advanceTrain(float dir)
     else
         m_Track.trainU =
             wrapTrackParameter(m_Track.trainU + step * 0.01f, static_cast<float>(pointCount));
+}
+
+//************************************************************************
+//
+// * Set the scene up from the command line (AppControl.h)
+//========================================================================
+bool TrainWindow::applyOptions(const AppControl::Options &options, std::string &error)
+//========================================================================
+{
+    if (!options.track.empty())
+    {
+        // checked first: readPoints() reports a bad file in a dialog
+        if (!AppControl::checkTrackFile(options.track, error))
+        {
+            error = "track: " + error;
+            return false;
+        }
+        m_Track.readPoints(options.track.c_str());
+        trainView->selectedCube = -1;
+    }
+    if (!options.texturePack.empty())
+    {
+        auto pack = std::make_shared<TexturePack::Pack>();
+        if (!pack->open(options.texturePack))
+        {
+            error = "texture pack: no usable textures in " + options.texturePack;
+            return false;
+        }
+        texturePackPath = options.texturePack;
+        trainView->setTexturePack(pack);
+        listTexturePacks(texturePackPath);
+    }
+
+    auto set = [](Fl_Button *button, AppControl::Switch value) {
+        if (value != AppControl::Switch::Keep)
+            button->value(value == AppControl::Switch::On ? 1 : 0);
+    };
+    set(sceneryButton, options.scenery);
+    set(lightingButton, options.light);
+    set(waterButton, options.water);
+    set(rainButton, options.rain);
+    set(shadowButton, options.shadows);
+    if (options.time >= 0)
+        timeOfDay->value(options.time);
+    if (options.trainU >= 0)
+        m_Track.trainU =
+            wrapTrackParameter(options.trainU, static_cast<float>(m_Track.points.size()));
+    if (options.width > 0)
+        size(options.width, options.height);
+
+    Fl_Button *camera = nullptr;
+    switch (options.camera)
+    {
+    case AppControl::Camera::World:
+        camera = worldCam;
+        break;
+    case AppControl::Camera::Train:
+        camera = trainCam;
+        break;
+    case AppControl::Camera::Chase:
+        camera = chaseCam;
+        break;
+    case AppControl::Camera::Top:
+        camera = topCam;
+        break;
+    case AppControl::Camera::Fly:
+        camera = flyCam;
+        break;
+    case AppControl::Camera::Keep:
+        break;
+    }
+    if (camera)
+    {
+        camera->setonly();
+        trainView->cameraChanged();
+    }
+    damageMe();
+    return true;
 }
 
 //************************************************************************

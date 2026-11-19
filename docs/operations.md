@@ -3,7 +3,7 @@
 ## 發布前
 
 1. `pwsh -File scripts/check-all.ps1` 全部成功（等同 MSVC 與 Clang 各自 Debug／Release 的 `scripts/check.ps1 -Stage all`）。
-2. 使用下列 GUI 清單驗證實際 Windows 裝置，於 PR 記錄結果。
+2. 在實際 Windows 裝置上執行 `pwsh -File scripts/control-app.ps1 smoke`，再依 [驗證流程](../.agents/skills/verify-app/SKILL.md) 完成改動相關的手動檢查，於 PR 記錄結果。
 3. 備份重要軌道檔並做一次還原驗證。
 4. 需要發布新版本時先修改 `CMakeLists.txt` 的 `project(... VERSION ...)`，合併後再建立對應 `v*` tag。
 
@@ -35,7 +35,22 @@ pwsh -File scripts/check.ps1 -Stage all -Config Release
 使用 Clang 封裝時加上 `-Compiler clang`，交付目錄改為 `out/package/clang/Release/`，執行期前置需求相同。
 目前未包含安裝程式、程式簽章與自動更新；正式對外發布前應另行規劃。
 交付目錄不含任何材質包，只有空的 `texturepacks/` 資料夾，使用者把自己的材質包放進去（見 README「材質包」）。
-`--version` 驗證程式與執行期可啟動，無法驗證 GPU 呈現。
+`--version` 驗證程式與執行期可啟動，無法驗證 GPU 呈現；在目標機器上用 `RollerCoasters.exe --doctor` 檢查 OpenGL、shader 路徑與資料夾。
+
+## 自動驗證（control-app）
+
+`scripts/control-app.ps1` 驅動已建置的程式（預設找 `out/` 下最新的 Release 建置，`-Exe` 可指定），證據寫到 `out/verify/`（不納入版控）：
+
+| 指令 | 作用 |
+| --- | --- |
+| `doctor` | `--doctor`：TrackFiles 可寫入、材質包可開啟、OpenGL 與 GLSL 版本、shader 光影與後製是否可用（失敗時程式會靜默退回固定管線，畫面仍「看起來正常」）。 |
+| `screenshot -Name <n> -AppArgs ...` | `--screenshot`：設定場景、畫完指定幀數後存 `out/verify/<n>.png`，並判斷畫面是否真的畫出東西（不是一片底色）。 |
+| `smoke [-Only <前綴>]` | 依序跑全部情境（`list` 列出），包含預期失敗的壞軌道檔、缺檔與命令列錯誤；結果表寫在 `out/verify/smoke.txt`。 |
+| `start -AppArgs ...`／`stop` | 以指定場景開啟視窗做手動檢查，之後關閉。 |
+| `clean` | 關閉 `start` 開的程式並刪除 `out/verify/`。 |
+
+程式本身的結束碼：0 通過、1 檢查失敗、2 命令列錯誤。場景參數見 `RollerCoasters.exe --help`。
+限制：截圖只能證明畫面不是空白、OpenGL 路徑正確，不能判斷景物是否擺對；這部分仍要看截圖或手動檢查。CI 的 Windows runner 沒有 GPU（只有 OpenGL 1.1），所以 `smoke` 目前不在 CI 執行，需要在有顯示卡的 Windows 電腦上跑。
 
 ## GUI 驗證清單
 
