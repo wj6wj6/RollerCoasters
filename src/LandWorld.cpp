@@ -1486,10 +1486,11 @@ void buildHipRoof(Grid &g, int x0, int x1, int z0, int z1, int base, int roof, i
 // The flowers that grow in beds and pots.
 const int kBedFlowers[5] = {POPPY, DANDELION, OXEYE, ALLIUM, CORNFLOWER};
 
-// Under each window pane in a wall, outside: a trapdoor for a sill, and on
-// some of them a flower pot. The panes are found in the wall's layer
+// Under about one window pane in three in a wall, outside: a trapdoor for
+// a sill with a flower pot on it (a sill under every pane looked too
+// busy). The panes are found in the wall's layer
 // `paneLayer` between (x0, z0) and (x1, z1) (a straight run along x or
-// z); `out` is the way out of the wall (kFacing). The pots are chosen by
+// z); `out` is the way out of the wall (kFacing). They are chosen by
 // the distance from the middle of the wall, so the two halves mirror each
 // other, as the walls do.
 void dressWindows(Grid &g, int x0, int z0, int x1, int z1, int paneLayer, int out)
@@ -1501,11 +1502,12 @@ void dressWindows(Grid &g, int x0, int z0, int x1, int z1, int paneLayer, int ou
     {
         if (g.get(bx, paneLayer, bz) != WINDOW || g.get(bx, paneLayer - 1, bz) == WINDOW)
             continue;
-        putTrapdoor(g, bx + ox, paneLayer - 1, bz + oz, (out + 2) % 4, true);
         const int fromMiddle = abs(2 * k - length);
         const unsigned int h = hash(fromMiddle, paneLayer, 811u);
-        if (h % 3u == 0u)
-            putPot(g, bx + ox, paneLayer, bz + oz, kBedFlowers[(h >> 4) % 5u]);
+        if (h % 3u != 0u)
+            continue;
+        putTrapdoor(g, bx + ox, paneLayer - 1, bz + oz, (out + 2) % 4, true);
+        putPot(g, bx + ox, paneLayer, bz + oz, kBedFlowers[(h >> 4) % 5u]);
     }
 }
 
@@ -2554,29 +2556,62 @@ void roundTree(std::vector<Placed> &out, int bx, int base, int bz, int log, int 
     }
 }
 
-// A spruce: rings of needles that narrow to a point. Where it snows the
-// snow settles on it in a thin layer (snowfall()).
-void spruce(std::vector<Placed> &out, int bx, int base, int bz, int trunk)
+// A spruce as a block game grows one: the trunk ends a block under a
+// single leaf at the top, and from there down the layers of needles go
+// radius 1, 2, 1, 2... (each a square with its corners cut, the lowest a
+// little wider on a tall tree), so the trunk never shows inside the crown;
+// it is bare only for the block or two above the ground (bare). Where it
+// snows the snow settles on it in a thin layer (snowfall()).
+void spruce(std::vector<Placed> &out, int bx, int base, int bz, int trunk, int bare)
 {
     for (int k = 0; k < trunk; ++k)
         out.push_back(Placed{bx, base + k, bz, SPRUCE_LOG});
-    int j = base + 2;
-    for (int ring = 0; j < base + trunk; ++ring, ++j)
+    out.push_back(Placed{bx, base + trunk, bz, LEAVES_SPRUCE}); // the tip
+    const int lowest = base + bare;
+    for (int j = base + trunk - 1, layer = 0; j >= lowest; --j, ++layer)
     {
-        const int left = base + trunk - j;
-        const int radius =
-            left > 4 ? (ring % 2 == 0 ? 2 : 1) : (left > 1 ? (ring % 2 == 0 ? 1 : 0) : 0);
+        int radius = layer % 2 == 0 ? 1 : 2;
+        if (j == lowest && trunk >= 8)
+            radius = 3; // a wider skirt at the foot of a tall one
         for (int dx = -radius; dx <= radius; ++dx)
             for (int dz = -radius; dz <= radius; ++dz)
             {
-                if ((dx == 0 && dz == 0) ||
-                    (radius == 2 && (dx == 2 || dx == -2) && (dz == 2 || dz == -2)))
+                const bool corner = abs(dx) == radius && abs(dz) == radius;
+                if ((dx == 0 && dz == 0) || corner ||
+                    (radius == 3 && abs(dx) + abs(dz) > 4)) // round off the skirt
                     continue;
                 out.push_back(Placed{bx + dx, j, bz + dz, LEAVES_SPRUCE});
             }
     }
-    out.push_back(Placed{bx, base + trunk, bz, LEAVES_SPRUCE});
-    out.push_back(Placed{bx, base + trunk + 1, bz, LEAVES_SPRUCE});
+}
+
+// A giant spruce, as in a block game's old growth taiga: a trunk two by
+// two and very tall, bare for most of its height, under a cone of needles
+// that widens a block every two layers down from a cap of four leaves; the
+// cone's layers are rounded. bx, bz: the trunk's corner with the lowest x
+// and z.
+void megaSpruce(std::vector<Placed> &out, int bx, int base, int bz, int height)
+{
+    for (int k = 0; k < height; ++k)
+        for (int t = 0; t < 4; ++t)
+            out.push_back(Placed{bx + t % 2, base + k, bz + t / 2, SPRUCE_LOG});
+    const int crown = height * 2 / 5 + 2; // layers of needles from the top down
+    for (int layer = 0; layer <= crown; ++layer)
+    {
+        const int j = base + height - layer; // the cap sits on the trunk
+        const int radius = layer == 0 ? 0 : (layer + 1) / 2;
+        for (int dx = -radius; dx <= 1 + radius; ++dx)
+            for (int dz = -radius; dz <= 1 + radius; ++dz)
+            {
+                const bool trunk = dx >= 0 && dx <= 1 && dz >= 0 && dz <= 1 && layer > 0;
+                // distance out from the trunk's edge, for a round layer
+                const int ox = dx < 0 ? -dx : (dx > 1 ? dx - 1 : 0);
+                const int oz = dz < 0 ? -dz : (dz > 1 ? dz - 1 : 0);
+                if (trunk || (radius >= 2 && ox * ox + oz * oz > radius * radius + 1))
+                    continue;
+                out.push_back(Placed{bx + dx, j, bz + dz, LEAVES_SPRUCE});
+            }
+    }
 }
 
 void giantMushroom(std::vector<Placed> &out, int bx, int base, int bz, int stem)
@@ -3359,6 +3394,25 @@ void plantTrees(Grid &g, const Clearance &clear, const Extras &extras)
     // the windmill's hub, or nowhere when there is none
     const float millHub[2] = {extras.hasMill ? extras.mill[0] : 1.0e6f, extras.mill[2]};
     std::vector<Placed> blocks;
+    // the giant spruces first, here and there in the spruce forest on level
+    // ground (the four trunk columns on the same ground), so the smaller
+    // spruces grow round them rather than leaving them no room
+    for (int bx = kMinBX + 4; bx < kMaxBX - 5; ++bx)
+        for (int bz = kMinBZ + 4; bz < kMaxBZ - 5; ++bz)
+        {
+            const unsigned int h = hash(bx, bz, 911u);
+            if (h % 53u != 0u || g.biome[Grid::column(bx, bz)] != ALPINE)
+                continue;
+            const int top = g.top(bx, bz);
+            const int ground = g.get(bx, top, bz);
+            if ((ground != GRASS && ground != SNOWY_DIRT) || g.top(bx + 1, bz) != top ||
+                g.top(bx, bz + 1) != top || g.top(bx + 1, bz + 1) != top ||
+                !clear.roomForTree(bx, top, bz) || crowded(g, bx, top + 1, bz, 5))
+                continue;
+            blocks.clear();
+            megaSpruce(blocks, bx, top + 1, bz, 14 + static_cast<int>((h >> 8) % 8u));
+            commit(g, clear, blocks);
+        }
     for (int bx = kMinBX + 1; bx < kMaxBX - 1; ++bx)
         for (int bz = kMinBZ + 1; bz < kMaxBZ - 1; ++bz)
         {
@@ -3417,7 +3471,8 @@ void plantTrees(Grid &g, const Clearance &clear, const Extras &extras)
                 if (biome == ALPINE || ground == SNOWY_DIRT)
                 {
                     if (h % 5u == 0 && !crowded(g, bx, base, bz, 1))
-                        spruce(blocks, bx, base, bz, 6 + static_cast<int>((h >> 8) % 3u));
+                        spruce(blocks, bx, base, bz, 6 + static_cast<int>((h >> 8) % 4u),
+                               1 + static_cast<int>((h >> 12) % 2u));
                 }
                 else if (biome == CRAG || biome == VOLCANO)
                 {
