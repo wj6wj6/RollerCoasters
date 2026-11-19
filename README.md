@@ -66,7 +66,7 @@ pwsh -File scripts/check.ps1 -Stage all -Compiler clang -Config Release
 - 控制面板在視窗右側，外觀仿 3D 建模軟體的屬性編輯器：深灰面板、圓角灰色按鈕，開啟或選取的項目是藍色。由上到下六個面板：
   `Ride`（Run、前後步進、ArcLength、Speed）、`Camera`（World／Train／Chase／Top／Fly、Fly 速度與 FOV）、
   `Track`（Spline Type、Edit、Add／Delete Point、Load／Save／Reset、R±X／R±Z）、`Transform`（選取控制點的 X／Y／Z，可直接輸入）、
-  `Lighting`（Light+、Shadows、Headlight、Bloom、SSAO、Time）、`World`（Water、Rain、Scenery、Grand Tour）。Load／Save 讀寫軌道文字檔，預設位置是 exe 旁邊的 `TrackFiles\`（build 與安裝時建立，程式啟動時會切到 exe 所在資料夾，不論從 Visual Studio、雙擊或終端機啟動都一樣）。
+  `Lighting`（Light+、Shadows、Headlight、Bloom、SSAO、Time）、`World`（Water、Rain、Scenery、Grand Tour、Textures）。Load／Save 讀寫軌道文字檔，開的是 Windows 檔案總管的「開啟」／「另存新檔」視窗（存檔時會自動補上 `.txt`，覆蓋舊檔前會先詢問），預設位置是 exe 旁邊的 `TrackFiles\`（build 與安裝時建立，程式啟動時會切到 exe 所在資料夾，不論從 Visual Studio、雙擊或終端機啟動都一樣）。
 - 編輯控制點（先開啟 `Edit`，World 與 Top 相機）：`Edit` 關閉時控制點不顯示也不能選取。左鍵點選，選到的控制點變橘色並出現移動把手。
   - 拖紅／綠／藍箭頭沿 X／Y／Z 軸移動，拖小方塊在該平面內移動，直接拖控制點則平行於畫面移動。
   - 鍵盤操作與 3D 建模軟體相同：`G` 移動、`R` 傾斜（改變控制點的上方向），之後按 `X`／`Y`／`Z` 鎖定軸，`Shift` + `X`／`Y`／`Z` 鎖定另外兩軸的平面；
@@ -117,16 +117,16 @@ pwsh -File scripts/check.ps1 -Stage all -Compiler clang -Config Release
   軌道周圍會挖空並保留淨空，三種 spline 下方塊與水草都不會碰到列車。
   海水清澈，遠景淡入藍色；鏡頭在水下時有海床光紋（caustics）、從水面射下的光束、頭燈光錐、漂浮微粒與氣泡，
   抬頭可看到水面的 Snell 窗與閃爍的太陽。海裡有跟著軌道的魚群、鯊魚、海龜、魟魚、鯨魚與發光水母；小魚成群、朝同一方向沿著軌道游過整段海底路線（一半順向、一半逆向），大魚群與大型生物在開闊的深水區大範圍遊走，不繞圈；每隻都有黑點眼睛。
-- 水面：細分網格以 Gerstner 波做頂點位移，多層捲動噪點擾動法線，倒影先做螢幕空間反射（SSR），沒打中時退回平面反射，
+- 水面：細分網格以 8 道波長不成整數比、方向分散的 Gerstner 波做頂點位移（所以海面不會出現重複的格子），多層捲動噪點擾動法線；白浪只在緩慢飄移的「陣風區」裡一陣一陣出現，不是每個浪峰都有，下雨時較多；倒影先做螢幕空間反射（SSR），沒打中時退回平面反射，
   強度依菲涅耳（Schlick）公式隨視角變化。
 - `Rain` 開啟下雨：天空轉陰、有雨絲，水面出現雨滴漣漪，地面逐漸變濕（變暗、高光變銳利），水窪會鏡面反射周圍景物；
   關閉後慢慢變乾。岸邊貼近水面的一圈永遠是濕的。
 
 ### 材質包
 
-島上的方塊與植物貼圖可以在執行中切換，像方塊遊戲換資源包一樣：`World` 面板的 `Textures` 選單選 `Built-in`（內建）或一個材質包，畫面立刻換上，不需要重新建島。
+島上的方塊與植物貼圖可以在執行中切換，像方塊遊戲換資源包一樣：`World` 面板最下面的按鈕顯示目前用的材質（例如 `Textures: Built-in`），按下去的清單裡選 `Built-in`（內建）或一個材質包，畫面立刻換上，不需要重新建島。
 
-- 放材質包的位置：`RollerCoasters.exe` 旁的 `texturepacks/` 資料夾（建置與安裝時會建立空的資料夾），或 exe 旁的 `data/texturepacks/`。每個 `.zip` 或資料夾就是一個材質包，選單依名稱列出（開啟程式時讀取，新放入的材質包重新開啟程式後出現）。放在別處的可以選 `Open pack...`，挑 `.zip` 或資料夾裡的 `pack.mcmeta`。
+- 放材質包的位置：`RollerCoasters.exe` 旁的 `texturepacks/` 資料夾（建置與安裝時會建立空的資料夾），或 exe 旁的 `data/texturepacks/`。每個 `.zip` 或資料夾就是一個材質包，清單依名稱列出，每次打開清單都會重新讀資料夾，所以程式開著時放進去的材質包也會出現。清單裡的 `Open texturepacks folder` 會用檔案總管打開這個資料夾（沒有就先建立），直接把下載的 zip 拖進去；`Open pack...` 會開 Windows 檔案總管的「開啟」視窗，挑放在任何地方的 `.zip` 或資料夾裡的 `pack.mcmeta`。
 - 讀得懂兩種格式：
   - 方塊遊戲的資源包（Java 版格式）：`assets/minecraft/textures/block/*.png`，較舊的資源包是 `textures/blocks/`；包在 zip 裡多一層資料夾也可以。依方塊名稱對應到島上的方塊（草地、泥土、石頭、圓石、沙、礫石、雪、原木與樹葉、木板、陶土、礦石、花草等），灰階的草地、樹葉、蕨類和藤蔓會照方塊遊戲的方式染成綠色；動畫材質（熔岩等）取第一格；16×、32×、64× 等解析度都可以，最大用到 256×256。
   - 本程式自己的格式：`textures/<名稱>.png`，名稱見 `src/TexturePack.cpp` 的對照表（例如 `grass_top`、`stone`、`leaves_oak`），每一種貼圖都能換，包含方塊遊戲沒有對應的（窗戶、門、水晶、秋色樹葉、竹子）。

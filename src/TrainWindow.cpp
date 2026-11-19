@@ -38,9 +38,40 @@
 #include "TexturePack.h"
 #include "UiTheme.h"
 
+// after the program's headers: on X11 it brings in Xlib, whose None macro
+// would break ArcBallCam.H; the usual guard for FLTK's pointer casts
+#pragma warning(push)
+#pragma warning(disable : 4311)
+#pragma warning(disable : 4312)
+#include <FL/fl_draw.H>
+#pragma warning(pop)
+
 // The panel's cards are laid out for this height; the window starts at it
 // so the cards are never squeezed (the strip below them takes any change).
 static const int kPanelHeight = 690;
+
+namespace
+{
+// The texture pack list reads the packs folder again whenever it is opened,
+// so a pack put there while the program runs shows up.
+class PackMenu : public Fl_Menu_Button
+{
+  public:
+    PackMenu(int x, int y, int w, int h, TrainWindow *window)
+        : Fl_Menu_Button(x, y, w, h), m_window(window)
+    {
+    }
+    int handle(int event) override
+    {
+        if (event == FL_PUSH)
+            m_window->listTexturePacks(m_window->texturePackPath);
+        return Fl_Menu_Button::handle(event);
+    }
+
+  private:
+    TrainWindow *m_window;
+};
+} // namespace
 
 //************************************************************************
 //
@@ -368,13 +399,13 @@ TrainWindow::TrainWindow(const int x, const int y)
                        "over the volcano's crater, through the mine and under the sea.");
 
         pty += oceanH + gap;
-        texturePackChoice = new Fl_Choice(innerX + 58, pty, innerW - 58, rowH, "Textures");
-        UiTheme::styleChoice(texturePackChoice);
-        texturePackChoice->callback((Fl_Callback *)texturePackCB, this);
-        texturePackChoice->tooltip(
-            "The island's block textures: built in, or a texture pack.\n"
-            "Put packs (.zip or folders) in a texturepacks folder beside\n"
-            "the program, or pick \"Open pack...\" to load one from anywhere.");
+        texturePackMenu = new PackMenu(innerX, pty, innerW, rowH, this);
+        UiTheme::styleMenuButton(texturePackMenu);
+        texturePackMenu->callback((Fl_Callback *)texturePackCB, this);
+        texturePackMenu->tooltip("The island's block textures: built in, or a texture pack.\n"
+                                 "Put downloaded packs (.zip) in the texturepacks folder beside\n"
+                                 "the program (\"Open texturepacks folder\" in this list), or\n"
+                                 "pick \"Open pack...\" to choose one anywhere.");
         listTexturePacks();
 
         pty += rowH + bottomPad;
@@ -573,32 +604,67 @@ void TrainWindow::advanceTrain(float dir)
 void TrainWindow::listTexturePacks(const std::string &select)
 //========================================================================
 {
-    texturePackChoice->clear();
+    texturePackMenu->clear();
     texturePackPaths.clear();
-    texturePackChoice->add("Built-in");
-    int chosen = 0;
+    // replace() takes a name as it is, so a '/' or '_' in it is no menu
+    // syntax; '&' would underline the next letter, so it is doubled
+    auto addPack = [this](const std::string &name) {
+        std::string label;
+        for (char c : name)
+            label += c == '&' ? std::string("&&") : std::string(1, c);
+        const int item = texturePackMenu->add("pack", 0, nullptr, nullptr, FL_MENU_RADIO);
+        texturePackMenu->replace(item, label.c_str());
+        return item;
+    };
+    int chosen = texturePackMenu->add("Built-in", 0, nullptr, nullptr, FL_MENU_RADIO);
+    std::string chosenName = "Built-in";
     for (const TexturePack::Found &pack : TexturePack::findAll())
     {
-        // replace() takes the name as it is: a '/' or '_' in it is no menu
-        // syntax; '&' would underline the next letter, so it is doubled
-        std::string label;
-        for (char c : pack.name)
-            label += c == '&' ? std::string("&&") : std::string(1, c);
-        const int item = texturePackChoice->add("pack");
-        texturePackChoice->replace(item, label.c_str());
+        const int item = addPack(pack.name);
         texturePackPaths.push_back(pack.path);
         if (pack.path == select)
+        {
             chosen = item;
+            chosenName = pack.name;
+        }
     }
-    if (!select.empty() && chosen == 0)
+    if (!select.empty() && chosenName == "Built-in")
     {
         // opened from elsewhere: listed by its own name
         TexturePack::Pack pack;
-        const int item = texturePackChoice->add("pack");
-        texturePackChoice->replace(item, pack.open(select) ? pack.name().c_str() : select.c_str());
+        chosenName = pack.open(select) ? pack.name() : select;
+        chosen = addPack(chosenName);
         texturePackPaths.push_back(select);
-        chosen = item;
     }
-    texturePackChoice->add("Open pack...");
-    texturePackChoice->value(chosen);
+    // a line under the packs, then the two actions
+    Fl_Menu_Item *items = const_cast<Fl_Menu_Item *>(texturePackMenu->menu());
+    items[texturePackMenu->size() - 2].flags |= FL_MENU_DIVIDER;
+    texturePackMenu->add("Open pack...");
+    texturePackMenu->add("Open texturepacks folder");
+    items = const_cast<Fl_Menu_Item *>(texturePackMenu->menu());
+    items[chosen].setonly();
+    texturePackLabel = "Textures: " + chosenName;
+    // a long name is shortened with "..." so the label fits on the button
+    // beside its arrow (UTF-8: never cut inside a character)
+    // (only once the window is up and text can be measured; the label at
+    // start is the short "Built-in")
+    Fl_Window *window = texturePackMenu->window();
+    if (window && window->shown())
+        fl_font(texturePackMenu->labelfont(), texturePackMenu->labelsize());
+    const double room = texturePackMenu->w() - 28;
+    if (window && window->shown() && fl_width(texturePackLabel.c_str()) > room)
+    {
+        std::string cut = texturePackLabel;
+        while (!cut.empty() && fl_width((cut + "...").c_str()) > room)
+        {
+            // drop the last character: its continuation bytes, then its
+            // first byte
+            while (!cut.empty() && (static_cast<unsigned char>(cut.back()) & 0xC0) == 0x80)
+                cut.pop_back();
+            if (!cut.empty())
+                cut.pop_back();
+        }
+        texturePackLabel = cut + "...";
+    }
+    texturePackMenu->copy_label(texturePackLabel.c_str());
 }

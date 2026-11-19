@@ -9,6 +9,7 @@
 - 開發設定與工具問題先讀 `docs/development.md`；UI 操作查 `README.md`。
 - 修改模組責任、事件流程或資料流時，同步更新 `docs/architecture.md` 的 Mermaid 圖；改變重要技術決策時追加 `docs/adr/`。
 - 修改建置、封裝或發布流程時，同步更新 `docs/operations.md`。
+- 新增或修改測試的來源檔時，同步更新 `CMakeLists.txt` 與 `tests/linux/CMakeLists.txt`。
 
 ## 必守規則
 
@@ -25,6 +26,7 @@
 
 1. 執行 `pwsh -File scripts/check.ps1 -Stage all -Config Debug`。
 2. 執行 `pwsh -File scripts/check.ps1 -Stage all -Config Release`。
-3. 另以 `-Compiler clang` 執行相同兩個組態；MSVC、Clang 的編譯、CTest 與安裝後 `--version` 全部成功，格式與共用 MSVC 靜態分析成功。
+3. 另以 `-Compiler clang` 執行相同兩個組態；MSVC、Clang 的編譯、CTest 與安裝後 `--version` 全部成功，格式與共用 MSVC 靜態分析成功。`pwsh -File scripts/check-all.ps1` 一次完成 1–3；PR 的 Windows CI 執行同一個腳本（見 `docs/operations.md`）。
+   無法執行 Windows 建置時，至少跑 Linux 上的同一組檢查（`docs/development.md`「Linux 上的檢查」），並在 PR 說明 Windows 檢查尚未執行。
 4. 涉及顯示或輸入的修改，另依 `docs/operations.md` 完成 GUI 手動檢查，記錄裝置與結果。
 5. 文件與變更同步，說明改前改後、驗證及已知限制。未執行的檢查如實列出。

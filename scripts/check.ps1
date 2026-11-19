@@ -6,6 +6,9 @@ param(
     [string] $Config = 'Debug',
     [ValidateSet('msvc', 'clang')]
     [string] $Compiler = 'msvc',
+    # Parallel build jobs; 0 uses every processor (CI). One job keeps a laptop responsive.
+    [ValidateRange(0, 256)]
+    [int] $Jobs = 1,
     [switch] $Fix
 )
 . "$PSScriptRoot/common.ps1"
@@ -72,7 +75,8 @@ function Invoke-Formatting {
 function Invoke-Build {
     param([string] $Preset)
     Invoke-Native $CMake @('--preset', $Preset)
-    $buildArguments = @('--build', "out/build/$Preset", '--config', $Config, '--parallel', '1')
+    $parallel = if ($Jobs -gt 0) { $Jobs } else { [Environment]::ProcessorCount }
+    $buildArguments = @('--build', "out/build/$Preset", '--config', $Config, '--parallel', "$parallel")
     if ($Preset -ne 'clang') { $buildArguments += @('--', '/nodeReuse:false') }
     Invoke-Native $CMake $buildArguments
 }

@@ -1,0 +1,74 @@
+name: Windows build
+
+# The full MSVC / clang-cl gate: scripts/check-all.ps1, the same command as the
+# local pre-merge check, in one job (format and /analyze run once). The
+# repository is public, so GitHub-hosted runners cost nothing and this runs on
+# every non-draft PR push as well as main pushes, v* tags and by hand.
+# Linux quality (ci.yml) gives faster feedback on the same pushes.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/workflows/ci.yml'
+      - 'tests/linux/**'
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/workflows/ci.yml'
+      - 'tests/linux/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    # Draft PRs are still being written; their checks start when marked ready.
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: windows-2022
+    timeout-minutes: 45
+    # A newer push to the same branch or PR supersedes the running build.
+    concurrency:
+      group: windows-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: out/tools
+          key: native-tools-windows-x64-${{ hashFiles('tools.json', 'scripts/setup-tools.ps1') }}
+      - name: Restore native tools
+        run: ./scripts/setup-tools.ps1 -WithClang
+      - name: Format, /analyze, MSVC and Clang Debug/Release build, CTest, package
+        run: ./scripts/check-all.ps1 -Jobs 0
+      - name: Upload test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-windows
+          path: |
+            out/check-summary.md
+            out/build/**/results-*.xml
+            out/build/**/Testing/Temporary/LastTest.log
+          retention-days: 14
+          if-no-files-found: ignore
+      - name: Upload verified distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: RollerCoasters-windows-x64
+          path: |
+            out/package/Release
+            out/package/clang/Release
+          retention-days: 14
+          if-no-files-found: error
