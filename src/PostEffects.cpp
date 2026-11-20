@@ -393,18 +393,27 @@ void main()
     // the side of a step they run down it.
     vec3 disp = vec3(0.0);
     vec3 N = vec3(0.0, 1.0, 0.0);
+    // The water on land's normal is smooth over the bend where it pours
+    // over an edge (LandWorld gives the corners there a normal between up
+    // and out), so the flat water, the bend and the fall are one surface:
+    // `fall` goes from 0 on the flat to 1 on an upright face, and the
+    // ripples, the colour and the foam go over with it.
     vec3 faceN = normalize(vFaceNormal);
-    if (uIsland != 0 && abs(faceN.y) < 0.5) {
-        // the same ripples as on the flat water, running down the face
-        vec3 across = vec3(-faceN.z, 0.0, faceN.x);
-        vec2 s = rippleSlope(vec2(dot(P, across), P.y + uTime * 3.0), uTime) * 2.5;
-        N = normalize(faceN + across * s.x + vec3(0.0, s.y, 0.0));
-    } else {
-        if (uIsland == 0)
-            oceanWaves(vBase, uTime, 0.0, disp, N);
+    float fall = uIsland != 0 ? 1.0 - smoothstep(0.35, 0.85, faceN.y) : 0.0;
+    if (uIsland != 0) {
         // where falling water lands the ripples are stronger and quicker
-        float stir = uIsland != 0 ? vStirred : 0.0;
-        vec2 g = rippleSlope(vBase, uTime * (1.0 + stir * 3.0)) * (uIsland != 0 ? 2.5 + stir * 8.0 : 1.0);
+        vec2 g = rippleSlope(vBase, uTime * (1.0 + vStirred * 3.0)) * (2.5 + vStirred * 8.0);
+        if (uRain > 0.0)
+            g += rainSlope(vBase, uTime) * uRain;
+        vec3 flatRipple = vec3(-g.x, 0.0, -g.y);
+        // on a fall the same ripples run down it
+        vec3 across = normalize(vec3(-faceN.z, 0.0, faceN.x) + vec3(1e-4, 0.0, 0.0));
+        vec2 s = rippleSlope(vec2(dot(P, across), P.y + uTime * 3.0), uTime) * 2.5;
+        vec3 fallRipple = across * s.x + vec3(0.0, s.y, 0.0);
+        N = normalize(faceN + mix(flatRipple, fallRipple, fall));
+    } else {
+        oceanWaves(vBase, uTime, 0.0, disp, N);
+        vec2 g = rippleSlope(vBase, uTime);
         if (uRain > 0.0)
             g += rainSlope(vBase, uTime) * uRain;
         N = normalize(vec3(N.x - g.x, N.y, N.z - g.y));
@@ -432,7 +441,9 @@ void main()
         return;
     }
     vec3 waterView = viewPos(suv, gl_FragCoord.z);
-    vec2 distort = N.xz * 0.03;
+    // (on the water on land only the ripples bend the view, not the slope
+    // of the face, or the bend over an edge would show what is far away)
+    vec2 distort = (uIsland != 0 ? N.xz - faceN.xz : N.xz) * 0.03;
 
     // Refraction: look through the surface at the sea bed. If the bent ray
     // lands on something in front of the water, fall back to the straight one.
@@ -469,7 +480,7 @@ void main()
     // from.
     float looksDeep = thickness;
     if (uIsland != 0)
-        looksDeep = thickness * 3.0 + (abs(faceN.y) < 0.5 ? 3.0 : 0.8);
+        looksDeep = thickness * 3.0 + mix(0.8, 3.0, fall);
     vec3 absorb = exp(-looksDeep * vec3(0.12, 0.030, 0.020));
     vec3 body = refr * absorb + scatter * (1.0 - absorb);
 
@@ -489,13 +500,17 @@ void main()
     }
     // Fresnel (Schlick): a mirror at grazing angles, clear looking straight down.
     float fresnel = 0.02 + 0.98 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+    fresnel *= 1.0 - 2.4 * fall * (1.0 - fall); // the bend over an edge mirrors less of the sky
     vec3 col = mix(body, refl, fresnel);
 
     // Sun glints.
     vec3 H = normalize(normalize(uLightDir) + V);
     float nh = max(dot(N, H), 0.0);
     float spec = pow(nh, 600.0) * 40.0 + pow(nh, 80.0) * 0.6;
-    col += uLightColor * spec * shadow * (0.3 + fresnel);
+    // (hardly any on the bend over an edge and down a fall, where the
+    // midday sun would make a white band across the water)
+    float glints = uIsland != 0 ? mix(0.1, 1.0, smoothstep(0.93, 0.995, faceN.y)) : 1.0;
+    col += uLightColor * spec * shadow * (0.3 + fresnel) * glints;
 
     // Foam where the water is shallow and on the steepest crests, broken up
     // by moving noise. Out at sea a crest only breaks where a gust is
@@ -503,7 +518,7 @@ void main()
     // random threshold is passed, so whitecaps come and go here and there
     // instead of on every crest; more of them in the rain.
     // (a little on the water on land, none on its falls, which stay clear)
-    float edgeFoam = uIsland == 0 ? 1.0 : (abs(faceN.y) < 0.5 ? 0.0 : 0.4);
+    float edgeFoam = uIsland == 0 ? 1.0 : 0.4 * (1.0 - fall);
     float edge = (1.0 - smoothstep(0.0, 1.2, thickness)) * edgeFoam;
     float pattern = noise(P.xz * 0.9 + vec2(uTime * 0.3, uTime * 0.2)) *
                     noise(P.xz * 2.3 - vec2(uTime * 0.25));

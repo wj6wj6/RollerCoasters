@@ -4303,6 +4303,26 @@ float lipDrop(const Grid &g, int gx, int gz, int j)
     return pours ? (open ? 0.55f : 0.15f) : 0.0f;
 }
 
+// Which way the water pours over the edge at the grid point (gx, gz) of
+// layer j: towards the open cells round it (x, z); false if none is open.
+bool lipOutward(const Grid &g, int gx, int gz, int j, float out[2])
+{
+    out[0] = out[1] = 0.0f;
+    for (int dx = -1; dx <= 0; ++dx)
+        for (int dz = -1; dz <= 0; ++dz)
+            if (g.get(gx + dx, j, gz + dz) == AIR)
+            {
+                out[0] += static_cast<float>(dx) + 0.5f;
+                out[1] += static_cast<float>(dz) + 0.5f;
+            }
+    const float length = sqrtf(out[0] * out[0] + out[1] * out[1]);
+    if (length < 0.01f)
+        return false;
+    out[0] /= length;
+    out[1] /= length;
+    return true;
+}
+
 // How stirred up the surface is at the grid point (gx, gz) of layer j:
 // most right beside falling water landing there, nothing three and a
 // half blocks away.
@@ -4391,6 +4411,22 @@ void addWaterFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
             v.extra[0] = waterMark(bob, sway, bob ? stirredAt(g, gx, gz, j) : 0.0f);
             // the surface bends down where it pours over an edge (lipDrop)
             const float drop = bob ? lipDrop(g, gx, gz, j) : 0.0f;
+            // Over the edge itself its normal is halfway between up and out,
+            // on the surface and on the face it pours down, so the light and
+            // the ripples go smoothly round the bend.
+            for (int k = 0; k < 3; ++k)
+                v.normal[k] = static_cast<float>(f.normal[k]);
+            float outward[2];
+            if (drop > 0.3f && lipOutward(g, gx, gz, j, outward) &&
+                (f.normal[1] > 0 || static_cast<float>(f.normal[0]) * outward[0] +
+                                            static_cast<float>(f.normal[2]) * outward[1] >
+                                        0.5f))
+            {
+                const float s = 1.0f / sqrtf(2.0f);
+                v.normal[0] = outward[0] * s;
+                v.normal[1] = s;
+                v.normal[2] = outward[1] * s;
+            }
             v.pos[0] = static_cast<float>(bx + f.corner[c][0]) * kBlock;
             v.pos[1] = (static_cast<float>(j) + y - drop) * kBlock;
             v.pos[2] = static_cast<float>(bz + f.corner[c][2]) * kBlock;
