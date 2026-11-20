@@ -1,24 +1,33 @@
 /************************************************************************
      File:        TrainModel.h
 
-     Comment:     The roller coaster train: a classic coaster train in the
-                  block style, a lead car with a stepped nose, a chrome
-                  bumper, a head lamp and a gold star, and five cars
-                  behind it, each following the track on its own: deep
-                  red bodies with a cream band and gold trim on dark
-                  running gear, black padded seats with headrests and a
-                  chrome lap bar; the last car has tail lamps. Two
-                  block-figure riders sit side by side in each car and
-                  react to the ride: hands on the bar on the climbs, arms
-                  up on the drops (a third of them keep holding on),
-                  leaning out on the curves, looking round on the level
-                  and now and then waving. Built from boxes and drawn in
+     Comment:     The roller coaster train, as a block game would have it:
+                  a furnace minecart in front (its fire lit, glowing) and
+                  five minecarts behind it, each following the track on
+                  its own, with a player sitting in each as players sit
+                  in a minecart. Everything is in the game's pixels, a
+                  sixteenth of the island's blocks, so the carts and the
+                  riders are the size they would be in that world, and
+                  their pictures are laid out the game's way: a texture
+                  pack's player skins, minecart and furnace fit them (the
+                  built-in ones are drawn in the same layout). The riders
+                  react to the ride: hands forward over the rim on the
+                  climbs, arms up on the drops (a third of them keep
+                  holding on), leaning out on the curves, looking round
+                  and now and then waving on the level. Drawn in
                   immediate mode, so it works with the fixed pipeline and
-                  with the lighting shader (the lamps use its glow input).
+                  with the lighting shader (the furnace uses its glow).
 *************************************************************************/
 #pragma once
 
+#include <memory>
+
 #include "Track.H"
+
+namespace TexturePack
+{
+class Pack;
+}
 
 namespace TrainModel
 {
@@ -26,6 +35,13 @@ namespace TrainModel
 // only the shapes are drawn, without colours. `time` (seconds) animates
 // the riders.
 void draw(const CTrack &track, TrackSplineType splineType, bool shadowPass, float time);
+
+// Uses a texture pack's player skins, minecart and furnace where it has
+// them (nullptr: all built in). Takes effect at the next draw().
+void setTexturePack(std::shared_ptr<const TexturePack::Pack> pack);
+
+// Forgets the texture names, after the GL context they lived in is gone.
+void releaseTextures();
 
 // From the front of the lead car to the middle of the last car,
 // along the track.

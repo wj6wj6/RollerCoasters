@@ -24,6 +24,7 @@
 #include "LandTextures.h"
 #include "PixelArt.h"
 #include "TrainView.H"
+#include "TrainModel.h"
 #include "TrainWindow.H"
 #include "Utilities/3DUtils.h"
 #include "TexturePack.h"
@@ -311,6 +312,7 @@ void TrainView::setTexturePack(std::shared_ptr<const TexturePack::Pack> pack)
             iron.clear();
     }
     m_trackRenderer.setPictures(wood, iron);
+    TrainModel::setTexturePack(pack);
     m_ocean.setTexturePack(pack);
     m_land.setTexturePack(std::move(pack));
 }
