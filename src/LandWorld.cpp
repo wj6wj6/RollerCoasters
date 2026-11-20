@@ -4281,6 +4281,28 @@ bool swayFree(const Grid &g, int gx, int gz, int layer, bool onLine)
     return true;
 }
 
+// How far the open surface at the grid point (gx, gz) of layer j bends
+// down, in blocks, where the water pours over an edge: a cell whose water
+// falls on below it slopes down to its open side, so the surface curves
+// into the fall instead of meeting it at a right angle; the water just
+// behind it dips a little too. Every face with a corner there bends it the
+// same, so they stay joined.
+float lipDrop(const Grid &g, int gx, int gz, int j)
+{
+    bool pours = false, open = false;
+    for (int dx = -1; dx <= 0; ++dx)
+        for (int dz = -1; dz <= 0; ++dz)
+        {
+            const int cx = gx + dx, cz = gz + dz;
+            if (g.get(cx, j, cz) == WATER && g.get(cx, j - 1, cz) == WATER &&
+                g.level[Grid::index(cx, j - 1, cz)] == WaterFlow::FALLING)
+                pours = true;
+            if (g.get(cx, j, cz) == AIR)
+                open = true;
+        }
+    return pours ? (open ? 0.55f : 0.15f) : 0.0f;
+}
+
 // How stirred up the surface is at the grid point (gx, gz) of layer j:
 // most right beside falling water landing there, nothing three and a
 // half blocks away.
@@ -4367,8 +4389,10 @@ void addWaterFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
             const bool sway = !bob && f.normal[1] == 0 && beside == AIR &&
                               swayFree(g, gx, gz, j + (y >= 1.0f ? 1 : 0), y == 0.0f || y >= 1.0f);
             v.extra[0] = waterMark(bob, sway, bob ? stirredAt(g, gx, gz, j) : 0.0f);
+            // the surface bends down where it pours over an edge (lipDrop)
+            const float drop = bob ? lipDrop(g, gx, gz, j) : 0.0f;
             v.pos[0] = static_cast<float>(bx + f.corner[c][0]) * kBlock;
-            v.pos[1] = (static_cast<float>(j) + y) * kBlock;
+            v.pos[1] = (static_cast<float>(j) + y - drop) * kBlock;
             v.pos[2] = static_cast<float>(bz + f.corner[c][2]) * kBlock;
             v.uv[0] = f.uv[c][0];
             // side faces show as much of the texture as they are tall
