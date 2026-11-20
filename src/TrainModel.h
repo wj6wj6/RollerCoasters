@@ -1,15 +1,20 @@
 /************************************************************************
      File:        TrainModel.h
 
-     Comment:     The roller coaster train: a blocky steam locomotive
-                  (red boiler, brass bands, head lamp, green cab with a
-                  driver) pulling five wooden mine carts, each following
-                  the track on its own. One block-figure rider sits in
-                  each cart with their arms in the air, clear of the
-                  walls; the last cart has tail lamps. Built from boxes
-                  and drawn in immediate mode, so it works with the fixed
-                  pipeline and with the lighting shader (the lamps use its
-                  glow input).
+     Comment:     The roller coaster train: a classic coaster train in the
+                  block style, a lead car with a stepped nose, a chrome
+                  bumper, a head lamp and a gold star, and five cars
+                  behind it, each following the track on its own: deep
+                  red bodies with a cream band and gold trim on dark
+                  running gear, black padded seats with headrests and a
+                  chrome lap bar; the last car has tail lamps. Two
+                  block-figure riders sit side by side in each car and
+                  react to the ride: hands on the bar on the climbs, arms
+                  up on the drops (a third of them keep holding on),
+                  leaning out on the curves, looking round on the level
+                  and now and then waving. Built from boxes and drawn in
+                  immediate mode, so it works with the fixed pipeline and
+                  with the lighting shader (the lamps use its glow input).
 *************************************************************************/
 #pragma once
 
@@ -22,7 +27,7 @@ namespace TrainModel
 // the riders.
 void draw(const CTrack &track, TrackSplineType splineType, bool shadowPass, float time);
 
-// From the front of the locomotive's frame to the middle of the last cart,
+// From the front of the lead car to the middle of the last car,
 // along the track.
 float length();
 
