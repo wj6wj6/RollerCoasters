@@ -529,14 +529,23 @@ Site firstSite(float x, float z, float coast)
         const float r = sqrtf(dx * dx + dz * dz) / kAlpineRadius * warp;
         if (r < 1.0f)
         {
-            // jagged peaks: sharp ridges running out from the summit, with
-            // crags along them, rather than one smooth cone
-            const float ridge = 1.0f - fabsf(valueNoise(x * 0.07f, z * 0.07f, 15u) * 2.0f - 1.0f);
-            const float crags = valueNoise(x * 0.22f, z * 0.22f, 16u) - 0.5f;
+            // Jagged peaks, as a block game grows them: spurs running out
+            // from the summit (ridges round it, by the direction from the
+            // top, with gullies between them) and broader ridges across
+            // them, so it is a massif with shoulders rather than one cone;
+            // the small crags only roughen it a little, as too many of them
+            // made every slope a staircase of grey steps.
+            const float ax = dx / (sqrtf(dx * dx + dz * dz) + 1e-3f),
+                        az = dz / (sqrtf(dx * dx + dz * dz) + 1e-3f);
+            const float spur =
+                1.0f -
+                fabsf(valueNoise(ax * 2.4f + 7.0f, az * 2.4f + 3.0f + r * 1.2f, 14u) * 2.0f - 1.0f);
+            const float ridge = 1.0f - fabsf(valueNoise(x * 0.045f, z * 0.045f, 15u) * 2.0f - 1.0f);
+            const float crags = valueNoise(x * 0.16f, z * 0.16f, 16u) - 0.5f;
             const float h = kAlpineHeight * (1.0f - r) *
-                                (0.72f + 0.16f * valueNoise(x * 0.035f, z * 0.035f, 13u) +
-                                 0.34f * ridge * ridge) +
-                            crags * 9.0f * (1.0f - r);
+                                (0.58f + 0.12f * valueNoise(x * 0.035f, z * 0.035f, 13u) +
+                                 0.35f * spur * spur + 0.3f * ridge * ridge) +
+                            crags * 3.5f * (1.0f - r);
             if (h > site.height)
             {
                 site.height = h;
@@ -909,13 +918,25 @@ void buildTerrain(Grid &g)
                 switch (biome)
                 {
                 case ALPINE: {
-                    const float snowLine = (56.0f + patch * 10.0f) * kLift;
+                    // Above the snow line the ground is snow two blocks deep,
+                    // so the sides of the small steps are white too and the
+                    // slopes read as one field of snow; where they drop
+                    // further the rock shows under it in grey bands, and the
+                    // sheer cliffs (six blocks or more) are bare. Below it,
+                    // grassy slopes, snowy near the line, with rock where
+                    // they are steep.
+                    const float snowLine = (44.0f + patch * 6.0f) * kLift;
                     if (topY > snowLine)
-                        b = depth < 2 ? SNOW : stoneOrOre(bx, j, bz, false);
+                        b = (depth < 2 && steep < 6) ? SNOW : stoneOrOre(bx, j, bz, false);
                     else if (topY > 34.0f * kLift || steep >= 3)
-                        b = (depth == 0 && steep < 2 && patch > 0.55f)
-                                ? (topY > 44.0f * kLift ? SNOWY_DIRT : GRASS)
-                                : stoneOrOre(bx, j, bz, false);
+                    {
+                        if (steep >= 3)
+                            b = stoneOrOre(bx, j, bz, false);
+                        else if (depth == 0)
+                            b = topY > 40.0f * kLift ? SNOWY_DIRT : GRASS;
+                        else
+                            b = depth < 3 ? DIRT : stoneOrOre(bx, j, bz, false);
+                    }
                     else
                         b = depth == 0 ? (topY > 26.0f * kLift && patch > 0.4f ? SNOWY_DIRT : GRASS)
                                        : (depth < 3 ? DIRT : stoneOrOre(bx, j, bz, false));
@@ -3013,10 +3034,19 @@ void buildIceSpikes(Grid &g, const Clearance &clear)
     for (int bx = kMinBX + 2; bx < kMaxBX - 2; ++bx)
         for (int bz = kMinBZ + 2; bz < kMaxBZ - 2; ++bz)
         {
-            if (g.biome[Grid::column(bx, bz)] != ALPINE || hash(bx, bz, 481u) % 70u != 0)
+            // few of them, and only on level snow: on the slopes they stood
+            // out like rows of glass pillars
+            if (g.biome[Grid::column(bx, bz)] != ALPINE || hash(bx, bz, 481u) % 240u != 0)
                 continue;
             const int top = g.top(bx, bz);
             if (g.get(bx, top, bz) != SNOW || top + 16 > kMaxY)
+                continue;
+            bool level = true;
+            for (int k = 0; k < 4 && level; ++k)
+                level = abs(g.top(bx + (k == 0 ? 2 : (k == 1 ? -2 : 0)),
+                                  bz + (k == 2 ? 2 : (k == 3 ? -2 : 0))) -
+                            top) <= 1;
+            if (!level)
                 continue;
             const int height = 5 + static_cast<int>(hash(bx, bz, 483u) % 10u);
             const bool thick = height > 9;
