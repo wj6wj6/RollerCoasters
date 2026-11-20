@@ -396,9 +396,9 @@ void main()
     vec3 N = vec3(0.0, 1.0, 0.0);
     vec3 faceN = normalize(vFaceNormal);
     if (uIsland != 0 && abs(faceN.y) < 0.5) {
+        // the same ripples as on the flat water, running down the face
         vec3 across = vec3(-faceN.z, 0.0, faceN.x);
-        vec2 q = vec2(dot(P, across), P.y + uTime * 5.0);
-        vec2 s = noiseSlope(q * vec2(0.9, 0.3)) * 0.10;
+        vec2 s = rippleSlope(vec2(dot(P, across), P.y + uTime * 3.0), uTime) * 2.5;
         N = normalize(faceN + across * s.x + vec3(0.0, s.y, 0.0));
     } else {
         if (uIsland == 0)
@@ -463,7 +463,12 @@ void main()
     vec3 scatter = vec3(0.004, 0.050, 0.11) * (uLightColor * sunUp * mix(0.6, 1.0, shadow) + uZenith * 2.0);
     // The water on land is only a few blocks deep: it takes its colour as
     // if it were deeper, so a shallow pond still looks like water.
-    float looksDeep = uIsland != 0 ? thickness * 3.0 + 0.8 : thickness;
+    // A fall has the rock right behind it, so it takes the colour of a
+    // pool about a block deep as well, and looks like the water it pours
+    // from.
+    float looksDeep = thickness;
+    if (uIsland != 0)
+        looksDeep = thickness * 3.0 + (abs(faceN.y) < 0.5 ? 3.0 : 0.8);
     vec3 absorb = exp(-looksDeep * vec3(0.12, 0.030, 0.020));
     vec3 body = refr * absorb + scatter * (1.0 - absorb);
 
