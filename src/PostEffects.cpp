@@ -496,7 +496,9 @@ void main()
     // blowing (a slowly drifting field of patches) and where its own
     // random threshold is passed, so whitecaps come and go here and there
     // instead of on every crest; more of them in the rain.
-    float edge = (1.0 - smoothstep(0.0, 1.2, thickness)) * (uIsland != 0 ? 0.4 : 1.0);
+    // (a little on the water on land, none on its falls, which stay clear)
+    float edgeFoam = uIsland == 0 ? 1.0 : (abs(faceN.y) < 0.5 ? 0.0 : 0.4);
+    float edge = (1.0 - smoothstep(0.0, 1.2, thickness)) * edgeFoam;
     float pattern = noise(P.xz * 0.9 + vec2(uTime * 0.3, uTime * 0.2)) *
                     noise(P.xz * 2.3 - vec2(uTime * 0.25));
     float gust = noise(P.xz * 0.011 + vec2(uTime * 0.021, uTime * 0.013)) * 0.65 +
@@ -505,12 +507,6 @@ void main()
     float breaking = smoothstep(0.38, 0.68, noise(P.xz * 0.13 + vec2(uTime * 0.06, -uTime * 0.04)));
     float crest = smoothstep(0.42, 0.66, disp.y) * vWave * 0.5 * gust * breaking;
     float foam = max(edge, crest) * smoothstep(0.15, 0.45, pattern + edge * 0.35);
-    if (uIsland != 0 && abs(faceN.y) < 0.5) {
-        // a fall: white streaks pouring down it
-        vec3 along = vec3(-faceN.z, 0.0, faceN.x);
-        float streak = noise(vec2(dot(P, along) * 1.4, P.y * 0.2 + uTime * 3.0));
-        foam = max(foam, 0.2 + 0.5 * smoothstep(0.4, 0.8, streak));
-    }
     vec3 foamLight = uLightColor * max(uLightDir.y, 0.0) * shadow + uZenith * 1.5 + uHorizon * 0.3;
     col = mix(col, foamLight * 0.9, foam * 0.85);
 
