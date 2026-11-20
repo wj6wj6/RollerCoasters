@@ -71,7 +71,7 @@ add_executable(RollerCoasters
     src/FileDialogs.h src/FileDialogs.cpp
     src/EditKeys.h src/EditKeys.cpp
     src/ControlPoint.H src/ControlPoint.cpp
-    src/main.cpp src/Object.H
+    src/main.cpp
     src/Track.H src/Track.cpp
     src/TrackHistory.h src/TrackHistory.cpp
     src/TrackInsert.h src/TrackInsert.cpp
