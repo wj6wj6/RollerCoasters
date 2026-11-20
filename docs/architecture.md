@@ -93,6 +93,7 @@ flowchart LR
 | `src/AdvancedLighting.h/.cpp` | 跟著鏡頭的 shadow map、GLSL 逐像素光照、日夜與頭燈。 |
 | `src/PostEffects.h/.cpp` | 浮點 frame buffer 與後製：天空、水面與 SSR、雨與濕地反射、SSAO、Bloom、god rays、ACES。 |
 | `src/UnderwaterOptics.h` | 水下吸收、caustics 與水色常數，三個 shader 共用。 |
+| `src/LandWaterMotion.h` | 島上的水怎麼動（水面輕微起伏、落水處攪動、瀑布朝空氣的面輕微擺動），光照 shader 與水面 shader 共用，依 `LandWorld` 寫在頂點上的標記。 |
 | `src/MatrixMath.h` | 光影程式用的 column-major 4×4 矩陣輔助函式。 |
 | `src/Track.H/.cpp` | 控制點容器、三種樣條的位置與切線、`trainU`、軌道文字檔讀寫。 |
 | `src/ControlPoint.H/.cpp` | 控制點位置、方向向量與標記繪製。 |

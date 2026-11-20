@@ -16,6 +16,7 @@
 
 #include "PostEffects.h"
 #include "MatrixMath.h"
+#include "LandWaterMotion.h"
 #include "UnderwaterOptics.h"
 
 namespace
@@ -208,10 +209,7 @@ void oceanWaves(vec2 p, float t, float shortest, out vec3 disp, out vec3 normal)
 // vertices. Further out the grid ends in flat skirts, so the waves fade to
 // nothing before they get there.
 // The water on land (uIsland) is the faces of its blocks instead, in world
-// space: its open surface (marked by a first extra value under -0.75, see
-// LandWorld) sinks and rises by up to a pixel of its block, only down so it
-// never rises into the block above, by its place so the corners the cells
-// share move together.
+// space, moved as LandWaterMotion.h says.
 const char *kWaterVertex = R"GLSL(
 uniform vec2 uCenter;      // where the grid is, snapped to its cell size
 uniform float uTime;
@@ -221,15 +219,15 @@ varying vec3 vWorld;
 varying vec2 vBase;
 varying float vWave;
 varying vec3 vFaceNormal;
+varying float vStirred;    // the water on land: how stirred up it is, 0 to 0.4
 void main()
 {
+    vStirred = 0.0;
     if (uIsland != 0) {
         vec3 land = gl_Vertex.xyz;
-        if (gl_MultiTexCoord1.x < -0.75) {
-            float bob = sin(land.x * 0.42 + uTime * 1.3) * cos(land.z * 0.37 - uTime * 1.05);
-            bob = 0.6 * bob + 0.4 * sin(uTime * 0.7 + (land.x + land.z) * 0.08);
-            land.y += 0.16 * (bob - 1.0) * 0.5;
-        }
+        float stirred;
+        land += landWaterMotion(gl_MultiTexCoord1.x, land, uTime, stirred);
+        vStirred = stirred;
         vBase = land.xz;
         vWave = 0.0;
         vWorld = land;
@@ -327,6 +325,7 @@ varying vec3 vWorld;
 varying vec2 vBase;
 varying float vWave;
 varying vec3 vFaceNormal;
+varying float vStirred;
 uniform int uIsland;       // the water on land: no big waves, nothing under it to see from below
 uniform sampler2D uReflection;
 uniform sampler2DShadow uShadowMap;
@@ -403,7 +402,9 @@ void main()
     } else {
         if (uIsland == 0)
             oceanWaves(vBase, uTime, 0.0, disp, N);
-        vec2 g = rippleSlope(vBase, uTime) * (uIsland != 0 ? 2.5 : 1.0);
+        // where falling water lands the ripples are stronger and quicker
+        float stir = uIsland != 0 ? vStirred : 0.0;
+        vec2 g = rippleSlope(vBase, uTime * (1.0 + stir * 3.0)) * (uIsland != 0 ? 2.5 + stir * 8.0 : 1.0);
         if (uRain > 0.0)
             g += rainSlope(vBase, uTime) * uRain;
         N = normalize(vec3(N.x - g.x, N.y, N.z - g.y));
@@ -1136,9 +1137,9 @@ bool PostEffects::init()
 
     m_skyProgram = makeProgram(kSkyFragment, "sky", kNoise);
     {
-        const char *vertex[2] = {kWaveGlsl, kWaterVertex};
+        const char *vertex[3] = {kWaveGlsl, kLandWaterMotionGlsl, kWaterVertex};
         const char *fragment[4] = {kNoise, kWaveGlsl, kSsrGlsl, kWaterFragment};
-        m_waterProgram = makeProgramParts(vertex, 2, fragment, 4, "water");
+        m_waterProgram = makeProgramParts(vertex, 3, fragment, 4, "water");
     }
     m_wetProgram = makeProgram(kWetFragment, "wet ground", kNoise, kSsrGlsl);
     m_ssaoProgram = makeProgram(kSsaoFragment, "ssao", kNoise);

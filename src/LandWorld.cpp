@@ -4252,12 +4252,56 @@ float waterHeight(const Grid &g, int bx, int j, int bz)
     return static_cast<float>(8 - level) / 9.0f;
 }
 
-// The first extra value of a water vertex (otherwise how much it glows):
-// negative marks it as water for the shader, which ripples the water's
-// surface and bobs the corners on its open surface a little, as the sea's
-// waves do (AdvancedLighting).
-const float kWaterSurface = -1.0f;
-const float kWaterBody = -0.5f;
+// The first extra value of a water vertex (otherwise how much it glows) is
+// negative, which marks it as water for the shaders, and says how the
+// corner moves: -(0.5 + 1 if it bobs with the open surface + 2 if it sways
+// on a fall + how stirred up the surface is there, 0 to 0.4). The shaders
+// ripple the surface and move the corners a little, as the sea's waves do
+// (AdvancedLighting, PostEffects); a corner's movement depends only on
+// where it is, so the faces that share it stay joined.
+float waterMark(bool bob, bool sway, float stirred)
+{
+    return -(0.5f + (bob ? 1.0f : 0.0f) + (sway ? 2.0f : 0.0f) + stirred);
+}
+
+// Can a fall's corner at the grid point (gx, gz) sway? Not where it
+// touches anything but water and air: in the four cells round its upright
+// edge, in the layer it is in, or both layers when it is on the line
+// between them (corners there are shared by the faces above and below).
+bool swayFree(const Grid &g, int gx, int gz, int layer, bool onLine)
+{
+    for (int l = onLine ? layer - 1 : layer; l <= layer; ++l)
+        for (int dx = -1; dx <= 0; ++dx)
+            for (int dz = -1; dz <= 0; ++dz)
+            {
+                const int b = g.get(gx + dx, l, gz + dz);
+                if (b != AIR && b != WATER)
+                    return false;
+            }
+    return true;
+}
+
+// How stirred up the surface is at the grid point (gx, gz) of layer j:
+// most right beside falling water landing there, nothing three and a
+// half blocks away.
+float stirredAt(const Grid &g, int gx, int gz, int j)
+{
+    float nearest = 1.0e9f;
+    for (int cx = gx - 4; cx < gx + 4; ++cx)
+        for (int cz = gz - 4; cz < gz + 4; ++cz)
+            for (int l = j; l <= j + 1; ++l)
+                if (g.get(cx, l, cz) == WATER &&
+                    g.level[Grid::index(cx, l, cz)] == WaterFlow::FALLING)
+                {
+                    const float dx = static_cast<float>(cx) + 0.5f - static_cast<float>(gx);
+                    const float dz = static_cast<float>(cz) + 0.5f - static_cast<float>(gz);
+                    const float d = sqrtf(dx * dx + dz * dz);
+                    nearest = d < nearest ? d : nearest;
+                }
+    // (not "near": windows.h defines it as nothing)
+    const float closeness = 1.0f - nearest / 3.5f;
+    return 0.4f * (closeness < 0.0f ? 0.0f : closeness);
+}
 
 // The faces of a water block: towards the air, and the part of a side that
 // stands above lower water next to it. Lit by the light of the open cell
@@ -4312,8 +4356,17 @@ void addWaterFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
             const float y = f.normal[1] > 0
                                 ? top
                                 : (f.normal[1] < 0 ? 0.0f : (f.corner[c][1] == 1 ? top : bottom));
-            // the shader moves the corners at the open surface (kWaterSurface)
-            v.extra[0] = open && y == top ? kWaterSurface : kWaterBody;
+            // The corners at the open surface bob, and so do those of a
+            // side where it meets the open surface of lower water beside
+            // it; the other corners of a side facing the air sway, where
+            // they touch nothing but water and air (waterMark).
+            const int gx = bx + f.corner[c][0], gz = bz + f.corner[c][2];
+            const bool meetsLower =
+                f.normal[1] == 0 && y == bottom && bottom > 0.0f && g.get(ox, oy + 1, oz) != WATER;
+            const bool bob = (open && y == top) || meetsLower;
+            const bool sway = !bob && f.normal[1] == 0 && beside == AIR &&
+                              swayFree(g, gx, gz, j + (y >= 1.0f ? 1 : 0), y == 0.0f || y >= 1.0f);
+            v.extra[0] = waterMark(bob, sway, bob ? stirredAt(g, gx, gz, j) : 0.0f);
             v.pos[0] = static_cast<float>(bx + f.corner[c][0]) * kBlock;
             v.pos[1] = (static_cast<float>(j) + y) * kBlock;
             v.pos[2] = static_cast<float>(bz + f.corner[c][2]) * kBlock;

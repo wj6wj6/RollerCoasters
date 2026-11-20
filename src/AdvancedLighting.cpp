@@ -16,6 +16,7 @@
 
 #include "AdvancedLighting.h"
 #include "MatrixMath.h"
+#include "LandWaterMotion.h"
 #include "UnderwaterOptics.h"
 
 namespace
@@ -23,8 +24,8 @@ namespace
 
 const int kShadowMapSize = 2048;
 
+// Pasted after "#version 120" and the island water's motion (LandWaterMotion.h).
 const char *kVertexShader = R"GLSL(
-#version 120
 // World space is recovered from the fixed function modelview matrix, so the
 // existing glBegin/glEnd drawing code works unchanged.
 uniform mat4 uInvView;
@@ -63,14 +64,11 @@ void main()
         eyePos = uView * world;
     }
 
-    // The island's still water bobs a little, as the sea does: its open
-    // surface sinks and rises by up to a pixel of its block (only down, so
-    // it never rises into the block above), by its place, so the corners
-    // the cells share move together; its picture drifts slowly.
-    if (gl_MultiTexCoord1.x < -0.75) {
-        float wave = sin(world.x * 0.42 + uTime * 1.3) * cos(world.z * 0.37 - uTime * 1.05);
-        wave = 0.6 * wave + 0.4 * sin(uTime * 0.7 + (world.x + world.z) * 0.08);
-        world.y += 0.16 * (wave - 1.0) * 0.5;
+    // The island's water moves a little, as the sea does (LandWaterMotion.h);
+    // the picture on its surface drifts slowly.
+    if (gl_MultiTexCoord1.x < -0.25) {
+        float stirred;
+        world.xyz += landWaterMotion(gl_MultiTexCoord1.x, world.xyz, uTime, stirred);
         eyePos = uView * world;
         if (vWorldNormal.y > 0.5)
             gl_TexCoord[0].s += uTime * 0.02;
@@ -436,9 +434,9 @@ bool AdvancedLighting::init()
         return false;
     }
 
-    const char *vertexParts[1] = {kVertexShader};
+    const char *vertexParts[3] = {"#version 120\n", kLandWaterMotionGlsl, kVertexShader};
     const char *fragmentParts[3] = {"#version 120\n", kUnderwaterOpticsGlsl, kFragmentShader};
-    GLuint vs = compileShader(GL_VERTEX_SHADER, vertexParts, 1);
+    GLuint vs = compileShader(GL_VERTEX_SHADER, vertexParts, 3);
     GLuint fs = compileShader(GL_FRAGMENT_SHADER, fragmentParts, 3);
     if (!vs || !fs)
     {
