@@ -59,6 +59,14 @@ class SceneCallbacks
     {
         (void)shadowPass;
     }
+    // The see-through water on land (ponds, streams, falls): only where its
+    // faces are, the sea's shader colours them. While waterLater is set
+    // (drawing the scene the post effects then finish), drawObjects()
+    // leaves that water out.
+    virtual void drawSurfaceWater()
+    {
+    }
+    bool waterLater = false;
 };
 
 class PostEffects
@@ -89,6 +97,10 @@ class PostEffects
     // rain 0..1 adds drop rings to the surface.
     void drawWater(const AdvancedLighting &lighting, float time, bool orthographic, bool underwater,
                    float rain);
+    // The water on land (scene.drawSurfaceWater()) as the sea is drawn:
+    // see-through, with ripples, reflections and sun glints.
+    void drawSurfaceWater(const AdvancedLighting &lighting, float time, bool orthographic,
+                          float rain, SceneCallbacks &scene);
     void drawRain(const SkyState &sky, float time, float rain);
     void applyUnderwater(const AdvancedLighting &lighting, float time);
     void finish(const SkyState &sky, bool bloom, bool underwater);
@@ -111,6 +123,12 @@ class PostEffects
     void fullscreenQuad();
     void blur(Target &src, Target &tmp, float radius);
     void buildWaterMesh();
+    // copies the scene so far for the water to look through
+    void copyScene();
+    // binds the water's program and sets what the sea and the water on land
+    // share; island: 1 for the water on land
+    void useWaterProgram(const AdvancedLighting &lighting, float time, bool orthographic,
+                         bool underwater, float rain, int island);
 
     bool m_triedInit;
     bool m_ok;

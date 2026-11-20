@@ -1918,7 +1918,8 @@ void TrainView::drawStuff(bool doingShadows)
     }
 
     // the island's see-through water last, blended over everything behind it
-    if (!doingShadows)
+    // (unless the sea's shader draws it after the scene: landWaterLater)
+    if (!doingShadows && !landWaterLater)
     {
         lighting.setTranslucent(true);
         m_land.drawWater(!sceneryOn());

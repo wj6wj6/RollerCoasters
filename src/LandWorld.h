@@ -84,6 +84,10 @@ class LandWorld
     // over what is behind them.
     void drawWater(bool flat);
 
+    // The same water's faces only (no textures, colour or blending), for a
+    // caller that draws them with its own shader: the sea's (PostEffects).
+    void drawWaterSurface(bool flat);
+
     // Stands the track on wooden trestles, one every 16 units along it
     // wherever it is above the water and well above the ground; off the
     // island the posts go down to the sea bed. path: points along the whole

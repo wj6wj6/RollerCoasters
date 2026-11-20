@@ -176,6 +176,10 @@ class TrainView : public Fl_Gl_Window
     void drawGround(bool shadowPass = false);
     void drawSupports(bool shadowPass);
     void drawUnderwater(bool shadowPass);
+    // the island's see-through water, positions only, for the sea's shader;
+    // while landWaterLater is set drawStuff() leaves it out
+    void drawLandWater();
+    bool landWaterLater = false;
 
     // seconds since the program started: drives everything that moves by
     // itself (TrainViewEffects.cpp)

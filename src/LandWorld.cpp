@@ -5662,6 +5662,17 @@ void LandWorld::drawWater(bool flat)
     glPopAttrib();
 }
 
+void LandWorld::drawWaterSurface(bool flat)
+{
+    if (!(flat ? m_flat : m_scenery) || !(flat ? m_flat : m_scenery)->built)
+        return;
+    const Scene &s = flat ? *m_flat : *m_scenery;
+    const Frustum view = Frustum::current();
+    for (const LandChunk &c : s.chunks)
+        if (view.sees(c.lo, c.hi))
+            glCallList(c.water);
+}
+
 void LandWorld::drawMoving(const Scene &s, float time)
 {
     const Grid &g = s.grid;
