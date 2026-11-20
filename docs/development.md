@@ -65,7 +65,7 @@ MSVC 發布目錄是 `out/package/<Config>/`，Clang 是 `out/package/clang/<Con
 `check.ps1` 預設只用一個建置程序，避免筆電卡住；`-Jobs N` 改為 N 個，`-Jobs 0` 用上所有處理器（CI 使用）。
 
 所有第一方 C++ 編譯使用 `/W3 /WX`，分析使用 `/analyze /analyze:external-`；第三方 GLAD 分開建置。
-隨附 Debug FLTK 沒有 PDB，因此僅抑制該組態的 linker LNK4099。
+隨附 FLTK 1.3.11 的 Debug `.lib` 內含除錯資訊（`/Z7`），連結器不再需要抑制 LNK4099；VS 偵錯時呼叫堆疊可看到 FLTK 內部。重新編譯內附 FLTK 用 `pwsh -File scripts/build-fltk.ps1`，再 `-Stage vendor-lock`（見 `docs/adr/0007-fltk-1-3-11.md`）。連結內附 FLTK 需要 MSVC 19.44（VS 2022 17.14）或更新。
 初次導入 clang-format 會建立全體 `src/`、`tests/` 的一致格式基準；第三方檔案不重排。
 
 ## Hooks
@@ -101,6 +101,14 @@ tests/linux/win32-syntax.sh
 - `FrustumCheck`：分塊剔除用的視錐判斷（`src/Frustum.*`）：透視視角前方的盒子看得到，後方、遠平面外、側邊外的看不到，跨過邊界的仍算看得到；正交（陰影 pass）視角移動後跟著移動。
 - `MobsCheck`：島上動物的模型與皮膚（`src/Mobs.*`）：羊、豬、牛每個方塊的每一面都落在內建皮膚有上色的位置（材質包同樣配置的皮膚因此也對得上），站立方塊的大小與貼圖配置一致，各有四條腿；只接受方塊遊戲的皮膚尺寸（64 x 32 的倍數，或 64 x 64 配置）。
 - `LandRideClearanceCheck`：三種 spline 下島上的方塊與植物不碰到列車，軌道左右 6、下方 6 到上方 10 單位內沒有水。
+- `HeadLookCheck`：Train 視角轉頭（`src/Utilities/HeadLook.*`）：起始看正前方、yaw 正值往右、pitch 停在上下限、yaw 跨過 ±180 度回繞、可轉到正後方，視線上方始終與視線垂直且朝上。
+- `EditKeysCheck`：控制點編輯鍵位對照正式 `FlyCam`：Fly 下沒有飛行鍵是編輯指令、Fly 的編輯鍵都是 `FlyCam` 不用的鍵、World／Top 的鍵位不變。
+- `GizmoDragCheck`：移動把手（`src/TransformGizmo.*`）找得到滑鼠下的把手，拖曳時點正好落在滑鼠下，且只沿把手允許的軸或平面移動。
+- `TrackInsertCheck`：新增控制點（`src/TrackInsert.*`）後軌道仍經過點擊處、新點插在前後兩點之間並內插傾斜、列車留在原位、螢幕上找得到滑鼠下的軌道位置。
+- `TrackHistoryCheck`：上一步／下一步（`src/TrackHistory.*`）回到當時的軌道與選取、下一步能前進、新修改清掉下一步、點數不變時列車留在原位、只保留最近的步數。
+- `TrackSpacingCheck`：弧長表讓枕木等距，控制點分佈很不平均時，以獨立的細分弧長量測誤差仍在 2% 以內。
+- `OceanRideClearanceCheck`：三種 spline 下海底的方塊與植物不碰到列車，以正式 `CTrack` 取樣，與挖空景物的程式互相獨立。
+- `TexturePackCheck`：zip 的三種 DEFLATE 區塊解碼與截斷資料、PNG 解碼與取動畫第一格、zip 與資料夾材質包的開啟、替代與染色、不是材質包的資料夾被拒絕、依名稱列出材質包。
 - `TwoFingerGestureCheck`：觸控板兩指濾波，驗證靜止不動、純捏合不轉動、純移動不縮放、兩者明顯時同時作用。
 - `TrackRoundTripCheck`：正式 `CTrack::writePoints/readPoints` 與真實暫存檔，驗證座標、方向、控制點數與載入後列車位置歸零。
 - `AppControlCheck`：命令列解析與錯誤、`checkTrackFile()` 與正式 `CTrack::readPoints()` 對同一份檔案的結果一致、PNG 寫入後以材質包用的同一個解碼器讀回逐像素相同、空白畫面不被當成已畫出、`--doctor` 的資料夾檢查（隔離的暫存資料夾）。

@@ -21,8 +21,6 @@ if(ROLLERCOASTERS_ANALYZE)
     endif()
     target_compile_options(project_options INTERFACE /analyze /analyze:external-)
 endif()
-# The supplied Debug FLTK archives have no PDBs. Keep other linker diagnostics enabled.
-target_link_options(project_options INTERFACE "$<$<CONFIG:Debug>:/IGNORE:4099>")
 
 add_library(fltk INTERFACE)
 target_include_directories(fltk SYSTEM INTERFACE "${PROJECT_SOURCE_DIR}/include")
@@ -74,7 +72,7 @@ add_executable(RollerCoasters
     src/FileDialogs.h src/FileDialogs.cpp
     src/EditKeys.h src/EditKeys.cpp
     src/ControlPoint.H src/ControlPoint.cpp
-    src/main.cpp src/Object.H
+    src/main.cpp
     src/Track.H src/Track.cpp
     src/TrackHistory.h src/TrackHistory.cpp
     src/TrackInsert.h src/TrackInsert.cpp
