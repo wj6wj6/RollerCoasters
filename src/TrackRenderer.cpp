@@ -22,11 +22,13 @@ namespace
 {
 
 // Track dimensions in world units (the default track is about 100 units across).
-const float kRailOffset = 1.35f;    // distance from the centre line to each rail
-const float kRailHalfWidth = 0.17f; // rails are square iron bars
+// As a block game's rails sit inside its minecarts' width: the carts
+// (TrainModel) are a little wider than the rails' outer edges.
+const float kRailOffset = 1.1f;     // distance from the centre line to each rail
+const float kRailHalfWidth = 0.12f; // rails are square iron bars
 const float kRailBottom = 0.12f;    // rails sit on top of the sleepers
 const float kRailTop = 0.46f;       // stays just below the bottom of the train car
-const float kSleeperHalfLength = 2.1f;
+const float kSleeperHalfLength = 1.85f;
 const float kSleeperHalfDepth = 0.45f;
 const float kSleeperBottom = -0.18f;
 const float kSleeperTop = kRailBottom;

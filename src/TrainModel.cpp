@@ -24,12 +24,16 @@ namespace
 // in each as they sit in a minecart.
 const int kCarts = 5;
 const int kVehicles = 1 + kCarts;
-const float kPx = 2.5f / 16.0f; // one pixel of a 2.5 unit block
-// Along the track, centre to centre: a cart is 20 pixels long.
-const float kEngineToCart = 4.0f;
-const float kCartToCart = 4.0f;
-// How far the carts ride above the rails, in pixels.
-const float kRide = 2.5f;
+// One pixel of the train: a 2.5 unit block's, a quarter bigger, so the carts
+// (16 pixels wide, 4 units) stand a little wider than the rails' outer
+// edges (TrackRenderer) as a block game's minecarts do on its rails.
+const float kPx = 1.25f * 2.5f / 16.0f;
+// Along the track, centre to centre: a cart is 20 pixels (3.9 units) long.
+const float kEngineToCart = 4.6f;
+const float kCartToCart = 4.6f;
+// How far the carts' floors ride above the track's line, in pixels: just
+// on top of the rails.
+const float kRide = 2.7f;
 
 bool gShadowPass = false;
 
