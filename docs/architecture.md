@@ -51,7 +51,7 @@ flowchart LR
     View --> Ocean[OceanWorld / 海床、海底景物與生物]
     View --> Effects[TrainViewEffects / 讀取光影 widget]
     Effects --> Frame[renderAdvancedFrame]
-    Frame --> Lighting[AdvancedLighting / shadow map、逐像素光照、頭燈]
+    Frame --> Lighting[AdvancedLighting / 兩層 shadow map、逐像素光照、頭燈]
     Frame --> Post[PostEffects / 天空、水面、雨、SSAO、Bloom、色調映射]
     Frame -->|drawGround / drawUnderwater / drawObjects| View
     View -->|worldReady：未建好前畫載入畫面| Loading[載入畫面 / 泥土背景、階段文字、進度條]
@@ -90,7 +90,7 @@ flowchart LR
 | `src/UiTheme.h/.cpp` | 控制面板配色與圓角控制項樣式。 |
 | `src/TrainView.H/.cpp` | OpenGL 畫布：相機投影、場景繪製、控制點選取與編輯、Windows 輸入訊息。 |
 | `src/TrainViewEffects.cpp` | 把光影 widget 的狀態轉成 `LightingFrame`，並呼叫 `renderAdvancedFrame()`。 |
-| `src/AdvancedLighting.h/.cpp` | 跟著鏡頭的 shadow map、GLSL 逐像素光照、日夜與頭燈。 |
+| `src/AdvancedLighting.h/.cpp` | 跟著鏡頭的兩層 shadow map（鏡頭附近 150 單位的細圖、外圍 600 單位的粗圖，交界處混合）、GLSL 逐像素光照、日夜與頭燈。 |
 | `src/PostEffects.h/.cpp` | 浮點 frame buffer 與後製：天空、水面與 SSR、雨與濕地反射、SSAO、Bloom、god rays、ACES。 |
 | `src/UnderwaterOptics.h` | 水下吸收、caustics 與水色常數，三個 shader 共用。 |
 | `src/MatrixMath.h` | 光影程式用的 column-major 4×4 矩陣輔助函式。 |
@@ -157,7 +157,7 @@ flowchart LR
 - 世界存檔的 key 由影響該世界的每個原始檔以 `buildStamp()` 回傳編譯時間組成：重新編譯生成程式就會重新生成，檔案損壞或格式不符時當作沒有存檔。改變生成結果的修改必須讓 key 改變。存檔先寫 `.tmp` 再改名。
 
 **繪製**
-- 島與海床以 16×16 欄為一塊，各自編成 display list；`Frustum` 用當下的矩陣剔除，所以陰影與反射 pass 也只畫自己看得到的塊。
+- 島與海床以 16×16 欄為一塊，各自編成 display list；`Frustum` 用當下的矩陣剔除，所以陰影與反射 pass 也只畫自己看得到的塊；陰影 pass 每層各畫一次（`AdvancedLighting::shadowCascades()`）。
 - 顯示清單綁定貼圖名稱：換材質包時只改寫貼圖內容（`PixelArt::uploadInto()`），不重建島嶼。
 - 場景中的每種方塊與植物都要對應到材質包對照表裡的方塊名稱；只有生物、雲、熱氣球、鐵軌與列車維持程式自己的顏色。小構件（樓梯、半磚、柵欄、燈籠等）放在植物格，見 [ADR 0006](adr/0006-building-parts-in-plant-cells.md)。材質包格式見 [ADR 0005](adr/0005-texture-packs.md)。
 - 光照烘焙（天光、發光方塊、ambient occlusion）寫進頂點的 texture unit 1 座標；依朝向的明暗一律由 shader 依法線計算，不寫進頂點顏色，否則會暗兩次。
