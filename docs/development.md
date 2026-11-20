@@ -65,7 +65,7 @@ MSVC 發布目錄是 `out/package/<Config>/`，Clang 是 `out/package/clang/<Con
 `check.ps1` 預設只用一個建置程序，避免筆電卡住；`-Jobs N` 改為 N 個，`-Jobs 0` 用上所有處理器（CI 使用）。
 
 所有第一方 C++ 編譯使用 `/W3 /WX`，分析使用 `/analyze /analyze:external-`；第三方 GLAD 分開建置。
-隨附 Debug FLTK 沒有 PDB，因此僅抑制該組態的 linker LNK4099。
+隨附 FLTK 1.3.11 的 Debug `.lib` 內含除錯資訊（`/Z7`），連結器不再需要抑制 LNK4099；VS 偵錯時呼叫堆疊可看到 FLTK 內部。重新編譯內附 FLTK 用 `pwsh -File scripts/build-fltk.ps1`，再 `-Stage vendor-lock`（見 `docs/adr/0007-fltk-1-3-11.md`）。連結內附 FLTK 需要 MSVC 19.44（VS 2022 17.14）或更新。
 初次導入 clang-format 會建立全體 `src/`、`tests/` 的一致格式基準；第三方檔案不重排。
 
 ## Hooks
@@ -102,8 +102,9 @@ tests/linux/win32-syntax.sh
 - `LandRideClearanceCheck`：三種 spline 下島上的方塊與植物不碰到列車，軌道左右 6、下方 6 到上方 10 單位內沒有水。
 - `TwoFingerGestureCheck`：觸控板兩指濾波，驗證靜止不動、純捏合不轉動、純移動不縮放、兩者明顯時同時作用。
 - `TrackRoundTripCheck`：正式 `CTrack::writePoints/readPoints` 與真實暫存檔，驗證座標、方向、控制點數與載入後列車位置歸零；只有 x y z 的舊檔仍可載入；點數不合法、空檔、點的行數少於宣告或某行缺 x y z 時，原軌道與列車位置不變，並且只跳出一次 `fl_alert`（測試以 FLTK timer 關閉正式的對話框）。
+- `AppControlCheck`：命令列解析與錯誤、`checkTrackFile()` 與正式 `CTrack::readPoints()` 對同一份檔案的結果一致、PNG 寫入後以材質包用的同一個解碼器讀回逐像素相同、空白畫面不被當成已畫出、`--doctor` 的資料夾檢查（隔離的暫存資料夾）。
 - `VersionCheck`：啟動正式 executable 的 `--version`，不建立 GUI。
 
 測試有明確 timeout，找不到測試時視為失敗；Release 的檢查不用會被移除的 `assert`。
 相機測試使用真實時間；忙碌機器可能受排程影響，失敗時檢查 CTest 日誌，保留原失敗證據。
-這些測試未涵蓋實際 GPU 畫面、Windows 觸控訊息，也未涵蓋數字以外的文字（例如 `a b c` 仍讀成 0）等其他損壞軌道檔，手動流程見 [維運文件](operations.md)。
+這些測試未涵蓋實際 GPU 畫面與 Windows 觸控訊息，也未涵蓋數字以外的文字（例如 `a b c` 仍讀成 0）等其他損壞軌道檔。實際畫面用 `scripts/control-app.ps1` 在 Windows 上截圖驗證，觸控與手感仍需手動檢查；兩者都依 [驗證流程](../.agents/skills/verify-app/SKILL.md)。

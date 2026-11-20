@@ -43,9 +43,14 @@
 
 // we need to know what is in the world to show
 #include "Track.H"
+#include "TrackHistory.h"
 
 // other things we just deal with as pointers, to avoid circular references
 class TrainView;
+namespace AppControl
+{
+struct Options;
+}
 
 // if we're also making the sample solution, then we need to know
 // about the stuff we don't tell students
@@ -80,9 +85,19 @@ class TrainWindow : public Fl_Double_Window
     // a Transform field was edited
     static void transformCB(Fl_Widget *widget, void *data);
 
+    // Undo and redo for the control points (TrackHistory.h). Call
+    // recordHistory() just before changing the points, or pushHistory()
+    // with a snapshot taken before a change that has happened.
+    void recordHistory();
+    void pushHistory(const TrackHistory::Snapshot &before);
+    void undoEdit();
+    void redoEdit();
+    void updateHistoryButtons(); // greys out Undo / Redo with nothing to do
+
   public:
     // keep track of the stuff in the world
     CTrack m_Track;
+    TrackHistory m_history; // undo and redo for the control points
 
     // the widgets that make up the Window
     TrainView *trainView;
@@ -91,6 +106,8 @@ class TrainWindow : public Fl_Double_Window
 
     // utility buttons
     Fl_Button *resetButton;
+    Fl_Button *undoButton = nullptr;
+    Fl_Button *redoButton = nullptr;
 
     // which viewpoint are we drawing from
     Fl_Button *worldCam;
@@ -130,6 +147,10 @@ class TrainWindow : public Fl_Double_Window
     std::string texturePackPath;               // the pack in use, empty when built in
     std::string texturePackLabel;              // "Textures: <name>"
     void listTexturePacks(const std::string &select = std::string());
+    // Sets the scene up as the command line asks (AppControl.h): the track,
+    // texture pack, camera, switches and hour. False, with a message, if a
+    // file cannot be used; nothing is shown in a dialog.
+    bool applyOptions(const AppControl::Options &options, std::string &error);
     Fl_Button *editButton;  // show the control points for editing
     Fl_Button *bloomButton; // bloom and god rays
     Fl_Button *ssaoButton;  // screen space ambient occlusion

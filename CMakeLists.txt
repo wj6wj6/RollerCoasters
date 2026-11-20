@@ -21,8 +21,6 @@ if(ROLLERCOASTERS_ANALYZE)
     endif()
     target_compile_options(project_options INTERFACE /analyze /analyze:external-)
 endif()
-# The supplied Debug FLTK archives have no PDBs. Keep other linker diagnostics enabled.
-target_link_options(project_options INTERFACE "$<$<CONFIG:Debug>:/IGNORE:4099>")
 
 add_library(fltk INTERFACE)
 target_include_directories(fltk SYSTEM INTERFACE "${PROJECT_SOURCE_DIR}/include")
@@ -52,6 +50,7 @@ target_link_libraries(Utilities PUBLIC project_options fltk)
 
 add_executable(RollerCoasters
     src/AdvancedLighting.h src/AdvancedLighting.cpp
+    src/AppControl.h src/AppControl.cpp
     src/Frustum.h src/Frustum.cpp
     src/LandTextures.h src/LandTextures.cpp
     src/LandWorld.h src/LandWorld.cpp
@@ -61,6 +60,7 @@ add_executable(RollerCoasters
     src/PostEffects.h src/PostEffects.cpp
     src/TexturePack.h src/TexturePack.cpp
     src/TrainModel.h src/TrainModel.cpp
+    src/TrainViewControl.cpp
     src/TrainViewEffects.cpp
     src/TransformGizmo.h src/TransformGizmo.cpp
     src/UnderwaterOptics.h
@@ -73,6 +73,8 @@ add_executable(RollerCoasters
     src/ControlPoint.H src/ControlPoint.cpp
     src/main.cpp src/Object.H
     src/Track.H src/Track.cpp
+    src/TrackHistory.h src/TrackHistory.cpp
+    src/TrackInsert.h src/TrackInsert.cpp
     src/TouchpadGestures.H src/TouchpadGestures.cpp
     src/TrackRenderer.H src/TrackRenderer.cpp
     src/TrainView.H src/TrainView.cpp
@@ -142,6 +144,28 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     target_link_libraries(TrackSpacingCheck PRIVATE Utilities glad)
     add_test(NAME TrackSpacingCheck COMMAND TrackSpacingCheck)
     set_tests_properties(TrackSpacingCheck PROPERTIES TIMEOUT 10 LABELS integration)
+
+    add_executable(AppControlCheck tests/AppControlCheck.cpp src/AppControl.cpp
+        src/Track.cpp src/ControlPoint.cpp
+        src/TexturePack.cpp src/ZipArchive.cpp src/LandTextures.cpp src/PixelArt.cpp)
+    target_include_directories(AppControlCheck PRIVATE src)
+    target_link_libraries(AppControlCheck PRIVATE Utilities glad)
+    add_test(NAME AppControlCheck COMMAND AppControlCheck)
+    set_tests_properties(AppControlCheck PROPERTIES TIMEOUT 30 LABELS integration)
+
+    add_executable(TrackHistoryCheck tests/TrackHistoryCheck.cpp
+        src/TrackHistory.cpp src/Track.cpp src/ControlPoint.cpp)
+    target_include_directories(TrackHistoryCheck PRIVATE src)
+    target_link_libraries(TrackHistoryCheck PRIVATE Utilities)
+    add_test(NAME TrackHistoryCheck COMMAND TrackHistoryCheck)
+    set_tests_properties(TrackHistoryCheck PROPERTIES TIMEOUT 10 LABELS integration)
+
+    add_executable(TrackInsertCheck tests/TrackInsertCheck.cpp
+        src/TrackInsert.cpp src/Track.cpp src/ControlPoint.cpp src/TransformGizmo.cpp)
+    target_include_directories(TrackInsertCheck PRIVATE src)
+    target_link_libraries(TrackInsertCheck PRIVATE Utilities glad)
+    add_test(NAME TrackInsertCheck COMMAND TrackInsertCheck)
+    set_tests_properties(TrackInsertCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
     add_executable(TexturePackCheck tests/TexturePackCheck.cpp
         src/TexturePack.cpp src/ZipArchive.cpp src/LandTextures.cpp src/PixelArt.cpp)

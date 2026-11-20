@@ -1,19 +1,17 @@
 //
-// "$Id$"
-//
 // Enumerations for the Fast Light Tool Kit (FLTK).
 //
-// Copyright 1998-2017 by Bill Spitzak and others.
+// Copyright 1998-2025 by Bill Spitzak and others.
 //
 // This library is free software. Distribution and use rights are outlined in
 // the file "COPYING" which should have been included with this file.  If this
 // file is missing or damaged, see the license at:
 //
-//     http://www.fltk.org/COPYING.php
+//     https://www.fltk.org/COPYING.php
 //
-// Please report all bugs and problems on the following page:
+// Please see the following page on how to report bugs and issues:
 //
-//     http://www.fltk.org/str.php
+//     https://www.fltk.org/bugs.php
 //
 
 /** \file
@@ -75,7 +73,7 @@
 
    FLTK remains binary compatible between patches.
  */
-#define FL_PATCH_VERSION	5
+#define FL_PATCH_VERSION	11
 
 /**
     The FLTK version number as a \em double.
@@ -137,7 +135,7 @@
     \verbatim
       FLTK Version  FL_API_VERSION  FL_ABI_VERSION  FL_VERSION (deprecated)
         1.3.0          10300           10300           1.0300
-	1.3.4          10304           10300           1.0304
+        1.3.4          10304           10300           1.0304
     \endverbatim
 
     Version 1.2.3 is actually stored as 10203 to allow for more than 9
@@ -537,9 +535,11 @@ enum Fl_When { // Fl_Widget::when():
 
 /*@{*/
 
-#define FL_LEFT_MOUSE	1	///< The left mouse button
-#define FL_MIDDLE_MOUSE	2	///< The middle mouse button
-#define FL_RIGHT_MOUSE	3	///< The right mouse button
+#define FL_LEFT_MOUSE     1       ///< The left mouse button
+#define FL_MIDDLE_MOUSE   2       ///< The middle mouse button
+#define FL_RIGHT_MOUSE    3       ///< The right mouse button
+#define FL_BACK_MOUSE     4       ///< The back mouse button (side button 1)
+#define FL_FORWARD_MOUSE  5       ///< The forward mouse button (side button 2)
 
 /*@}*/		// group: Mouse Buttons
 
@@ -564,11 +564,18 @@ enum Fl_When { // Fl_Widget::when():
 					// correct for XFree86
 #define FL_SCROLL_LOCK	0x00800000	///< The scroll lock is on
 					// correct for XFree86
-#define FL_BUTTON1	0x01000000	///< Mouse button 1 is pushed
-#define FL_BUTTON2	0x02000000	///< Mouse button 2 is pushed
-#define FL_BUTTON3	0x04000000	///< Mouse button 3 is pushed
-#define FL_BUTTONS	0x7f000000	///< Any mouse button is pushed
-#define FL_BUTTON(n)	(0x00800000<<(n)) ///< Mouse button n (n > 0) is pushed
+
+// Mouse buttons
+
+#define FL_BUTTON1      0x01000000        ///< Mouse button 1 is pushed (L)
+#define FL_BUTTON2      0x02000000        ///< Mouse button 2 is pushed (M)
+#define FL_BUTTON3      0x04000000        ///< Mouse button 3 is pushed (R)
+#define FL_BUTTON4      0x08000000        ///< Mouse button 4 is pushed (BACK)
+#define FL_BUTTON5      0x10000000        ///< Mouse button 5 is pushed (FORWARD)
+#define FL_BUTTONS      0x1f000000        ///< Bitmask: any mouse button (1-5) is pushed
+
+#define FL_BUTTON(n)   (0x00800000<<(n))  ///< Mouse button n (n = 1..5) is pushed,
+                                          ///< *undefined* if n outside 1..5
 
 #define FL_KEY_MASK 0x0000ffff		///< All keys are 16 bit for now 
 					//   FIXME: Unicode needs 24 bits!

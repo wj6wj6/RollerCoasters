@@ -25,6 +25,9 @@
 #include "stdio.h"
 #include <cstring>
 #include <cwchar>
+#include <string>
+#include "AppControl.h"
+#include "TrainView.H"
 #include "TrainWindow.H"
 
 #ifndef NOMINMAX
@@ -58,23 +61,63 @@ static void useExeFolderForTrackFiles()
         CreateDirectoryW(L"TrackFiles", nullptr);
 }
 
+// Paths on the command line are relative to where the program was started,
+// not to the exe's folder it moves to.
+static void makeAbsolute(std::string &path)
+{
+    if (path.empty())
+        return;
+    char full[MAX_PATH] = {};
+    const DWORD length = GetFullPathNameA(path.c_str(), MAX_PATH, full, nullptr);
+    if (length > 0 && length < MAX_PATH)
+        path = full;
+}
+
 int main(int argc, char **argv)
 {
-    if (argc == 2 && std::strcmp(argv[1], "--version") == 0)
+    AppControl::Options options;
+    std::string error;
+    if (!AppControl::parse(argc, argv, options, error))
+    {
+        fprintf(stderr, "%s\n%s", error.c_str(), AppControl::usage());
+        return AppControl::kUsage;
+    }
+    if (options.mode == AppControl::Mode::Version)
     {
         printf("RollerCoasters %s\n", ROLLERCOASTERS_VERSION);
-        return 0;
+        return AppControl::kPass;
     }
-    if (argc != 1)
+    if (options.mode == AppControl::Mode::Help)
     {
-        fprintf(stderr, "Usage: RollerCoasters [--version]\n");
-        return 2;
+        printf("%s", AppControl::usage());
+        return AppControl::kPass;
     }
-    printf("CS559 Train Assignment\n");
+    const bool automated = options.mode != AppControl::Mode::Gui;
+    makeAbsolute(options.output);
+    makeAbsolute(options.track);
+    makeAbsolute(options.texturePack);
+    if (!automated)
+        printf("CS559 Train Assignment\n");
     useExeFolderForTrackFiles();
 
+    int result = AppControl::kPass;
+    if (options.mode == AppControl::Mode::Doctor)
+        result = AppControl::report(AppControl::environmentChecks(), stdout);
+
     TrainWindow tw;
+    if (!tw.applyOptions(options, error))
+    {
+        AppControl::report({{"options", false, error}}, stdout);
+        return AppControl::kFail;
+    }
+    tw.trainView->startAutomation(automated ? &options : nullptr);
     tw.show();
 
     Fl::run();
+    if (!automated)
+        return AppControl::kPass;
+    if (tw.trainView->automationResult < 0)
+        return AppControl::kFail; // the window was closed before the check finished
+    // a doctor's folder failure still fails the run
+    return result != AppControl::kPass ? result : tw.trainView->automationResult;
 }

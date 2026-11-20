@@ -29,11 +29,13 @@
 #include <FL/Fl_Box.H>
 
 // for using the real time clock
+#include <memory>
 #include <time.h>
 #include <math.h>
 
 #include "TrainWindow.H"
 #include "TrainView.H"
+#include "AppControl.h"
 #include "CallBacks.H"
 #include "TexturePack.h"
 #include "UiTheme.h"
@@ -213,7 +215,7 @@ TrainWindow::TrainWindow(const int x, const int y)
                         "Also: right drag or arrow keys look; E/Q up/down\n"
                         "Touchpad: two fingers look, spread / pinch fly, Alt + two fingers slide\n"
                         "Lost? F: face the train; Home: back to the World view\n"
-                        "Edit on: G / R move / tilt the selected point, Alt + D duplicates,\n"
+                        "Edit on: G / R move / tilt the selected point, Alt + D adds a point,\n"
                         "Delete removes (Shift + D and X fly or do nothing here)");
 
         // observer camera speed (world units per second) and field of view
@@ -244,7 +246,7 @@ TrainWindow::TrainWindow(const int x, const int y)
         const int browserLabelH = 13;
         const int browserH = 62;
         Fl_Group *trackCard = UiTheme::beginCard(
-            cardX, pty, cardW, titleH + browserLabelH + browserH + 3 * (gap + rowH) + bottomPad,
+            cardX, pty, cardW, titleH + browserLabelH + browserH + 4 * (gap + rowH) + bottomPad,
             "Track");
         pty += titleH + browserLabelH;
 
@@ -263,10 +265,12 @@ TrainWindow::TrainWindow(const int x, const int y)
         // show the control points for editing; add and delete points
         editButton = new Fl_Button(innerX, pty, colW, rowH, "Edit");
         togglify(editButton);
-        editButton->tooltip("Show the control points and their move handles.\n"
+        editButton->tooltip("Show the control points and their move handles (F4).\n"
                             "Off for the Grand Tour: the scenery is built around that ride.");
         Fl_Button *ap = new Fl_Button(col2, pty, colW, rowH, "Add Pt");
         UiTheme::styleButton(ap);
+        ap->tooltip("Then click the track where the new point goes (hold to drag it).\n"
+                    "Esc or a right click cancels. Shortcut: Shift + D (Alt + D in Fly).");
         ap->callback((Fl_Callback *)addPointCB, this);
         Fl_Button *dp = new Fl_Button(col3, pty, col3W, rowH, "Del Pt");
         UiTheme::styleButton(dp);
@@ -300,6 +304,20 @@ TrainWindow::TrainWindow(const int x, const int y)
         Fl_Button *rzp = new Fl_Button(roll4, pty, innerX + innerW - roll4, rowH, "R-Z");
         UiTheme::styleButton(rzp);
         rzp->callback((Fl_Callback *)rmzCB, this);
+
+        pty += rowH + gap;
+        // step back and forward through the changes to the points
+        undoButton = new Fl_Button(innerX, pty, halfW, rowH, "Undo");
+        UiTheme::styleButton(undoButton);
+        undoButton->tooltip(
+            "Take back the last change to the control points (Ctrl + Z):\n"
+            "adding, deleting, moving or tilting a point, Load, Reset, Grand Tour.");
+        undoButton->callback((Fl_Callback *)undoCB, this);
+        redoButton = new Fl_Button(half2, pty, half2W, rowH, "Redo");
+        UiTheme::styleButton(redoButton);
+        redoButton->tooltip("Put back a change taken back (Ctrl + Y or Ctrl + Shift + Z).");
+        redoButton->callback((Fl_Callback *)redoCB, this);
+        updateHistoryButtons();
 
         pty += rowH + bottomPad;
         trackCard->end();
@@ -460,11 +478,61 @@ void TrainWindow::transformCB(Fl_Widget *, void *data)
     const int selected = tw->trainView->selectedCube;
     if (selected < 0 || selected >= static_cast<int>(tw->m_Track.points.size()))
         return;
+    const Pnt3f typed(static_cast<float>(tw->pointX->value()),
+                      static_cast<float>(tw->pointY->value()),
+                      static_cast<float>(tw->pointZ->value()));
     Pnt3f &pos = tw->m_Track.points[static_cast<size_t>(selected)].pos;
-    pos.x = static_cast<float>(tw->pointX->value());
-    pos.y = static_cast<float>(tw->pointY->value());
-    pos.z = static_cast<float>(tw->pointZ->value());
+    if (typed.x == pos.x && typed.y == pos.y && typed.z == pos.z)
+        return;
+    tw->recordHistory();
+    pos = typed;
     tw->trainView->damage(1);
+}
+
+//************************************************************************
+//
+// * Undo and redo (TrackHistory.h)
+//========================================================================
+void TrainWindow::recordHistory()
+{
+    m_history.record(m_Track, trainView->selectedCube);
+    updateHistoryButtons();
+}
+
+void TrainWindow::pushHistory(const TrackHistory::Snapshot &before)
+{
+    m_history.push(before);
+    updateHistoryButtons();
+}
+
+void TrainWindow::undoEdit()
+{
+    trainView->finishEdits(); // a move in progress becomes a step of its own first
+    if (m_history.undo(m_Track, trainView->selectedCube))
+        damageMe();
+    updateHistoryButtons();
+}
+
+void TrainWindow::redoEdit()
+{
+    trainView->finishEdits();
+    if (m_history.redo(m_Track, trainView->selectedCube))
+        damageMe();
+    updateHistoryButtons();
+}
+
+void TrainWindow::updateHistoryButtons()
+{
+    if (!undoButton || !redoButton)
+        return;
+    if (m_history.canUndo())
+        undoButton->activate();
+    else
+        undoButton->deactivate();
+    if (m_history.canRedo())
+        redoButton->activate();
+    else
+        redoButton->deactivate();
 }
 
 //************************************************************************
@@ -594,6 +662,84 @@ void TrainWindow::advanceTrain(float dir)
     else
         m_Track.trainU =
             wrapTrackParameter(m_Track.trainU + step * 0.01f, static_cast<float>(pointCount));
+}
+
+//************************************************************************
+//
+// * Set the scene up from the command line (AppControl.h)
+//========================================================================
+bool TrainWindow::applyOptions(const AppControl::Options &options, std::string &error)
+//========================================================================
+{
+    if (!options.track.empty())
+    {
+        // checked first: readPoints() reports a bad file in a dialog
+        if (!AppControl::checkTrackFile(options.track, error))
+        {
+            error = "track: " + error;
+            return false;
+        }
+        m_Track.readPoints(options.track.c_str());
+        trainView->selectedCube = -1;
+    }
+    if (!options.texturePack.empty())
+    {
+        auto pack = std::make_shared<TexturePack::Pack>();
+        if (!pack->open(options.texturePack))
+        {
+            error = "texture pack: no usable textures in " + options.texturePack;
+            return false;
+        }
+        texturePackPath = options.texturePack;
+        trainView->setTexturePack(pack);
+        listTexturePacks(texturePackPath);
+    }
+
+    auto set = [](Fl_Button *button, AppControl::Switch value) {
+        if (value != AppControl::Switch::Keep)
+            button->value(value == AppControl::Switch::On ? 1 : 0);
+    };
+    set(sceneryButton, options.scenery);
+    set(lightingButton, options.light);
+    set(waterButton, options.water);
+    set(rainButton, options.rain);
+    set(shadowButton, options.shadows);
+    if (options.time >= 0)
+        timeOfDay->value(options.time);
+    if (options.trainU >= 0)
+        m_Track.trainU =
+            wrapTrackParameter(options.trainU, static_cast<float>(m_Track.points.size()));
+    if (options.width > 0)
+        size(options.width, options.height);
+
+    Fl_Button *camera = nullptr;
+    switch (options.camera)
+    {
+    case AppControl::Camera::World:
+        camera = worldCam;
+        break;
+    case AppControl::Camera::Train:
+        camera = trainCam;
+        break;
+    case AppControl::Camera::Chase:
+        camera = chaseCam;
+        break;
+    case AppControl::Camera::Top:
+        camera = topCam;
+        break;
+    case AppControl::Camera::Fly:
+        camera = flyCam;
+        break;
+    case AppControl::Camera::Keep:
+        break;
+    }
+    if (camera)
+    {
+        camera->setonly();
+        trainView->cameraChanged();
+    }
+    damageMe();
+    return true;
 }
 
 //************************************************************************

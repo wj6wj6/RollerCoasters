@@ -68,4 +68,9 @@ float inlandMain(float x, float z)
     return d;
 }
 
+const char *buildStamp()
+{
+    return __DATE__ " " __TIME__;
+}
+
 } // namespace WorldShape

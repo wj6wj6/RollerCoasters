@@ -1,9 +1,7 @@
 //
-// "$Id$"
-//
 // X11 header file for the Fast Light Tool Kit (FLTK).
 //
-// Copyright 1998-2012 by Bill Spitzak and others.
+// Copyright 1998-2024 by Bill Spitzak and others.
 //
 // This library is free software. Distribution and use rights are outlined in
 // the file "COPYING" which should have been included with this file.  If this
@@ -20,8 +18,6 @@
 // calling Xlib.  You should include this file if (and ONLY if) you
 // need to call Xlib directly.  These symbols may not exist on non-X
 // systems.
-
-#  include <windows.h>	//define WIN32
 
 #if !defined(Fl_X_H) && !defined(FL_DOXYGEN) 
 #  define Fl_X_H
@@ -79,10 +75,13 @@ typedef ulong Fl_Offscreen;
 // begin/end are macros that save the old state in local variables:
 #    define fl_begin_offscreen(pixmap) \
   Window _sw=fl_window; fl_window=pixmap; \
+  GC _sgc = fl_gc; if (!_sgc) fl_gc = XCreateGC(fl_display, pixmap, 0, 0); \
   Fl_Surface_Device *_ss = Fl_Surface_Device::surface(); Fl_Display_Device::display_device()->set_current(); \
   fl_push_no_clip()
 #    define fl_end_offscreen() \
-  fl_pop_clip(); fl_window = _sw; _ss->set_current()
+  fl_pop_clip(); fl_window = _sw; _ss->set_current(); \
+  if (!_sgc) XFreeGC(fl_display, fl_gc); \
+    fl_gc = _sgc
 
 extern FL_EXPORT void fl_copy_offscreen(int x, int y, int w, int h, Fl_Offscreen pixmap, int srcx, int srcy);
 #    define fl_delete_offscreen(pixmap) XFreePixmap(fl_display, pixmap)
@@ -106,7 +105,7 @@ FL_EXPORT Fl_Region XRectangleRegion(int x, int y, int w, int h); // in fl_rect.
 // With Xlib / X11 fonts, fl_xfont will return the current selected font.
 // With XFT / X11 fonts, fl_xfont will attempt to return the bitmap "core" font most
 // similar to (usually the same as) the current XFT font.
-class Fl_XFont_On_Demand
+class FL_EXPORT Fl_XFont_On_Demand
 {
 public:
   Fl_XFont_On_Demand(XFontStruct* p = NULL) : ptr(p) { }
@@ -179,7 +178,3 @@ extern FL_EXPORT int fl_parse_color(const char* p, uchar& r, uchar& g, uchar& b)
 
 #  endif
 #endif
-
-//
-// End of "$Id$".
-//

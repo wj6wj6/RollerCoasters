@@ -5,7 +5,7 @@
 1. 從最新的 `main` 建立單一目的分支，例如 `fix/camera-zoom`。
 2. Issue 說明問題、重現方式與預期行為；PR 描述原因、改前改後、驗證與風險。
 3. 修改行為時加入能驗證該行為的測試。純文件或機械格式調整使用相應檢查即可。
-4. 跑完 MSVC 與 Clang 各自 Debug／Release 的 `all` 檢查（Clang 加 `-Compiler clang`）；顯示或裝置輸入變更另做 GUI 驗證。
+4. 跑完 MSVC 與 Clang 各自 Debug／Release 的 `all` 檢查（Clang 加 `-Compiler clang`）；顯示或裝置輸入變更另依 `.agents/skills/verify-app/SKILL.md` 驗證並附上證據。
 5. 提交使用 `fix: ...`、`feat: ...`、`docs: ...`、`ci: ...` 等 Conventional Commits 標題。
 6. 一個變更維持一個 PR，review 修正追加到同一分支。合併前確認 CI 全部通過。
 

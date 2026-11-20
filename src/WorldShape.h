@@ -11,11 +11,11 @@
                   middle (heights above the sea at kLift times), which
                   gives every landmark room to be built at a larger size.
 
-                  The coast is no longer a square: a rounded square
-                  (superellipse) whose shore wanders in and out with
-                  noise, giving bays and headlands. inland() is the
-                  distance from the shore, positive on land. No OpenGL
-                  here, so it can be tested on its own.
+                  The coast is a rounded square (superellipse) whose
+                  shore wanders in and out with noise, giving bays and
+                  headlands. inland() is the distance from the shore,
+                  positive on land. No OpenGL here, so it can be tested
+                  on its own.
 
 *************************************************************************/
 #pragma once
@@ -36,6 +36,10 @@ const float kIslandReach = kIslandHalf + kCoastWander + 4.0f;
 // rounded blob whose shore wanders like the main island's.
 const float kNorthEastX = 360.0f, kNorthEastZ = -360.0f;
 const float kNorthEastRadius = 150.0f;
+
+// When this file was compiled, for the key of a saved world (WorldSave.h):
+// a rebuilt generator no longer matches the saves the old one made.
+const char *buildStamp();
 
 // Distance from the shore at (x, z): positive on land, negative at sea.
 // Roughly in world units near the coast. Either land counts.

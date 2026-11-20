@@ -96,4 +96,9 @@ void uploadInto(unsigned int texture, Image pixels, bool repeatT)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, level);
 }
 
+const char *buildStamp()
+{
+    return __DATE__ " " __TIME__;
+}
+
 } // namespace PixelArt

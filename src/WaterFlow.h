@@ -44,6 +44,10 @@ enum Cell
     SINK = 3 // water flows in and is gone (the sea)
 };
 
+// When this file was compiled, for the key of a saved world (WorldSave.h):
+// a rebuilt generator no longer matches the saves the old one made.
+const char *buildStamp();
+
 const int FALLING = 8;      // the level of falling water
 const int MAX_LEVEL = 7;    // the furthest sideways water goes
 const int SLOPE_SEARCH = 4; // how far it looks for a way down

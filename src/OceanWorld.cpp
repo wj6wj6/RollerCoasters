@@ -14,15 +14,20 @@
 #include <math.h>
 #include <stdlib.h>
 
-#include <deque>
+#include <atomic>
+#include <chrono>
+#include <memory>
+#include <thread>
 #include <utility>
 #include <vector>
 
 #include "OceanWorld.h"
 
+#include "CellQueue.h"
 #include "Frustum.h"
 
 #include "LandTextures.h"
+#include "WorldSave.h"
 #include "WorldShape.h"
 #include "PixelArt.h"
 #include "TexturePack.h"
@@ -379,26 +384,38 @@ Image makeAnemone()
     return p;
 }
 
-// A cluster of small glowing bulbs on short stems.
+// A sea pickle's skin, laid out as a block game lays it out so a texture
+// pack's sea_pickle fits the same model: the top of a pickle at columns
+// 4-7 and the bottom at 8-11 of rows 1-4, the glowing sprouts at columns
+// 0-3 and 12-15 of rows 0-4, and the sides in a band from row 5 down, four
+// columns to a side.
 Image makeGlowBud()
 {
     Image p = PixelArt::blank();
-    const int xs[3] = {3, 8, 12};
-    const int tops[3] = {9, 6, 10};
-    for (int k = 0; k < 3; ++k)
-    {
-        for (int y = tops[k] + 3; y < S; ++y)
-            set(p, xs[k], y, 60, 120, 96);
-        for (int dy = 0; dy < 3; ++dy)
-            for (int dx = -1; dx <= 1; ++dx)
-            {
-                const bool corner = dx != 0 && dy != 1;
-                if (corner)
-                    set(p, xs[k] + dx, tops[k] + dy, 110, 230, 190);
-                else
-                    set(p, xs[k] + dx, tops[k] + dy, 215, 255, 220);
-            }
-    }
+    for (int y = 5; y < S; ++y)
+        for (int x = 0; x < S; ++x)
+        {
+            const bool spot = hash(x, y, 431u) % 7u == 0u;
+            const bool rim = x % 4 == 0 || x % 4 == 3;
+            const int shade = y == 5 ? 30 : (spot ? -26 : (rim ? -12 : 0));
+            set(p, x, y, 96 + shade, 132 + shade, 52 + shade / 2);
+        }
+    for (int y = 1; y < 5; ++y)
+        for (int x = 0; x < 4; ++x)
+        {
+            const bool edge = x == 0 || x == 3 || y == 1 || y == 4;
+            set(p, 4 + x, y, edge ? 104 : 140, edge ? 142 : 176, edge ? 58 : 82); // top
+            set(p, 8 + x, y, 70, 98, 40);                                         // bottom
+        }
+    const int sprout[2][5] = {{1, 2, 1, 2, 1}, {2, 1, 2, 1, 2}};
+    for (int k = 0; k < 2; ++k)
+        for (int y = 0; y < 5; ++y)
+        {
+            const int x = (k == 0 ? 0 : 12) + sprout[k][y];
+            set(p, x, y, 236, 250, 196);
+            if (y < 2)
+                set(p, x + (k == 0 ? 1 : -1), y, 200, 240, 150);
+        }
     return p;
 }
 
@@ -1311,12 +1328,11 @@ struct Cell
 };
 const int kDirs[6][3] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
 
-void flood(const Grid &g, std::vector<unsigned char> &light, std::deque<Cell> &queue)
+void flood(const Grid &g, std::vector<unsigned char> &light, CellQueue<Cell> &queue)
 {
     while (!queue.empty())
     {
-        const Cell c = queue.front();
-        queue.pop_front();
+        const Cell c = queue.pop_front();
         const int level = light[Grid::index(c.bx, c.j, c.bz)] - 1;
         if (level <= 0)
             continue;
@@ -1337,7 +1353,7 @@ void flood(const Grid &g, std::vector<unsigned char> &light, std::deque<Cell> &q
 
 void spreadSky(Grid &g)
 {
-    std::deque<Cell> queue;
+    CellQueue<Cell> queue;
     for (int bx = -kHalf; bx < kHalf; ++bx)
         for (int bz = -kHalf; bz < kHalf; ++bz)
             for (int j = kMaxY; j >= kMinY && !g.solid(bx, j, bz); --j)
@@ -1352,7 +1368,7 @@ void spreadSky(Grid &g)
 // same way.
 void spreadGlow(Grid &g)
 {
-    std::deque<Cell> queue;
+    CellQueue<Cell> queue;
     for (int bx = -kHalf; bx < kHalf; ++bx)
         for (int bz = -kHalf; bz < kHalf; ++bz)
             for (int j = kMinY; j <= kMaxY; ++j)
@@ -1623,6 +1639,84 @@ void addPlant(const Grid &g, int bx, int j, int bz, Batches &batches)
             v.extra[1] = corners[c][3] > 0.5f ? swayBottom : swayTop;
             out.push_back(v);
         }
+    }
+}
+
+// A clump of one to four sea pickles as a block game models them: small
+// boxes four pixels square and four to seven tall, each with two crossed
+// sprouts on top that glow brighter than the body. The boxes sit where the
+// game puts them for that count, so a clump of three is not a row.
+void addSeaPickle(const Grid &g, int bx, int j, int bz, Batches &batches)
+{
+    struct Pickle
+    {
+        int x, z, height; // in sixteenths of the block
+    };
+    static const Pickle kClumps[4][4] = {{{6, 6, 6}},
+                                         {{3, 3, 6}, {8, 8, 4}},
+                                         {{6, 9, 6}, {2, 2, 4}, {8, 2, 6}},
+                                         {{2, 2, 6}, {9, 10, 4}, {9, 2, 6}, {2, 8, 7}}};
+    const size_t i = Grid::index(bx, j, bz);
+    const int count = 1 + static_cast<int>(hash(bx, bz * 13 + j, 433u) % 4u);
+    std::vector<Vertex> &out = batches[static_cast<size_t>(plantTexture(GLOW_BUD))];
+    const float px = kBlock / 16.0f;
+    const float x0 = static_cast<float>(bx) * kBlock;
+    const float y0 = static_cast<float>(j) * kBlock;
+    const float z0 = static_cast<float>(bz) * kBlock;
+
+    Vertex v;
+    v.color[0] = v.color[1] = v.color[2] = 1.0f;
+    v.extra[1] = 0.0f;
+    v.extra[2] = glowFactor(static_cast<float>(g.glow[i]));
+    v.extra[3] = skyFactor(static_cast<float>(g.sky[i]));
+    // One quad: corners in pixels from the cell's corner, the normal, the
+    // texture rectangle (u0, v0, u1, v1 in pixels) and how much it glows.
+    auto quad = [&](const float (&c)[4][3], float nx, float ny, float nz, const float (&r)[4],
+                    float glow) {
+        const float uv[4][2] = {{r[0], r[3]}, {r[2], r[3]}, {r[2], r[1]}, {r[0], r[1]}};
+        v.normal[0] = nx;
+        v.normal[1] = ny;
+        v.normal[2] = nz;
+        v.extra[0] = glow;
+        for (int k = 0; k < 4; ++k)
+        {
+            v.pos[0] = x0 + c[k][0] * px;
+            v.pos[1] = y0 + c[k][1] * px;
+            v.pos[2] = z0 + c[k][2] * px;
+            v.uv[0] = uv[k][0] / 16.0f;
+            v.uv[1] = uv[k][1] / 16.0f;
+            out.push_back(v);
+        }
+    };
+    const float body = 0.45f, sprout = 1.0f;
+    for (int k = 0; k < count; ++k)
+    {
+        const Pickle &p = kClumps[count - 1][k];
+        const float a = static_cast<float>(p.x), b = static_cast<float>(p.z);
+        const float h = static_cast<float>(p.height), a1 = a + 4.0f, b1 = b + 4.0f;
+        const float top[4] = {4.0f, 1.0f, 8.0f, 5.0f}, under[4] = {8.0f, 1.0f, 12.0f, 5.0f};
+        quad({{a, h, b1}, {a1, h, b1}, {a1, h, b}, {a, h, b}}, 0.0f, 1.0f, 0.0f, top, body);
+        quad({{a, 0.0f, b}, {a1, 0.0f, b}, {a1, 0.0f, b1}, {a, 0.0f, b1}}, 0.0f, -1.0f, 0.0f, under,
+             body);
+        // The sides, each from its own four columns of the band under row 5.
+        const float sides[4][4][3] = {{{a, 0.0f, b1}, {a1, 0.0f, b1}, {a1, h, b1}, {a, h, b1}},
+                                      {{a1, 0.0f, b1}, {a1, 0.0f, b}, {a1, h, b}, {a1, h, b1}},
+                                      {{a1, 0.0f, b}, {a, 0.0f, b}, {a, h, b}, {a1, h, b}},
+                                      {{a, 0.0f, b}, {a, 0.0f, b1}, {a, h, b1}, {a, h, b}}};
+        const float normals[4][3] = {{0, 0, 1}, {1, 0, 0}, {0, 0, -1}, {-1, 0, 0}};
+        for (int s = 0; s < 4; ++s)
+        {
+            const float u = 4.0f * static_cast<float>(s);
+            const float r[4] = {u, 5.0f, u + 4.0f, 5.0f + h};
+            quad(sides[s], normals[s][0], normals[s][1], normals[s][2], r, body);
+        }
+        // Two sprouts crossing over the middle of the top, five pixels tall.
+        const float sprouts[2][4][3] = {
+            {{a, h, b}, {a1, h, b1}, {a1, h + 5.0f, b1}, {a, h + 5.0f, b}},
+            {{a, h, b1}, {a1, h, b}, {a1, h + 5.0f, b}, {a, h + 5.0f, b1}}};
+        const float sproutUv[2][4] = {{0.0f, 0.0f, 4.0f, 5.0f}, {12.0f, 0.0f, 16.0f, 5.0f}};
+        for (int s = 0; s < 2; ++s)
+            quad(sprouts[s], 0.0f, 1.0f, 0.0f, sproutUv[s], sprout);
     }
 }
 
@@ -1947,7 +2041,30 @@ void drawJellyfish(float time, float seed, const unsigned char colour[3])
 
 } // namespace
 
+// The blocks and their meshes, made on a thread of their own so the window
+// keeps drawing meanwhile; prepare() turns them into display lists.
+struct OceanWorld::Build
+{
+    std::thread worker;
+    std::atomic<bool> done{false};
+    std::atomic<int> permille{0};
+    std::vector<Chunk> chunks; // the boxes; the lists are made from the meshes below
+    std::vector<Batches> solids, plants;
+    Batches beyond = Batches(kTextureCount);
+
+    ~Build()
+    {
+        if (worker.joinable())
+            worker.join();
+    }
+    void run();
+};
+
 OceanWorld::OceanWorld() : m_built(false), m_farList(0)
+{
+}
+
+OceanWorld::~OceanWorld()
 {
 }
 
@@ -1968,6 +2085,7 @@ float OceanWorld::waterLevel()
 
 void OceanWorld::releaseResources()
 {
+    m_build.reset(); // the meshes are made again with the lists
     m_built = false;
     m_chunks.clear();
     m_farList = 0;
@@ -2279,7 +2397,7 @@ const char *packBlocks(int t, TexturePack::Pack::Use &use)
     case ANEMONE:
         return "fire_coral|fire_coral_fan";
     case GLOW_BUD:
-        return "sea_pickle|glow_lichen";
+        return "sea_pickle";
     case CRYSTAL_SPIKE:
         return "amethyst_cluster|large_amethyst_bud";
     default:
@@ -2319,12 +2437,51 @@ void OceanWorld::uploadTextures(bool fresh)
     m_texturesStale = false;
 }
 
-void OceanWorld::build()
+namespace
 {
-    Grid g;
-    buildWorld(g);
+// What the sea floor's save must have been made by (WorldSave.h).
+std::string saveKey()
+{
+    return std::string("ocean ") + OceanWorld::buildStamp() + " | " + WorldShape::buildStamp() +
+           " | " + PixelArt::buildStamp() + " | " + std::to_string(kSizeXZ) + "x" +
+           std::to_string(kSizeY);
+}
 
-    uploadTextures(true);
+bool loadGrid(Grid &g)
+{
+    WorldSave::Reader save;
+    return save.open("ocean", saveKey()) && save.layer(g.block) && save.layer(g.plant) &&
+           save.layer(g.sky) && save.layer(g.glow) && save.done();
+}
+
+void saveGrid(const Grid &g)
+{
+    WorldSave::Writer save(saveKey());
+    save.layer(g.block);
+    save.layer(g.plant);
+    save.layer(g.sky);
+    save.layer(g.glow);
+    save.finish("ocean");
+}
+} // namespace
+
+const char *OceanWorld::buildStamp()
+{
+    return __DATE__ " " __TIME__;
+}
+
+void OceanWorld::Build::run()
+{
+    // Read the sea floor from its save; make it (and save it) only when
+    // there is none from this build.
+    Grid g;
+    if (!loadGrid(g))
+    {
+        g = Grid();
+        buildWorld(g);
+        saveGrid(g);
+    }
+    permille = 700;
 
     // In chunks of 16 x 16 columns, each with the box round its blocks, so
     // only the chunks in view are drawn.
@@ -2332,23 +2489,26 @@ void OceanWorld::build()
     for (int cx = -kHalf; cx < kHalf; cx += chunkSize)
         for (int cz = -kHalf; cz < kHalf; cz += chunkSize)
         {
-            Batches solids(kTextureCount);
-            Batches plants(kTextureCount);
+            Batches solid(kTextureCount);
+            Batches plant(kTextureCount);
             int low = kMaxY + 1, high = kMinY - 1;
             for (int bx = cx; bx < cx + chunkSize && bx < kHalf; ++bx)
                 for (int bz = cz; bz < cz + chunkSize && bz < kHalf; ++bz)
                     for (int j = kMinY; j <= kMaxY; ++j)
                     {
                         const int b = g.get(bx, j, bz);
-                        const bool plant = b == AIR && g.plant[Grid::index(bx, j, bz)] != NO_PLANT;
-                        if ((b == AIR || b == ISLAND) && !plant)
+                        const bool isPlant =
+                            b == AIR && g.plant[Grid::index(bx, j, bz)] != NO_PLANT;
+                        if ((b == AIR || b == ISLAND) && !isPlant)
                             continue;
                         low = j < low ? j : low;
                         high = j > high ? j : high;
-                        if (plant)
-                            addPlant(g, bx, j, bz, plants);
+                        if (isPlant && g.plant[Grid::index(bx, j, bz)] == GLOW_BUD)
+                            addSeaPickle(g, bx, j, bz, plant);
+                        else if (isPlant)
+                            addPlant(g, bx, j, bz, plant);
                         else
-                            addBlockFaces(g, bx, j, bz, solids);
+                            addBlockFaces(g, bx, j, bz, solid);
                     }
             if (high < low)
                 continue;
@@ -2359,22 +2519,55 @@ void OceanWorld::build()
             chunk.hi[0] = static_cast<float>(cx + chunkSize) * kBlock;
             chunk.hi[1] = static_cast<float>(high + 1) * kBlock + 2.0f; // kelp sways
             chunk.hi[2] = static_cast<float>(cz + chunkSize) * kBlock;
-            chunk.solid = compileList(solids, m_textures);
-            chunk.plant = compileList(plants, m_textures);
-            m_chunks.push_back(chunk);
+            chunks.push_back(chunk);
+            solids.push_back(std::move(solid));
+            plants.push_back(std::move(plant));
         }
-    Batches beyond(kTextureCount);
     addFarFloor(beyond);
-    m_farList = compileList(beyond, m_textures);
+    permille = 1000;
+    done = true;
+}
+
+bool OceanWorld::prepare()
+{
+    if (m_built)
+        return true;
+    if (!m_build)
+    {
+        m_build.reset(new Build);
+        m_build->worker = std::thread(&Build::run, m_build.get());
+    }
+    if (!m_build->done)
+        return false;
+    m_build->worker.join();
+
+    uploadTextures(true);
+
+    m_chunks = m_build->chunks;
+    for (size_t i = 0; i < m_chunks.size(); ++i)
+    {
+        m_chunks[i].solid = compileList(m_build->solids[i], m_textures);
+        m_chunks[i].plant = compileList(m_build->plants[i], m_textures);
+    }
+    m_farList = compileList(m_build->beyond, m_textures);
+    m_build.reset(); // the meshes are in the lists now
     m_built = true;
+    return true;
+}
+
+float OceanWorld::progress() const
+{
+    if (m_built)
+        return 1.0f;
+    return m_build ? static_cast<float>(m_build->permille.load()) / 1000.0f : 0.0f;
 }
 
 void OceanWorld::draw(bool shadowPass, float time)
 {
     glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_TEXTURE_BIT);
-    if (!m_built)
-        build();
-    else if (m_texturesStale)
+    while (!prepare())
+        std::this_thread::sleep_for(std::chrono::milliseconds(1)); // a caller that cannot wait
+    if (m_texturesStale)
         uploadTextures(false);
     glEnable(GL_TEXTURE_2D);
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);

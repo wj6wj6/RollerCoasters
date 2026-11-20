@@ -7,7 +7,10 @@
 
 #include <math.h>
 #include <stdlib.h>
-#include <deque>
+#include <atomic>
+#include <chrono>
+#include <mutex>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -17,12 +20,14 @@
 #include <glad/glad.h>
 
 #include "LandWorld.h"
+#include "CellQueue.h"
 #include "Frustum.h"
 #include "LandTextures.h"
 #include "OceanWorld.h"
 #include "PixelArt.h"
 #include "TexturePack.h"
 #include "WaterFlow.h"
+#include "WorldSave.h"
 #include "WorldShape.h"
 
 namespace
@@ -51,8 +56,8 @@ const int kMinBZ = -212, kMaxBZ = 113;
 const int kSizeX = kMaxBX - kMinBX;
 const int kSizeZ = kMaxBZ - kMinBZ;
 // The grid's extent in world units, x and z.
-const float kGridLo[2] = {static_cast<float>(kMinBX) * 2.5f, static_cast<float>(kMinBZ) * 2.5f};
-const float kGridHi[2] = {static_cast<float>(kMaxBX) * 2.5f, static_cast<float>(kMaxBZ) * 2.5f};
+const float kGridLo[2] = {static_cast<float>(kMinBX) * kBlock, static_cast<float>(kMinBZ) * kBlock};
+const float kGridHi[2] = {static_cast<float>(kMaxBX) * kBlock, static_cast<float>(kMaxBZ) * kBlock};
 const int kMinY = -2; // block layer j spans y = 2.5 j .. 2.5 j + 2.5
 const int kMaxY = 90; // the jagged peaks top out near y = 220
 const int kSizeY = kMaxY - kMinY + 1;
@@ -103,7 +108,6 @@ enum Block
     ROOF,
     WINDOW,
     DOOR,
-    LANTERN, // a full glowing block (glowstone); the scenery no longer uses it
     CRYSTAL,
     ORE_COAL,
     ORE_IRON,
@@ -243,8 +247,6 @@ int textureOf(int block, int face)
         return T::WINDOW;
     case DOOR:
         return face == 2 ? T::DOOR : T::PLANKS;
-    case LANTERN:
-        return T::LANTERN;
     case CRYSTAL:
         return T::CRYSTAL;
     case ORE_COAL:
@@ -361,8 +363,6 @@ float blockGlow(int block)
     {
     case LAVA:
         return 1.0f;
-    case LANTERN:
-        return 1.3f;
     case CRYSTAL:
         return 1.0f;
     case MAGMA:
@@ -1486,10 +1486,11 @@ void buildHipRoof(Grid &g, int x0, int x1, int z0, int z1, int base, int roof, i
 // The flowers that grow in beds and pots.
 const int kBedFlowers[5] = {POPPY, DANDELION, OXEYE, ALLIUM, CORNFLOWER};
 
-// Under each window pane in a wall, outside: a trapdoor for a sill, and on
-// some of them a flower pot. The panes are found in the wall's layer
+// Under about one window pane in three in a wall, outside: a trapdoor for
+// a sill with a flower pot on it (a sill under every pane looked too
+// busy). The panes are found in the wall's layer
 // `paneLayer` between (x0, z0) and (x1, z1) (a straight run along x or
-// z); `out` is the way out of the wall (kFacing). The pots are chosen by
+// z); `out` is the way out of the wall (kFacing). They are chosen by
 // the distance from the middle of the wall, so the two halves mirror each
 // other, as the walls do.
 void dressWindows(Grid &g, int x0, int z0, int x1, int z1, int paneLayer, int out)
@@ -1501,11 +1502,12 @@ void dressWindows(Grid &g, int x0, int z0, int x1, int z1, int paneLayer, int ou
     {
         if (g.get(bx, paneLayer, bz) != WINDOW || g.get(bx, paneLayer - 1, bz) == WINDOW)
             continue;
-        putTrapdoor(g, bx + ox, paneLayer - 1, bz + oz, (out + 2) % 4, true);
         const int fromMiddle = abs(2 * k - length);
         const unsigned int h = hash(fromMiddle, paneLayer, 811u);
-        if (h % 3u == 0u)
-            putPot(g, bx + ox, paneLayer, bz + oz, kBedFlowers[(h >> 4) % 5u]);
+        if (h % 3u != 0u)
+            continue;
+        putTrapdoor(g, bx + ox, paneLayer - 1, bz + oz, (out + 2) % 4, true);
+        putPot(g, bx + ox, paneLayer, bz + oz, kBedFlowers[(h >> 4) % 5u]);
     }
 }
 
@@ -2554,29 +2556,62 @@ void roundTree(std::vector<Placed> &out, int bx, int base, int bz, int log, int 
     }
 }
 
-// A spruce: rings of needles that narrow to a point. Where it snows the
-// snow settles on it in a thin layer (snowfall()).
-void spruce(std::vector<Placed> &out, int bx, int base, int bz, int trunk)
+// A spruce as a block game grows one: the trunk ends a block under a
+// single leaf at the top, and from there down the layers of needles go
+// radius 1, 2, 1, 2... (each a square with its corners cut, the lowest a
+// little wider on a tall tree), so the trunk never shows inside the crown;
+// it is bare only for the block or two above the ground (bare). Where it
+// snows the snow settles on it in a thin layer (snowfall()).
+void spruce(std::vector<Placed> &out, int bx, int base, int bz, int trunk, int bare)
 {
     for (int k = 0; k < trunk; ++k)
         out.push_back(Placed{bx, base + k, bz, SPRUCE_LOG});
-    int j = base + 2;
-    for (int ring = 0; j < base + trunk; ++ring, ++j)
+    out.push_back(Placed{bx, base + trunk, bz, LEAVES_SPRUCE}); // the tip
+    const int lowest = base + bare;
+    for (int j = base + trunk - 1, layer = 0; j >= lowest; --j, ++layer)
     {
-        const int left = base + trunk - j;
-        const int radius =
-            left > 4 ? (ring % 2 == 0 ? 2 : 1) : (left > 1 ? (ring % 2 == 0 ? 1 : 0) : 0);
+        int radius = layer % 2 == 0 ? 1 : 2;
+        if (j == lowest && trunk >= 8)
+            radius = 3; // a wider skirt at the foot of a tall one
         for (int dx = -radius; dx <= radius; ++dx)
             for (int dz = -radius; dz <= radius; ++dz)
             {
-                if ((dx == 0 && dz == 0) ||
-                    (radius == 2 && (dx == 2 || dx == -2) && (dz == 2 || dz == -2)))
+                const bool corner = abs(dx) == radius && abs(dz) == radius;
+                if ((dx == 0 && dz == 0) || corner ||
+                    (radius == 3 && abs(dx) + abs(dz) > 4)) // round off the skirt
                     continue;
                 out.push_back(Placed{bx + dx, j, bz + dz, LEAVES_SPRUCE});
             }
     }
-    out.push_back(Placed{bx, base + trunk, bz, LEAVES_SPRUCE});
-    out.push_back(Placed{bx, base + trunk + 1, bz, LEAVES_SPRUCE});
+}
+
+// A giant spruce, as in a block game's old growth taiga: a trunk two by
+// two and very tall, bare for most of its height, under a cone of needles
+// that widens a block every two layers down from a cap of four leaves; the
+// cone's layers are rounded. bx, bz: the trunk's corner with the lowest x
+// and z.
+void megaSpruce(std::vector<Placed> &out, int bx, int base, int bz, int height)
+{
+    for (int k = 0; k < height; ++k)
+        for (int t = 0; t < 4; ++t)
+            out.push_back(Placed{bx + t % 2, base + k, bz + t / 2, SPRUCE_LOG});
+    const int crown = height * 2 / 5 + 2; // layers of needles from the top down
+    for (int layer = 0; layer <= crown; ++layer)
+    {
+        const int j = base + height - layer; // the cap sits on the trunk
+        const int radius = layer == 0 ? 0 : (layer + 1) / 2;
+        for (int dx = -radius; dx <= 1 + radius; ++dx)
+            for (int dz = -radius; dz <= 1 + radius; ++dz)
+            {
+                const bool trunk = dx >= 0 && dx <= 1 && dz >= 0 && dz <= 1 && layer > 0;
+                // distance out from the trunk's edge, for a round layer
+                const int ox = dx < 0 ? -dx : (dx > 1 ? dx - 1 : 0);
+                const int oz = dz < 0 ? -dz : (dz > 1 ? dz - 1 : 0);
+                if (trunk || (radius >= 2 && ox * ox + oz * oz > radius * radius + 1))
+                    continue;
+                out.push_back(Placed{bx + dx, j, bz + dz, LEAVES_SPRUCE});
+            }
+    }
 }
 
 void giantMushroom(std::vector<Placed> &out, int bx, int base, int bz, int stem)
@@ -2603,7 +2638,7 @@ bool crowded(const Grid &g, int bx, int j, int bz, int reach)
             const int b = g.get(bx + dx, j, bz + dz);
             const int above = g.get(bx + dx, j + 1, bz + dz);
             if ((b >= OAK_LOG && b <= SPRUCE_LOG) || (above >= OAK_LOG && above <= SPRUCE_LOG) ||
-                b == MUSHROOM_STEM || b == CACTUS || (b >= PLANKS && b <= LANTERN) || b == COBBLE)
+                b == MUSHROOM_STEM || b == CACTUS || (b >= PLANKS && b <= DOOR) || b == COBBLE)
                 return true;
         }
     return false;
@@ -3359,6 +3394,25 @@ void plantTrees(Grid &g, const Clearance &clear, const Extras &extras)
     // the windmill's hub, or nowhere when there is none
     const float millHub[2] = {extras.hasMill ? extras.mill[0] : 1.0e6f, extras.mill[2]};
     std::vector<Placed> blocks;
+    // the giant spruces first, here and there in the spruce forest on level
+    // ground (the four trunk columns on the same ground), so the smaller
+    // spruces grow round them rather than leaving them no room
+    for (int bx = kMinBX + 4; bx < kMaxBX - 5; ++bx)
+        for (int bz = kMinBZ + 4; bz < kMaxBZ - 5; ++bz)
+        {
+            const unsigned int h = hash(bx, bz, 911u);
+            if (h % 53u != 0u || g.biome[Grid::column(bx, bz)] != ALPINE)
+                continue;
+            const int top = g.top(bx, bz);
+            const int ground = g.get(bx, top, bz);
+            if ((ground != GRASS && ground != SNOWY_DIRT) || g.top(bx + 1, bz) != top ||
+                g.top(bx, bz + 1) != top || g.top(bx + 1, bz + 1) != top ||
+                !clear.roomForTree(bx, top, bz) || crowded(g, bx, top + 1, bz, 5))
+                continue;
+            blocks.clear();
+            megaSpruce(blocks, bx, top + 1, bz, 14 + static_cast<int>((h >> 8) % 8u));
+            commit(g, clear, blocks);
+        }
     for (int bx = kMinBX + 1; bx < kMaxBX - 1; ++bx)
         for (int bz = kMinBZ + 1; bz < kMaxBZ - 1; ++bz)
         {
@@ -3417,7 +3471,8 @@ void plantTrees(Grid &g, const Clearance &clear, const Extras &extras)
                 if (biome == ALPINE || ground == SNOWY_DIRT)
                 {
                     if (h % 5u == 0 && !crowded(g, bx, base, bz, 1))
-                        spruce(blocks, bx, base, bz, 6 + static_cast<int>((h >> 8) % 3u));
+                        spruce(blocks, bx, base, bz, 6 + static_cast<int>((h >> 8) % 4u),
+                               1 + static_cast<int>((h >> 12) % 2u));
                 }
                 else if (biome == CRAG || biome == VOLCANO)
                 {
@@ -3572,12 +3627,11 @@ struct Cell
 
 const int kDirs[6][3] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
 
-void flood(const Grid &g, std::vector<unsigned char> &light, std::deque<Cell> &queue)
+void flood(const Grid &g, std::vector<unsigned char> &light, CellQueue<Cell> &queue)
 {
     while (!queue.empty())
     {
-        const Cell c = queue.front();
-        queue.pop_front();
+        const Cell c = queue.pop_front();
         const int level = light[Grid::index(c.bx, c.j, c.bz)] - 1;
         if (level <= 0)
             continue;
@@ -3608,7 +3662,7 @@ void flood(const Grid &g, std::vector<unsigned char> &light, std::deque<Cell> &q
 // block sideways, so cuttings stay bright and tunnels get dark.
 void spreadSky(Grid &g)
 {
-    std::deque<Cell> queue;
+    CellQueue<Cell> queue;
     for (int bx = kMinBX; bx < kMaxBX; ++bx)
         for (int bz = kMinBZ; bz < kMaxBZ; ++bz)
             for (int j = kMaxY; j >= kMinY && !g.opaque(bx, j, bz); --j)
@@ -3642,15 +3696,14 @@ void spreadSky(Grid &g)
 
 void spreadGlow(Grid &g)
 {
-    std::deque<Cell> warm, cool;
+    CellQueue<Cell> warm, cool;
     for (int bx = kMinBX; bx < kMaxBX; ++bx)
         for (int bz = kMinBZ; bz < kMaxBZ; ++bz)
             for (int j = kMinY; j <= kMaxY; ++j)
             {
                 const int block = g.block[Grid::index(bx, j, bz)];
                 // as bright as in a block game, its 15 being 14 here: a
-                // lantern, lava and glowstone 15, a
-                // campfire's embers (magma) less
+                // lantern and lava 15, a campfire's embers (magma) less
                 int level = 0;
                 bool isCool = false;
                 if (g.plant[Grid::index(bx, j, bz)] == LAMP)
@@ -3665,8 +3718,6 @@ void spreadGlow(Grid &g)
                     continue;
                 }
                 if (block == LAVA)
-                    level = 14;
-                else if (block == LANTERN)
                     level = 14;
                 else if (block == MAGMA)
                     level = 6;
@@ -3912,14 +3963,41 @@ void snowfall(Grid &g, const Clearance &clear, const std::vector<unsigned char> 
         }
 }
 
-void buildScenery(Grid &g, Extras &extras)
+// How far a build has got, for the loading screen, and whether it should
+// stop early (the world is being thrown away).
+struct BuildProgress
+{
+    std::atomic<int> *permille = nullptr; // 0..1000
+    const std::atomic<bool> *cancel = nullptr;
+
+    // Records that the build has got this far (0..1); false: stop now.
+    bool at(float done) const
+    {
+        if (permille)
+            permille->store(static_cast<int>(done * 1000.0f));
+        return !(cancel && cancel->load());
+    }
+};
+
+void buildScenery(Grid &g, Extras &extras, const BuildProgress &progress = BuildProgress())
 {
     const std::vector<float> ride = OceanWorld::rideSamples();
     Clearance clear;
     clear.add(ride);
 
+    // the steps in order, with roughly how long each takes (in tenths of a
+    // percent of the whole build), so the loading bar moves evenly
+    const float total = 1000.0f;
+    float done = 0.0f;
+    auto step = [&](float share) {
+        done += share;
+        return progress.at(done / total);
+    };
+
     buildTerrain(g);
     const std::vector<unsigned char> cover = snowCover(g); // before anything is built on it
+    if (!step(150))
+        return;
     buildLavaLake(g);
     traceLava(g, scaledLine(kLavaSouth, 4).data(), 4, true);
     traceLava(g, scaledLine(kLavaEast, 4).data(), 4, true);
@@ -3929,11 +4007,15 @@ void buildScenery(Grid &g, Extras &extras)
     buildSpringPool(g, 12.5f, 102.5f, 9.0f); // a hot spring on the badlands
     buildWaterfall(g);
     buildFloatingIsland(g);
+    if (!step(100))
+        return;
 
     carveRide(g, ride);
     const std::vector<float> along(ride.begin() + static_cast<long>(ride.size() / 3 * 2),
                                    ride.end());
     lightTunnels(g, along, clear);
+    if (!step(100))
+        return;
     int castle[2] = {1 << 20, 1 << 20};
     buildCastle(g, clear, castle);
     buildBridge(g, clear);
@@ -3945,19 +4027,30 @@ void buildScenery(Grid &g, Extras &extras)
     buildIceSpikes(g, clear);
     buildHoodoos(g, clear);
     buildJungleTemple(g, clear, extras);
+    if (!step(100))
+        return;
     buildSwampWater(g, waterZone(ride));
     // after the carving, so the water flows round the ride's room
     spreadWater(g);
+    if (!step(100))
+        return;
 
     scatterBoulders(g, clear);
     plantTrees(g, clear, extras);
     plantNorthEast(g, clear, extras);
+    if (!step(50))
+        return;
     spreadSky(g);
+    if (!step(200))
+        return;
     plantFlowers(g, clear, extras);
     dressEdges(g, clear);
     snowfall(g, clear, cover);
+    if (!step(50))
+        return;
     spreadGlow(g);
     placeAnimals(g, clear, extras);
+    step(150);
 }
 
 // The editor's island: level grass with a few trees and flowers around
@@ -5020,13 +5113,55 @@ struct LandChunk
     float lo[3], hi[3];
 };
 
+namespace
+{
+// A chunk the builder has meshed, waiting for its display lists.
+struct MeshedChunk
+{
+    Batches solids, plants, water;
+    float lo[3], hi[3];
+};
+} // namespace
+
+// One of the two islands. The grid and the meshes are made on a thread of
+// their own (build()), so the window keeps drawing (the loading screen)
+// meanwhile; prepare() turns the meshes into display lists, which only
+// the thread that owns the OpenGL context can do.
 struct LandWorld::Scene
 {
     Grid grid;
     Extras extras;
-    bool built = false;
+    bool built = false; // every chunk has its display lists
     std::vector<LandChunk> chunks;
+
+    std::thread worker;
+    std::atomic<bool> gridReady{false}; // the grid is complete; the worker no longer writes it
+    std::atomic<bool> cancel{false};
+    std::atomic<bool> fromSave{false}; // the grid is being read from its save
+    std::atomic<int> gridPermille{0};
+    std::atomic<int> chunksMeshed{0}; // of kChunkCount
+    std::mutex lock;                  // guards meshed and meshingDone
+    std::vector<MeshedChunk> meshed;
+    bool meshingDone = false;
+
+    ~Scene()
+    {
+        stop();
+    }
+
+    // Stops the worker and throws away what it has not handed over.
+    void stop()
+    {
+        cancel = true;
+        if (worker.joinable())
+            worker.join();
+        cancel = false;
+        meshed.clear();
+        meshingDone = false;
+    }
 };
+
+const int kChunkCount = ((kSizeX + kChunk - 1) / kChunk) * ((kSizeZ + kChunk - 1) / kChunk);
 
 LandWorld::LandWorld()
 {
@@ -5038,9 +5173,16 @@ LandWorld::~LandWorld()
 
 void LandWorld::releaseResources()
 {
-    // the grids are rebuilt with the lists; that takes a fraction of a second
-    m_scenery.reset();
-    m_flat.reset();
+    // The display lists are gone with the old context; the grids are kept,
+    // so only the meshes are made again.
+    for (Scene *s : {m_scenery.get(), m_flat.get()})
+        if (s)
+        {
+            s->stop();
+            s->chunks.clear();
+            s->built = false;
+            s->chunksMeshed = 0;
+        }
     m_textures.clear();
     m_trestles.clear();
     m_supportPath.clear();
@@ -5121,35 +5263,129 @@ int LandWorld::waterNearRide(const std::vector<float> &path)
     return count;
 }
 
-LandWorld::Scene &LandWorld::scene(bool flat)
+namespace
 {
-    std::unique_ptr<Scene> &slot = flat ? m_flat : m_scenery;
-    if (!slot)
-        slot.reset(new Scene);
-    Scene &s = *slot;
-    if (s.built)
-        return s;
+// What a save of this island must have been made by (WorldSave.h): the
+// files that shape it, built when they were.
+std::string saveKey(bool flat)
+{
+    return std::string(flat ? "flat " : "island ") + __DATE__ " " __TIME__ + " | " +
+           OceanWorld::buildStamp() + " | " + WorldShape::buildStamp() + " | " +
+           WaterFlow::buildStamp() + " | " + PixelArt::buildStamp() + " | " +
+           std::to_string(kSizeX) + "x" + std::to_string(kSizeY) + "x" + std::to_string(kSizeZ);
+}
 
-    if (m_textures.empty())
+const char *saveName(bool flat)
+{
+    return flat ? "flat" : "island";
+}
+
+std::vector<std::vector<unsigned char> *> gridLayers(Grid &g)
+{
+    return {&g.block, &g.plant, &g.sky, &g.warm, &g.cool, &g.carved, &g.level, &g.biome};
+}
+
+void saveExtras(WorldSave::Writer &save, const Extras &e)
+{
+    save.number(static_cast<std::uint32_t>(e.animals.size()));
+    for (const Animal &a : e.animals)
     {
-        m_textures.assign(LandTextures::TEXTURE_COUNT, 0);
-        for (int t = 0; t < LandTextures::TEXTURE_COUNT; ++t)
-            m_textures[static_cast<size_t>(t)] =
-                PixelArt::upload(pictureOf(t), LandTextures::repeatsVertically(t));
-        m_texturesStale = false;
+        save.raw(&a.x, sizeof(a.x));
+        save.raw(&a.z, sizeof(a.z));
+        save.raw(&a.kind, sizeof(a.kind));
+        save.raw(&a.phase, sizeof(a.phase));
     }
+    save.raw(e.mill, sizeof(e.mill));
+    save.raw(&e.hasMill, sizeof(e.hasMill));
+    save.raw(e.grove, sizeof(e.grove));
+    save.raw(&e.hasGrove, sizeof(e.hasGrove));
+    save.raw(e.meadow, sizeof(e.meadow));
+    save.raw(&e.hasMeadow, sizeof(e.hasMeadow));
+    save.raw(e.temple, sizeof(e.temple));
+    save.raw(&e.hasTemple, sizeof(e.hasTemple));
+}
 
-    if (flat)
-        buildFlat(s.grid);
-    else
-        buildScenery(s.grid, s.extras);
+bool loadExtras(WorldSave::Reader &save, Extras &e)
+{
+    std::uint32_t count = 0;
+    if (!save.number(count) || count > 100000u)
+        return false;
+    e.animals.resize(count);
+    for (Animal &a : e.animals)
+        if (!save.raw(&a.x, sizeof(a.x)) || !save.raw(&a.z, sizeof(a.z)) ||
+            !save.raw(&a.kind, sizeof(a.kind)) || !save.raw(&a.phase, sizeof(a.phase)))
+            return false;
+    return save.raw(e.mill, sizeof(e.mill)) && save.raw(&e.hasMill, sizeof(e.hasMill)) &&
+           save.raw(e.grove, sizeof(e.grove)) && save.raw(&e.hasGrove, sizeof(e.hasGrove)) &&
+           save.raw(e.meadow, sizeof(e.meadow)) && save.raw(&e.hasMeadow, sizeof(e.hasMeadow)) &&
+           save.raw(e.temple, sizeof(e.temple)) && save.raw(&e.hasTemple, sizeof(e.hasTemple));
+}
+
+bool loadGrid(Grid &g, Extras &e, bool flat)
+{
+    WorldSave::Reader save;
+    if (!save.open(saveName(flat), saveKey(flat)))
+        return false;
+    for (std::vector<unsigned char> *layer : gridLayers(g))
+        if (!save.layer(*layer))
+            return false;
+    return loadExtras(save, e) && save.done();
+}
+
+void saveGrid(Grid &g, const Extras &e, bool flat)
+{
+    WorldSave::Writer save(saveKey(flat));
+    for (std::vector<unsigned char> *layer : gridLayers(g))
+        save.layer(*layer);
+    saveExtras(save, e);
+    save.finish(saveName(flat));
+}
+} // namespace
+
+// Runs on the worker thread: reads the grid from its save, or makes it and
+// saves it, unless it is already there; then meshes it chunk by chunk and
+// hands each chunk over.
+void LandWorld::buildScene(Scene &s, bool flat)
+{
+    if (!s.gridReady)
+    {
+        s.fromSave = true;
+        if (loadGrid(s.grid, s.extras, flat))
+        {
+            s.gridPermille = 1000;
+            s.gridReady = true;
+        }
+        s.fromSave = false;
+    }
+    if (!s.gridReady)
+    {
+        s.grid = Grid();
+        s.extras = Extras();
+        if (flat)
+            buildFlat(s.grid);
+        else
+        {
+            BuildProgress progress;
+            progress.permille = &s.gridPermille;
+            progress.cancel = &s.cancel;
+            buildScenery(s.grid, s.extras, progress);
+        }
+        if (s.cancel)
+            return; // half built: made again from the start next time
+        saveGrid(s.grid, s.extras, flat);
+        s.gridPermille = 1000;
+        s.gridReady = true;
+    }
 
     for (int cx = kMinBX; cx < kMaxBX; cx += kChunk)
         for (int cz = kMinBZ; cz < kMaxBZ; cz += kChunk)
         {
-            Batches solids(LandTextures::TEXTURE_COUNT);
-            Batches plants(LandTextures::TEXTURE_COUNT);
-            Batches water(LandTextures::TEXTURE_COUNT);
+            if (s.cancel)
+                return;
+            MeshedChunk chunk;
+            chunk.solids.resize(LandTextures::TEXTURE_COUNT);
+            chunk.plants.resize(LandTextures::TEXTURE_COUNT);
+            chunk.water.resize(LandTextures::TEXTURE_COUNT);
             int low = kMaxY + 1, high = kMinY - 1;
             for (int bx = cx; bx < cx + kChunk && bx < kMaxBX; ++bx)
                 for (int bz = cz; bz < cz + kChunk && bz < kMaxBZ; ++bz)
@@ -5163,43 +5399,142 @@ LandWorld::Scene &LandWorld::scene(bool flat)
                         high = j > high ? j : high;
                         if (b == WATER)
                         {
-                            addWaterFaces(s.grid, bx, j, bz, water);
+                            addWaterFaces(s.grid, bx, j, bz, chunk.water);
                             if (s.grid.plant[cell] == LILY_PAD)
-                                addLilyPad(s.grid, bx, j, bz, plants);
+                                addLilyPad(s.grid, bx, j, bz, chunk.plants);
                         }
                         else if (b == WINDOW)
-                            addGlassFaces(s.grid, bx, j, bz, water);
+                            addGlassFaces(s.grid, bx, j, bz, chunk.water);
                         else if (b == DOOR)
-                            addDoor(s.grid, bx, j, bz, solids);
+                            addDoor(s.grid, bx, j, bz, chunk.solids);
                         else if (b != AIR)
-                            addBlockFaces(s.grid, bx, j, bz, solids);
+                            addBlockFaces(s.grid, bx, j, bz, chunk.solids);
                         else if (s.grid.plant[cell] == SNOW_LAYER)
-                            addSnowLayer(s.grid, bx, j, bz, solids);
+                            addSnowLayer(s.grid, bx, j, bz, chunk.solids);
                         else if (s.grid.plant[cell] == FENCE)
-                            addFence(s.grid, bx, j, bz, solids);
+                            addFence(s.grid, bx, j, bz, chunk.solids);
                         else if (s.grid.plant[cell] == LAMP)
-                            addLantern(s.grid, bx, j, bz, solids);
+                            addLantern(s.grid, bx, j, bz, chunk.solids);
                         else if (s.grid.plant[cell] >= STAIRS && s.grid.plant[cell] <= POT)
-                            addShape(s.grid, bx, j, bz, solids);
+                            addShape(s.grid, bx, j, bz, chunk.solids);
                         else
-                            addPlant(s.grid, bx, j, bz, plants);
+                            addPlant(s.grid, bx, j, bz, chunk.plants);
                     }
+            ++s.chunksMeshed;
             if (high < low)
                 continue; // nothing in it
-            LandChunk chunk;
             chunk.lo[0] = static_cast<float>(cx) * kBlock;
             chunk.lo[1] = static_cast<float>(low) * kBlock;
             chunk.lo[2] = static_cast<float>(cz) * kBlock;
             chunk.hi[0] = static_cast<float>(cx + kChunk) * kBlock;
             chunk.hi[1] = static_cast<float>(high + 1) * kBlock + 1.0f; // plants sway a little
             chunk.hi[2] = static_cast<float>(cz + kChunk) * kBlock;
-            chunk.solid = compileList(solids, m_textures);
-            chunk.plant = compileList(plants, m_textures);
-            chunk.water = compileList(water, m_textures);
-            s.chunks.push_back(chunk);
+            std::lock_guard<std::mutex> hold(s.lock);
+            s.meshed.push_back(std::move(chunk));
         }
-    s.built = true;
-    return s;
+    std::lock_guard<std::mutex> hold(s.lock);
+    s.meshingDone = true;
+}
+
+bool LandWorld::prepare(bool flat, float seconds)
+{
+    std::unique_ptr<Scene> &slot = flat ? m_flat : m_scenery;
+    if (!slot)
+        slot.reset(new Scene);
+    Scene &s = *slot;
+    if (s.built)
+        return true;
+
+    if (!s.worker.joinable())
+        s.worker = std::thread(&LandWorld::buildScene, std::ref(s), flat);
+
+    if (m_textures.empty())
+    {
+        m_textures.assign(LandTextures::TEXTURE_COUNT, 0);
+        for (int t = 0; t < LandTextures::TEXTURE_COUNT; ++t)
+            m_textures[static_cast<size_t>(t)] =
+                PixelArt::upload(pictureOf(t), LandTextures::repeatsVertically(t));
+        m_texturesStale = false;
+    }
+
+    // Turn the chunks meshed so far into display lists, for as long as the
+    // caller can wait.
+    const auto until = std::chrono::steady_clock::now() +
+                       std::chrono::microseconds(static_cast<long long>(seconds * 1e6f));
+    for (;;)
+    {
+        std::vector<MeshedChunk> ready;
+        bool finished;
+        {
+            std::lock_guard<std::mutex> hold(s.lock);
+            ready.swap(s.meshed);
+            finished = s.meshingDone;
+        }
+        for (size_t i = 0; i < ready.size(); ++i)
+        {
+            LandChunk chunk;
+            for (int k = 0; k < 3; ++k)
+            {
+                chunk.lo[k] = ready[i].lo[k];
+                chunk.hi[k] = ready[i].hi[k];
+            }
+            chunk.solid = compileList(ready[i].solids, m_textures);
+            chunk.plant = compileList(ready[i].plants, m_textures);
+            chunk.water = compileList(ready[i].water, m_textures);
+            s.chunks.push_back(chunk);
+            if (std::chrono::steady_clock::now() > until && i + 1 < ready.size())
+            {
+                // out of time: give the rest back for the next frame
+                std::lock_guard<std::mutex> hold(s.lock);
+                s.meshed.insert(
+                    s.meshed.begin(),
+                    std::make_move_iterator(ready.begin() + static_cast<std::ptrdiff_t>(i) + 1),
+                    std::make_move_iterator(ready.end()));
+                return false;
+            }
+        }
+        if (finished && ready.empty())
+        {
+            s.worker.join();
+            s.built = true;
+            return true;
+        }
+        if (finished)
+            continue; // the last chunks were handed over with the flag
+        if (std::chrono::steady_clock::now() > until)
+            return false;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+}
+
+float LandWorld::progress(bool flat) const
+{
+    const Scene *s = (flat ? m_flat : m_scenery).get();
+    if (!s)
+        return 0.0f;
+    if (s->built)
+        return 1.0f;
+    // making the grid is most of the work; meshing and the lists the rest
+    const float grid = static_cast<float>(s->gridPermille.load()) / 1000.0f;
+    const float meshed =
+        static_cast<float>(s->chunksMeshed.load()) / static_cast<float>(kChunkCount);
+    const float lists = static_cast<float>(s->chunks.size()) / static_cast<float>(kChunkCount);
+    return 0.7f * grid + 0.2f * meshed + 0.1f * fminf(1.0f, lists * 1.25f);
+}
+
+bool LandWorld::loadingSave(bool flat) const
+{
+    const Scene *s = (flat ? m_flat : m_scenery).get();
+    return s && s->fromSave;
+}
+
+LandWorld::Scene &LandWorld::scene(bool flat)
+{
+    // a caller that cannot wait: finish the build now
+    while (!prepare(flat, 1.0f))
+    {
+    }
+    return *(flat ? m_flat : m_scenery);
 }
 
 void LandWorld::setTexturePack(std::shared_ptr<const TexturePack::Pack> pack)
@@ -5426,7 +5761,7 @@ void LandWorld::drawMoving(const Scene &s, float time)
 float LandWorld::postGround(float x, float z, float from) const
 {
     const int bx = blockOf(x), bz = blockOf(z);
-    if (!Grid::insideColumn(bx, bz) || !onIsland(bx, bz) || !m_scenery)
+    if (!Grid::insideColumn(bx, bz) || !onIsland(bx, bz) || !m_scenery || !m_scenery->gridReady)
         return OceanWorld::seaFloor(x, z);
     const Grid &g = m_scenery->grid;
     int j = blockOf(from);
