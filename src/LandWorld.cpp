@@ -5253,6 +5253,7 @@ struct LandChunk
 {
     unsigned int solid = 0, plant = 0;
     unsigned int water = 0; // see-through, drawn last (drawWater)
+    unsigned int glass = 0; // the same, kept apart so the water can be drawn as the sea is
     float lo[3], hi[3];
 };
 
@@ -5261,7 +5262,7 @@ namespace
 // A chunk the builder has meshed, waiting for its display lists.
 struct MeshedChunk
 {
-    Batches solids, plants, water;
+    Batches solids, plants, water, glass;
     float lo[3], hi[3];
 };
 } // namespace
@@ -5529,6 +5530,7 @@ void LandWorld::buildScene(Scene &s, bool flat)
             chunk.solids.resize(LandTextures::TEXTURE_COUNT);
             chunk.plants.resize(LandTextures::TEXTURE_COUNT);
             chunk.water.resize(LandTextures::TEXTURE_COUNT);
+            chunk.glass.resize(LandTextures::TEXTURE_COUNT);
             int low = kMaxY + 1, high = kMinY - 1;
             for (int bx = cx; bx < cx + kChunk && bx < kMaxBX; ++bx)
                 for (int bz = cz; bz < cz + kChunk && bz < kMaxBZ; ++bz)
@@ -5547,7 +5549,7 @@ void LandWorld::buildScene(Scene &s, bool flat)
                                 addLilyPad(s.grid, bx, j, bz, chunk.plants);
                         }
                         else if (b == WINDOW)
-                            addGlassFaces(s.grid, bx, j, bz, chunk.water);
+                            addGlassFaces(s.grid, bx, j, bz, chunk.glass);
                         else if (b == DOOR)
                             addDoor(s.grid, bx, j, bz, chunk.solids);
                         else if (b != AIR)
@@ -5624,6 +5626,7 @@ bool LandWorld::prepare(bool flat, float seconds)
             chunk.solid = compileList(ready[i].solids, m_textures);
             chunk.plant = compileList(ready[i].plants, m_textures);
             chunk.water = compileList(ready[i].water, m_textures);
+            chunk.glass = compileList(ready[i].glass, m_textures);
             s.chunks.push_back(chunk);
             if (std::chrono::steady_clock::now() > until && i + 1 < ready.size())
             {
@@ -5742,6 +5745,16 @@ void LandWorld::draw(bool flat, bool shadowPass, float time)
 
 void LandWorld::drawWater(bool flat)
 {
+    drawSeeThrough(flat, true);
+}
+
+void LandWorld::drawGlass(bool flat)
+{
+    drawSeeThrough(flat, false);
+}
+
+void LandWorld::drawSeeThrough(bool flat, bool withWater)
+{
     if (!(flat ? m_flat : m_scenery) || !(flat ? m_flat : m_scenery)->built)
         return;
     const Scene &s = flat ? *m_flat : *m_scenery;
@@ -5761,7 +5774,11 @@ void LandWorld::drawWater(bool flat)
     std::vector<unsigned int> lists;
     for (const LandChunk &c : s.chunks)
         if (view.sees(c.lo, c.hi))
-            lists.push_back(c.water);
+        {
+            if (withWater)
+                lists.push_back(c.water);
+            lists.push_back(c.glass);
+        }
     for (unsigned int list : lists)
         glCallList(list);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
