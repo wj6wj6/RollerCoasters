@@ -354,6 +354,8 @@ bool TrainView::worldReady()
         if (landReady)
             stage = "Building the sea floor";
     }
+    loadingDone = done;
+    loadingStage = stage;
     drawLoadingScreen(done, stage);
     if (!platform::hasTimeout(redrawSoon, this))
         platform::addTimeout(1.0 / 30.0, redrawSoon, this);
@@ -416,6 +418,10 @@ void TrainView::drawLoadingScreen(float done, const char *stage)
     glPopMatrix();
     glMatrixMode(GL_MODELVIEW);
     glPopAttrib();
+
+    // The title screen draws itself over the dirt, with the progress in its corner.
+    if (tw->menu.screen() == GameMenu::Screen::Title)
+        return;
 
     // The stage in the pixel font over a grey bar that fills with green, and
     // the percentage under it (Ui/Gui.h).

@@ -21,6 +21,8 @@
 #include "CallBacks.H"
 #include "Folders.h"
 #include "Ui/PixelFont.h"
+#include "Utilities/Platform.H"
+#include "WorldSave.h"
 #include "TrainView.H"
 #include "TrainWindow.H"
 
@@ -110,6 +112,15 @@ void GameMenu::show(TrainWindow &tw, Screen screen)
         m_trackScroll = 0;
         markSaveName();
     }
+    if (screen == Screen::None && !m_riding)
+    {
+        // Leaving the title: the ride starts looking ahead, not where the
+        // title's slow turn left the view.
+        m_riding = true;
+        tw.trainView->headLook.reset();
+    }
+    if (screen != Screen::Title)
+        m_titleSeconds = -1.0; // coming back, the turn goes on from there
     // "Added ..." belongs to the screen the files were dropped on, also
     // after a notice over it about the files that were not
     const auto overlay = [](Screen s) { return s == Screen::Notice || s == Screen::Confirm; };
@@ -125,13 +136,19 @@ void GameMenu::back(TrainWindow &tw)
 {
     switch (m_screen)
     {
+    case Screen::Title:
+        break; // the title is where it starts; Quit is a button
+    case Screen::Options:
+    case Screen::SelectWorld:
+        show(tw, Screen::Title);
+        break;
     case Screen::None:
     case Screen::Pause:
         show(tw, Screen::None);
         break;
     case Screen::LoadTrack:
     case Screen::SaveTrack:
-        show(tw, Screen::Track);
+        show(tw, m_riding ? Screen::Track : Screen::Title);
         break;
     case Screen::Notice:
     case Screen::Confirm:
@@ -139,7 +156,7 @@ void GameMenu::back(TrainWindow &tw)
         show(tw, m_return);
         break;
     default:
-        show(tw, Screen::Pause);
+        show(tw, m_riding ? Screen::Pause : Screen::Options);
         break;
     }
 }
@@ -421,6 +438,15 @@ void GameMenu::draw(TrainWindow &tw, ui::Gui &gui, double seconds)
         gui.fill({0, 0, gui.width(), gui.height()}, ui::kDim);
         switch (m_screen)
         {
+        case Screen::Title:
+            drawTitle(tw, gui, seconds);
+            break;
+        case Screen::Options:
+            drawOptions(tw, gui);
+            break;
+        case Screen::SelectWorld:
+            drawSelectWorld(tw, gui);
+            break;
         case Screen::Pause:
             drawPause(tw, gui);
             break;
@@ -541,6 +567,211 @@ bool GameMenu::done(TrainWindow &tw, ui::Gui &gui, int row)
     return true;
 }
 
+//************************************************************************
+//
+// * The title screen
+//========================================================================
+namespace
+{
+// Text in blocks: every lit pixel of the font is a block `size` units
+// square, its face lighter at the top and speckled like stone, over a darker
+// side and bottom, so the letters stand out of the screen.
+void blockText(ui::Gui &gui, int centerX, int y, const std::string &text, int size)
+{
+    const int width = ui::PixelFont::textWidth(text) * size;
+    const int depth = size / 2 > 0 ? size / 2 : 1;
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        int pen = centerX - width / 2;
+        for (char c : text)
+        {
+            const int glyph = ui::PixelFont::glyphWidth(c);
+            for (int row = 0; row < ui::PixelFont::kCell; ++row)
+                for (int column = 0; column < glyph; ++column)
+                {
+                    if (!ui::PixelFont::pixel(c, column, row))
+                        continue;
+                    const int x = pen + column * size, rowY = y + row * size;
+                    if (pass == 0)
+                    {
+                        gui.fill({x + depth, rowY + depth, size, size}, {40, 40, 46, 255});
+                        continue;
+                    }
+                    // a few shades, picked by position, as stone has
+                    const unsigned hash = (static_cast<unsigned>(x) * 73856093u) ^
+                                          (static_cast<unsigned>(rowY) * 19349663u);
+                    const int light = 228 - row * 12 - static_cast<int>(hash % 3) * 10;
+                    const auto shade = static_cast<unsigned char>(light);
+                    gui.fill({x, rowY, size, size},
+                             {shade, shade, static_cast<unsigned char>(light + 8), 255});
+                }
+            pen += (glyph + 1) * size;
+        }
+    }
+}
+
+void turnTitleView(void *window)
+{
+    static_cast<TrainWindow *>(window)->trainView->damage(1);
+}
+} // namespace
+
+void GameMenu::drawTitle(TrainWindow &tw, ui::Gui &gui, double seconds)
+{
+    TrainView &view = *tw.trainView;
+    // The world turns slowly behind the title, as a block game's panorama:
+    // the rider in the train looks round, about once a minute and a half.
+    if (view.frameShowsScene && tw.settings.camera == CameraView::Train)
+    {
+        if (m_titleSeconds >= 0.0)
+            view.headLook.turn(static_cast<float>((seconds - m_titleSeconds) * 4.0), 0.0f);
+        m_titleSeconds = seconds;
+        if (!platform::hasTimeout(turnTitleView, &tw))
+            platform::addTimeout(1.0 / 30.0, turnTitleView, &tw);
+    }
+
+    const int cx = gui.width() / 2;
+    const std::string name = "RollerCoasters";
+    const int size = (gui.width() - 40) / ui::PixelFont::textWidth(name) < 4
+                         ? (gui.width() - 40) / ui::PixelFont::textWidth(name)
+                         : 4;
+    const int logoY = gui.height() / 4 - 4 * size - 6;
+    blockText(gui, cx, logoY, name, size);
+    gui.text(cx, logoY + 8 * size + 6, "Train and Roller Coaster", ui::kYellow, ui::Align::Center);
+
+    const int y = gui.height() / 4 + 40;
+    if (gui.button({cx - 100, y, 200, kButtonH}, "Play") || m_enter)
+    {
+        m_enter = false;
+        m_worldSelected = tw.settings.scenery ? 0 : 1; // the world it was last in
+        show(tw, Screen::SelectWorld);
+        return;
+    }
+    if (gui.button({cx - 100, y + 24, 200, kButtonH}, "Load Track..."))
+        show(tw, Screen::LoadTrack);
+    if (gui.button({cx - 100, y + 60, 98, kButtonH}, "Options..."))
+        show(tw, Screen::Options);
+    if (gui.button({cx + 2, y + 60, 98, kButtonH}, "Quit"))
+        tw.close();
+
+    gui.text(2, gui.height() - 10, std::string("RollerCoasters ") + ROLLERCOASTERS_VERSION,
+             ui::kWhite);
+    // while the world is still being built, how far it is
+    if (!view.frameShowsScene)
+    {
+        char status[64];
+        snprintf(status, sizeof(status), "%s %d%%", view.loadingStage,
+                 static_cast<int>(view.loadingDone * 100.0f));
+        gui.text(gui.width() - 2, gui.height() - 10, status, ui::kGrey, ui::Align::Right);
+    }
+}
+
+//************************************************************************
+//
+// * Select World, as a block game lists its worlds: a picture, the name and
+//   a line about each; a click selects, a double click or Enter plays
+//========================================================================
+namespace
+{
+struct WorldEntry
+{
+    const char *name;
+    const char *about;
+    const char *save; // WorldSave name
+    bool flat;
+};
+const WorldEntry kWorlds[] = {
+    {"Grand Tour Island", "The island, the sea and the ride round them", "island", false},
+    {"Flat Island", "Level grass to build a track of your own", "flat", true},
+};
+
+// A small picture of the world: sky, then the island over the sea or the
+// flat grass on dirt.
+void worldPicture(ui::Gui &gui, int x, int y, bool flat)
+{
+    gui.fill({x, y, 32, 32}, {120, 170, 255, 255});
+    if (flat)
+    {
+        gui.fill({x, y + 18, 32, 4}, {96, 168, 64, 255});
+        gui.fill({x, y + 22, 32, 10}, {134, 96, 67, 255});
+        return;
+    }
+    gui.fill({x, y + 20, 32, 12}, {48, 96, 200, 255});
+    gui.fill({x + 6, y + 16, 20, 6}, {96, 168, 64, 255});
+    gui.fill({x + 11, y + 11, 10, 5}, {96, 168, 64, 255});
+    gui.fill({x + 4, y + 21, 24, 2}, {218, 206, 150, 255});
+}
+} // namespace
+
+void GameMenu::playWorld(TrainWindow &tw, int world)
+{
+    if (world == 1)
+        playFlat(&tw);
+    else
+        playIsland(&tw);
+    show(tw, Screen::None); // the loading screen shows while that world is built
+}
+
+void GameMenu::drawSelectWorld(TrainWindow &tw, ui::Gui &gui)
+{
+    title(gui, "Select World");
+    const int cx = gui.width() / 2;
+    int i = 0;
+    for (const WorldEntry &world : kWorlds)
+    {
+        const Rect row = {cx - 135, top(gui) + i * 40, 270, 36};
+        bool twice = false;
+        if (gui.area(row, &twice))
+        {
+            if (twice && m_worldSelected == i)
+            {
+                playWorld(tw, i);
+                return;
+            }
+            m_worldSelected = i;
+        }
+        if (m_worldSelected == i)
+        {
+            // the selected world has a white frame, as in the game
+            gui.fill(row, {255, 255, 255, 255});
+            gui.fill({row.x + 1, row.y + 1, row.w - 2, row.h - 2}, {0, 0, 0, 255});
+        }
+        else if (gui.isHovered(row))
+            gui.fill(row, {255, 255, 255, 40});
+        worldPicture(gui, row.x + 2, row.y + 2, world.flat);
+        gui.text(row.x + 38, row.y + 3, world.name, ui::kWhite);
+        gui.text(row.x + 38, row.y + 14, world.about, ui::kGrey);
+        const bool saved = Folders::exists(WorldSave::path(world.save));
+        gui.text(row.x + 38, row.y + 25,
+                 saved ? "Saved: opens quickly" : "New: made the first time you play", ui::kGrey);
+        ++i;
+    }
+    if (gui.button(left(gui, 4), "Play Selected World") || m_enter)
+    {
+        m_enter = false;
+        playWorld(tw, m_worldSelected);
+        return;
+    }
+    if (gui.button(right(gui, 4), "Cancel"))
+        back(tw);
+    gui.text(cx, top(gui) + 5 * kRowStep + 6, "A track of your own goes with you to either world",
+             ui::kGrey, ui::Align::Center);
+}
+
+void GameMenu::drawOptions(TrainWindow &tw, ui::Gui &gui)
+{
+    title(gui, "Options");
+    if (gui.button(left(gui, 0), "Ride..."))
+        show(tw, Screen::Ride);
+    if (gui.button(right(gui, 0), "Camera..."))
+        show(tw, Screen::Camera);
+    if (gui.button(left(gui, 1), "Lighting..."))
+        show(tw, Screen::Lighting);
+    if (gui.button(right(gui, 1), "World..."))
+        show(tw, Screen::World);
+    done(tw, gui, 3);
+}
+
 void GameMenu::drawPause(TrainWindow &tw, ui::Gui &gui)
 {
     const int cx = gui.width() / 2;
@@ -563,8 +794,12 @@ void GameMenu::drawPause(TrainWindow &tw, ui::Gui &gui)
         grandTourCB(&tw);
         show(tw, Screen::None);
     }
-    if (gui.button({cx - 102, y + 108, 204, kButtonH}, "Quit"))
-        tw.close();
+    // as a block game's "Quit to Title": the program ends from the title
+    if (gui.button({cx - 102, y + 108, 204, kButtonH}, "Quit to Title"))
+    {
+        m_riding = false;
+        show(tw, Screen::Title);
+    }
 }
 
 void GameMenu::drawRide(TrainWindow &tw, ui::Gui &gui)

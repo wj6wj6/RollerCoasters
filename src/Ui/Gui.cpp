@@ -332,11 +332,14 @@ bool ui::Gui::slider(const Rect &r, const std::string &label, float &value, floa
     return value != before;
 }
 
-bool ui::Gui::area(const Rect &r)
+bool ui::Gui::area(const Rect &r, bool *doubleClicked)
 {
     ++m_widget;
     solid(r);
-    return takePush(r);
+    const bool pressed = takePush(r);
+    if (doubleClicked)
+        *doubleClicked = pressed && m_frameClicks > 0;
+    return pressed;
 }
 
 bool ui::Gui::list(const Rect &r, const std::vector<std::string> &items, int &selected, int &scroll,

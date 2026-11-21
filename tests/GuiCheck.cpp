@@ -196,6 +196,22 @@ int main()
     gui.list(listRect, rows, selected, scroll, &doubleClicked);
     expect(!doubleClicked, "... once");
 
+    // An area (the world list's rows) reports a double click too.
+    const Rect areaRect = {10, 160, 100, 20};
+    gui.beginFrame(640, 480, 2);
+    gui.area(areaRect);
+    InputEvent onArea = mouse(InputType::Push, px(20), px(165));
+    onArea.clicks = 1;
+    gui.feed(onArea);
+    gui.feed(mouse(InputType::Release, px(20), px(165)));
+    gui.beginFrame(640, 480, 2);
+    bool areaTwice = false;
+    expect(gui.area(areaRect, &areaTwice) && areaTwice, "a double click on an area is reported");
+    gui.feed(mouse(InputType::Push, px(20), px(165)));
+    gui.feed(mouse(InputType::Release, px(20), px(165)));
+    gui.beginFrame(640, 480, 2);
+    expect(gui.area(areaRect, &areaTwice) && !areaTwice, "a single click is not");
+
     // Text field: printable characters and Backspace typed since the last frame, up to the limit.
     std::string name = "ab";
     auto typed = [](unsigned int codepoint) {

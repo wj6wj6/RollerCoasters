@@ -139,8 +139,9 @@ class Gui
     // the keyboard.
     bool textField(const Rect &r, std::string &value, size_t maxLength);
     // An area that takes the mouse like a button, for widgets drawn by the
-    // caller (the hotbar's slots): true when pressed this frame.
-    bool area(const Rect &r);
+    // caller (the hotbar's slots, the world list): true when pressed this
+    // frame; *doubleClicked (if given) says the press was a double click.
+    bool area(const Rect &r, bool *doubleClicked = nullptr);
     // Is the mouse over r (in units)?
     bool isHovered(const Rect &r) const
     {

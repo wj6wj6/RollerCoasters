@@ -259,8 +259,10 @@ void TrainWindow::input(const InputEvent &e)
 {
     if (e.type == InputType::None)
         return;
-    // While the loading screen shows there is no interface to take anything.
-    if (!automated && trainView->frameShowsScene && menu.input(*this, e))
+    // While the loading screen shows there is no interface to take anything;
+    // the title screen shows over it and takes everything.
+    const bool interface = trainView->frameShowsScene || menu.screen() == GameMenu::Screen::Title;
+    if (!automated && interface && menu.input(*this, e))
         return;
     trainView->handleInput(e);
 }

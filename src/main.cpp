@@ -131,6 +131,9 @@ int main(int argc, char **argv)
         return AppControl::kFail;
     }
     tw.trainView->startAutomation(automated ? &options : nullptr);
+    // A person starts on the title screen; a check goes straight to the ride.
+    if (!automated)
+        tw.menu.show(tw, GameMenu::Screen::Title);
     tw.run();
     if (!automated)
         return AppControl::kPass;

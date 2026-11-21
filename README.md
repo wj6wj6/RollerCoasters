@@ -9,7 +9,7 @@
 最簡單的方式：clone 後在 Visual Studio 選「開啟資料夾」（或在檔案總管對資料夾按右鍵「使用 Visual Studio 開啟」），
 Visual Studio 會讀取 `CMakePresets.json`，選 `Visual Studio (any version) / x64` 與 `Debug`，啟動項目選 `RollerCoasters.exe` 後按 F5。
 VS Code 搭配 CMake Tools 擴充也一樣選這個 preset。
-世界（約 1000 萬格方塊）在啟動時於背景生成，期間顯示載入畫面與進度條；Release 約一兩秒（依電腦而定），Debug 沒有最佳化又有執行期檢查，會慢上數倍到十幾倍，只想看效果或展示時改選 `Release`。
+程式啟動時先進入方塊遊戲風的標題畫面：大字的 `RollerCoasters`、`Play`、`Load Track...`、`Options...`、`Quit`，背後是慢慢轉一圈的世界。`Play` 像方塊遊戲的 Singleplayer 一樣先列出世界：`Grand Tour Island`（島、海與繞行的軌道）或 `Flat Island`（平坦草地，用來蓋自己的軌道），選一個按 `Play Selected World`（或雙擊、Enter）。自己的軌道會跟著帶到任一個世界；只有各世界原本的軌道（Grand Tour 與四點的起始軌道）會換成另一個世界的。世界（約 1000 萬格方塊）在標題畫面時就於背景生成，右下角顯示進度；還沒建好就進入會顯示載入畫面與進度條。Release 約一兩秒（依電腦而定），Debug 沒有最佳化又有執行期檢查，會慢上數倍到十幾倍，只想看效果或展示時改選 `Release`。
 第一次生成後，島與海床會像方塊遊戲的存檔一樣存到 exe 旁的 `data\saves\`（`island.world`、`flat.world`、`ocean.world`，各約 2 MB），之後啟動顯示 `Loading world` 直接讀檔，不再重新生成。重新建置任何會影響世界的原始檔（`LandWorld`、`OceanWorld`、`WorldShape`、`WaterFlow`、`PixelArt`）後存檔自動失效並重新生成；想強制重新生成就刪掉 `data\saves\`。這個 preset 不綁定 Visual Studio 版本，由 IDE 自行載入已安裝的 x64 編譯器。
 
 命令列建置與完整檢查，以下命令均在此 repository 根目錄執行：
@@ -51,7 +51,7 @@ pwsh -File scripts/check.ps1 -Stage all -Compiler clang -Config Release
 | `1`–`9` | 快捷欄：`1` World、`2` Train、`3` Chase、`4` Top、`5` Fly 相機，`6` Edit 開關，`7` 新增控制點，`8` 刪除控制點，`9` Run；也可以直接點格子 |
 | F1 | 隱藏／顯示左上角提示與快捷欄 |
 
-選單（Esc）：`Back to Ride`、`Ride`（Run、Arc Length、Speed、前後步進）、`Camera`（相機、FOV、Fly 速度）、`Track`（Spline、Edit、新增／刪除、Undo／Redo、Load／Save、R±X／R±Z、選取控制點的 X／Y／Z 微調、Reset Track）、`Lighting`（Light+、Shadows、Headlight、Bloom、SSAO、Time）、`World`（Water、Rain、Scenery、Grand Tour、材質包、Open Pack Folder）、`Grand Tour`、`Quit`。開關按一下切換，滑桿可拖曳或點；按鈕按下就生效。
+選單（Esc）：`Back to Ride`、`Ride`（Run、Arc Length、Speed、前後步進）、`Camera`（相機、FOV、Fly 速度）、`Track`（Spline、Edit、新增／刪除、Undo／Redo、Load／Save、R±X／R±Z、選取控制點的 X／Y／Z 微調、Reset Track）、`Lighting`（Light+、Shadows、Headlight、Bloom、SSAO、Time）、`World`（Water、Rain、Scenery、Grand Tour、材質包、Open Pack Folder）、`Grand Tour`、`Quit to Title`（回標題畫面，從標題畫面的 `Quit` 結束程式）。開關按一下切換，滑桿可拖曳或點；按鈕按下就生效。
 
 - `Grand Tour` 是一條 62 個控制點的長路線（每個轉彎的夾角都不小於 90 度，沒有銳角的急彎或髮夾彎），繞行整座方塊風島嶼與東北新大陸後潛入海底再回來：
   從海上飛向村莊（風車、小屋、麥田、路燈）→ 沿雪山岩壁螺旋爬升，跨過從山上一路跌進海裡的溪流瀑布 →
