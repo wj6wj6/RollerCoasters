@@ -21,6 +21,7 @@
 #include "Folders.h"
 #include "Ui/PixelFont.h"
 #include "Utilities/Platform.H"
+#include "WorldSave.h"
 #include "TrainView.H"
 #include "TrainWindow.H"
 
@@ -132,6 +133,7 @@ void GameMenu::back(TrainWindow &tw)
     case Screen::Title:
         break; // the title is where it starts; Quit is a button
     case Screen::Options:
+    case Screen::SelectWorld:
         show(tw, Screen::Title);
         break;
     case Screen::None:
@@ -359,6 +361,9 @@ void GameMenu::draw(TrainWindow &tw, ui::Gui &gui, double seconds)
         case Screen::Options:
             drawOptions(tw, gui);
             break;
+        case Screen::SelectWorld:
+            drawSelectWorld(tw, gui);
+            break;
         case Screen::Pause:
             drawPause(tw, gui);
             break;
@@ -552,10 +557,11 @@ void GameMenu::drawTitle(TrainWindow &tw, ui::Gui &gui, double seconds)
     gui.text(cx, logoY + 8 * size + 6, "Train and Roller Coaster", ui::kYellow, ui::Align::Center);
 
     const int y = gui.height() / 4 + 40;
-    if (gui.button({cx - 100, y, 200, kButtonH}, "Start Ride") || m_enter)
+    if (gui.button({cx - 100, y, 200, kButtonH}, "Play") || m_enter)
     {
         m_enter = false;
-        show(tw, Screen::None); // the loading screen shows if the world is still being built
+        m_worldSelected = tw.settings.scenery ? 0 : 1; // the world it was last in
+        show(tw, Screen::SelectWorld);
         return;
     }
     if (gui.button({cx - 100, y + 24, 200, kButtonH}, "Load Track..."))
@@ -575,6 +581,98 @@ void GameMenu::drawTitle(TrainWindow &tw, ui::Gui &gui, double seconds)
                  static_cast<int>(view.loadingDone * 100.0f));
         gui.text(gui.width() - 2, gui.height() - 10, status, ui::kGrey, ui::Align::Right);
     }
+}
+
+//************************************************************************
+//
+// * Select World, as a block game lists its worlds: a picture, the name and
+//   a line about each; a click selects, a double click or Enter plays
+//========================================================================
+namespace
+{
+struct WorldEntry
+{
+    const char *name;
+    const char *about;
+    const char *save; // WorldSave name
+    bool flat;
+};
+const WorldEntry kWorlds[] = {
+    {"Grand Tour Island", "The island, the sea and the ride round them", "island", false},
+    {"Flat Island", "Level grass to build a track of your own", "flat", true},
+};
+
+// A small picture of the world: sky, then the island over the sea or the
+// flat grass on dirt.
+void worldPicture(ui::Gui &gui, int x, int y, bool flat)
+{
+    gui.fill({x, y, 32, 32}, {120, 170, 255, 255});
+    if (flat)
+    {
+        gui.fill({x, y + 18, 32, 4}, {96, 168, 64, 255});
+        gui.fill({x, y + 22, 32, 10}, {134, 96, 67, 255});
+        return;
+    }
+    gui.fill({x, y + 20, 32, 12}, {48, 96, 200, 255});
+    gui.fill({x + 6, y + 16, 20, 6}, {96, 168, 64, 255});
+    gui.fill({x + 11, y + 11, 10, 5}, {96, 168, 64, 255});
+    gui.fill({x + 4, y + 21, 24, 2}, {218, 206, 150, 255});
+}
+} // namespace
+
+void GameMenu::playWorld(TrainWindow &tw, int world)
+{
+    if (world == 1)
+        playFlat(&tw);
+    else
+        playIsland(&tw);
+    show(tw, Screen::None); // the loading screen shows while that world is built
+}
+
+void GameMenu::drawSelectWorld(TrainWindow &tw, ui::Gui &gui)
+{
+    title(gui, "Select World");
+    const int cx = gui.width() / 2;
+    int i = 0;
+    for (const WorldEntry &world : kWorlds)
+    {
+        const Rect row = {cx - 135, top(gui) + i * 40, 270, 36};
+        bool twice = false;
+        if (gui.area(row, &twice))
+        {
+            if (twice && m_worldSelected == i)
+            {
+                playWorld(tw, i);
+                return;
+            }
+            m_worldSelected = i;
+        }
+        if (m_worldSelected == i)
+        {
+            // the selected world has a white frame, as in the game
+            gui.fill(row, {255, 255, 255, 255});
+            gui.fill({row.x + 1, row.y + 1, row.w - 2, row.h - 2}, {0, 0, 0, 255});
+        }
+        else if (gui.isHovered(row))
+            gui.fill(row, {255, 255, 255, 40});
+        worldPicture(gui, row.x + 2, row.y + 2, world.flat);
+        gui.text(row.x + 38, row.y + 3, world.name, ui::kWhite);
+        gui.text(row.x + 38, row.y + 14, world.about, ui::kGrey);
+        const bool saved = Folders::exists(WorldSave::path(world.save));
+        gui.text(row.x + 38, row.y + 25,
+                 saved ? "Saved: opens quickly" : "New: made the first time you play", ui::kGrey);
+        ++i;
+    }
+    if (gui.button(left(gui, 4), "Play Selected World") || m_enter)
+    {
+        m_enter = false;
+        playWorld(tw, m_worldSelected);
+        return;
+    }
+    if (gui.button(right(gui, 4), "Cancel"))
+        back(tw);
+    gui.text(cx, top(gui) + 5 * kRowStep + 6, "A track of your own goes with you to either world",
+             ui::kGrey, ui::Align::Center);
 }
 
 void GameMenu::drawOptions(TrainWindow &tw, ui::Gui &gui)

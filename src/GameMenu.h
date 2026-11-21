@@ -7,7 +7,8 @@
                   - the title screen the program starts on, as a block
                     game's: the name in big blocks over the world turning
                     slowly behind (or the loading dirt while it is built),
-                    Start Ride, Load Track..., Options... and Quit;
+                    Play, Load Track..., Options... and Quit; Play
+                    lists the worlds to pick from, as Singleplayer does;
                   - the hotbar at the bottom: the five cameras, Edit, Add
                     and Delete point, Run / Stop; keys 1 to 9 or a click;
                   - key hints in the top left corner, and the view's
@@ -42,9 +43,10 @@ class GameMenu
   public:
     enum class Screen
     {
-        None,    // riding: only the hotbar and the hints
-        Title,   // before the ride: the program starts here
-        Options, // from the title: the settings screens
+        None,        // riding: only the hotbar and the hints
+        Title,       // before the ride: the program starts here
+        Options,     // from the title: the settings screens
+        SelectWorld, // from the title's Play: the island or the flat grass
         Pause,
         Ride,
         Camera,
@@ -93,6 +95,8 @@ class GameMenu
     void drawHud(TrainWindow &tw, ui::Gui &gui, double seconds);
     void drawTitle(TrainWindow &tw, ui::Gui &gui, double seconds);
     void drawOptions(TrainWindow &tw, ui::Gui &gui);
+    void drawSelectWorld(TrainWindow &tw, ui::Gui &gui);
+    void playWorld(TrainWindow &tw, int world);
     void drawPause(TrainWindow &tw, ui::Gui &gui);
     void drawRide(TrainWindow &tw, ui::Gui &gui);
     void drawCamera(TrainWindow &tw, ui::Gui &gui);
@@ -113,6 +117,7 @@ class GameMenu
     Screen m_screen = Screen::None;
     bool m_riding = false;      // left the title: Esc and Back lead to the game menu
     double m_titleSeconds = -1; // the time the title last turned the view
+    int m_worldSelected = 0;    // Select World: 0 the island, 1 the flat grass
     bool m_guiHasMouse = false; // a press on the hotbar: its drag and release go there too
     double m_now = 0.0;         // the time input() was last given, for useSlot()
     int m_packScroll = 0;

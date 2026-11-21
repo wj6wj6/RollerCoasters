@@ -41,6 +41,12 @@ bool saveTrack(TrainWindow *tw, const std::string &path, std::string &error);
 // Load the demo ride over the island and under the sea (see OceanWorld), ready to ride
 void grandTourCB(TrainWindow *tw);
 
+// The worlds of the title's Select World: the scenery island with its Grand
+// Tour ride, or level grass with the starter track. A track of one's own is
+// kept and taken along; only a world's own track is swapped for the other's.
+void playIsland(TrainWindow *tw);
+void playFlat(TrainWindow *tw);
+
 // Texture packs: use the one at this place in TrainWindow::texturePackPaths
 // (0 is built in), or show the folder beside the program where downloaded
 // packs go, as a block game's "Open Pack Folder" does.

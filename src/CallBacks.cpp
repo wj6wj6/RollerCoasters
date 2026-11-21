@@ -156,6 +156,60 @@ void grandTourCB(TrainWindow *tw)
 
 //***************************************************************************
 //
+// * Select World: the island or the flat grass
+//===========================================================================
+namespace
+{
+bool samePoints(const CTrack &track, const std::vector<ControlPoint> &points)
+{
+    if (track.points.size() != points.size())
+        return false;
+    auto same = [](const Pnt3f &a, const Pnt3f &b) {
+        return fabsf(a.x - b.x) < 1e-3f && fabsf(a.y - b.y) < 1e-3f && fabsf(a.z - b.z) < 1e-3f;
+    };
+    for (size_t i = 0; i < points.size(); ++i)
+        if (!same(track.points[i].pos, points[i].pos) ||
+            !same(track.points[i].orient, points[i].orient))
+            return false;
+    return true;
+}
+
+bool isGrandTourTrack(const CTrack &track)
+{
+    const std::vector<float> xyz = OceanWorld::demoTrack();
+    std::vector<ControlPoint> points;
+    for (size_t i = 0; i + 2 < xyz.size(); i += 3)
+        points.push_back(ControlPoint(Pnt3f(xyz[i], xyz[i + 1], xyz[i + 2])));
+    return samePoints(track, points);
+}
+
+bool isStarterTrack(const CTrack &track)
+{
+    CTrack starter; // resetPoints()
+    return samePoints(track, starter.points);
+}
+} // namespace
+
+void playIsland(TrainWindow *tw)
+{
+    if (isStarterTrack(tw->m_Track))
+        grandTourCB(tw);
+    else
+        tw->settings.scenery = true;
+    tw->damageMe();
+}
+
+void playFlat(TrainWindow *tw)
+{
+    if (isGrandTourTrack(tw->m_Track))
+        resetCB(tw);
+    else
+        tw->settings.scenery = false;
+    tw->damageMe();
+}
+
+//***************************************************************************
+//
 // * Rotate the selected control point about x axis
 //===========================================================================
 void rollx(TrainWindow *tw, float dir)
