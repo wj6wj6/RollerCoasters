@@ -34,6 +34,8 @@ const float kCartToCart = 4.6f;
 // How far the carts' floors ride above the track's line, in pixels: just
 // on top of the rails.
 const float kRide = 2.7f;
+// How high the riders' hips sit above the carts' bottoms, in pixels.
+const float kHips = 4.2f;
 
 bool gShadowPass = false;
 
@@ -640,6 +642,13 @@ float TrainModel::length()
     return kEngineToCart + static_cast<float>(kCarts - 1) * kCartToCart;
 }
 
+float TrainModel::riderTop()
+{
+    // the hips where draw() seats them, the body 12 pixels and the head 8
+    // with its outer layer half a pixel over it
+    return (kRide + kHips + 12.0f + 8.5f) * kPx;
+}
+
 float TrainModel::parameterBehind(const CTrack &track, float u, float distance,
                                   TrackSplineType splineType)
 {
@@ -715,7 +724,7 @@ void TrainModel::draw(const CTrack &track, TrackSplineType splineType, bool shad
                                stretch;
             glPushMatrix();
             // sitting on the floor, a little back so the legs fit
-            glTranslatef(0.0f, (kRide + 4.2f) * kPx, -4.5f * kPx);
+            glTranslatef(0.0f, (kRide + kHips) * kPx, -4.5f * kPx);
             drawRider(car - 1, poseFor(car - 1, dir.y, turn, time));
             glPopMatrix();
         }

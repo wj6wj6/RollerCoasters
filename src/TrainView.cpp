@@ -24,6 +24,7 @@
 
 *************************************************************************/
 
+#include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <math.h>
@@ -42,6 +43,7 @@
 #include "Utilities/3DUtils.h"
 #include "TrackRenderer.H"
 #include "CallBacks.H"
+#include "ChaseRig.h"
 #include "TrainModel.h"
 #include "EditKeys.h"
 #include "TrackInsert.h"
@@ -1825,18 +1827,83 @@ void TrainView::setProjection()
             Pnt3f side;
             makeTrackFrame(forward, side, up);
             eye = position + up * 3.0f + forward * 3.0f;
-            // The chase camera rides above the track a little way behind the
-            // last cart and looks along the train. Following the track keeps
-            // it inside the room carved for the ride, out of the rock.
+            // The Chase camera follows the train from behind and above, like a
+            // third person view: the whole train and the track ahead in view,
+            // the last rider low in the picture (ChaseRig works out where
+            // from the train's length and the riders' height). It stays over
+            // the track behind the last cart, so it keeps to the room carved
+            // for the ride; where a tunnel's roof or an overhang leaves less
+            // room it comes lower and nearer, and it moves there smoothly,
+            // dropping at once rather than going through the rock.
             if (tw->chaseCam->value())
             {
-                const float behind = TrainModel::parameterBehind(
-                    *m_pTrack, m_pTrack->trainU, TrainModel::length() + 9.0f, splineType);
-                Pnt3f backForward = m_pTrack->evaluateTangent(behind, splineType);
-                Pnt3f backSide, backUp;
-                makeTrackFrame(backForward, backSide, backUp);
-                eye = m_pTrack->evaluatePosition(behind, splineType) + backUp * 6.5f;
-                const Pnt3f look = position + up * 1.0f;
+                const ChaseRig::Train train = {TrainModel::length(), TrainModel::riderTop()};
+                const float fovY = m_fieldOfView;
+                const ChaseRig::Placement open = ChaseRig::plan(train, fovY);
+                const float uLast = TrainModel::parameterBehind(*m_pTrack, m_pTrack->trainU,
+                                                                train.length, splineType);
+                Pnt3f lastForward = m_pTrack->evaluateTangent(uLast, splineType);
+                Pnt3f lastSide, lastUp;
+                makeTrackFrame(lastForward, lastSide, lastUp);
+                const Pnt3f lastHead =
+                    m_pTrack->evaluatePosition(uLast, splineType) + lastUp * train.riderTop;
+                const float minBehind = 0.6f * train.riderTop;
+                // the camera's place over the track `behind` back, and the room there
+                auto place = [&](float behind, Pnt3f &base, Pnt3f &baseUp) {
+                    const float u =
+                        TrainModel::parameterBehind(*m_pTrack, uLast, behind, splineType);
+                    Pnt3f f = m_pTrack->evaluateTangent(u, splineType);
+                    Pnt3f s;
+                    makeTrackFrame(f, s, baseUp);
+                    base = m_pTrack->evaluatePosition(u, splineType);
+                };
+                ChaseRig::Placement want = open;
+                for (int pass = 0; pass < 4; ++pass)
+                {
+                    Pnt3f base, baseUp;
+                    place(want.behind, base, baseUp);
+                    const float room = chaseRoom(base, baseUp, open.height);
+                    want = ChaseRig::fit(open, std::min(room, open.height), minBehind, train, fovY);
+                    // and a clear line from there to the last rider, or nearer
+                    place(want.behind, base, baseUp);
+                    const Pnt3f from = base + baseUp * want.height;
+                    bool clear = true;
+                    for (int k = 1; k < 12 && clear; ++k)
+                    {
+                        const float t = static_cast<float>(k) / 12.0f;
+                        clear = !chaseBlocked(from * (1.0f - t) + lastHead * t);
+                    }
+                    if (clear)
+                        break;
+                    want.behind = std::max(minBehind, want.behind * 0.6f);
+                    want.height = std::min(want.height, open.height);
+                }
+                // follow smoothly: on along the track and up gently, down at once
+                const float now = animationTime();
+                const float dt = now - m_chaseTime;
+                m_chaseTime = now;
+                if (!m_chaseValid || dt < 0.0f || dt > 1.0f)
+                {
+                    m_chaseBehind = want.behind;
+                    m_chaseHeight = want.height;
+                    m_chaseValid = true;
+                }
+                else
+                {
+                    m_chaseBehind = ChaseRig::approach(m_chaseBehind, want.behind, dt, 3.0f);
+                    m_chaseHeight = ChaseRig::approach(m_chaseHeight, want.height, dt,
+                                                       want.height < m_chaseHeight ? 12.0f : 2.5f);
+                }
+                Pnt3f base, baseUp;
+                place(m_chaseBehind, base, baseUp);
+                // never higher than the room where the camera is now
+                const float height =
+                    std::min(m_chaseHeight, chaseRoom(base, baseUp, m_chaseHeight));
+                eye = base + baseUp * height;
+                Pnt3f ahead = forward;
+                ahead.normalize();
+                const Pnt3f look =
+                    position + ahead * (open.lookAhead - train.length) + up * open.lookHeight;
                 glMatrixMode(GL_PROJECTION);
                 glLoadIdentity();
                 gluPerspective(m_fieldOfView, aspect, 0.5, 3000.0);
@@ -1845,6 +1912,7 @@ void TrainView::setProjection()
                 gluLookAt(eye.x, eye.y, eye.z, look.x, look.y, look.z, 0.0, 1.0, 0.0);
                 return;
             }
+            m_chaseValid = false;
             // The rider may turn their head; the view still moves with the train.
             Pnt3f viewForward, viewUp;
             headLook.apply(forward, side, up, viewForward, viewUp);
@@ -1862,6 +1930,29 @@ void TrainView::setProjection()
         const Pnt3f target = eye + forward * 15.0f + up * -3.6f;
         gluLookAt(eye.x, eye.y, eye.z, target.x, target.y, target.z, up.x, up.y, up.z);
     }
+}
+
+//************************************************************************
+//
+// * Is there a block of the island or the sea floor at p? (for the Chase camera)
+//========================================================================
+bool TrainView::chaseBlocked(const Pnt3f &p) const
+{
+    return m_land.solidAt(!sceneryOn(), p.x, p.y, p.z) || m_ocean.solidAt(p.x, p.y, p.z);
+}
+
+//************************************************************************
+//
+// * How high above base, along up, the Chase camera can go before it is
+//   within a block and a half of a block (at most upTo)
+//========================================================================
+float TrainView::chaseRoom(const Pnt3f &base, const Pnt3f &up, float upTo) const
+{
+    const float margin = 1.5f;
+    for (float h = 1.0f; h <= upTo + margin; h += 0.5f)
+        if (chaseBlocked(base + up * h))
+            return std::max(1.0f, h - margin);
+    return upTo;
 }
 
 //************************************************************************

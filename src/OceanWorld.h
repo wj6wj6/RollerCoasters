@@ -101,6 +101,10 @@ class OceanWorld
     // Height of the water surface.
     static float waterLevel();
 
+    // Is there a block of the sea floor at (x, y, z)? False until it is
+    // built. For keeping the Chase camera out of the rock.
+    bool solidAt(float x, float y, float z) const;
+
     // Height of the terraced sea bed at (x, z), off the island: where the
     // posts of a track over the sea stand.
     static float seaFloor(float x, float z);
@@ -113,6 +117,7 @@ class OceanWorld
   private:
     void drawSeaLife(float time);
 
+    std::vector<unsigned char> m_solid; // per block of the grid: 1 where it is solid
     bool m_built;
     struct Chunk
     {
