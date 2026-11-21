@@ -11,7 +11,7 @@
 
 - 新增 `vs` preset 作為 IDE 入口：Ninja Multi-Config＋`cl.exe`，`architecture`（x64）與 `toolset`（host=x64）採 `external` 策略，由 Visual Studio／VS Code 依已安裝的版本載入開發者環境，CMake 不指定版本。
 - `windows` preset 移除 `generator`，改用 CMake 的一般 generator 搜尋，在 Windows 上即已安裝的最新 Visual Studio；保留 MSBuild，`scripts/check.ps1` 與 CI 的用法不變。
-- 仍要求 Windows x64 與 MSVC 相容前端（`CMakeLists.txt` 的檢查不變）。內附 FLTK 是 MSVC 靜態庫，依賴 v14 系列工具組之間的二進位相容。
+- 仍要求 Windows x64 與 MSVC 相容前端（`CMakeLists.txt` 的檢查不變）。內附 FLTK 是 MSVC 靜態庫，依賴 v14 系列工具組之間的二進位相容（FLTK 已移除，見 [ADR 0012](0012-remove-fltk.md)）。
 
 ## 取捨
 

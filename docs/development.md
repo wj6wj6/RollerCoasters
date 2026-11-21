@@ -66,7 +66,7 @@ MSVC 發布目錄是 `out/package/<Config>/`，Clang 是 `out/package/clang/<Con
 `check.ps1` 預設只用一個建置程序，避免筆電卡住；`-Jobs N` 改為 N 個，`-Jobs 0` 用上所有處理器（CI 使用）。
 
 所有第一方 C++ 編譯使用 `/W3 /WX`，分析使用 `/analyze /analyze:external-`；第三方 GLAD、GLFW（`include/glfw-3.4/`，只編 Win32 後端）與 stb_image（`include/stb-2.30/`，只開 PNG）分開建置，不套第一方的警告設定。
-隨附 FLTK 1.3.11 的 Debug `.lib` 內含除錯資訊（`/Z7`），連結器不再需要抑制 LNK4099；VS 偵錯時呼叫堆疊可看到 FLTK 內部。重新編譯內附 FLTK 用 `pwsh -File scripts/build-fltk.ps1`，再 `-Stage vendor-lock`（見 `docs/adr/0007-fltk-1-3-11.md`）。連結內附 FLTK 需要 MSVC 19.44（VS 2022 17.14）或更新。
+第三方程式碼都隨 repository 附上原始碼，沒有預先編好的第三方 `.lib`；`lib/` 只剩課程附的 `OpenGL32.Lib`、`GlU32.Lib` 匯入庫，所以任何 Visual Studio 2022 以上的 MSVC 或 clang-cl 都能連結（見 [ADR 0012](adr/0012-remove-fltk.md)）。
 初次導入 clang-format 會建立全體 `src/`、`tests/` 的一致格式基準；第三方檔案不重排。
 
 ## Hooks
@@ -91,7 +91,7 @@ xvfb-run -a ctest --test-dir out/build/linux --output-on-failure
 tests/linux/win32-syntax.sh
 ```
 
-`tests/linux/` 只用系統的 FLTK 與 `stubs/` 裡的 `<windows.h>` 替身，編譯 `main.cpp`、`TrainView.cpp`、`TrainWindow.cpp`、`TouchpadGestures.cpp` 以外的原始碼與全部檢查程式（GLFW 只用到標頭）；這四個檔案只做 MinGW 語法檢查。新增測試時，在 `CMakeLists.txt` 與 `tests/linux/CMakeLists.txt` 都加上同樣的來源檔。
+`tests/linux/` 只用系統的 OpenGL／GLU 與 `stubs/` 裡的 `<windows.h>` 替身，編譯 `main.cpp`、`TrainView.cpp`、`TrainWindow.cpp`、`TouchpadGestures.cpp` 以外的原始碼與全部檢查程式（GLFW 只用到標頭）；這四個檔案只做 MinGW 語法檢查。新增測試時，在 `CMakeLists.txt` 與 `tests/linux/CMakeLists.txt` 都加上同樣的來源檔。
 撤銷本機設定可執行 `git config --unset core.hooksPath`。
 
 ## 測試範圍

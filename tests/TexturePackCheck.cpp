@@ -352,8 +352,7 @@ int main()
               "a PNG decodes to its size");
         const PixelArt::Image frame = TexturePack::firstFrame(rgba, width, height);
         // the see-through corner's colour is not checked: decoders may
-        // drop the colour of a texel that cannot be seen (FLTK on Windows
-        // does)
+        // drop the colour of a texel that cannot be seen
         check(PixelArt::sizeOf(frame) == 16 && texelIs(frame, 5, 15, 200, 200, 200, 255) &&
                   frame[3] == 0,
               "an animated strip gives its top frame");

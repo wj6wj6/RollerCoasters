@@ -140,7 +140,7 @@ flowchart LR
 | `src/PixelArt.h/.cpp` | 程序貼圖的雜湊、繪圖與上傳輔助函式。 |
 | `src/TexturePack.h/.cpp` | 找出並開啟材質包，對照方塊名稱、染色並交出貼圖；PNG 以 stb_image 解碼。 |
 | `src/ZipArchive.h/.cpp` | 讀取 zip 目錄，以自己的 DEFLATE 解碼器解壓。 |
-| `src/Folders.h/.cpp` | 遊戲內清單用的資料夾工具：列出某副檔名的檔案（不分大小寫排序）、Windows 能不能用這個檔名、補副檔名、建立資料夾、用檔案總管打開資料夾、把拖進視窗的檔案或資料夾複製進來（同名不同內容時取名 `loop (2).txt`）；由 `FoldersCheck` 測試。見 [ADR 0011](adr/0011-in-game-track-list-and-notices.md)、[ADR 0012](adr/0012-drop-files-on-the-window.md)。程式裡的路徑一律是 UTF-8：`main()` 把命令列轉成 UTF-8，檔案以 `Utilities/Utf8File.H` 的 `openUtf8()` 開啟（Windows 上用寬字元），中文檔名的軌道也能存讀。 |
+| `src/Folders.h/.cpp` | 遊戲內清單用的資料夾工具：列出某副檔名的檔案（不分大小寫排序）、Windows 能不能用這個檔名、補副檔名、建立資料夾、用檔案總管打開資料夾、把拖進視窗的檔案或資料夾複製進來（同名不同內容時取名 `loop (2).txt`）；由 `FoldersCheck` 測試。見 [ADR 0011](adr/0011-in-game-track-list-and-notices.md)、[ADR 0013](adr/0013-drop-files-on-the-window.md)。程式裡的路徑一律是 UTF-8：`main()` 把命令列轉成 UTF-8，檔案以 `Utilities/Utf8File.H` 的 `openUtf8()` 開啟（Windows 上用寬字元），中文檔名的軌道也能存讀。 |
 | `src/TouchpadGestures.H/.cpp` | Raw Input 讀精準觸控板的手指座標；Direct Manipulation 接手手勢並作為備援。 |
 | `src/Utilities/TwoFingerGesture.*` | 兩指位移與張開比例的 1-euro 濾波與起動門檻。 |
 | `src/Utilities/Input.H` | 自己的輸入事件 `InputEvent`、`Key::`／`Mod::`／`Mouse::` 常數，以及相機用的 `Viewport` 介面。 |
@@ -207,4 +207,4 @@ flowchart LR
 
 目前 `TrainWindow` 只持有一條 `CTrack`，`TrainView::drawStuff()` 直接列出要畫的東西。加入多條軌道或其他遊樂設施前，建議先把世界狀態從視窗移出（例如 `ParkWorld` 持有軌道、設施與景物集合），每種設施各自實作 `update(dt)` 與 `draw(renderPass)`，不要把特定設施的邏輯塞進 `TrainView`；速度也應改用實際時間差 `dt`。
 
-工程決策見 [ADR 0001](adr/0001-windows-quality-gates.md)；Clang 工具鏈見 [ADR 0002](adr/0002-clang-cl-build.md)；Visual Studio 版本見 [ADR 0004](adr/0004-any-visual-studio-version.md)；內附 FLTK 升級到 1.3.11 見 [ADR 0007](adr/0007-fltk-1-3-11.md)；GLFW 視窗與 Esc 選單見 [ADR 0010](adr/0010-glfw-window-and-game-menu.md)；遊戲內的軌道清單、提示與 stb_image 見 [ADR 0011](adr/0011-in-game-track-list-and-notices.md)；把檔案拖進視窗見 [ADR 0012](adr/0012-drop-files-on-the-window.md)。
+工程決策見 [ADR 0001](adr/0001-windows-quality-gates.md)；Clang 工具鏈見 [ADR 0002](adr/0002-clang-cl-build.md)；Visual Studio 版本見 [ADR 0004](adr/0004-any-visual-studio-version.md)；GLFW 視窗與 Esc 選單見 [ADR 0010](adr/0010-glfw-window-and-game-menu.md)；遊戲內的軌道清單、提示與 stb_image 見 [ADR 0011](adr/0011-in-game-track-list-and-notices.md)；移除 FLTK 見 [ADR 0012](adr/0012-remove-fltk.md)；把檔案拖進視窗見 [ADR 0013](adr/0013-drop-files-on-the-window.md)。

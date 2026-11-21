@@ -3,7 +3,7 @@ project(RollerCoasters VERSION 0.1.0 LANGUAGES C CXX)
 
 if(NOT WIN32 OR NOT CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC"
         OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
-    message(FATAL_ERROR "The bundled FLTK libraries require Windows x64 with MSVC or clang-cl. Use the windows or clang preset.")
+    message(FATAL_ERROR "RollerCoasters needs Windows x64 with MSVC or clang-cl (Win32 input, the bundled OpenGL import libraries). Use the windows or clang preset.")
 endif()
 
 option(ROLLERCOASTERS_BUILD_TESTS "Build regression and integration checks" ON)
@@ -22,16 +22,10 @@ if(ROLLERCOASTERS_ANALYZE)
     target_compile_options(project_options INTERFACE /analyze /analyze:external-)
 endif()
 
-add_library(fltk INTERFACE)
-target_include_directories(fltk SYSTEM INTERFACE "${PROJECT_SOURCE_DIR}/include")
-foreach(component forms gl images jpeg png z)
-    target_link_libraries(fltk INTERFACE
-        debug "${PROJECT_SOURCE_DIR}/lib/Debug/fltk_${component}d.lib"
-        optimized "${PROJECT_SOURCE_DIR}/lib/Release/fltk_${component}.lib")
-endforeach()
-target_link_libraries(fltk INTERFACE
-    debug "${PROJECT_SOURCE_DIR}/lib/Debug/fltkd.lib"
-    optimized "${PROJECT_SOURCE_DIR}/lib/Release/fltk.lib"
+# OpenGL and GLU: the course's headers (include/GL) and import libraries (lib/).
+add_library(opengl INTERFACE)
+target_include_directories(opengl SYSTEM INTERFACE "${PROJECT_SOURCE_DIR}/include")
+target_link_libraries(opengl INTERFACE
     "${PROJECT_SOURCE_DIR}/lib/OpenGL32.Lib"
     "${PROJECT_SOURCE_DIR}/lib/GlU32.Lib")
 
@@ -77,7 +71,7 @@ add_library(Utilities
     src/Utilities/TwoFingerGesture.H src/Utilities/TwoFingerGesture.cpp
     src/Utilities/Utf8File.H)
 # stb_image goes along with Utilities: every target that builds TexturePack.cpp links it.
-target_link_libraries(Utilities PUBLIC project_options fltk stb_image)
+target_link_libraries(Utilities PUBLIC project_options opengl stb_image)
 # GlfwInput.cpp reads GLFW's key and button numbers from its header.
 target_include_directories(Utilities SYSTEM PUBLIC "${GLFW_DIR}/include")
 
