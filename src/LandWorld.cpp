@@ -2553,28 +2553,134 @@ bool commit(Grid &g, const Clearance &clear, const std::vector<Placed> &blocks)
     return true;
 }
 
-// A round-crowned tree: oak, birch, cherry or an autumn one.
+// A round-crowned tree: oak, birch or an autumn one, as a block game grows
+// them, but no two alike: the crown is four or five layers, the outer
+// leaves of each layer gone here and there (more of them on the corners
+// and on the top), and a tree now and then has a leaf or two sticking out
+// beyond the rest, so a wood is not rows of the same green box.
 void roundTree(std::vector<Placed> &out, int bx, int base, int bz, int log, int leaves, int trunk,
                bool wide)
 {
     for (int k = 0; k < trunk; ++k)
         out.push_back(Placed{bx, base + k, bz, log});
-    const int crown = base + trunk - 2;
-    for (int layer = 0; layer < 4; ++layer)
+    const unsigned int seed = hash(bx, bz, 71u);
+    const int layers = 4 + static_cast<int>(seed % 2u);
+    const int crown = base + trunk - 2 - (layers - 4);
+    for (int layer = 0; layer < layers; ++layer)
     {
-        const int radius = layer < 2 ? (wide ? 3 : 2) : (layer == 2 ? (wide ? 2 : 1) : 1);
+        const int fromTop = layers - 1 - layer;
+        const int radius = fromTop >= 2 ? (wide ? 3 : 2) : (fromTop == 1 ? (wide ? 2 : 1) : 1);
         for (int dx = -radius; dx <= radius; ++dx)
             for (int dz = -radius; dz <= radius; ++dz)
             {
-                if (dx == 0 && dz == 0 && layer < 2)
+                if (dx == 0 && dz == 0 && fromTop >= 2)
                     continue; // the trunk
+                const bool edge = dx == radius || dx == -radius || dz == radius || dz == -radius;
                 const bool corner =
                     (dx == radius || dx == -radius) && (dz == radius || dz == -radius);
-                if (corner && (layer == 3 || hash(bx + dx, bz + dz + layer, 73u) % 2u == 0))
+                const unsigned int r = hash(bx * 3 + dx, bz * 5 + dz + layer * 17, 73u) % 8u;
+                if (corner && (fromTop == 0 || r < 5u))
+                    continue;
+                if (edge && !corner && radius >= 2 && r < (fromTop == 0 ? 4u : 2u))
                     continue;
                 out.push_back(Placed{bx + dx, crown + layer, bz + dz, leaves});
             }
     }
+    // a leaf sticking out from the widest layer
+    if (seed % 3u == 0u)
+    {
+        const int r = wide ? 4 : 3;
+        const int side = static_cast<int>((seed >> 4) % 4u);
+        const int ox = side == 0 ? r : (side == 1 ? -r : 0),
+                  oz = side == 2 ? r : (side == 3 ? -r : 0);
+        out.push_back(Placed{bx + ox, crown + 1, bz + oz, leaves});
+    }
+}
+
+// A cherry tree as a block game grows one: a short trunk that splits into
+// two or three branches leaning out and up, each ending in a wide, flat
+// crown of blossom, its underside hanging down in places, so the grove is
+// a pink roof on crooked dark trunks rather than stacked pyramids.
+void cherryTree(std::vector<Placed> &out, int bx, int base, int bz, unsigned int h)
+{
+    const int trunk = 3 + static_cast<int>(h % 2u);
+    for (int k = 0; k < trunk; ++k)
+        out.push_back(Placed{bx, base + k, bz, DARK_OAK_LOG});
+    const int branches = 2 + static_cast<int>((h >> 3) % 2u);
+    const float start = static_cast<float>((h >> 5) % 360u) * 0.0174533f;
+    for (int b = 0; b < branches; ++b)
+    {
+        const float a = start + 6.2831853f * static_cast<float>(b) / static_cast<float>(branches) +
+                        (static_cast<float>((h >> (8 + b * 3)) % 7u) - 3.0f) * 0.12f;
+        const float ux = cosf(a), uz = sinf(a);
+        const int length = 2 + static_cast<int>((h >> (12 + b * 2)) % 2u);
+        int ex = bx, ey = base + trunk - 1, ez = bz;
+        for (int k = 1; k <= length; ++k)
+        {
+            ex = bx + static_cast<int>(lroundf(ux * static_cast<float>(k) * 1.2f));
+            ez = bz + static_cast<int>(lroundf(uz * static_cast<float>(k) * 1.2f));
+            ey = base + trunk - 1 + k;
+            out.push_back(Placed{ex, ey, ez, DARK_OAK_LOG});
+        }
+        // the crown at the branch's end: a flat dome, widest a block above it
+        for (int dy = -1; dy <= 2; ++dy)
+        {
+            const float radius = dy == -1 ? 2.6f : (dy == 0 ? 3.6f : (dy == 1 ? 3.1f : 1.9f));
+            for (int dx = -4; dx <= 4; ++dx)
+                for (int dz = -4; dz <= 4; ++dz)
+                {
+                    const float d = sqrtf(static_cast<float>(dx * dx + dz * dz)) +
+                                    (lattice(ex + dx * 7, ez + dz * 3 + dy, 79u) - 0.5f) * 0.9f;
+                    if (d > radius || (dx == 0 && dz == 0 && dy < 1))
+                        continue;
+                    out.push_back(Placed{ex + dx, ey + dy, ez + dz, LEAVES_CHERRY});
+                    // blossom hanging from the underside
+                    if (dy == -1 && hash(ex + dx, ez + dz, 81u) % 4u == 0u)
+                        out.push_back(Placed{ex + dx, ey - 2, ez + dz, LEAVES_CHERRY});
+                }
+        }
+    }
+}
+
+// A big oak, as a block game sometimes grows one: a taller trunk with
+// three or four branches reaching out at different heights, each with
+// its own ball of leaves, and a crown on top, so the big trees of a wood
+// stand out from the small ones.
+void bigOak(std::vector<Placed> &out, int bx, int base, int bz, unsigned int h)
+{
+    const int trunk = 7 + static_cast<int>(h % 3u);
+    for (int k = 0; k < trunk; ++k)
+        out.push_back(Placed{bx, base + k, bz, OAK_LOG});
+    auto ball = [&](int cx, int cy, int cz, float radius) {
+        for (int dy = -2; dy <= 2; ++dy)
+            for (int dx = -3; dx <= 3; ++dx)
+                for (int dz = -3; dz <= 3; ++dz)
+                {
+                    const float d = sqrtf(static_cast<float>(dx * dx + dz * dz) +
+                                          1.8f * static_cast<float>(dy * dy)) +
+                                    (lattice(cx + dx * 5, cz + dz * 7 + dy, 83u) - 0.5f) * 0.8f;
+                    if (d <= radius)
+                        out.push_back(Placed{cx + dx, cy + dy, cz + dz, LEAVES_OAK});
+                }
+    };
+    const int branches = 3 + static_cast<int>((h >> 3) % 2u);
+    for (int b = 0; b < branches; ++b)
+    {
+        const float a = static_cast<float>((h >> 5) % 360u) * 0.0174533f +
+                        6.2831853f * static_cast<float>(b) / static_cast<float>(branches);
+        const int from = base + trunk - 4 + b % 3;
+        const int length = 2 + static_cast<int>((h >> (9 + b)) % 2u);
+        int ex = bx, ey = from, ez = bz;
+        for (int k = 1; k <= length; ++k)
+        {
+            ex = bx + static_cast<int>(lroundf(cosf(a) * static_cast<float>(k)));
+            ez = bz + static_cast<int>(lroundf(sinf(a) * static_cast<float>(k)));
+            ey = from + k / 2;
+            out.push_back(Placed{ex, ey, ez, OAK_LOG});
+        }
+        ball(ex, ey + 1, ez, 2.4f);
+    }
+    ball(bx, base + trunk, bz, 2.9f);
 }
 
 // A spruce as a block game grows one: the trunk ends a block under a
@@ -2788,7 +2894,7 @@ void buildLake(Grid &g, const Clearance &clear, Extras &extras)
             if (abs(x - bestX) + abs(z - bestZ) <= 3)
                 g.put(x, level + 1, z, abs(x - bestX) + abs(z - bestZ) <= 1 ? GRASS : SAND);
     std::vector<Placed> tree;
-    roundTree(tree, bestX, level + 2, bestZ, OAK_LOG, LEAVES_CHERRY, 5, true);
+    cherryTree(tree, bestX, level + 2, bestZ, 5u);
     commit(g, clear, tree);
     // the jetty from the south bank
     for (int z = bestZ + radius + 1; z >= bestZ + radius - 5; --z)
@@ -3139,7 +3245,9 @@ void buildSwampWater(Grid &g, const std::vector<unsigned char> &zone)
 void mangrove(Grid &g, const Clearance &clear, int bx, int base, int bz, unsigned int h)
 {
     std::vector<Placed> tree;
-    const int lift = 3, trunk = 5 + static_cast<int>(h % 3u);
+    // trunks of different heights, so the crowns stand at different levels
+    // and the swamp is not one flat green roof
+    const int lift = 3, trunk = 4 + static_cast<int>(h % 6u);
     const int dirs[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
     for (const int *d : dirs)
     {
@@ -3374,8 +3482,8 @@ void plantNorthEast(Grid &g, const Clearance &clear, const Extras &extras)
             const float cx = centerOf(bx), cz = centerOf(bz);
             if (biome == MANGROVE)
             {
-                if ((ground == MUD || ground == WATER) && h % 34u == 0 && top + 14 < kMaxY &&
-                    !crowded(g, bx, top + 1, bz, 7))
+                if ((ground == MUD || ground == WATER) && h % 34u == 0 && top + 18 < kMaxY &&
+                    !crowded(g, bx, top + 1, bz, 9))
                     mangrove(g, clear, bx, top + 1, bz, h >> 4);
                 continue;
             }
@@ -3389,14 +3497,17 @@ void plantNorthEast(Grid &g, const Clearance &clear, const Extras &extras)
                 if (tx * tx + tz * tz < ragged * ragged)
                     continue;
             }
+            // thickets of bamboo with grassy clearings between them, where
+            // the big trees stand, so from afar the jungle is not one green
+            // roof
             const float thicket = valueNoise(cx * 0.04f, cz * 0.04f, 743u);
-            if (thicket > 0.34f && h % 4u != 0)
+            if (thicket > 0.44f && h % 4u != 0)
             {
                 const int height = 8 + static_cast<int>((h >> 8) % 9u);
                 if (bambooCane(g, clear, bx, top + 1, bz, height))
                     caneTops.push_back(Placed{bx, top + height, bz, LEAVES_BAMBOO});
             }
-            else if (h % 61u == 0 && !crowded(g, bx, top + 1, bz, 3))
+            else if (h % 41u == 0 && !crowded(g, bx, top + 1, bz, 4))
             {
                 std::vector<Placed> tree;
                 roundTree(tree, bx, top + 1, bz, OAK_LOG, LEAVES_OAK, 9, true);
@@ -3487,8 +3598,7 @@ void plantTrees(Grid &g, const Clearance &clear, const Extras &extras)
                     // the cherry grove: blossom trees close together
                     if (h % 9u == 0 && !crowded(g, bx, base, bz, 3))
                     {
-                        roundTree(blocks, bx, base, bz, OAK_LOG, LEAVES_CHERRY,
-                                  5 + static_cast<int>((h >> 8) % 2u), true);
+                        cherryTree(blocks, bx, base, bz, h >> 6);
                         commit(g, clear, blocks);
                     }
                     continue;
@@ -3528,10 +3638,12 @@ void plantTrees(Grid &g, const Clearance &clear, const Extras &extras)
                         const unsigned int kind = (h >> 8) % 10u;
                         const int trunk = 4 + static_cast<int>((h >> 12) % 3u);
                         if (blossom && kind < 6u)
-                            roundTree(blocks, bx, base, bz, OAK_LOG, LEAVES_CHERRY, trunk, true);
+                            cherryTree(blocks, bx, base, bz, h >> 6);
                         else if (kind < 4u)
                             roundTree(blocks, bx, base, bz, BIRCH_LOG, LEAVES_BIRCH, trunk + 1,
                                       false);
+                        else if (kind == 9u && wood > 0.56f)
+                            bigOak(blocks, bx, base, bz, h >> 6);
                         else
                             roundTree(blocks, bx, base, bz, OAK_LOG, LEAVES_OAK, trunk, kind == 9u);
                     }
@@ -3543,7 +3655,7 @@ void plantTrees(Grid &g, const Clearance &clear, const Extras &extras)
 
     // one cherry tree on the floating island
     blocks.clear();
-    roundTree(blocks, kFloatX - 1, kFloatTop + 1, kFloatZ + 1, OAK_LOG, LEAVES_CHERRY, 4, false);
+    cherryTree(blocks, kFloatX - 1, kFloatTop + 1, kFloatZ + 1, 2u);
     commit(g, clear, blocks);
 }
 
@@ -4127,7 +4239,7 @@ void buildFlat(Grid &g)
         else if (tree[2] == 1)
             roundTree(blocks, tree[0], 0, tree[1], BIRCH_LOG, LEAVES_BIRCH, 6, false);
         else
-            roundTree(blocks, tree[0], 0, tree[1], OAK_LOG, LEAVES_CHERRY, 5, true);
+            cherryTree(blocks, tree[0], 0, tree[1], 7u);
         commit(g, clear, blocks);
     }
     spreadSky(g);
