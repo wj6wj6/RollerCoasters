@@ -45,6 +45,8 @@
 #include "TrainModel.h"
 #include "EditKeys.h"
 #include "TrackInsert.h"
+#include "Utilities/Platform.H"
+#include "Utilities/PlatformFltk.H"
 #include <FL/x.H>
 #include <FL/gl.h>
 
@@ -90,17 +92,17 @@ static int touchpadWheel(void *event, void *data)
     const WORD keys = LOWORD(message->wParam);
     int state = 0;
     if (keys & MK_CONTROL)
-        state |= FL_CTRL;
+        state |= Mod::Ctrl;
     if (keys & MK_SHIFT)
-        state |= FL_SHIFT;
+        state |= Mod::Shift;
     if (GetKeyState(VK_MENU) < 0)
-        state |= FL_ALT;
+        state |= Mod::Alt;
     const float steps = (float)delta / WHEEL_DELTA;
     const bool precise = isPreciseWheel(delta);
     // Riding the train, touchpad scrolling turns the head; wheel notches do nothing.
-    if (train && (!precise || (state & FL_CTRL)))
+    if (train && (!precise || (state & Mod::Ctrl)))
         return 1;
-    // Match FLTK's signs: wheel up is -dy, tilting right is +dx.
+    // Match InputEvent's signs: wheel up is -dy, tilting right is +dx.
     const float dx = message->message == WM_MOUSEWHEEL ? 0.0f : steps;
     const float dy = message->message == WM_MOUSEWHEEL ? -steps : 0.0f;
     if (train)
@@ -122,7 +124,7 @@ static int touchpadWheel(void *event, void *data)
 }
 
 // In Fly mode, take the flying keys before FLTK and the input method see them
-// and hand them to the view as FLTK key events.
+// and hand them to the view as key events.
 static int flyKeys(void *event, void *data)
 {
     MSG *message = static_cast<MSG *>(event);
@@ -152,18 +154,20 @@ static int flyKeys(void *event, void *data)
             view->recenterHead();
         return 1;
     }
-    Fl::e_keysym = key;
     // FLTK never saw this message, so take the modifiers from the keyboard:
-    // editing commands such as Ctrl + snapping read them.
-    int state = Fl::e_state & ~(FL_SHIFT | FL_CTRL | FL_ALT);
+    // editing commands such as Ctrl + snapping read them. The mouse is where
+    // FLTK last saw it, as for any key event.
+    InputEvent e = platform::fltkEvent(FL_KEYDOWN);
+    e.type = message->message == WM_KEYDOWN ? InputType::KeyDown : InputType::KeyUp;
+    e.key = key;
+    e.state &= ~(Mod::Shift | Mod::Ctrl | Mod::Alt);
     if (GetKeyState(VK_SHIFT) < 0)
-        state |= FL_SHIFT;
+        e.state |= Mod::Shift;
     if (GetKeyState(VK_CONTROL) < 0)
-        state |= FL_CTRL;
+        e.state |= Mod::Ctrl;
     if (GetKeyState(VK_MENU) < 0)
-        state |= FL_ALT;
-    Fl::e_state = state;
-    view->handle(message->message == WM_KEYDOWN ? FL_KEYDOWN : FL_KEYUP);
+        e.state |= Mod::Alt;
+    view->handleInput(e);
     return 1;
 }
 
@@ -246,7 +250,7 @@ TrainView::~TrainView()
         ClipCursor(nullptr);
     Fl::remove_system_handler(touchpadWheel);
     Fl::remove_system_handler(flyKeys);
-    Fl::remove_timeout(redrawSoon, this);
+    platform::removeTimeout(redrawSoon, this);
 }
 
 //************************************************************************
@@ -420,47 +424,49 @@ void TrainView::recenterHead()
 //   double click looks ahead again. Control points are hidden while riding,
 //   so clicks never pick them. Returns 1 when the event was used.
 //========================================================================
-int TrainView::handleTrainLook(int event)
+int TrainView::handleTrainLook(const InputEvent &e)
 //========================================================================
 {
-    switch (event)
+    switch (e.type)
     {
-    case FL_PUSH:
-        if (Fl::event_button() == FL_MIDDLE_MOUSE)
+    case InputType::Push:
+        if (e.button == Mouse::Middle)
             break;
         Fl::focus(this);
-        if (Fl::event_clicks())
+        if (e.clicks)
         {
             recenterHead();
             headDragging = false;
             // The next press starts a new drag rather than counting as a third click.
-            Fl::event_is_click(0);
+            platform::forgetClick();
             return 1;
         }
         headDragging = true;
-        headDragX = Fl::event_x();
-        headDragY = Fl::event_y();
+        headDragX = e.x;
+        headDragY = e.y;
         return 1;
-    case FL_DRAG:
+    case InputType::Drag:
         if (!headDragging)
             break;
-        headLook.drag((float)(Fl::event_x() - headDragX), (float)(Fl::event_y() - headDragY));
-        headDragX = Fl::event_x();
-        headDragY = Fl::event_y();
+        headLook.drag((float)(e.x - headDragX), (float)(e.y - headDragY));
+        headDragX = e.x;
+        headDragY = e.y;
         damage(1);
         return 1;
-    case FL_RELEASE:
+    case InputType::Release:
         if (!headDragging)
             break;
         headDragging = false;
         return 1;
-    case FL_KEYBOARD:
+    case InputType::KeyDown:
         // R (or Home) looks ahead again; the scan-code handler covers input methods.
-        if (Fl::event_key() == 'r' || Fl::event_key() == FL_Home)
+        if (e.key == 'r' || e.key == Key::Home)
         {
             recenterHead();
             return 1;
         }
+        break;
+    default:
         break;
     }
     return 0;
@@ -477,25 +483,32 @@ int TrainView::handleTrainLook(int event)
 //========================================================================
 int TrainView::handle(int event)
 {
+    if (handleInput(platform::fltkEvent(event)))
+        return 1;
+    return Fl_Gl_Window::handle(event);
+}
+
+int TrainView::handleInput(const InputEvent &e)
+{
     // an edit in progress sees every event before the camera does
-    if (m_editMode != EDIT_IDLE && editEvent(event))
+    if (m_editMode != EDIT_IDLE && editEvent(e))
         return 1;
     // so does adding a point, so a click on the track is not an orbit
-    if (m_placing && placeEvent(event))
+    if (m_placing && placeEvent(e))
         return 1;
     // and carrying a point along in Fly (G)
-    if (m_carrying && carryEvent(event))
+    if (m_carrying && carryEvent(e))
         return 1;
 
     // see if the ArcBall will handle the event - if it does,
     // then we're done
     // note: the arcball only gets the event if we're in world view
     if (tw->worldCam->value())
-        if (arcball.handle(event))
+        if (arcball.handle(e))
             return 1;
 
     // Riding the train, drags turn the rider's head.
-    if (tw->trainCam->value() && handleTrainLook(event))
+    if (tw->trainCam->value() && handleTrainLook(e))
         return 1;
 
     // The observer camera takes held keys, right drags and the wheel.
@@ -503,13 +516,13 @@ int TrainView::handle(int event)
     {
         if (mouseCaptured)
         {
-            switch (event)
+            switch (e.type)
             {
-            case FL_MOVE:
-            case FL_DRAG: {
+            case InputType::Move:
+            case InputType::Drag: {
                 // The cursor is hidden and kept at the centre; its offset is the turn.
-                const int dx = Fl::event_x() - w() / 2;
-                const int dy = Fl::event_y() - h() / 2;
+                const int dx = e.x - w() / 2;
+                const int dy = e.y - h() / 2;
                 if (dx != 0 || dy != 0)
                 {
                     flyCam.mouseLook((float)dx, (float)dy);
@@ -520,49 +533,51 @@ int TrainView::handle(int event)
             // With Edit on the mouse buttons build, as in Minecraft: left
             // removes the point at the crosshair, right places a new one,
             // middle selects (picks) it. With Edit off they do nothing.
-            case FL_PUSH:
+            case InputType::Push:
                 if (canEdit())
-                    flyBuildClick(Fl::event_button());
+                    flyBuildClick(e.button);
                 return 1;
-            case FL_RELEASE:
+            case InputType::Release:
                 return 1;
-            case FL_UNFOCUS:
-            case FL_HIDE:
+            case InputType::Unfocus:
+            case InputType::Hide:
                 setMouseCaptured(false);
+                break;
+            default:
                 break;
             }
         }
         // Esc frees the mouse; it must not reach the window, which would close.
-        if (event == FL_KEYBOARD && Fl::event_key() == FL_Escape)
+        if (e.type == InputType::KeyDown && e.key == Key::Escape)
         {
             setMouseCaptured(false);
             return 1;
         }
         // Editing commands first: none of them is a flying key (see
         // EditKeys.h), so G, R, Alt + D, Delete and Ctrl + Z still work here.
-        if (event == FL_KEYBOARD && editKey(Fl::event_key()))
+        if (e.type == InputType::KeyDown && editKey(e))
             return 1;
         // building: the wheel sets how far ahead a new point goes
-        if (event == FL_MOUSEWHEEL && flyBuilding())
+        if (e.type == InputType::Wheel && flyBuilding())
         {
-            adjustPlaceDepth(static_cast<float>(Fl::event_dy()));
+            adjustPlaceDepth(e.dy);
             return 1;
         }
         const float speedBefore = flyCam.speed();
-        const int used = flyCam.handle(event);
+        const int used = flyCam.handle(e);
         if (flyCam.speed() != speedBefore)
             tw->flySpeed->value(flyCam.speed());
         if (used)
             return 1;
         // Home puts the observer back at the world camera's viewpoint (R
         // tilts the selected control point).
-        if (event == FL_KEYBOARD && Fl::event_key() == FL_Home)
+        if (e.type == InputType::KeyDown && e.key == Key::Home)
         {
             placeFlyCamAtWorldView();
             return 1;
         }
         // F turns to face the train, so it is easy to find again.
-        if (event == FL_KEYBOARD && Fl::event_key() == 'f')
+        if (e.type == InputType::KeyDown && e.key == 'f')
         {
             const Pnt3f target = trainPosition();
             flyCam.lookAt(target.x, target.y, target.z);
@@ -573,16 +588,16 @@ int TrainView::handle(int event)
     // remember what button was used
     static int last_push;
 
-    switch (event)
+    switch (e.type)
     {
     // Mouse button being pushed event
-    case FL_PUSH:
-        last_push = Fl::event_button();
+    case InputType::Push:
+        last_push = e.button;
         // if the left button be pushed is left mouse button
-        if (last_push == FL_LEFT_MOUSE)
+        if (last_push == Mouse::Left)
         {
-            const int mx = Fl::event_x();
-            const int my = Fl::event_y();
+            const int mx = e.x;
+            const int my = e.y;
             // a handle of the selected point wins over picking another point
             if (canEdit() && hasSelection() && m_editCameraValid)
             {
@@ -596,13 +611,13 @@ int TrainView::handle(int event)
                     return 1;
                 }
             }
-            doPick();
+            doPick(mx, my);
             // dragging a point by its body moves it parallel to the screen;
             // dragging empty space orbits (Alt pans), so one finger is enough on a touchpad
             if (canEdit() && hasSelection() && m_editCameraValid)
                 beginEdit(EDIT_DRAG, TransformGizmo::VIEW, mx, my);
             else if (selectedCube < 0 && tw->worldCam->value())
-                arcball.beginDrag((Fl::event_state() & FL_ALT) != 0);
+                arcball.beginDrag(mx, my, (e.state & Mod::Alt) != 0);
             // In the observer camera a click on empty space captures the mouse
             // for spectator-style mouse look (Esc frees it).
             else if (selectedCube < 0 && tw->flyCam->value())
@@ -612,28 +627,28 @@ int TrainView::handle(int event)
         }
         // the middle button selects the point under the mouse (picks it, as
         // in a block game), without moving anything; C does the same
-        if (last_push == FL_MIDDLE_MOUSE && canEdit())
+        if (last_push == Mouse::Middle && canEdit())
         {
-            selectedCube = pointUnderMouse();
+            selectedCube = pointUnderMouse(e.x, e.y);
             tw->damageMe();
             return 1;
         }
         break;
 
         // Mouse button release event
-    case FL_RELEASE: // button release
+    case InputType::Release: // button release
         damage(1);
         last_push = 0;
         return 1;
 
     // highlight the handle under the mouse
-    case FL_MOVE:
+    case InputType::Move:
         if (canEdit() && hasSelection() && m_editCameraValid)
         {
             const Pnt3f &p = m_pTrack->points[static_cast<size_t>(selectedCube)].pos;
             const float position[3] = {p.x, p.y, p.z};
-            const TransformGizmo::Handle handle = TransformGizmo::pick(
-                m_editCamera, position, m_gizmoSize, Fl::event_x(), Fl::event_y());
+            const TransformGizmo::Handle handle =
+                TransformGizmo::pick(m_editCamera, position, m_gizmoSize, e.x, e.y);
             if (handle != m_hoverHandle)
             {
                 m_hoverHandle = handle;
@@ -643,20 +658,19 @@ int TrainView::handle(int event)
         return 1;
 
     // in order to get keyboard events, we need to accept focus
-    case FL_FOCUS:
+    case InputType::Focus:
         return 1;
 
     // every time the mouse enters this window, aggressively take focus
-    // (returning 1 also asks FLTK for FL_MOVE events, used by mouse look)
-    case FL_ENTER:
+    // (returning 1 also asks FLTK for move events, used by mouse look)
+    case InputType::Enter:
         focus(this);
         return 1;
 
-    case FL_KEYBOARD:
-        int k = Fl::event_key();
-        if (editKey(k))
+    case InputType::KeyDown:
+        if (editKey(e))
             return 1;
-        if (k == 'p')
+        if (e.key == 'p')
         {
             // Print out the selected control point information
             if (selectedCube >= 0)
@@ -672,9 +686,11 @@ int TrainView::handle(int event)
             return 1;
         };
         break;
+    default:
+        break;
     }
 
-    return Fl_Gl_Window::handle(event);
+    return 0;
 }
 
 //************************************************************************
@@ -727,12 +743,11 @@ void TrainView::beginEdit(EditMode mode, TransformGizmo::Handle handle, int mous
     damage(1);
 }
 
-void TrainView::updateEdit(int mouseX, int mouseY)
+void TrainView::updateEdit(int mouseX, int mouseY, bool snap)
 {
     if (!hasSelection() || !m_editCameraValid)
         return;
     ControlPoint &point = m_pTrack->points[static_cast<size_t>(selectedCube)];
-    const bool snap = (Fl::event_state() & FL_CTRL) != 0;
     const float start[3] = {m_editStart.pos.x, m_editStart.pos.y, m_editStart.pos.z};
 
     if (m_editMode == EDIT_ROTATE)
@@ -905,33 +920,33 @@ void TrainView::endCarry(bool keep)
 
 // Events while carrying a point in Fly. The mouse still looks and the keys
 // still fly; the wheel sets the distance, a left click puts it down.
-bool TrainView::carryEvent(int event)
+bool TrainView::carryEvent(const InputEvent &e)
 {
     if (!canEdit() || !tw->flyCam->value() || !hasSelection())
     {
         endCarry(true);
         return false;
     }
-    switch (event)
+    switch (e.type)
     {
-    case FL_MOUSEWHEEL:
-        adjustPlaceDepth(static_cast<float>(Fl::event_dy()));
+    case InputType::Wheel:
+        adjustPlaceDepth(e.dy);
         return true;
-    case FL_PUSH:
-        if (Fl::event_button() == FL_LEFT_MOUSE)
+    case InputType::Push:
+        if (e.button == Mouse::Left)
             endCarry(true);
         return true; // the other buttons do nothing meanwhile
-    case FL_RELEASE:
+    case InputType::Release:
         return true;
-    case FL_KEYBOARD:
-        if (Fl::event_key() == FL_Escape)
+    case InputType::KeyDown:
+        if (e.key == Key::Escape)
         {
             endCarry(false);
             return true;
         }
         return false;
-    case FL_UNFOCUS:
-    case FL_HIDE:
+    case InputType::Unfocus:
+    case InputType::Hide:
         endCarry(true);
         return false;
     default:
@@ -941,14 +956,13 @@ bool TrainView::carryEvent(int event)
 
 // The control point the middle button or C selects: at the crosshair while
 // Fly holds the mouse, else under the mouse; -1 when none is near.
-int TrainView::pointUnderMouse() const
+int TrainView::pointUnderMouse(int mouseX, int mouseY) const
 {
     if (tw->flyCam->value() && mouseCaptured)
         return crosshairPoint();
     if (!m_editCameraValid)
         return -1;
-    return TrackInsert::pickPoint(*m_pTrack, m_editCamera, Fl::event_x(), Fl::event_y(),
-                                  kCrosshairReach);
+    return TrackInsert::pickPoint(*m_pTrack, m_editCamera, mouseX, mouseY, kCrosshairReach);
 }
 
 // The control point at the Fly crosshair, or -1.
@@ -1008,9 +1022,9 @@ bool TrainView::wheelSetsDepth() const
 void TrainView::flyBuildClick(int button)
 {
     const int aimed = crosshairPoint();
-    if (button == FL_MIDDLE_MOUSE)
+    if (button == Mouse::Middle)
         selectedCube = aimed;
-    else if (button == FL_LEFT_MOUSE && aimed >= 0)
+    else if (button == Mouse::Left && aimed >= 0)
     {
         const TrackHistory::Snapshot before = TrackHistory::capture(*m_pTrack, selectedCube);
         if (TrackInsert::removeAt(*m_pTrack, aimed))
@@ -1022,7 +1036,7 @@ void TrainView::flyBuildClick(int button)
                 --selectedCube;
         }
     }
-    else if (button == FL_RIGHT_MOUSE)
+    else if (button == Mouse::Right)
     {
         updateFlyPlace();
         const TrackSplineType splineType = static_cast<TrackSplineType>(tw->splineBrowser->value());
@@ -1106,7 +1120,7 @@ void TrainView::updatePlaceHover(int mouseX, int mouseY)
 
 // Events while adding a point. True if the event was used; the rest go on
 // as usual, so the camera can still be turned and zoomed.
-bool TrainView::placeEvent(int event)
+bool TrainView::placeEvent(const InputEvent &e)
 {
     // gave up when Edit goes off or the camera changes to Fly
     if (!canEdit() || tw->flyCam->value())
@@ -1114,19 +1128,19 @@ bool TrainView::placeEvent(int event)
         endPlacePoint();
         return false;
     }
-    switch (event)
+    switch (e.type)
     {
-    case FL_MOVE:
-        updatePlaceHover(Fl::event_x(), Fl::event_y());
+    case InputType::Move:
+        updatePlaceHover(e.x, e.y);
         return false; // the handle highlighting still runs
-    case FL_PUSH: {
-        if (Fl::event_button() != FL_LEFT_MOUSE)
+    case InputType::Push: {
+        if (e.button != Mouse::Left)
         {
             endPlacePoint();
             return true;
         }
-        const int mx = Fl::event_x();
-        const int my = Fl::event_y();
+        const int mx = e.x;
+        const int my = e.y;
         updatePlaceHover(mx, my);
         if (!m_placeHit)
             return false; // off the track: orbit or pick a point as usual
@@ -1144,8 +1158,8 @@ bool TrainView::placeEvent(int event)
         tw->damageMe();
         return true;
     }
-    case FL_KEYBOARD:
-        if (Fl::event_key() == FL_Escape)
+    case InputType::KeyDown:
+        if (e.key == Key::Escape)
         {
             endPlacePoint();
             return true;
@@ -1157,7 +1171,7 @@ bool TrainView::placeEvent(int event)
 }
 
 // Events while a point is being moved or tilted. True if the event was used.
-bool TrainView::editEvent(int event)
+bool TrainView::editEvent(const InputEvent &e)
 {
     if (!hasSelection() || !canEdit())
     {
@@ -1165,30 +1179,31 @@ bool TrainView::editEvent(int event)
         return false;
     }
     const bool held = m_editMode == EDIT_DRAG;
-    switch (event)
+    const bool snap = (e.state & Mod::Ctrl) != 0;
+    switch (e.type)
     {
-    case FL_DRAG:
-    case FL_MOVE:
-        updateEdit(Fl::event_x(), Fl::event_y());
+    case InputType::Drag:
+    case InputType::Move:
+        updateEdit(e.x, e.y, snap);
         return true;
-    case FL_PUSH:
+    case InputType::Push:
         if (held)
             return true;
         // left click accepts, any other button puts the point back
-        endEdit(Fl::event_button() == FL_LEFT_MOUSE);
+        endEdit(e.button == Mouse::Left);
         return true;
-    case FL_RELEASE:
+    case InputType::Release:
         if (held)
             endEdit(true);
         return true;
-    case FL_KEYBOARD: {
-        const int key = Fl::event_key();
-        if (key == FL_Escape)
+    case InputType::KeyDown: {
+        const int key = e.key;
+        if (key == Key::Escape)
         {
             endEdit(false);
             return true;
         }
-        if (key == FL_Enter || key == FL_KP_Enter)
+        if (key == Key::Enter || key == Key::KeypadEnter)
         {
             endEdit(true);
             return true;
@@ -1197,14 +1212,14 @@ bool TrainView::editEvent(int event)
         {
             // start over from where the point was, held to the new axis
             const int axis = key - 'x';
-            const bool plane = (Fl::event_state() & FL_SHIFT) != 0 && m_editMode == EDIT_GRAB;
+            const bool plane = (e.state & Mod::Shift) != 0 && m_editMode == EDIT_GRAB;
             const TransformGizmo::Handle wanted = static_cast<TransformGizmo::Handle>(
                 (plane ? TransformGizmo::PLANE_YZ : TransformGizmo::AXIS_X) + axis);
             const TransformGizmo::Handle free =
                 m_editMode == EDIT_GRAB ? TransformGizmo::VIEW : TransformGizmo::NONE;
             m_pTrack->points[static_cast<size_t>(selectedCube)] = m_editStart;
             m_editHandle = m_editHandle == wanted ? free : wanted;
-            updateEdit(Fl::event_x(), Fl::event_y());
+            updateEdit(e.x, e.y, snap);
             damage(1);
         }
         return true; // no other key does anything in the middle of an edit
@@ -1216,10 +1231,9 @@ bool TrainView::editEvent(int event)
 
 // Keys when no edit is in progress. True if the key was used. Which key is
 // which command, in Fly and in the other cameras, is in EditKeys.h.
-bool TrainView::editKey(int key)
+bool TrainView::editKey(const InputEvent &e)
 {
-    const EditKeys::Action action =
-        EditKeys::forKey(key, Fl::event_state(), tw->flyCam->value() != 0);
+    const EditKeys::Action action = EditKeys::forKey(e.key, e.state, tw->flyCam->value() != 0);
     if (action == EditKeys::CAMERA_WORLD || action == EditKeys::CAMERA_TOP ||
         action == EditKeys::CAMERA_TRAIN)
     {
@@ -1256,7 +1270,7 @@ bool TrainView::editKey(int key)
     {
         // C: select the point at the crosshair in Fly, else under the mouse
         // (the middle button's job, for a touchpad that has none)
-        selectedCube = pointUnderMouse();
+        selectedCube = pointUnderMouse(e.x, e.y);
         tw->damageMe();
         return true;
     }
@@ -1284,12 +1298,12 @@ bool TrainView::editKey(int key)
     case EditKeys::GRAB:
         if (!m_editCameraValid)
             return false;
-        beginEdit(EDIT_GRAB, TransformGizmo::VIEW, Fl::event_x(), Fl::event_y());
+        beginEdit(EDIT_GRAB, TransformGizmo::VIEW, e.x, e.y);
         return true;
     case EditKeys::TILT:
         if (!m_editCameraValid)
             return false;
-        beginEdit(EDIT_ROTATE, TransformGizmo::NONE, Fl::event_x(), Fl::event_y());
+        beginEdit(EDIT_ROTATE, TransformGizmo::NONE, e.x, e.y);
         return true;
     case EditKeys::REMOVE:
         deletePointCB(nullptr, tw);
@@ -1944,22 +1958,18 @@ void TrainView::drawStuff(bool doingShadows)
 //		changed how control points are drawn, you might need to change this
 //########################################################################
 //========================================================================
-void TrainView::doPick()
+void TrainView::doPick(int mx, int my)
 //========================================================================
 {
     // since we'll need to do some GL stuff so we make this window as
     // active window
     make_current();
 
-    // where is the mouse?
-    int mx = Fl::event_x();
-    int my = Fl::event_y();
-
     // get the viewport - most reliable way to turn mouse coords into GL coords
     int viewport[4];
     glGetIntegerv(GL_VIEWPORT, viewport);
 
-    // Set up the pick matrix on the stack - remember, FlTk is
+    // Set up the pick matrix on the stack - remember, window y is
     // upside down!
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();

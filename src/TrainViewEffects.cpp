@@ -27,6 +27,7 @@
 #include "TrainModel.h"
 #include "TrainWindow.H"
 #include "Utilities/3DUtils.h"
+#include "Utilities/Platform.H"
 #include "TexturePack.h"
 #include "WorldShape.h"
 
@@ -357,8 +358,8 @@ bool TrainView::worldReady()
             stage = "Building the sea floor";
     }
     drawLoadingScreen(done, stage);
-    if (!Fl::has_timeout(redrawSoon, this))
-        Fl::add_timeout(1.0 / 30.0, redrawSoon, this);
+    if (!platform::hasTimeout(redrawSoon, this))
+        platform::addTimeout(1.0 / 30.0, redrawSoon, this);
     return false;
 }
 

@@ -4,7 +4,7 @@
 #include <windows.h>
 #include <directmanipulation.h>
 #include <hidsdi.h>
-#include <FL/Fl.H>
+#include "Utilities/Platform.H"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -291,8 +291,8 @@ bool TouchpadGestures::attach(void *window, Accept acceptFn, Apply applyFn, void
 void TouchpadGestures::detach()
 {
     stopTicking();
-    Fl::remove_timeout(resetLater, this);
-    Fl::remove_timeout(coast, this);
+    platform::removeTimeout(resetLater, this);
+    platform::removeTimeout(coast, this);
     if (raw)
     {
         RAWINPUTDEVICE device = {0x0D, 0x05, RIDEV_REMOVE, nullptr};
@@ -364,9 +364,9 @@ bool TouchpadGestures::hitTest(unsigned int pointerId)
         return false;
     HWND target = static_cast<HWND>(hwnd);
     // A gesture that starts right after the last one must not race its reset.
-    if (Fl::has_timeout(resetLater, this))
+    if (platform::hasTimeout(resetLater, this))
     {
-        Fl::remove_timeout(resetLater, this);
+        platform::removeTimeout(resetLater, this);
         resetLater(this);
     }
     // A pinch zooms around the cursor, which stays still during the gesture.
@@ -387,7 +387,7 @@ bool TouchpadGestures::hitTest(unsigned int pointerId)
     if (!ticking)
     {
         ticking = true;
-        Fl::add_timeout(kTickSeconds, tick, this);
+        platform::addTimeout(kTickSeconds, tick, this);
     }
     return true;
 }
@@ -400,7 +400,7 @@ void TouchpadGestures::statusChanged(int current)
         stopTicking();
         // This runs inside Update(); reset once it has returned.
         resetting = true;
-        Fl::add_timeout(0, resetLater, this);
+        platform::addTimeout(0, resetLater, this);
     }
 }
 
@@ -456,13 +456,13 @@ void TouchpadGestures::tick(void *data)
         gestures->stopTicking();
         return;
     }
-    Fl::repeat_timeout(kTickSeconds, tick, data);
+    platform::repeatTimeout(kTickSeconds, tick, data);
 }
 
 void TouchpadGestures::stopTicking()
 {
     if (ticking)
-        Fl::remove_timeout(tick, this);
+        platform::removeTimeout(tick, this);
     ticking = false;
 }
 
@@ -612,7 +612,7 @@ void TouchpadGestures::rawFrame()
             endRawGesture();
         if (!rawStartAllowed())
             return;
-        Fl::remove_timeout(coast, this);
+        platform::removeTimeout(coast, this);
         raw->tracking = true;
         raw->idA = a.id;
         raw->idB = b.id;
@@ -649,7 +649,7 @@ void TouchpadGestures::endRawGesture()
     if (inertia && idle < .05f && std::hypot(raw->velocityX, raw->velocityY) > 150)
     {
         raw->lastFrame = std::chrono::steady_clock::now();
-        Fl::add_timeout(kTickSeconds, coast, this);
+        platform::addTimeout(kTickSeconds, coast, this);
     }
 }
 
@@ -668,5 +668,5 @@ void TouchpadGestures::coast(void *data)
     raw->velocityX *= decay;
     raw->velocityY *= decay;
     if (std::hypot(raw->velocityX, raw->velocityY) > 20)
-        Fl::repeat_timeout(kTickSeconds, coast, data);
+        platform::repeatTimeout(kTickSeconds, coast, data);
 }

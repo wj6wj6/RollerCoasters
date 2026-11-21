@@ -28,11 +28,13 @@ flowchart LR
     View --> History
     History --> Track
     View --> Keys[EditKeys / 按鍵對應的編輯指令]
+    FltkEvents[FLTK 事件 / Fl::event_*] -->|platform::fltkEvent| Input[InputEvent / 自己的滑鼠鍵盤事件 Input.H]
+    Input -->|handleInput| View
     View --> Camera[ArcBallCam / World 相機與手勢平滑]
     View --> Fly[FlyCam / 觀察者自由相機]
     View --> Head[HeadLook / Train 視角轉頭]
     Camera -->|進入 Fly 時的視角| Fly
-    Camera --> Timer[FLTK event loop / timeout]
+    Camera --> Timer[platform:: timer / 目前由 FLTK event loop 實作]
     Timer --> Camera
     Fly -->|按住按鍵時| Timer
     Timer --> Fly
@@ -120,7 +122,9 @@ flowchart LR
 | `src/FileDialogs.h/.cpp` | 系統檔案視窗（`Fl_Native_File_Chooser`）與用檔案總管開資料夾。 |
 | `src/TouchpadGestures.H/.cpp` | Raw Input 讀精準觸控板的手指座標；Direct Manipulation 接手手勢並作為備援。 |
 | `src/Utilities/TwoFingerGesture.*` | 兩指位移與張開比例的 1-euro 濾波與起動門檻。 |
-| `src/Utilities/ArcBallCam.*` | World 相機；以 FLTK timeout 分攤滾輪縮放。 |
+| `src/Utilities/Input.H` | 自己的輸入事件 `InputEvent`、`Key::`／`Mod::`／`Mouse::` 常數（數值與 FLTK 相同），以及相機用的 `Viewport` 介面。 |
+| `src/Utilities/Platform.H`、`PlatformFltk.*` | 計時器與事件迴圈（`platform::addTimeout()` 等），目前以 FLTK 實作；`platform::fltkEvent()` 把 FLTK 事件轉成 `InputEvent`。見 [ADR 0008](adr/0008-own-input-and-timer-layer.md)。 |
+| `src/Utilities/ArcBallCam.*` | World 相機；以 `platform::` timer 分攤滾輪縮放。 |
 | `src/Utilities/FlyCam.*` | Fly 觀察者相機。 |
 | `src/Utilities/HeadLook.*` | Train 相機相對於列車的轉頭。 |
 | `src/Utilities/Pnt3f.*`、`3DUtils.*` | 三維向量型別與 OpenGL 輔助函式（課程原始碼）。 |
@@ -134,7 +138,8 @@ flowchart LR
 - 世界在背景執行緒建造：`TrainView::draw()` 先呼叫 `worldReady()`，它對目前要畫的島與（`Water` 與 `Light+` 都開時）海床呼叫 `prepare()`。第一次呼叫時各開一條 `std::thread` 生成網格並逐塊產生頂點；display list 只能在主執行緒建立，所以 `prepare()` 每幀最多花約 30 ms 編譯已完成的塊，其餘時間畫載入畫面，並以 timeout 約每 1/30 秒重畫，直到全部完成。
 - 新增控制點（`Add Pt`、`Shift` + `D`）先進入放置模式，`TrackInsert::pick()` 找滑鼠附近的軌道參數，點下時 `insertAt()` 插點並進入拖曳。Fly 相機在滑鼠鎖定且 `Edit` 開啟時是建造狀態（`flyBuilding()`）：左鍵刪準心對到的點、中鍵或 `C` 選取、右鍵在準心前方放點；`G` 以 `beginCarry()`／`updateCarry()` 讓點跟著視角移動。
 - 修改控制點的每條路徑（新增、刪除、`Load`、`Reset`、`Grand Tour`、R±X／Z、`Transform` 欄位、拖曳與 `G`／`R`）都先存 `TrackHistory` 快照；拖曳只在點真的改變時才存入。
-- 相機的平滑、按住按鍵移動與觸控板慣性都走 FLTK timeout，依實際經過時間計算，與幀率無關。
+- 相機的平滑、按住按鍵移動與觸控板慣性都走 `platform::` timer（目前由 FLTK 實作），依實際經過時間計算，與幀率無關。
+- 滑鼠與鍵盤事件：`TrainView::handle()` 以 `platform::fltkEvent()` 把當下的 FLTK 事件轉成 `InputEvent`，交給 `TrainView::handleInput()`；相機、控制點編輯與 Train 轉頭的處理函式只吃 `InputEvent`，不讀 `Fl::event_*()`。
 - 自動模式（`--doctor`／`--screenshot`）：`main()` 先以 `TrainWindow::applyOptions()` 設定場景（軌道檔先經 `checkTrackFile()`，壞檔直接失敗、不跳對話框），`TrainView::draw()` 畫完 `drawFrame()` 後呼叫 `finishAutomatedFrame()`。`--doctor` 在第一幀就回報；`--screenshot` 只計算真正畫出場景的幀（`frameShowsScene`，載入畫面不算），達到指定幀數才讀回畫面、寫 PNG、印出 `PASS`／`FAIL` 行與場景出現所花的秒數，再關閉視窗讓 `Fl::run()` 返回。300 秒內場景沒有出現也算失敗。結束碼：0 通過、1 檢查失敗、2 命令列錯誤。
 
 ## 跨模組約定
@@ -150,7 +155,7 @@ flowchart LR
 
 **相機**
 - 所有透視相機共用 `FOV` 滑桿的視角（`TrainView::setFieldOfView()`），所以切到 Fly 時直接沿用上一幀的 modelview 矩陣，畫面不跳動；上一幀是 Top 時改從 `topViewCentre()` 上方往下看。
-- Fly 與 Train 模式的按鍵經掃描碼 system handler（`FlyCam::keyForScanCode()`）送進 `TrainView::handle()`，輸入法開啟或使用其他鍵盤配置時按鍵位置仍有效。編輯鍵由 `EditKeys::forKey()` 決定，不能與飛行鍵衝突（`EditKeysCheck`）。
+- Fly 與 Train 模式的按鍵經掃描碼 system handler（`FlyCam::keyForScanCode()`）組成 `InputEvent` 送進 `TrainView::handleInput()`，輸入法開啟或使用其他鍵盤配置時按鍵位置仍有效。編輯鍵由 `EditKeys::forKey()` 決定，不能與飛行鍵衝突（`EditKeysCheck`）。
 - FLTK 1.3 會把滾輪訊息捨入為整格，所以 `TrainView.cpp` 直接讀 `WM_MOUSEWHEEL`／`WM_MOUSEHWHEEL` 的原始位移。觸控板的設計見 [ADR 0003](adr/0003-touchpad-direct-manipulation.md)。
 
 **場景與列車淨空**

@@ -62,10 +62,11 @@ class CTrack;
 #include "TrackHistory.h"
 #include "Utilities/FlyCam.H"
 #include "Utilities/HeadLook.H"
+#include "Utilities/Input.H"
 #include "TrackRenderer.H"
 #include "TouchpadGestures.H"
 
-class TrainView : public Fl_Gl_Window
+class TrainView : public Fl_Gl_Window, public Viewport
 {
   public:
     // note that we keep the "standard widget" constructor arguments
@@ -73,9 +74,27 @@ class TrainView : public Fl_Gl_Window
     ~TrainView();
 
     // overrides of important window things
-    virtual int handle(int);
-    virtual void draw();
+    int handle(int) override;
+    void draw() override;
     void drawFrame(); // the scene; draw() adds the command line checks
+
+    // Mouse and keyboard input, already turned into InputEvent (handle() does
+    // that for FLTK's events). Returns 1 when the view used the event.
+    int handleInput(const InputEvent &e);
+
+    // Viewport, for the cameras
+    int viewWidth() const override
+    {
+        return w();
+    }
+    int viewHeight() const override
+    {
+        return h();
+    }
+    void requestRedraw() override
+    {
+        damage(1);
+    }
 
     // --doctor and --screenshot (AppControl.h, TrainViewControl.cpp): main()
     // starts them; automationResult is the exit code once they finish.
@@ -106,8 +125,8 @@ class TrainView : public Fl_Gl_Window
     void setTexturePack(std::shared_ptr<const TexturePack::Pack> pack);
     void resetArcball();
 
-    // pick a point (for when the mouse goes down)
-    void doPick();
+    // pick a point (for when the mouse goes down at window pixel mx, my)
+    void doPick(int mx, int my);
 
     // Control point editing: the move handles on the selected point, moving
     // (G) and tilting (R) from the keyboard, undo. See handle().
@@ -121,10 +140,10 @@ class TrainView : public Fl_Gl_Window
     bool canEdit() const;
     bool hasSelection() const;
     void beginEdit(EditMode mode, TransformGizmo::Handle handle, int mouseX, int mouseY);
-    void updateEdit(int mouseX, int mouseY);
+    void updateEdit(int mouseX, int mouseY, bool snap); // snap: Ctrl, whole units or 5 degrees
     void endEdit(bool keep);
-    bool editEvent(int event);
-    bool editKey(int key);
+    bool editEvent(const InputEvent &e);
+    bool editKey(const InputEvent &e); // a KeyDown with no edit in progress
     // ends a move, tilt or point placing in progress, keeping what was done
     void finishEdits();
     void drawEditOverlay();
@@ -135,8 +154,8 @@ class TrainView : public Fl_Gl_Window
     void beginPlacePoint();
     void endPlacePoint();
     void updatePlaceHover(int mouseX, int mouseY);
-    bool placeEvent(int event);
-    void flyBuildClick(int button);
+    bool placeEvent(const InputEvent &e);
+    void flyBuildClick(int button); // Mouse::Left, Middle or Right
     void updateFlyPlace();
 
   public:
@@ -153,12 +172,13 @@ class TrainView : public Fl_Gl_Window
     void beginCarry();
     void updateCarry();
     void endCarry(bool keep);
-    bool carryEvent(int event);
+    bool carryEvent(const InputEvent &e);
     void flyAxes(float right[3], float up[3], float forward[3]) const;
     // the control point at the Fly crosshair, or -1
     int crosshairPoint() const;
-    // the point the middle button or C selects (crosshair in Fly, else mouse)
-    int pointUnderMouse() const;
+    // the point the middle button or C selects (crosshair in Fly, else the
+    // mouse at window pixel mouseX, mouseY)
+    int pointUnderMouse(int mouseX, int mouseY) const;
     static constexpr float kCrosshairReach = 18.0f; // pixels
     void adjustPlaceDepth(float wheelDy);
 
@@ -208,7 +228,7 @@ class TrainView : public Fl_Gl_Window
     // Train camera: look straight ahead again, and mouse drags that turn the
     // rider's head (returns 1 when the event was used).
     void recenterHead();
-    int handleTrainLook(int event);
+    int handleTrainLook(const InputEvent &e);
 
     // Where the train is now (the track centre without a train).
     Pnt3f trainPosition() const;

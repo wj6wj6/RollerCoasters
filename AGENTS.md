@@ -19,7 +19,7 @@
 - `src/` 與 `tests/` 使用 clang-format；第三方 `include/`、`lib/` 保留原始內容。
 - 更新第三方檔案需說明來源與相容性，並用 `pwsh -File scripts/check.ps1 -Stage vendor-lock` 更新指紋。
 - 編譯器警告視為錯誤。修正原因；新增抑制需在附近註解原因及範圍。
-- 相機測試保留正式 `ArcBallCam`、FLTK event loop 與 timer 呼叫路徑；軌道測試使用正式讀寫函式和隔離的暫存檔。
+- 相機測試保留正式 `ArcBallCam`／`FlyCam`、`platform::` event loop 與 timer 呼叫路徑（`src/Utilities/Platform.H`），事件以 `InputEvent` 送入；軌道測試使用正式讀寫函式和隔離的暫存檔。
 - 軌道格式變更維持舊檔可讀；先備份真實軌道資料，再驗證還原。
 - 執行資料放 `data/`，備份放 `backups/`；金鑰、私密設定及執行產物留在版控之外。
 

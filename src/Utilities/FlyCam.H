@@ -1,7 +1,7 @@
 /************************************************************************
      File:        FlyCam.H
 
-     Comment:     A free-fly observer camera for FlTk OpenGL windows.
+     Comment:     A free-fly observer camera for an OpenGL view (Input.H).
 
                   Controls follow a block-game spectator camera.
 
@@ -30,7 +30,7 @@
                   setGround() for scenes that go below y = 0, such as a ride
                   under the sea. lookAt() turns smoothly toward a point.
 
-                  Held keys move the camera on an FLTK timeout using the
+                  Held keys move the camera on a timer (Platform.H) using the
                   real elapsed time, so the speed is in world units per
                   second and does not depend on the frame rate.
 
@@ -39,7 +39,7 @@
 
 #include <chrono>
 
-class Fl_Gl_Window;
+#include "Input.H"
 
 class FlyCam
 {
@@ -50,7 +50,7 @@ class FlyCam
     FlyCam &operator=(const FlyCam &) = delete;
 
     // Attach the camera to a window before using it.
-    void setup(Fl_Gl_Window *window, float fieldOfView = 60.0f);
+    void setup(Viewport *window, float fieldOfView = 60.0f);
 
     // Place the camera; yaw 0 looks down -Z, positive yaw turns right, positive
     // pitch looks up. Angles are in degrees.
@@ -62,14 +62,14 @@ class FlyCam
     // its view direction so the world origin keeps its size on screen.
     void setFromViewMatrix(const float matrix[16], float sourceFieldOfView = 0);
 
-    // Mimics an FlTk handler: returns 1 when the camera used the event.
-    int handle(int event);
+    // Returns 1 when the camera used the event.
+    int handle(const InputEvent &event);
 
-    // Start a look drag for a button the caller already took (a left drag on
-    // empty space). Later FL_DRAG/FL_RELEASE events go through handle().
-    void beginDrag();
+    // Start a look drag at mouse (x, y) for a button the caller already took (a
+    // left drag on empty space). Later Drag/Release events go through handle().
+    void beginDrag(int x, int y);
 
-    // Wheel input in notches with FLTK signs (+dx right, +dy down). Precise
+    // Wheel input in notches (+dx right, +dy down); state holds Mod:: bits. Precise
     // touchpad scrolling looks around; mouse wheel notches change the speed.
     void scroll(float dx, float dy, int state, bool precise);
 
@@ -114,12 +114,12 @@ class FlyCam
         return fieldOfView;
     }
 
-    // The FLTK key for a key used in Fly given by its physical position (a set
+    // The Key:: code for a key used in Fly given by its physical position (a set
     // 1 scan code from Windows), or 0: the flying keys, F (face the train),
     // Home (back to the World view, handled by TrainView) and G / R / C (move,
     // tilt and select a control point, also TrainView). Reading keys this way keeps WASD working
     // with any keyboard layout and while a Chinese input method such as Zhuyin
-    // is on: it turns letter keys into VK_PROCESSKEY, and FLTK never sees them.
+    // is on: it turns letter keys into VK_PROCESSKEY, and the window never sees them.
     static int keyForScanCode(unsigned scan, bool extended);
 
     void setSpeed(float unitsPerSecond);
@@ -160,7 +160,7 @@ class FlyCam
     static constexpr float maxDistance = 1000.0f; // |x| and |z| limit
 
   private:
-    enum Key
+    enum Motion
     {
         Forward,
         Back,
@@ -211,5 +211,5 @@ class FlyCam
     float moveSpeed;
     float groundY;
 
-    Fl_Gl_Window *wind;
+    Viewport *wind;
 };
