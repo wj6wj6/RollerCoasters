@@ -70,6 +70,7 @@ check(TrackInsertCheck
     SOURCES src/TrackInsert.cpp src/Track.cpp src/ControlPoint.cpp src/TransformGizmo.cpp
     LIBS Utilities glad)
 check(FrustumCheck SOURCES src/Frustum.cpp LIBS glad)
+check(MobsCheck SOURCES src/Mobs.cpp src/PixelArt.cpp LIBS glad)
 check(TexturePackCheck
     SOURCES src/TexturePack.cpp src/ZipArchive.cpp src/LandTextures.cpp src/PixelArt.cpp
     LIBS Utilities glad)
@@ -83,8 +84,8 @@ check(OceanRideClearanceCheck TIMEOUT 120
         src/ControlPoint.cpp
     LIBS Utilities glad)
 check(LandRideClearanceCheck TIMEOUT 120
-    SOURCES src/LandWorld.cpp src/Frustum.cpp src/LandTextures.cpp src/OceanWorld.cpp
-        src/PixelArt.cpp src/TexturePack.cpp src/WaterFlow.cpp src/WorldShape.cpp
+    SOURCES src/LandWorld.cpp src/Frustum.cpp src/LandTextures.cpp src/Mobs.cpp
+        src/OceanWorld.cpp src/PixelArt.cpp src/TexturePack.cpp src/WaterFlow.cpp src/WorldShape.cpp
         src/ZipArchive.cpp src/Track.cpp src/ControlPoint.cpp
     LIBS Utilities glad)
 

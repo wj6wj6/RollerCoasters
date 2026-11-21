@@ -542,6 +542,20 @@ bool Pack::picture(const std::string &relative, PixelArt::Image &out) const
     return true;
 }
 
+bool Pack::entityPicture(const std::string &names, bool (*fits)(int width, int height), int &width,
+                         int &height, std::vector<unsigned char> &rgba) const
+{
+    for (const std::string &name : split(names.c_str()))
+    {
+        const std::string relative = "assets/minecraft/textures/entity/" + name + ".png";
+        ZipArchive::Bytes file;
+        if (hasFile(relative) && readFile(relative, file) && decodePng(file, width, height, rgba) &&
+            fits(width, height))
+            return true;
+    }
+    return false;
+}
+
 bool Pack::standIn(const std::string &blocks, Use use, PixelArt::Image &out) const
 {
     for (const std::string &entry : split(blocks.c_str()))

@@ -5161,48 +5161,18 @@ void colour(int r, int g, int b)
     glColor3ub(static_cast<GLubyte>(r), static_cast<GLubyte>(g), static_cast<GLubyte>(b));
 }
 
-// A sheep, a pig or a cow, facing +z, standing on y = 0.
-void drawAnimal(int kind, float stride)
+// A sheep's wool, as often as the block game's sheep grow each colour:
+// mostly white, now and then light grey, grey, black or brown. Chosen by
+// the animal's phase, so a sheep keeps its colour.
+const float *woolColour(float phase)
 {
-    const int coats[3][3] = {{236, 236, 230}, {240, 164, 170}, {92, 62, 44}};
-    const int skins[3][3] = {{214, 180, 160}, {240, 164, 170}, {92, 62, 44}};
-    const int *coat = coats[kind];
-    const int *skin = skins[kind];
-    const float fat = kind == 0 ? 0.12f : 0.0f; // wool
-    // legs, swinging in pairs
-    for (int leg = 0; leg < 4; ++leg)
-    {
-        const float x = (leg % 2 == 0) ? -0.45f : 0.2f;
-        const float z = leg < 2 ? 0.75f : -0.95f;
-        const float swing = ((leg == 0 || leg == 3) ? stride : -stride) * 0.25f;
-        colour(skin[0] - 30, skin[1] - 30, skin[2] - 30);
-        box(x, 0.0f, z + swing, x + 0.25f, 0.7f, z + swing + 0.25f);
-    }
-    colour(coat[0], coat[1], coat[2]);
-    box(-0.55f - fat, 0.65f, -1.1f - fat, 0.55f + fat, 1.5f + fat, 1.1f + fat);
-    if (kind == 2)
-    {
-        // a cow's white patches
-        colour(240, 238, 232);
-        box(-0.56f, 0.9f, -0.5f, 0.56f, 1.51f, 0.2f);
-        box(-0.3f, 1.2f, 0.6f, 0.57f, 1.52f, 1.0f);
-    }
-    colour(skin[0], skin[1], skin[2]);
-    box(-0.35f, 1.0f, 1.1f, 0.35f, 1.7f, 1.7f); // head
-    colour(30, 30, 34);
-    box(-0.36f, 1.4f, 1.55f, -0.24f, 1.52f, 1.71f); // eyes
-    box(0.24f, 1.4f, 1.55f, 0.36f, 1.52f, 1.71f);
-    if (kind == 1)
-    {
-        colour(250, 190, 196);
-        box(-0.16f, 1.12f, 1.7f, 0.16f, 1.34f, 1.8f); // snout
-    }
-    if (kind == 2)
-    {
-        colour(226, 220, 200);
-        box(-0.45f, 1.7f, 1.3f, -0.33f, 1.9f, 1.42f); // horns
-        box(0.33f, 1.7f, 1.3f, 0.45f, 1.9f, 1.42f);
-    }
+    static const float kWool[5][3] = {{1.0f, 1.0f, 1.0f},
+                                      {0.62f, 0.62f, 0.6f},
+                                      {0.32f, 0.32f, 0.34f},
+                                      {0.13f, 0.13f, 0.14f},
+                                      {0.5f, 0.34f, 0.22f}};
+    const unsigned int h = hash(static_cast<int>(phase * 1000.0f), 0, 451u) % 100u;
+    return kWool[h < 82u ? 0 : (h < 87u ? 1 : (h < 92u ? 2 : (h < 97u ? 3 : 4)))];
 }
 
 // A hot-air balloon: a stepped envelope of wool in two colours, oak ropes
@@ -5328,6 +5298,7 @@ void LandWorld::releaseResources()
             s->chunksMeshed = 0;
         }
     m_textures.clear();
+    m_mobSkins = Mobs::Skins(); // the names went with the old context
     m_trestles.clear();
     m_supportPath.clear();
 }
@@ -5687,6 +5658,20 @@ void LandWorld::setTexturePack(std::shared_ptr<const TexturePack::Pack> pack)
 {
     m_pack = std::move(pack);
     m_texturesStale = true;
+    m_mobsStale = true;
+}
+
+void LandWorld::uploadMobSkins()
+{
+    for (int skin = 0; skin < Mobs::SKIN_COUNT; ++skin)
+    {
+        Mobs::Picture picture;
+        if (!m_pack || !m_pack->entityPicture(Mobs::packNames(skin), Mobs::fits, picture.width,
+                                              picture.height, picture.rgba))
+            picture = Mobs::builtin(skin);
+        Mobs::upload(m_mobSkins, skin, picture);
+    }
+    m_mobsStale = false;
 }
 
 PixelArt::Image LandWorld::pictureOf(int texture) const
@@ -5838,6 +5823,9 @@ void LandWorld::drawMoving(const Scene &s, float time)
     }
 
     // animals wander around their spot, facing the way they walk
+    if (m_mobsStale || m_mobSkins.texture[0] == 0)
+        uploadMobSkins();
+    glEnable(GL_TEXTURE_2D);
     for (const Animal &a : s.extras.animals)
     {
         const float t = time * 0.16f + a.phase;
@@ -5852,10 +5840,12 @@ void LandWorld::drawMoving(const Scene &s, float time)
         glPushMatrix();
         glTranslatef(x, ground, z);
         glRotatef(atan2f(vx, vz) * 57.29578f, 0.0f, 1.0f, 0.0f);
-        glScalef(1.25f, 1.25f, 1.25f);
-        drawAnimal(a.kind, sinf(time * 5.0f + a.phase));
+        glScalef(kBlock / 16.0f, kBlock / 16.0f, kBlock / 16.0f); // the game's pixels
+        Mobs::draw(a.kind, sinf(time * 5.0f + a.phase), m_mobSkins, woolColour(a.phase));
         glPopMatrix();
     }
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glDisable(GL_TEXTURE_2D);
 
     // blocky clouds drifting east, high above the peaks
     setGlow(0.12f);

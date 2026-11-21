@@ -43,6 +43,7 @@
 #include <memory>
 #include <vector>
 
+#include "Mobs.h"
 #include "PixelArt.h"
 
 namespace TexturePack
@@ -151,5 +152,9 @@ class LandWorld
     std::vector<unsigned int> m_textures;
     std::shared_ptr<const TexturePack::Pack> m_pack;
     bool m_texturesStale = false;
+    // the animals' pictures, uploaded when first drawn and for a new pack
+    Mobs::Skins m_mobSkins;
+    bool m_mobsStale = true;
+    void uploadMobSkins();
     int m_chunksDrawn = 0;
 };

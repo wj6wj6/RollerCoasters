@@ -56,6 +56,7 @@ add_executable(RollerCoasters
     src/LandWaterMotion.h
     src/LandWorld.h src/LandWorld.cpp
     src/MatrixMath.h
+    src/Mobs.h src/Mobs.cpp
     src/OceanWorld.h src/OceanWorld.cpp
     src/PixelArt.h src/PixelArt.cpp
     src/PostEffects.h src/PostEffects.cpp
@@ -175,6 +176,12 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     add_test(NAME TexturePackCheck COMMAND TexturePackCheck)
     set_tests_properties(TexturePackCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
+    add_executable(MobsCheck tests/MobsCheck.cpp src/Mobs.cpp src/PixelArt.cpp)
+    target_include_directories(MobsCheck PRIVATE src)
+    target_link_libraries(MobsCheck PRIVATE glad)
+    add_test(NAME MobsCheck COMMAND MobsCheck)
+    set_tests_properties(MobsCheck PROPERTIES TIMEOUT 10 LABELS integration)
+
     add_executable(GizmoDragCheck tests/GizmoDragCheck.cpp src/TransformGizmo.cpp)
     target_include_directories(GizmoDragCheck PRIVATE src)
     target_link_libraries(GizmoDragCheck PRIVATE glad)
@@ -190,9 +197,9 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     set_tests_properties(OceanRideClearanceCheck PROPERTIES TIMEOUT 30 LABELS integration)
 
     add_executable(LandRideClearanceCheck tests/LandRideClearanceCheck.cpp
-        src/LandWorld.cpp src/Frustum.cpp src/LandTextures.cpp src/OceanWorld.cpp src/PixelArt.cpp
-        src/TexturePack.cpp src/WaterFlow.cpp src/WorldShape.cpp src/ZipArchive.cpp
-        src/Track.cpp src/ControlPoint.cpp)
+        src/LandWorld.cpp src/Frustum.cpp src/LandTextures.cpp src/Mobs.cpp src/OceanWorld.cpp
+        src/PixelArt.cpp src/TexturePack.cpp src/WaterFlow.cpp src/WorldShape.cpp
+        src/ZipArchive.cpp src/Track.cpp src/ControlPoint.cpp)
     target_include_directories(LandRideClearanceCheck PRIVATE src)
     target_link_libraries(LandRideClearanceCheck PRIVATE Utilities glad)
     add_test(NAME LandRideClearanceCheck COMMAND LandRideClearanceCheck)
