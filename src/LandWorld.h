@@ -113,6 +113,11 @@ class LandWorld
     // A box around the blocks that cast shadows.
     static void shadowBounds(float lo[3], float hi[3]);
 
+    // Is there a block (not water) at (x, y, z) of the scenery's or the flat
+    // island's grid? False until that grid is complete. For keeping the
+    // Chase camera out of the rock.
+    bool solidAt(bool flat, float x, float y, float z) const;
+
     // For tests: how many of the given points (x, y, z for each, a path the
     // train follows) have a block or a plant within the train's reach. The
     // demo ride gives 0 for every spline type.

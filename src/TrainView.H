@@ -286,8 +286,17 @@ class TrainView : public Viewport
     int headDragX;      // last mouse position of that drag
     int headDragY;
     float m_fieldOfView; // degrees, the World, Train, Chase and Fly cameras
-    bool mouseCaptured;  // does the mouse steer the observer camera?
-    int selectedCube;    // simple - just remember which cube is selected
+    // the Chase camera, followed smoothly (setProjection()): how far behind
+    // the last cart along the track and how high above it, and when
+    bool m_chaseValid = false;
+    float m_chaseBehind = 0.0f;
+    float m_chaseHeight = 0.0f;
+    float m_chaseTime = 0.0f;
+    bool chaseBlocked(const Pnt3f &p) const; // a block of the island or the sea floor there?
+    float chaseRoom(const Pnt3f &base, const Pnt3f &up,
+                    float upTo) const; // clear height above base
+    bool mouseCaptured;                // does the mouse steer the observer camera?
+    int selectedCube;                  // simple - just remember which cube is selected
 
     TrainWindow *tw;               // The parent of this display window
     CTrack *m_pTrack;              // The track of the entire scene

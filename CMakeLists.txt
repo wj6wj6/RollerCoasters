@@ -73,6 +73,7 @@ target_include_directories(Utilities SYSTEM PUBLIC "${GLFW_DIR}/include")
 add_executable(RollerCoasters
     src/AdvancedLighting.h src/AdvancedLighting.cpp
     src/AppControl.h src/AppControl.cpp
+    src/ChaseRig.h src/ChaseRig.cpp
     src/Frustum.h src/Frustum.cpp
     src/LandTextures.h src/LandTextures.cpp
     src/LandWaterMotion.h
@@ -243,6 +244,12 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     target_link_libraries(LandRideClearanceCheck PRIVATE Utilities glad)
     add_test(NAME LandRideClearanceCheck COMMAND LandRideClearanceCheck)
     set_tests_properties(LandRideClearanceCheck PROPERTIES TIMEOUT 30 LABELS integration)
+
+    add_executable(ChaseRigCheck tests/ChaseRigCheck.cpp src/ChaseRig.cpp)
+    target_include_directories(ChaseRigCheck PRIVATE src)
+    target_link_libraries(ChaseRigCheck PRIVATE project_options)
+    add_test(NAME ChaseRigCheck COMMAND ChaseRigCheck)
+    set_tests_properties(ChaseRigCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
     add_executable(FrustumCheck tests/FrustumCheck.cpp src/Frustum.cpp)
     target_include_directories(FrustumCheck PRIVATE src)

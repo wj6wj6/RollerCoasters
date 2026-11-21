@@ -5497,6 +5497,15 @@ void LandWorld::releaseResources()
     m_supportPath.clear();
 }
 
+bool LandWorld::solidAt(bool flat, float x, float y, float z) const
+{
+    const Scene *s = flat ? m_flat.get() : m_scenery.get();
+    if (!s || !s->gridReady)
+        return false;
+    const int b = s->grid.get(blockOf(x), blockOf(y), blockOf(z));
+    return b != AIR && b != WATER;
+}
+
 void LandWorld::shadowBounds(float lo[3], float hi[3])
 {
     lo[0] = kGridLo[0];
