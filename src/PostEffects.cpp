@@ -423,20 +423,24 @@ void main()
 
     vec2 suv = gl_FragCoord.xy / uScreen;
     if (uUnder != 0) {
-        // Seen from below, light from above only gets through inside Snell's
-        // window, a cone of about 48 degrees around straight up. Outside it
-        // the surface mirrors the water below.
+        // Seen from below, light from above comes through Snell's window,
+        // a cone round straight up; outside it the surface mirrors the water
+        // below. The window is drawn wider and softer than the real 48
+        // degrees, with a little of the sky still showing in the mirror,
+        // and the waves bend the view only a little: a narrow window with
+        // the rest of the surface a solid blue looked like a lid.
         float cosView = abs(dot(V, N));
-        float window = smoothstep(0.62, 0.70, cosView);
-        vec3 above = texture2D(uRefraction, suv + N.xz * 0.08).rgb;
+        float window = smoothstep(0.22, 0.55, cosView);
+        vec3 above = texture2D(uRefraction, suv + N.xz * 0.025).rgb;
         // The sun through the waves: each facet that happens to bend the
         // line of sight towards the sun flashes.
         vec3 out1 = refract(-V, -N, 1.33);
         float sunHit = max(dot(out1, normalize(uLightDir)), 0.0);
         vec3 glitter = uLightColor * (pow(sunHit, 180.0) * 14.0 + pow(sunHit, 14.0) * 0.5);
-        vec3 col = mix(uDeepColor * 1.6, above * 1.15 + glitter, window);
-        float rim = smoothstep(0.54, 0.65, cosView) - smoothstep(0.65, 0.74, cosView);
-        col += (uDeepColor * 3.0 + uLightColor * 0.12) * rim;
+        vec3 mirror = uDeepColor * 1.6 + above * 0.2;
+        vec3 col = mix(mirror, above + glitter, window);
+        float rim = smoothstep(0.16, 0.26, cosView) - smoothstep(0.26, 0.4, cosView);
+        col += (uDeepColor * 2.0 + uLightColor * 0.06) * rim;
         gl_FragColor = vec4(col, 1.0);
         return;
     }
