@@ -52,6 +52,9 @@ flowchart LR
     View --> Land[LandWorld / 方塊島嶼與木棧橋]
     View --> Ocean[OceanWorld / 海床、海底景物與生物]
     View --> Effects[TrainViewEffects / 讀取光影 widget]
+    View --> Gui[Ui/Gui / 自己畫的方塊遊戲風介面：按鈕、滑桿、清單、像素字型]
+    Gui --> Atlas[Ui/UiAtlas + PixelFont / 程式畫的字型與元件貼圖]
+    Gui -->|quads| GuiGl[Ui/GuiGl / 以 OpenGL 畫出]
     Effects --> Frame[renderAdvancedFrame]
     Frame --> Lighting[AdvancedLighting / 兩層 shadow map、逐像素光照、頭燈]
     Frame --> Post[PostEffects / 天空、水面、雨、SSAO、Bloom、色調映射]
@@ -92,6 +95,9 @@ flowchart LR
 | `src/TrainWindow.H/.cpp` | 主視窗與控制面板；持有唯一的 `CTrack`、widget 與 `advanceTrain()`。 |
 | `src/CallBacks.H/.cpp` | 按鈕、滑桿、idle 更新、軌道載入儲存與材質包選單。 |
 | `src/UiTheme.h/.cpp` | 控制面板配色與圓角控制項樣式。 |
+| `src/Ui/Gui.h/.cpp` | 方塊遊戲風的即時模式介面：每幀呼叫 `button()`、`toggle()`、`cycle()`、`slider()`、`list()` 同時畫出元件並回報是否被使用；滑鼠以 `feed()` 在幀之間送入（按下即觸發），`feed()` 回報介面是否吃掉事件；GUI 縮放照方塊遊戲的 Auto（至少留 320 x 240 單位）。不需 OpenGL，由 `GuiCheck` 測試。見 [ADR 0009](adr/0009-own-block-game-style-ui.md)。 |
+| `src/Ui/PixelFont.h/.cpp`、`UiAtlas.h/.cpp` | 自己畫的 ASCII 像素字型（最寬 5、高 7 加一行下伸）與元件貼圖（按鈕三態、滑桿槽、面板、快捷欄格子），合成一張 256 x 256 atlas，以九宮格伸縮。 |
+| `src/Ui/GuiGl.h/.cpp` | 上傳 atlas（nearest 取樣）並以像素座標畫出 `Gui` 的 quads；GL context 重建時 `forget()`。目前載入畫面的文字由它畫。 |
 | `src/TrainView.H/.cpp` | OpenGL 畫布：相機投影、場景繪製、控制點選取與編輯、Windows 輸入訊息。 |
 | `src/TrainViewEffects.cpp` | 把光影 widget 的狀態轉成 `LightingFrame`，並呼叫 `renderAdvancedFrame()`。 |
 | `src/AdvancedLighting.h/.cpp` | 跟著鏡頭的兩層 shadow map（鏡頭附近 150 單位的細圖、外圍 600 單位的粗圖，交界處混合）、GLSL 逐像素光照、日夜與頭燈。 |

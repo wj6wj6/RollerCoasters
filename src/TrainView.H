@@ -63,6 +63,8 @@ class CTrack;
 #include "Utilities/FlyCam.H"
 #include "Utilities/HeadLook.H"
 #include "Utilities/Input.H"
+#include "Ui/Gui.h"
+#include "Ui/GuiGl.h"
 #include "TrackRenderer.H"
 #include "TouchpadGestures.H"
 
@@ -245,6 +247,8 @@ class TrainView : public Fl_Gl_Window, public Viewport
     void drawLoadingScreen(float done, const char *stage);
     static void redrawSoon(void *view);
     unsigned int m_loadingTexture = 0; // the dirt behind the loading screen
+    ui::Gui m_gui;                     // the block-game style interface (Ui/Gui.h)
+    ui::GuiRenderer m_guiRenderer;     // ... and its atlas in this GL context
 
   public:
     ArcBallCam arcball; // keep an ArcBall for the UI

@@ -1561,6 +1561,7 @@ void TrainView::drawFrame()
         lighting.invalidate();
         effects.invalidate();
         m_loadingTexture = 0;
+        m_guiRenderer.forget();
     }
 
     // The first frames show how far the world is built, instead of a white

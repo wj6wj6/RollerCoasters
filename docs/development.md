@@ -103,6 +103,7 @@ tests/linux/win32-syntax.sh
 - `MobsCheck`：島上動物的模型與皮膚（`src/Mobs.*`）：羊、豬、牛每個方塊的每一面都落在內建皮膚有上色的位置（材質包同樣配置的皮膚因此也對得上），站立方塊的大小與貼圖配置一致，各有四條腿；只接受方塊遊戲的皮膚尺寸（64 x 32 的倍數，或 64 x 64 配置）。
 - `LandRideClearanceCheck`：三種 spline 下島上的方塊與植物不碰到列車，軌道左右 6、下方 6 到上方 10 單位內沒有水。
 - `HeadLookCheck`：Train 視角轉頭（`src/Utilities/HeadLook.*`）：起始看正前方、yaw 正值往右、pitch 停在上下限、yaw 跨過 ±180 度回繞、可轉到正後方，視線上方始終與視線垂直且朝上。
+- `GuiCheck`：方塊遊戲風介面（`src/Ui/*`）不需 OpenGL：像素字型的寬度、下伸與未知字元、atlas 內容與配置、自動 GUI 縮放，以及按鈕按下即觸發且只觸發一次、空白處不吃事件、停用的按鈕不觸發、開關翻轉、循環按鈕左鍵往後右鍵往前並回繞、滑桿按下設值、拖出範圍時夾住、放開後停止、清單滾輪捲動到底即停、點選滑鼠下的列。
 - `EditKeysCheck`：控制點編輯鍵位對照正式 `FlyCam`：Fly 下沒有飛行鍵是編輯指令、Fly 的編輯鍵都是 `FlyCam` 不用的鍵、World／Top 的鍵位不變。
 - `GizmoDragCheck`：移動把手（`src/TransformGizmo.*`）找得到滑鼠下的把手，拖曳時點正好落在滑鼠下，且只沿把手允許的軸或平面移動。
 - `TrackInsertCheck`：新增控制點（`src/TrackInsert.*`）後軌道仍經過點擊處、新點插在前後兩點之間並內插傾斜、列車留在原位、螢幕上找得到滑鼠下的軌道位置。
