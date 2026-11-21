@@ -19,7 +19,7 @@ flowchart LR
     View --> Track
     View --> Rails[TrackRenderer / 鐵軌、枕木與弧長表]
     Rails --> Track
-    View --> Train[TrainModel / 火車頭、礦車、乘客與車燈]
+    View --> Train[TrainModel / 熔爐礦車與礦車、會依軌道反應的玩家乘客]
     Train --> Track
     View --> Gizmo[TransformGizmo / 控制點移動把手]
     View --> Insert[TrackInsert / 在點擊的軌道位置新增、刪除控制點]

@@ -1541,6 +1541,7 @@ void TrainView::drawFrame()
     if (!context_valid())
     {
         m_trackRenderer.releaseTextures();
+        TrainModel::releaseTextures();
         m_land.releaseResources();
         m_ocean.releaseResources();
         lighting.invalidate();
