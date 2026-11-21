@@ -16,6 +16,8 @@
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 
 #include "Folders.h"
 
@@ -28,6 +30,19 @@ std::string lower(std::string text)
     for (char &c : text)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return text;
+}
+// Do the two files hold the same bytes?
+bool sameBytes(const fs::path &a, const fs::path &b)
+{
+    std::error_code error;
+    if (!fs::is_regular_file(a, error) || !fs::is_regular_file(b, error) ||
+        fs::file_size(a, error) != fs::file_size(b, error) || error)
+        return false;
+    std::ifstream fa(a, std::ios::binary), fb(b, std::ios::binary);
+    if (!fa || !fb)
+        return false;
+    return std::equal(std::istreambuf_iterator<char>(fa), std::istreambuf_iterator<char>(),
+                      std::istreambuf_iterator<char>(fb), std::istreambuf_iterator<char>());
 }
 } // namespace
 
@@ -111,6 +126,58 @@ bool make(const std::string &folder)
     std::error_code error;
     fs::create_directories(fs::u8path(folder), error);
     return fs::is_directory(fs::u8path(folder), error);
+}
+
+std::string copyInto(const std::string &path, const std::string &folder, std::string &error)
+{
+    std::error_code code;
+    fs::path from = fs::u8path(path);
+    if (!from.has_filename())
+        from =
+            from.parent_path(); // a path ending in a separator, "packs/mine/", is the folder "mine"
+    const std::string name = from.filename().u8string();
+    if (name.empty() || !fs::exists(from, code))
+    {
+        error = "it is not there any more";
+        return std::string();
+    }
+    const fs::path into = fs::u8path(folder);
+    if (!make(folder))
+    {
+        error = "the folder " + folder + " could not be made";
+        return std::string();
+    }
+    // dragged from the folder itself (opened with Open Folder): nothing to copy
+    if (fs::equivalent(from.parent_path().empty() ? fs::path(".") : from.parent_path(), into, code))
+        return name;
+    if (sameBytes(from, into / from.filename()))
+        return name;
+
+    // a free name: "loop.txt", "loop (2).txt", "loop (3).txt"... ("My Pack (2)" for a folder)
+    const bool isFolder = fs::is_directory(from, code);
+    const std::string stem = isFolder ? name : from.stem().u8string();
+    const std::string extension = isFolder ? std::string() : from.extension().u8string();
+    fs::path to = into / from.filename();
+    for (int n = 2; fs::exists(to, code); ++n)
+    {
+        if (n > 999)
+        {
+            error = "there are too many files named " + name;
+            return std::string();
+        }
+        to = into / fs::u8path(stem + " (" + std::to_string(n) + ")" + extension);
+    }
+    if (isFolder)
+        fs::copy(from, to, fs::copy_options::recursive, code);
+    else
+        fs::copy_file(from, to, code);
+    if (code)
+    {
+        fs::remove_all(to, code); // not half a copy
+        error = "it could not be copied into " + folder;
+        return std::string();
+    }
+    return to.filename().u8string();
 }
 
 bool show(const std::string &folder)

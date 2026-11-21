@@ -14,7 +14,13 @@
                   - Load Track and Save Track list the tracks in
                     TrackFiles\ (a block game's world list, not the
                     system's file dialogs), and a notice or a yes / no
-                    question takes the place of a message box.
+                    question takes the place of a message box;
+                  - files dropped on the window are added as a block game
+                    adds dropped packs: track files (.txt) are copied into
+                    TrackFiles\ and picked in Load Track, texture packs
+                    into the packs' folder and listed in World. The lists
+                    are read again when the window comes back to the
+                    front, so files put in the folders show up.
 
                   It changes TrainWindow::settings and calls the same
                   actions (CallBacks.H) the panel did. Every frame draw()
@@ -80,6 +86,10 @@ class GameMenu
     void confirm(TrainWindow &tw, const std::string &question,
                  std::function<void(TrainWindow &)> yes);
 
+    // Files dropped on the window (UTF-8 paths): tracks to Load Track,
+    // texture packs to World, a notice for anything else.
+    void dropped(TrainWindow &tw, const std::vector<std::string> &paths);
+
     bool hudHidden = false; // F1
 
   private:
@@ -95,6 +105,9 @@ class GameMenu
     void drawNotice(TrainWindow &tw, ui::Gui &gui);
     void drawConfirm(TrainWindow &tw, ui::Gui &gui);
     void markSaveName(); // select the listed track that m_saveName would save over
+    // read TrackFiles\ again, keeping the track picked (or picking `pick`)
+    void readTracks(const std::string &pick = std::string());
+    void readFolders(TrainWindow &tw); // the list on screen, from its folder again
     void loadSelected(TrainWindow &tw);
     void save(TrainWindow &tw);
     void say(const std::string &text); // a line above the hotbar for a moment
@@ -113,6 +126,7 @@ class GameMenu
     int m_trackSelected = -1;
     int m_trackScroll = 0;
     std::string m_saveName = "track";
+    std::string m_dropNote; // "Added loop.txt", on the screen the files were dropped on
 
     // Notice and Confirm, and the screen to go back to.
     std::string m_title;

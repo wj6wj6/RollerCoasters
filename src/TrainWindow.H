@@ -116,6 +116,7 @@ class TrainWindow
     static void charCallback(GLFWwindow *w, unsigned int codepoint);
     static void sizeCallback(GLFWwindow *w, int width, int height);
     static void refreshCallback(GLFWwindow *w);
+    static void dropCallback(GLFWwindow *w, int count, const char **paths);
 
     GlfwInput m_input;
     double m_lastAdvance = 0.0; // when the train last moved

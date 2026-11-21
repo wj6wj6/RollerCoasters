@@ -149,6 +149,7 @@ bool TrainWindow::open(std::string &error)
     glfwSetCharCallback(window, charCallback);
     glfwSetFramebufferSizeCallback(window, sizeCallback);
     glfwSetWindowRefreshCallback(window, refreshCallback);
+    glfwSetDropCallback(window, dropCallback);
 
     HWND hwnd = glfwGetWin32Window(window);
     // Nothing in the program takes typed text, and a Chinese input method
@@ -320,6 +321,16 @@ void TrainWindow::sizeCallback(GLFWwindow *w, int width, int height)
 void TrainWindow::refreshCallback(GLFWwindow *w)
 {
     windowOf(w)->drawNow();
+}
+
+// Files dragged from the file manager onto the window (UTF-8 paths): the
+// menu adds tracks and texture packs, as a block game adds dropped packs.
+void TrainWindow::dropCallback(GLFWwindow *w, int count, const char **paths)
+{
+    TrainWindow *tw = windowOf(w);
+    if (tw->automated || !tw->trainView->frameShowsScene)
+        return; // no interface yet to show what was added
+    tw->menu.dropped(*tw, std::vector<std::string>(paths, paths + count));
 }
 
 //************************************************************************

@@ -5,6 +5,7 @@
 #include "AppControl.h"
 #include "TexturePack.h"
 #include "Track.H"
+#include "Utilities/Utf8File.H"
 
 #include <cstdio>
 #include <filesystem>
@@ -40,8 +41,8 @@ bool refused(std::vector<const char *> args)
 
 void writeText(const fs::path &path, const char *text)
 {
-    FILE *fp = nullptr;
-    if (fopen_s(&fp, path.u8string().c_str(), "w") == 0 && fp)
+    FILE *fp = openUtf8(path.u8string().c_str(), "w");
+    if (fp)
     {
         std::fputs(text, fp);
         std::fclose(fp);
@@ -51,8 +52,8 @@ void writeText(const fs::path &path, const char *text)
 std::vector<unsigned char> readFile(const fs::path &path)
 {
     std::vector<unsigned char> bytes;
-    FILE *fp = nullptr;
-    if (fopen_s(&fp, path.u8string().c_str(), "rb") != 0 || !fp)
+    FILE *fp = openUtf8(path.u8string().c_str(), "rb");
+    if (!fp)
         return bytes;
     unsigned char buffer[4096];
     size_t n = 0;
