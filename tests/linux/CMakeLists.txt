@@ -69,6 +69,7 @@ check(TrackHistoryCheck SOURCES src/TrackHistory.cpp src/Track.cpp src/ControlPo
 check(TrackInsertCheck
     SOURCES src/TrackInsert.cpp src/Track.cpp src/ControlPoint.cpp src/TransformGizmo.cpp
     LIBS Utilities glad)
+check(GuiCheck SOURCES src/Ui/Gui.cpp src/Ui/PixelFont.cpp src/Ui/UiAtlas.cpp)
 check(FrustumCheck SOURCES src/Frustum.cpp LIBS glad)
 check(MobsCheck SOURCES src/Mobs.cpp src/PixelArt.cpp LIBS glad)
 check(TexturePackCheck
@@ -92,7 +93,7 @@ check(LandRideClearanceCheck TIMEOUT 120
 # Compile the rest of the app as well (not linked), so an error in code that no
 # check uses still shows up here. These three need the real Win32 API; the
 # MinGW pass in win32-syntax.sh covers them.
-file(GLOB app_sources CONFIGURE_DEPENDS "${ROOT}/src/*.cpp")
+file(GLOB app_sources CONFIGURE_DEPENDS "${ROOT}/src/*.cpp" "${ROOT}/src/Ui/*.cpp")
 list(FILTER app_sources EXCLUDE REGEX "/(main|TrainView|TouchpadGestures)\\.cpp$")
 add_library(AppObjects OBJECT ${app_sources})
 target_include_directories(AppObjects PRIVATE "${ROOT}/src")
