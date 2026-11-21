@@ -53,7 +53,7 @@ class CTrack;
 
 struct GLFWwindow;
 
-class TrainView : public Viewport
+class TrainView final : public Viewport
 {
   public:
     TrainView();
