@@ -26,7 +26,6 @@
 
 #include "Track.H"
 
-#include <FL/fl_ask.H>
 #include <math.h>
 #include <stdlib.h>
 
@@ -180,17 +179,17 @@ void breakString(char *str, std::vector<const char *> &words)
 //   first line: an integer with the number of control points
 //	  other lines: one line per control point
 //   either 3 (X,Y,Z) numbers on the line, or 6 numbers (X,Y,Z, orientation)
-//   readPoints() keeps the current track and alerts if the file has fewer point
-//   lines than declared or a line has fewer than 3 numbers.
+//   readPoints() keeps the current track and says why if the file has fewer
+//   point lines than declared or a line has fewer than 3 numbers.
 //============================================================================
-void CTrack::readPoints(const char *filename)
+bool CTrack::readPoints(const char *filename, std::string &error)
 //============================================================================
 {
     FILE *fp = nullptr;
     if (fopen_s(&fp, filename, "r") != 0)
     {
-        fl_alert("Can't Open File!\n");
-        return;
+        error = "The file could not be opened";
+        return false;
     }
 
     // Parse into a temporary list and only replace the track when the whole
@@ -199,15 +198,15 @@ void CTrack::readPoints(const char *filename)
     if (!fgets(buf, 512, fp))
     {
         fclose(fp);
-        fl_alert("Missing Number of Points in File");
-        return;
+        error = "The file is empty: its first line should be the number of points";
+        return false;
     }
     const long npts = strtol(buf, nullptr, 10);
     if ((npts < 4) || (npts > 65535))
     {
         fclose(fp);
-        fl_alert("Illegal Number of Points Specified in File");
-        return;
+        error = "The first line should be a number of points from 4 to 65535";
+        return false;
     }
 
     vector<ControlPoint> loaded;
@@ -220,8 +219,8 @@ void CTrack::readPoints(const char *filename)
         {
             fclose(fp);
             // The count is line 1, so control point i is on line i + 2.
-            fl_alert("Line %zu needs x y z; the track was not changed", loaded.size() + 2);
-            return;
+            error = "Line " + std::to_string(loaded.size() + 2) + " needs x y z";
+            return false;
         }
 
         Pnt3f pos, orient;
@@ -247,33 +246,36 @@ void CTrack::readPoints(const char *filename)
 
     if (loaded.size() < static_cast<size_t>(npts))
     {
-        fl_alert("The file says %ld points but has %zu; the track was not changed", npts,
-                 loaded.size());
-        return;
+        error = "The file says " + std::to_string(npts) + " points but has " +
+                std::to_string(loaded.size());
+        return false;
     }
 
     points.swap(loaded);
     trainU = 0;
+    return true;
 }
 
 //****************************************************************************
 //
 // * write the control points to our simple format
 //============================================================================
-void CTrack::writePoints(const char *filename)
+bool CTrack::writePoints(const char *filename, std::string &error)
 //============================================================================
 {
     FILE *fp = nullptr;
-    if (fopen_s(&fp, filename, "w") != 0)
+    if (fopen_s(&fp, filename, "w") != 0 || !fp)
     {
-        fl_alert("Can't open file for writing");
+        error = "The file could not be opened for writing";
+        return false;
     }
-    else
-    {
-        fprintf(fp, "%zu\n", points.size());
-        for (size_t i = 0; i < points.size(); ++i)
+    bool written = fprintf(fp, "%zu\n", points.size()) > 0;
+    for (size_t i = 0; i < points.size(); ++i)
+        written &=
             fprintf(fp, "%g %g %g %g %g %g\n", points[i].pos.x, points[i].pos.y, points[i].pos.z,
-                    points[i].orient.x, points[i].orient.y, points[i].orient.z);
-        fclose(fp);
-    }
+                    points[i].orient.x, points[i].orient.y, points[i].orient.z) > 0;
+    written &= fclose(fp) == 0;
+    if (!written)
+        error = "The file could not be written completely";
+    return written;
 }

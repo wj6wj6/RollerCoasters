@@ -8,12 +8,14 @@
      
      Comment:     The actions of the menu's buttons and the hotbar
                   (GameMenu.cpp): editing the track, loading and saving
-                  it, the demo ride and the texture packs.
+                  it, the demo ride and the texture packs. Problems are
+                  shown on the menu's notice screen (GameMenu::notify).
 
 *************************************************************************/
 #pragma once
 
 #include <cstddef>
+#include <string>
 
 class TrainWindow;
 
@@ -29,18 +31,20 @@ void deletePointCB(TrainWindow *tw);
 void forwCB(TrainWindow *tw);
 void backCB(TrainWindow *tw);
 
-// Load and save the control points
-void loadCB(TrainWindow *tw);
-void saveCB(TrainWindow *tw);
+// Load and save the control points: TrackFiles\ beside the program, and a
+// file there. False, with the reason in `error`, when it cannot be read or
+// written; a failed load leaves the track as it was.
+std::string trackFolder();
+bool loadTrack(TrainWindow *tw, const std::string &path, std::string &error);
+bool saveTrack(TrainWindow *tw, const std::string &path, std::string &error);
 
 // Load the demo ride over the island and under the sea (see OceanWorld), ready to ride
 void grandTourCB(TrainWindow *tw);
 
 // Texture packs: use the one at this place in TrainWindow::texturePackPaths
-// (0 is built in), pick one anywhere with the system's file dialog, or show
-// the folder beside the program where downloaded packs go.
+// (0 is built in), or show the folder beside the program where downloaded
+// packs go, as a block game's "Open Pack Folder" does.
 void useTexturePack(TrainWindow *tw, std::size_t index);
-void openTexturePack(TrainWindow *tw);
 void openTexturePackFolder(TrainWindow *tw);
 
 // Roll the selected control point about the x or z axis, one way or the other

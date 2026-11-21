@@ -34,12 +34,15 @@ void ui::Gui::beginFrame(int pixelWidth, int pixelHeight, int scale)
     m_push = m_pushPending;
     m_framePushX = m_pushX;
     m_framePushY = m_pushY;
+    m_frameClicks = m_pushClicks;
     m_rightPush = m_rightPushPending;
     m_frameRightX = m_rightPushX;
     m_frameRightY = m_rightPushY;
     m_wheel = m_wheelPending;
     m_pushPending = m_rightPushPending = false;
     m_wheelPending = 0.0f;
+    m_typed.swap(m_typedPending);
+    m_typedPending.clear();
     // A drag that ended between frames still lets its slider take the last position.
 }
 
@@ -75,6 +78,14 @@ bool ui::Gui::feed(const InputEvent &e)
     case InputType::Hide:
         m_leftDown = false;
         return false;
+    case InputType::Text:
+        if (e.key >= 32 && e.key < 127)
+            m_typedPending += static_cast<char>(e.key);
+        return false;
+    case InputType::KeyDown:
+        if (e.key == Key::BackSpace)
+            m_typedPending += '\b';
+        return false;
     default:
         return false;
     }
@@ -90,6 +101,7 @@ bool ui::Gui::feed(const InputEvent &e)
             m_pushPending = true;
             m_pushX = e.x;
             m_pushY = e.y;
+            m_pushClicks = e.clicks;
         }
     }
     else if (e.type == InputType::Push && e.button == Mouse::Right && over)
@@ -327,8 +339,11 @@ bool ui::Gui::area(const Rect &r)
     return takePush(r);
 }
 
-bool ui::Gui::list(const Rect &r, const std::vector<std::string> &items, int &selected, int &scroll)
+bool ui::Gui::list(const Rect &r, const std::vector<std::string> &items, int &selected, int &scroll,
+                   bool *doubleClicked)
 {
+    if (doubleClicked)
+        *doubleClicked = false;
     ++m_widget;
     panel(r);
     const int count = static_cast<int>(items.size());
@@ -349,7 +364,11 @@ bool ui::Gui::list(const Rect &r, const std::vector<std::string> &items, int &se
         const int item = scroll + i;
         const Rect row = {r.x + 2, r.y + 2 + i * kRowHeight, rowWidth, kRowHeight};
         if (takePush(row))
+        {
+            if (doubleClicked && item == selected && m_frameClicks > 0)
+                *doubleClicked = true;
             selected = item;
+        }
         if (item == selected)
             fill(row, {255, 255, 255, 70});
         else if (hovered(row))
@@ -367,4 +386,31 @@ bool ui::Gui::list(const Rect &r, const std::vector<std::string> &items, int &se
         fill({r.x + r.w - 5, thumbY, 3, thumbH}, {200, 200, 210, 255});
     }
     return selected != before;
+}
+
+bool ui::Gui::textField(const Rect &r, std::string &value, size_t maxLength)
+{
+    ++m_widget;
+    solid(r);
+    const std::string before = value;
+    for (const char c : m_typed)
+    {
+        if (c == '\b')
+        {
+            if (!value.empty())
+                value.pop_back();
+        }
+        else if (value.size() < maxLength)
+            value += c;
+    }
+    m_typed.clear();
+    skin(r, UiAtlas::SLIDER_TRACK);
+    // the end of a long name stays in view, after the cursor's room
+    const int room = r.w - 8 - PixelFont::textWidth("_");
+    std::string shown = value;
+    while (!shown.empty() && PixelFont::textWidth(shown) > room)
+        shown.erase(0, 1);
+    const int y = r.y + (r.h - PixelFont::kAscent) / 2;
+    text(r.x + 4, y, shown + "_", kWhite);
+    return value != before;
 }

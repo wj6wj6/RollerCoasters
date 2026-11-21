@@ -146,6 +146,7 @@ bool TrainWindow::open(std::string &error)
     glfwSetScrollCallback(window, scrollCallback);
     glfwSetWindowFocusCallback(window, focusCallback);
     glfwSetCursorEnterCallback(window, enterCallback);
+    glfwSetCharCallback(window, charCallback);
     glfwSetFramebufferSizeCallback(window, sizeCallback);
     glfwSetWindowRefreshCallback(window, refreshCallback);
 
@@ -304,6 +305,12 @@ void TrainWindow::enterCallback(GLFWwindow *w, int entered)
     tw->input(tw->m_input.enter(entered == GLFW_TRUE));
 }
 
+void TrainWindow::charCallback(GLFWwindow *w, unsigned int codepoint)
+{
+    TrainWindow *tw = windowOf(w);
+    tw->input(tw->m_input.text(codepoint));
+}
+
 void TrainWindow::sizeCallback(GLFWwindow *w, int width, int height)
 {
     windowOf(w)->resized(width, height);
@@ -449,13 +456,12 @@ bool TrainWindow::applyOptions(const AppControl::Options &options, std::string &
 {
     if (!options.track.empty())
     {
-        // checked first: readPoints() reports a bad file in a dialog
-        if (!AppControl::checkTrackFile(options.track, error))
+        if (!AppControl::checkTrackFile(options.track, error) ||
+            !m_Track.readPoints(options.track.c_str(), error))
         {
             error = "track: " + error;
             return false;
         }
-        m_Track.readPoints(options.track.c_str());
         trainView->selectedCube = -1;
     }
     if (!options.texturePack.empty())

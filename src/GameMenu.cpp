@@ -10,12 +10,15 @@
 
 #include "GameMenu.h"
 
+#include <cctype>
+
 #include <array>
 #include <cstddef>
 #include <cstdio>
 #include <vector>
 
 #include "CallBacks.H"
+#include "Folders.h"
 #include "Ui/PixelFont.h"
 #include "TrainView.H"
 #include "TrainWindow.H"
@@ -64,6 +67,18 @@ struct Slot
 
 const char *const kCameraNames[] = {"World", "Train", "Chase", "Top", "Fly"};
 
+// The text, shortened from the front with "..." when it is wider than `width`
+// units: the end of a path or file name is the part that tells them apart.
+std::string fit(const std::string &text, int width)
+{
+    if (ui::PixelFont::textWidth(text) <= width)
+        return text;
+    std::string tail = text;
+    while (!tail.empty() && ui::PixelFont::textWidth("..." + tail) > width)
+        tail.erase(0, 1);
+    return "..." + tail;
+}
+
 std::string hoursText(float hours)
 {
     const int minutes = static_cast<int>(hours * 60.0f + 0.5f);
@@ -87,6 +102,14 @@ void GameMenu::show(TrainWindow &tw, Screen screen)
     }
     if (screen == Screen::World)
         tw.listTexturePacks(tw.texturePackPath); // packs put in the folder meanwhile show up
+    if ((screen == Screen::LoadTrack || screen == Screen::SaveTrack) && screen != m_screen)
+    {
+        // read the folder again: files put there meanwhile show up
+        m_tracks = Folders::list(trackFolder(), ".txt");
+        m_trackScroll = 0;
+        markSaveName();
+    }
+    m_enter = false;
     m_screen = screen;
     m_guiHasMouse = false;
     tw.trainView->damage(1);
@@ -94,7 +117,54 @@ void GameMenu::show(TrainWindow &tw, Screen screen)
 
 void GameMenu::back(TrainWindow &tw)
 {
-    show(tw, m_screen == Screen::Pause || m_screen == Screen::None ? Screen::None : Screen::Pause);
+    switch (m_screen)
+    {
+    case Screen::None:
+    case Screen::Pause:
+        show(tw, Screen::None);
+        break;
+    case Screen::LoadTrack:
+    case Screen::SaveTrack:
+        show(tw, Screen::Track);
+        break;
+    case Screen::Notice:
+    case Screen::Confirm:
+        m_yes = nullptr;
+        show(tw, m_return);
+        break;
+    default:
+        show(tw, Screen::Pause);
+        break;
+    }
+}
+
+void GameMenu::notify(TrainWindow &tw, const std::string &title, const std::string &text)
+{
+    m_return = m_screen == Screen::Notice || m_screen == Screen::Confirm ? m_return : m_screen;
+    m_title = title;
+    m_lines.clear();
+    size_t start = 0;
+    for (size_t end; (end = text.find('\n', start)) != std::string::npos; start = end + 1)
+        m_lines.push_back(text.substr(start, end - start));
+    m_lines.push_back(text.substr(start));
+    m_yes = nullptr;
+    show(tw, Screen::Notice);
+}
+
+void GameMenu::confirm(TrainWindow &tw, const std::string &question,
+                       std::function<void(TrainWindow &)> yes)
+{
+    m_return = m_screen == Screen::Notice || m_screen == Screen::Confirm ? m_return : m_screen;
+    m_title = question;
+    m_lines.clear();
+    m_yes = std::move(yes);
+    show(tw, Screen::Confirm);
+}
+
+void GameMenu::say(const std::string &text)
+{
+    m_slotName = text;
+    m_slotNameUntil = m_now + kSlotNameSeconds;
 }
 
 //************************************************************************
@@ -121,7 +191,15 @@ bool GameMenu::input(TrainWindow &tw, const InputEvent &e)
             return true;
         }
         if (open())
-            return true; // the menu has no keyboard controls; keep WASD from flying behind it
+        {
+            // Backspace for the Save screen's name field, Enter for Load or
+            // Save; nothing reaches the view (WASD would fly behind the menu).
+            gui.feed(e);
+            if (e.key == Key::Enter || e.key == Key::KeypadEnter)
+                m_enter = true;
+            tw.trainView->damage(1);
+            return true;
+        }
         const bool plain = (e.state & (Mod::Ctrl | Mod::Alt)) == 0;
         if (e.key == Key::F + 1)
         {
@@ -188,6 +266,12 @@ bool GameMenu::input(TrainWindow &tw, const InputEvent &e)
         }
         return false;
     }
+    case InputType::Text:
+        if (!open())
+            return false;
+        gui.feed(e);
+        tw.trainView->damage(1);
+        return true;
     case InputType::Unfocus:
     case InputType::Hide:
         gui.feed(e);
@@ -271,6 +355,18 @@ void GameMenu::draw(TrainWindow &tw, ui::Gui &gui, double seconds)
             break;
         case Screen::World:
             drawWorld(tw, gui);
+            break;
+        case Screen::LoadTrack:
+            drawLoadTrack(tw, gui);
+            break;
+        case Screen::SaveTrack:
+            drawSaveTrack(tw, gui);
+            break;
+        case Screen::Notice:
+            drawNotice(tw, gui);
+            break;
+        case Screen::Confirm:
+            drawConfirm(tw, gui);
             break;
         case Screen::None:
             break;
@@ -489,9 +585,9 @@ void GameMenu::drawTrack(TrainWindow &tw, ui::Gui &gui)
     if (gui.button(right(gui, 2), "Redo", tw.m_history.canRedo()))
         tw.redoEdit();
     if (gui.button(left(gui, 3), "Load..."))
-        loadCB(&tw);
+        show(tw, Screen::LoadTrack);
     if (gui.button(right(gui, 3), "Save..."))
-        saveCB(&tw);
+        show(tw, Screen::SaveTrack);
 
     // The selected point: roll it, or nudge it a unit along an axis.
     const bool selected = view.hasSelection();
@@ -574,9 +670,167 @@ void GameMenu::drawWorld(TrainWindow &tw, ui::Gui &gui)
     const Rect list = {wide(gui, 2).x, wide(gui, 2).y + 12, 310, 2 * kRowStep - 14};
     if (gui.list(list, tw.texturePackNames, selected, m_packScroll))
         useTexturePack(&tw, static_cast<size_t>(selected));
-    if (gui.button(left(gui, 4), "Open Pack..."))
-        openTexturePack(&tw);
-    if (gui.button(right(gui, 4), "Open Packs Folder"))
+    if (gui.button(wide(gui, 4), "Open Pack Folder"))
         openTexturePackFolder(&tw);
     done(tw, gui, 5);
+}
+
+//************************************************************************
+//
+// * Load Track and Save Track: the tracks in TrackFiles\, as a block game
+//   lists its worlds
+//========================================================================
+void GameMenu::markSaveName()
+{
+    // file names on Windows ignore case, so "Track" is the same file as "track.txt"
+    auto lower = [](std::string text) {
+        for (char &c : text)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return text;
+    };
+    const std::string name = lower(Folders::withExtension(m_saveName, ".txt"));
+    m_trackSelected = -1;
+    for (size_t i = 0; i < m_tracks.size(); ++i)
+        if (lower(m_tracks[i]) == name)
+            m_trackSelected = static_cast<int>(i);
+}
+
+void GameMenu::loadSelected(TrainWindow &tw)
+{
+    if (m_trackSelected < 0 || m_trackSelected >= static_cast<int>(m_tracks.size()))
+        return;
+    const std::string name = m_tracks[static_cast<size_t>(m_trackSelected)];
+    std::string error;
+    if (!loadTrack(&tw, trackFolder() + "/" + name, error))
+    {
+        notify(tw, "Could not load " + name, error + "\nThe track was not changed.");
+        return;
+    }
+    m_saveName = name.substr(0, name.size() - 4); // Save offers the same name
+    show(tw, Screen::None);
+    say("Loaded " + name);
+}
+
+void GameMenu::drawLoadTrack(TrainWindow &tw, ui::Gui &gui)
+{
+    title(gui, "Load Track");
+    const Rect list = {wide(gui, 0).x, wide(gui, 0).y, 310, 4 * kRowStep - 4};
+    bool doubleClicked = false;
+    gui.list(list, m_tracks, m_trackSelected, m_trackScroll, &doubleClicked);
+    if (m_tracks.empty())
+    {
+        gui.text(gui.width() / 2, list.y + 20, "No tracks yet. Save one, or put", ui::kGrey,
+                 ui::Align::Center);
+        gui.text(gui.width() / 2, list.y + 31, "track files (.txt) in the folder.", ui::kGrey,
+                 ui::Align::Center);
+    }
+    const bool picked = m_trackSelected >= 0;
+    if ((gui.button(left(gui, 4), "Load", picked) || doubleClicked || (m_enter && picked)))
+    {
+        m_enter = false;
+        loadSelected(tw);
+        return;
+    }
+    m_enter = false;
+    if (gui.button(right(gui, 4), "Open Folder"))
+        Folders::show(trackFolder());
+    gui.text(gui.width() / 2, top(gui) + 5 * kRowStep + 6, fit(trackFolder(), gui.width() - 20),
+             ui::kGrey, ui::Align::Center);
+    if (gui.button({gui.width() / 2 - 100, top(gui) + 6 * kRowStep + 8, 200, kButtonH}, "Cancel"))
+        back(tw);
+}
+
+void GameMenu::save(TrainWindow &tw)
+{
+    const std::string name = Folders::withExtension(m_saveName, ".txt");
+    const std::string path = trackFolder() + "/" + name;
+    auto write = [this, name, path](TrainWindow &window) {
+        std::string error;
+        if (!saveTrack(&window, path, error))
+        {
+            notify(window, "Could not save " + name, error);
+            return;
+        }
+        show(window, Screen::None);
+        say("Saved " + name);
+    };
+    if (Folders::exists(path))
+        confirm(tw, "Replace " + name + "?", write);
+    else
+        write(tw);
+}
+
+void GameMenu::drawSaveTrack(TrainWindow &tw, ui::Gui &gui)
+{
+    title(gui, "Save Track");
+    const Rect field = wide(gui, 0);
+    gui.text(field.x, field.y - 10, "Name", ui::kGrey);
+    if (gui.textField(field, m_saveName, 60))
+        markSaveName();
+    const bool valid = Folders::validName(m_saveName);
+    const std::string name = Folders::withExtension(m_saveName, ".txt");
+    std::string note;
+    if (m_saveName.empty())
+        note = "Type a name for the track";
+    else if (!valid)
+        note = "A name cannot have \\ / : * ? \" < > | or end in a dot";
+    else if (Folders::exists(trackFolder() + "/" + name))
+        note = "Saves over " + name;
+    else
+        note = "Saves as " + name;
+    gui.text(field.x, field.y + kButtonH + 4, fit(note, field.w), valid ? ui::kGrey : ui::kYellow);
+
+    // a click on a saved track takes its name, to save over it
+    const Rect list = {field.x, top(gui) + 2 * kRowStep - 4, 310, 3 * kRowStep - 4};
+    if (gui.list(list, m_tracks, m_trackSelected, m_trackScroll) && m_trackSelected >= 0)
+    {
+        const std::string &picked = m_tracks[static_cast<size_t>(m_trackSelected)];
+        m_saveName = picked.substr(0, picked.size() - 4);
+    }
+    if (gui.button(left(gui, 5), "Save", valid) || (m_enter && valid))
+    {
+        m_enter = false;
+        save(tw);
+        return;
+    }
+    m_enter = false;
+    if (gui.button(right(gui, 5), "Cancel"))
+        back(tw);
+}
+
+//************************************************************************
+//
+// * A notice and a question, in place of message boxes
+//========================================================================
+void GameMenu::drawNotice(TrainWindow &tw, ui::Gui &gui)
+{
+    title(gui, m_title);
+    for (size_t i = 0; i < m_lines.size(); ++i)
+        gui.text(gui.width() / 2, top(gui) + 6 + static_cast<int>(i) * 11,
+                 fit(m_lines[i], gui.width() - 20), ui::kWhite, ui::Align::Center);
+    const int row = 1 + static_cast<int>(m_lines.size()) / 2;
+    if (gui.button({gui.width() / 2 - 100, top(gui) + row * kRowStep + 8, 200, kButtonH}, "OK") ||
+        m_enter)
+    {
+        m_enter = false;
+        back(tw);
+    }
+}
+
+void GameMenu::drawConfirm(TrainWindow &tw, ui::Gui &gui)
+{
+    title(gui, m_title);
+    if (gui.button(left(gui, 1), "Yes") || m_enter)
+    {
+        m_enter = false;
+        std::function<void(TrainWindow &)> yes = std::move(m_yes);
+        m_yes = nullptr;
+        m_screen = m_return; // where Yes leads from, unless it shows something else
+        if (yes)
+            yes(tw);
+        tw.trainView->damage(1);
+        return;
+    }
+    if (gui.button(right(gui, 1), "No"))
+        back(tw);
 }

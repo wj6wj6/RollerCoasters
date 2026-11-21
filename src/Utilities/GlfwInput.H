@@ -30,6 +30,8 @@ class GlfwInput
     InputEvent scroll(double xOffset, double yOffset);
     InputEvent focus(bool focused);
     InputEvent enter(bool entered);
+    // A typed character (GLFW's char callback), for the menu's text field.
+    InputEvent text(unsigned int codepoint);
 
     int x() const
     {

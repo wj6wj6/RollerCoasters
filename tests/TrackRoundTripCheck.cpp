@@ -1,29 +1,14 @@
 #include "Track.H"
-#include <FL/Fl.H>
-#include <FL/Fl_Window.H>
 #include <windows.h>
 #include <cmath>
 #include <cstdio>
+#include <string>
 
 // Exercise the production serializer and parser against isolated real files.
 // Explicit checks also run in Release, where assert() would be disabled.
 
 namespace
 {
-int alertsShown = 0;
-
-// readPoints() reports problems with the real fl_alert(), which runs its own
-// modal loop. This timer runs inside that loop, counts the dialog and closes it.
-void closeAlert(void *)
-{
-    if (Fl_Window *modal = Fl::modal())
-    {
-        modal->hide();
-        ++alertsShown;
-    }
-    Fl::repeat_timeout(0.02, closeAlert);
-}
-
 bool writeText(const char *filename, const char *text)
 {
     FILE *fp = nullptr;
@@ -59,7 +44,7 @@ bool report(bool pass, const char *what)
 }
 
 // A file readPoints() must refuse: the track, train position and point count
-// stay as they were, and exactly one alert is shown.
+// stay as they were, and it says what is wrong (the menu shows that).
 bool rejects(const char *filename, const char *text, const char *what)
 {
     CTrack track;
@@ -68,12 +53,13 @@ bool rejects(const char *filename, const char *text, const char *what)
     track.trainU = 1.5f;
     const CTrack before = track;
 
-    alertsShown = 0;
     bool pass = writeText(filename, text);
     if (pass)
     {
-        track.readPoints(filename);
-        pass = samePoints(track, before) && track.trainU == 1.5f && alertsShown == 1;
+        std::string error;
+        pass = !track.readPoints(filename, error) && !error.empty() && samePoints(track, before) &&
+               track.trainU == 1.5f;
+        std::printf("      (%s)\n", error.c_str());
     }
     return report(pass, what);
 }
@@ -87,7 +73,6 @@ int main()
     if (length == 0 || length >= MAX_PATH || !GetTempFileNameA(directory, "rct", 0, filename))
         return 1;
 
-    Fl::add_timeout(0.02, closeAlert);
     bool pass = true;
 
     {
@@ -95,25 +80,25 @@ int main()
         original.points[0].pos = Pnt3f(12.5f, -3.25f, 99.0f);
         original.points[0].orient = Pnt3f(1, 0, 0);
         original.points.push_back(ControlPoint(Pnt3f(-7, 2, 4), Pnt3f(0, 0, 1)));
-        original.writePoints(filename);
+        std::string error;
+        const bool written = original.writePoints(filename, error);
 
         CTrack restored;
         restored.trainU = 2.5f;
-        alertsShown = 0;
-        restored.readPoints(filename);
-        pass &= report(samePoints(original, restored) && restored.trainU == 0 && alertsShown == 0,
+        const bool read = restored.readPoints(filename, error);
+        pass &= report(written && read && error.empty() && samePoints(original, restored) &&
+                           restored.trainU == 0,
                        "track positions, orientations and reset survive a real file round trip");
     }
 
     {
         // Older files list only x y z; orientation defaults to straight up.
         CTrack track;
-        alertsShown = 0;
         bool ok = writeText(filename, "4\n1 2 3\n4 5 6\n7 8 9\n10 11 12 # comment\n");
         if (ok)
         {
-            track.readPoints(filename);
-            ok = track.points.size() == 4 && alertsShown == 0 &&
+            std::string error;
+            ok = track.readPoints(filename, error) && track.points.size() == 4 &&
                  samePos(track.points[3].pos, Pnt3f(10, 11, 12)) &&
                  samePos(track.points[0].orient, Pnt3f(0, 1, 0));
         }
@@ -129,8 +114,17 @@ int main()
     pass &= rejects(filename, "3\n1 2 3\n4 5 6\n7 8 9\n",
                     "an illegal point count leaves the track unchanged");
     pass &= rejects(filename, "", "an empty file leaves the track unchanged");
+    {
+        CTrack track;
+        std::string error;
+        const bool refused = !track.readPoints("no such folder/no such track.txt", error) &&
+                             !error.empty() && track.points.size() == 4;
+        pass &= report(refused, "a missing file is refused with a message");
+        error.clear();
+        pass &= report(!track.writePoints("no such folder/track.txt", error) && !error.empty(),
+                       "saving where there is no folder fails with a message");
+    }
 
-    Fl::remove_timeout(closeAlert);
     if (!DeleteFileA(filename))
         pass = report(false, "temporary track file removed");
     return pass ? 0 : 1;

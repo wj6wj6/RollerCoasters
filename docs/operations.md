@@ -63,7 +63,7 @@ pwsh -File scripts/check.ps1 -Stage all -Config Release
 
 ## 軌道備份與還原
 
-Load／Save 會直接讀寫指定檔案。儲存前保留原檔，尤其不要用唯一的資料副本測試新版本。
+Load／Save 讀寫 exe 旁 `TrackFiles\` 裡的檔案，存到已有的名稱時會先詢問再覆蓋。儲存前保留原檔，尤其不要用唯一的資料副本測試新版本。
 
 ```powershell
 New-Item -ItemType Directory -Force backups | Out-Null

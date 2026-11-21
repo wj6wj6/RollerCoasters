@@ -87,8 +87,9 @@ bool parse(int argc, const char *const *argv, Options &options, std::string &err
 const char *usage();
 
 // Does the file have the layout CTrack::readPoints() reads: a point count of
-// 4 to 65535, then that many lines of at least three numbers? Checked here so
-// a bad file fails with a message instead of readPoints()'s dialog.
+// 4 to 65535, then that many lines of at least three numbers? A second,
+// independent reading of the format: AppControlCheck holds the two to the same
+// answer, so a format change in one shows up.
 bool checkTrackFile(const std::string &path, std::string &error);
 
 struct Check

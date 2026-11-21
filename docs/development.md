@@ -65,7 +65,7 @@ MSVC 發布目錄是 `out/package/<Config>/`，Clang 是 `out/package/clang/<Con
 
 `check.ps1` 預設只用一個建置程序，避免筆電卡住；`-Jobs N` 改為 N 個，`-Jobs 0` 用上所有處理器（CI 使用）。
 
-所有第一方 C++ 編譯使用 `/W3 /WX`，分析使用 `/analyze /analyze:external-`；第三方 GLAD 與 GLFW（`include/glfw-3.4/`，只編 Win32 後端）分開建置，不套第一方的警告設定。
+所有第一方 C++ 編譯使用 `/W3 /WX`，分析使用 `/analyze /analyze:external-`；第三方 GLAD、GLFW（`include/glfw-3.4/`，只編 Win32 後端）與 stb_image（`include/stb-2.30/`，只開 PNG）分開建置，不套第一方的警告設定。
 隨附 FLTK 1.3.11 的 Debug `.lib` 內含除錯資訊（`/Z7`），連結器不再需要抑制 LNK4099；VS 偵錯時呼叫堆疊可看到 FLTK 內部。重新編譯內附 FLTK 用 `pwsh -File scripts/build-fltk.ps1`，再 `-Stage vendor-lock`（見 `docs/adr/0007-fltk-1-3-11.md`）。連結內附 FLTK 需要 MSVC 19.44（VS 2022 17.14）或更新。
 初次導入 clang-format 會建立全體 `src/`、`tests/` 的一致格式基準；第三方檔案不重排。
 
@@ -104,8 +104,8 @@ tests/linux/win32-syntax.sh
 - `MobsCheck`：島上動物的模型與皮膚（`src/Mobs.*`）：羊、豬、牛每個方塊的每一面都落在內建皮膚有上色的位置（材質包同樣配置的皮膚因此也對得上），站立方塊的大小與貼圖配置一致，各有四條腿；只接受方塊遊戲的皮膚尺寸（64 x 32 的倍數，或 64 x 64 配置）。
 - `LandRideClearanceCheck`：三種 spline 下島上的方塊與植物不碰到列車，軌道左右 6、下方 6 到上方 10 單位內沒有水。
 - `HeadLookCheck`：Train 視角轉頭（`src/Utilities/HeadLook.*`）：起始看正前方、yaw 正值往右、pitch 停在上下限、yaw 跨過 ±180 度回繞、可轉到正後方，視線上方始終與視線垂直且朝上。
-- `GuiCheck`：方塊遊戲風介面（`src/Ui/*`）不需 OpenGL：像素字型的寬度、下伸與未知字元、atlas 內容與配置、自動 GUI 縮放，以及按鈕按下即觸發且只觸發一次、空白處不吃事件、停用的按鈕不觸發、開關翻轉、循環按鈕左鍵往後右鍵往前並回繞、滑桿按下設值、拖出範圍時夾住、放開後停止、清單滾輪捲動到底即停、點選滑鼠下的列。
-- `GlfwInputCheck`：GLFW 事件轉 `InputEvent`（`src/Utilities/GlfwInput.*`）：字母、數字、符號、F 鍵與數字鍵盤的鍵碼，修飾鍵與按住的滑鼠鍵，拖曳、雙擊的時間與距離、`forgetClick()` 之後不算雙擊，滾輪方向，失去焦點時清掉按住的狀態。
+- `GuiCheck`：方塊遊戲風介面（`src/Ui/*`）不需 OpenGL：像素字型的寬度、下伸與未知字元、atlas 內容與配置、自動 GUI 縮放，以及按鈕按下即觸發且只觸發一次、空白處不吃事件、停用的按鈕不觸發、開關翻轉、循環按鈕左鍵往後右鍵往前並回繞、滑桿按下設值、拖出範圍時夾住、放開後停止、清單滾輪捲動到底即停、點選滑鼠下的列、雙擊回報一次，以及文字欄接收打字與 Backspace、只收可印的 ASCII、到長度上限為止。
+- `GlfwInputCheck`：GLFW 事件轉 `InputEvent`（`src/Utilities/GlfwInput.*`）：字母、數字、符號、F 鍵與數字鍵盤的鍵碼，修飾鍵與按住的滑鼠鍵，拖曳、雙擊的時間與距離、`forgetClick()` 之後不算雙擊，滾輪方向，失去焦點時清掉按住的狀態，打的字轉成 `Text` 事件（Unicode 碼位）。
 - `EditKeysCheck`：控制點編輯鍵位對照正式 `FlyCam`：Fly 下沒有飛行鍵是編輯指令、Fly 的編輯鍵都是 `FlyCam` 不用的鍵、World／Top 的鍵位不變。
 - `GizmoDragCheck`：移動把手（`src/TransformGizmo.*`）找得到滑鼠下的把手，拖曳時點正好落在滑鼠下，且只沿把手允許的軸或平面移動。
 - `TrackInsertCheck`：新增控制點（`src/TrackInsert.*`）後軌道仍經過點擊處、新點插在前後兩點之間並內插傾斜、列車留在原位、螢幕上找得到滑鼠下的軌道位置。
@@ -114,8 +114,9 @@ tests/linux/win32-syntax.sh
 - `OceanRideClearanceCheck`：三種 spline 下海底的方塊與植物不碰到列車，以正式 `CTrack` 取樣，與挖空景物的程式互相獨立。
 - `TexturePackCheck`：zip 的三種 DEFLATE 區塊解碼與截斷資料、PNG 解碼與取動畫第一格、zip 與資料夾材質包的開啟、替代與染色、不是材質包的資料夾被拒絕、依名稱列出材質包。
 - `TwoFingerGestureCheck`：觸控板兩指濾波，驗證靜止不動、純捏合不轉動、純移動不縮放、兩者明顯時同時作用。
-- `TrackRoundTripCheck`：正式 `CTrack::writePoints/readPoints` 與真實暫存檔，驗證座標、方向、控制點數與載入後列車位置歸零；只有 x y z 的舊檔仍可載入；點數不合法、空檔、點的行數少於宣告或某行缺 x y z 時，原軌道與列車位置不變，並且只跳出一次 `fl_alert`（測試以 FLTK timer 關閉正式的對話框）。
+- `TrackRoundTripCheck`：正式 `CTrack::writePoints/readPoints` 與真實暫存檔，驗證座標、方向、控制點數與載入後列車位置歸零；只有 x y z 的舊檔仍可載入；點數不合法、空檔、點的行數少於宣告或某行缺 x y z 時，原軌道與列車位置不變，並且傳回說明原因的錯誤文字；不存在的檔案與寫進不存在的資料夾也回報失敗。
 - `AppControlCheck`：命令列解析與錯誤、`checkTrackFile()` 與正式 `CTrack::readPoints()` 對同一份檔案的結果一致、PNG 寫入後以材質包用的同一個解碼器讀回逐像素相同、空白畫面不被當成已畫出、`--doctor` 的資料夾檢查（隔離的暫存資料夾）。
+- `FoldersCheck`：遊戲內軌道清單用的資料夾工具（`src/Folders.*`）以真實暫存資料夾驗證：只列出指定副檔名（不分大小寫）的檔案並依名稱排序、Windows 不能用的檔名（空白、`\ / : * ? " < > |`、結尾的點或空白、CON／NUL／COM1 等裝置名稱）被拒絕、補 `.txt` 時名稱裡的點不算副檔名、`exists()` 與 `make()`。
 - `VersionCheck`：啟動正式 executable 的 `--version`，不建立 GUI。
 
 測試有明確 timeout，找不到測試時視為失敗；Release 的檢查不用會被移除的 `assert`。

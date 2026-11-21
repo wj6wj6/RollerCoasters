@@ -113,6 +113,7 @@ class TrainWindow
     static void scrollCallback(GLFWwindow *w, double dx, double dy);
     static void focusCallback(GLFWwindow *w, int focused);
     static void enterCallback(GLFWwindow *w, int entered);
+    static void charCallback(GLFWwindow *w, unsigned int codepoint);
     static void sizeCallback(GLFWwindow *w, int width, int height);
     static void refreshCallback(GLFWwindow *w);
 

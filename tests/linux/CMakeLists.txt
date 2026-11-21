@@ -34,12 +34,18 @@ add_library(glad STATIC "${ROOT}/include/glad4.6/src/glad.c")
 target_include_directories(glad SYSTEM PUBLIC "${ROOT}/include/glad4.6/include")
 target_link_libraries(glad PUBLIC ${CMAKE_DL_LIBS})
 
+file(WRITE "${CMAKE_BINARY_DIR}/stb_image.c"
+    "#define STB_IMAGE_IMPLEMENTATION\n#define STBI_ONLY_PNG\n#define STBI_NO_STDIO\n"
+    "#include <stb_image.h>\n")
+add_library(stb_image STATIC "${CMAKE_BINARY_DIR}/stb_image.c")
+target_include_directories(stb_image SYSTEM PUBLIC "${ROOT}/include/stb-2.30")
+
 file(GLOB utility_sources CONFIGURE_DEPENDS "${ROOT}/src/Utilities/*.cpp")
 add_library(Utilities STATIC ${utility_sources})
 target_include_directories(Utilities PUBLIC "${ROOT}/src/Utilities")
 # GLFW's header only: GlfwInput.cpp reads its key numbers; the window code is Windows-only.
 target_include_directories(Utilities SYSTEM PUBLIC "${ROOT}/include/glfw-3.4/include")
-target_link_libraries(Utilities PUBLIC project_options fltk_deps)
+target_link_libraries(Utilities PUBLIC project_options fltk_deps stb_image)
 
 enable_testing()
 # check(<name> [TIMEOUT s] [GUI] SOURCES <files relative to the repo> LIBS <targets>)
@@ -72,6 +78,7 @@ check(TrackInsertCheck
     SOURCES src/TrackInsert.cpp src/Track.cpp src/ControlPoint.cpp src/TransformGizmo.cpp
     LIBS Utilities glad)
 check(GuiCheck SOURCES src/Ui/Gui.cpp src/Ui/PixelFont.cpp src/Ui/UiAtlas.cpp)
+check(FoldersCheck SOURCES src/Folders.cpp)
 check(GlfwInputCheck LIBS Utilities)
 check(FrustumCheck SOURCES src/Frustum.cpp LIBS glad)
 check(ChaseRigCheck SOURCES src/ChaseRig.cpp)

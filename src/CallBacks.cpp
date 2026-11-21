@@ -10,27 +10,24 @@
 
 *************************************************************************/
 
-#include <time.h>
-#include <math.h>
+#include <cmath>
 
 #include "TrainWindow.H"
 #include "TrainView.H"
 #include "CallBacks.H"
 #include "TrackInsert.h"
 #include "OceanWorld.h"
-#include "FileDialogs.h"
+#include "Folders.h"
 #include "LandTextures.h"
 #include "TexturePack.h"
 
-#pragma warning(push)
-#pragma warning(disable : 4312)
-#pragma warning(disable : 4311)
-#include <FL/fl_ask.H>
-#include <FL/math.h>
-#pragma warning(pop)
-
 #include <memory>
 #include <string>
+
+namespace
+{
+const float kEighthTurn = 0.785398163f; // R+X and the others tilt by 45 degrees
+}
 
 //***************************************************************************
 //
@@ -104,19 +101,30 @@ void backCB(TrainWindow *tw)
 
 //***************************************************************************
 //
-// * Load the control points from the files
+// * Load and save the control points (the menu's Load Track and Save Track
+//   screens). A file that cannot be read leaves the track as it was.
 //===========================================================================
-void loadCB(TrainWindow *tw)
-//===========================================================================
+std::string trackFolder()
 {
-    std::string path;
-    if (FileDialogs::open("Load a track", "Track files (*.txt)\t*.txt\nAll files\t*",
-                          FileDialogs::besideProgram("TrackFiles"), path))
-    {
-        tw->recordHistory();
-        tw->m_Track.readPoints(path.c_str());
-        tw->damageMe();
-    }
+    return Folders::besideProgram("TrackFiles");
+}
+
+bool loadTrack(TrainWindow *tw, const std::string &path, std::string &error)
+{
+    CTrack loaded = tw->m_Track;
+    if (!loaded.readPoints(path.c_str(), error))
+        return false;
+    tw->recordHistory();
+    tw->m_Track = loaded;
+    tw->trainView->selectedCube = -1;
+    tw->damageMe();
+    return true;
+}
+
+bool saveTrack(TrainWindow *tw, const std::string &path, std::string &error)
+{
+    Folders::make(trackFolder());
+    return tw->m_Track.writePoints(path.c_str(), error);
 }
 //***************************************************************************
 //
@@ -148,19 +156,6 @@ void grandTourCB(TrainWindow *tw)
 
 //***************************************************************************
 //
-// * Save the control points
-//===========================================================================
-void saveCB(TrainWindow *tw)
-//===========================================================================
-{
-    std::string path;
-    if (FileDialogs::save("Save the track", "Track files (*.txt)\t*.txt",
-                          FileDialogs::besideProgram("TrackFiles"), "track.txt", ".txt", path))
-        tw->m_Track.writePoints(path.c_str());
-}
-
-//***************************************************************************
-//
 // * Rotate the selected control point about x axis
 //===========================================================================
 void rollx(TrainWindow *tw, float dir)
@@ -170,8 +165,8 @@ void rollx(TrainWindow *tw, float dir)
     {
         tw->recordHistory();
         Pnt3f old = tw->m_Track.points[s].orient;
-        float si = sinf(((float)M_PI_4) * dir);
-        float co = cosf(((float)M_PI_4) * dir);
+        float si = std::sin(kEighthTurn * dir);
+        float co = std::cos(kEighthTurn * dir);
         tw->m_Track.points[s].orient.y = co * old.y - si * old.z;
         tw->m_Track.points[s].orient.z = si * old.y + co * old.z;
     }
@@ -211,8 +206,8 @@ void rollz(TrainWindow *tw, float dir)
 
         Pnt3f old = tw->m_Track.points[s].orient;
 
-        float si = sinf(((float)M_PI_4) * dir);
-        float co = cosf(((float)M_PI_4) * dir);
+        float si = std::sin(kEighthTurn * dir);
+        float co = std::cos(kEighthTurn * dir);
 
         tw->m_Track.points[s].orient.y = co * old.y - si * old.x;
         tw->m_Track.points[s].orient.x = si * old.y + co * old.x;
@@ -255,7 +250,8 @@ static void usePackAt(TrainWindow *tw, const std::string &path)
         pack = std::make_shared<TexturePack::Pack>();
         if (!pack->open(path))
         {
-            fl_alert("No textures this program can use were found in\n%s", path.c_str());
+            tw->menu.notify(*tw, "Not a texture pack",
+                            "No textures this program can use were found in\n" + path);
             return;
         }
     }
@@ -278,20 +274,10 @@ void useTexturePack(TrainWindow *tw, std::size_t index)
         usePackAt(tw, tw->texturePackPaths[index]);
 }
 
-void openTexturePack(TrainWindow *tw)
-{
-    std::string path;
-    if (FileDialogs::open("Open a texture pack",
-                          "Texture packs (*.zip)\t*.zip\n"
-                          "A pack in a folder (pack.mcmeta)\tpack.mcmeta",
-                          TexturePack::searchFolders().front(), path))
-        usePackAt(tw, path);
-}
-
 void openTexturePackFolder(TrainWindow *tw)
 {
     const std::string folder = TexturePack::searchFolders().front();
-    if (!FileDialogs::showFolder(folder))
-        fl_alert("Put texture packs (.zip, or folders) in\n%s", folder.c_str());
+    if (!Folders::show(folder))
+        tw->menu.notify(*tw, "Texture packs", "Put texture packs (.zip, or folders) in\n" + folder);
     tw->listTexturePacks(tw->texturePackPath);
 }

@@ -115,6 +115,11 @@ int main()
                input.enter(false).type == InputType::Leave,
            "focus and the mouse entering and leaving");
 
+    // Typing, for the Save screen's name field
+    e = input.text('k');
+    expect(e.type == InputType::Text && e.key == 'k', "a typed character is a Text event");
+    expect(input.text(0x4e2du).key == 0x4e2d, "the code point is kept as it is");
+
     std::printf("%s\n", failures ? "FAIL" : "PASS");
     return failures ? 1 : 0;
 }

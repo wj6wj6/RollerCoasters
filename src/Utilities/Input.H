@@ -76,7 +76,8 @@ enum class InputType
     Unfocus, // the view lost the keyboard: held keys never send KeyUp
     Enter,   // the mouse came into the view
     Leave,   // the mouse left the view
-    Hide     // the view was hidden
+    Hide,    // the view was hidden
+    Text     // a character was typed: key is its Unicode code point
 };
 
 struct InputEvent
@@ -86,7 +87,7 @@ struct InputEvent
     int x = 0;
     int y = 0;
     int button = 0; // Mouse::Left, Middle or Right on Push and Release
-    int key = 0;    // on KeyDown and KeyUp
+    int key = 0;    // on KeyDown and KeyUp; the character on Text
     int state = 0;  // Mod:: bits
     float dx = 0;   // on Wheel
     float dy = 0;

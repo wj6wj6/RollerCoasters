@@ -13,9 +13,9 @@
                   game's "Auto" GUI scale: the largest whole number that
                   still leaves at least 320 x 240 units.
 
-                  Mouse input comes in through feed() between frames (a
-                  button fires when it is pressed, like in the game); the
-                  next frame acts on it. feed() says whether the interface
+                  Mouse input and typing come in through feed() between
+                  frames (a button fires when it is pressed, like in the
+                  game); the next frame acts on it. feed() says whether the interface
                   took the event, so the 3D view does not also get it.
 
                   The widgets turn into textured quads (quads()), in
@@ -94,6 +94,8 @@ class Gui
 
     // Mouse input between frames, in window pixels. True when the interface
     // takes it: over something it drew last frame, or a slider being dragged.
+    // Typed characters (Text) and Backspace are kept for the next frame's
+    // textField(), and are not "taken": the caller decides who has the keys.
     // Call it after the frame that drew the screen, then draw a new frame.
     bool feed(const InputEvent &e);
     // Is this window pixel over something the interface drew last frame?
@@ -101,7 +103,8 @@ class Gui
     // Has fed input that the next frame still has to act on?
     bool pending() const
     {
-        return m_pushPending || m_rightPushPending || m_wheelPending != 0.0f;
+        return m_pushPending || m_rightPushPending || m_wheelPending != 0.0f ||
+               !m_typedPending.empty();
     }
 
     // Drawing only.
@@ -125,8 +128,16 @@ class Gui
     // digits, or -1 to show the label alone (it already says the value).
     bool slider(const Rect &r, const std::string &label, float &value, float minimum, float maximum,
                 int decimals = 0);
-    // A scrolling list of rows; a click selects, the wheel scrolls.
-    bool list(const Rect &r, const std::vector<std::string> &items, int &selected, int &scroll);
+    // A scrolling list of rows; a click selects, the wheel scrolls. True when
+    // the selection changed; *doubleClicked (if given) is set when a row was
+    // double clicked this frame.
+    bool list(const Rect &r, const std::vector<std::string> &items, int &selected, int &scroll,
+              bool *doubleClicked = nullptr);
+    // A one-line text box that takes the characters typed since the last
+    // frame (printable ASCII only, up to maxLength) and Backspace. True when
+    // the text changed. There is one on a screen at most, so it always has
+    // the keyboard.
+    bool textField(const Rect &r, std::string &value, size_t maxLength);
     // An area that takes the mouse like a button, for widgets drawn by the
     // caller (the hotbar's slots): true when pressed this frame.
     bool area(const Rect &r);
@@ -172,11 +183,15 @@ class Gui
     bool m_leftDown = false;
     // Presses fed since the last frame, and the ones this frame still has to hand out.
     bool m_pushPending = false, m_rightPushPending = false;
-    int m_pushX = 0, m_pushY = 0, m_rightPushX = 0, m_rightPushY = 0;
+    int m_pushX = 0, m_pushY = 0, m_rightPushX = 0, m_rightPushY = 0, m_pushClicks = 0;
     float m_wheelPending = 0.0f;
     bool m_push = false, m_rightPush = false;
     int m_framePushX = 0, m_framePushY = 0, m_frameRightX = 0, m_frameRightY = 0;
+    int m_frameClicks = 0;
     float m_wheel = 0.0f;
+    // Typing: characters, and '\b' for Backspace, fed since the last frame,
+    // and the ones this frame's textField() takes.
+    std::string m_typedPending, m_typed;
 
     int m_widget = 0;        // counts widgets in this frame, for the dragged slider
     int m_activeSlider = -1; // the slider whose knob is held, or -1
