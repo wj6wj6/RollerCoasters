@@ -173,9 +173,8 @@ void TrainView::finishAutomatedFrame()
     std::snprintf(built, sizeof built, "the scene appeared after %.1f s", worldSeconds);
     checks.push_back({"world", true, built});
     checks.push_back({"frame", AppControl::looksDrawn(stats), AppControl::describe(stats)});
-    checks.push_back({"shader lighting", !tw->lightingButton->value() || lighting.init(),
-                      tw->lightingButton->value()
-                          ? (lighting.init() ? "on" : "Light+ is on but fell back")
-                          : "off"});
+    checks.push_back(
+        {"shader lighting", !tw->settings.lighting || lighting.init(),
+         tw->settings.lighting ? (lighting.init() ? "on" : "Light+ is on but fell back") : "off"});
     finishAutomation(AppControl::report(checks, stdout));
 }

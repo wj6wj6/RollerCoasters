@@ -165,7 +165,7 @@ TrainWindow::TrainWindow(const int x, const int y)
         speed = new Fl_Value_Slider(sliderX, pty, sliderW, rowH, "Speed");
         UiTheme::styleSlider(speed);
         speed->range(0, 10);
-        speed->value(2);
+        speed->callback((Fl_Callback *)damageCB, this);
 
         pty += rowH + bottomPad;
         rideCard->end();
@@ -460,6 +460,77 @@ TrainWindow::TrainWindow(const int x, const int y)
     // a window wide enough to enjoy the view. Run starts the ride.
     resize(x, y, 1180, kPanelHeight);
     grandTourCB(nullptr, this);
+    syncPanel();
+}
+
+//************************************************************************
+//
+// * The widgets show the settings; settings take what the widgets show
+//========================================================================
+void TrainWindow::syncPanel()
+{
+    // A widget held down is left alone: a button shows its new state while
+    // pressed and only reports it on release, which a reset here would undo.
+    auto show = [](Fl_Button *button, bool on) {
+        if (Fl::pushed() != button && (button->value() != 0) != on)
+            button->value(on ? 1 : 0);
+    };
+    show(runButton, settings.run);
+    show(arcLength, settings.arcLength);
+    show(worldCam, settings.camera == CameraView::World);
+    show(trainCam, settings.camera == CameraView::Train);
+    show(chaseCam, settings.camera == CameraView::Chase);
+    show(topCam, settings.camera == CameraView::Top);
+    show(flyCam, settings.camera == CameraView::Fly);
+    show(editButton, settings.edit);
+    show(lightingButton, settings.lighting);
+    show(shadowButton, settings.shadows);
+    show(headlightButton, settings.headlight);
+    show(bloomButton, settings.bloom);
+    show(ssaoButton, settings.ssao);
+    show(waterButton, settings.water);
+    show(rainButton, settings.rain);
+    show(sceneryButton, settings.scenery);
+    auto slide = [](Fl_Valuator *slider, double value) {
+        if (Fl::pushed() != slider && slider->value() != value)
+            slider->value(value);
+    };
+    slide(speed, settings.speed);
+    slide(timeOfDay, settings.timeOfDay);
+    slide(flySpeed, trainView->flyCam.speed());
+    slide(fovSlider, trainView->m_fieldOfView);
+    if (Fl::pushed() != splineBrowser && splineBrowser->value() != settings.spline)
+        splineBrowser->select(settings.spline);
+    syncTransform();
+}
+
+void TrainWindow::readPanel()
+{
+    settings.run = runButton->value() != 0;
+    settings.arcLength = arcLength->value() != 0;
+    if (worldCam->value())
+        settings.camera = CameraView::World;
+    else if (trainCam->value())
+        settings.camera = CameraView::Train;
+    else if (chaseCam->value())
+        settings.camera = CameraView::Chase;
+    else if (topCam->value())
+        settings.camera = CameraView::Top;
+    else if (flyCam->value())
+        settings.camera = CameraView::Fly;
+    settings.edit = editButton->value() != 0;
+    settings.lighting = lightingButton->value() != 0;
+    settings.shadows = shadowButton->value() != 0;
+    settings.headlight = headlightButton->value() != 0;
+    settings.bloom = bloomButton->value() != 0;
+    settings.ssao = ssaoButton->value() != 0;
+    settings.water = waterButton->value() != 0;
+    settings.rain = rainButton->value() != 0;
+    settings.scenery = sceneryButton->value() != 0;
+    settings.speed = static_cast<float>(speed->value());
+    settings.timeOfDay = static_cast<float>(timeOfDay->value());
+    if (splineBrowser->value() > 0) // clicking below the rows selects nothing
+        settings.spline = splineBrowser->value();
 }
 
 //************************************************************************
@@ -469,7 +540,7 @@ TrainWindow::TrainWindow(const int x, const int y)
 void TrainWindow::animateEffectsCB(void *data)
 {
     TrainWindow *tw = static_cast<TrainWindow *>(data);
-    if (tw->lightingButton->value() && !tw->runButton->value())
+    if (tw->settings.lighting && !tw->settings.run)
         tw->trainView->damage(1);
     Fl::repeat_timeout(1.0 / 30.0, animateEffectsCB, data);
 }
@@ -661,9 +732,9 @@ void TrainWindow::advanceTrain(float dir)
     if (pointCount < 4)
         return;
 
-    const TrackSplineType splineType = static_cast<TrackSplineType>(splineBrowser->value());
-    const float step = dir * static_cast<float>(speed->value());
-    if (arcLength->value())
+    const TrackSplineType splineType = static_cast<TrackSplineType>(settings.spline);
+    const float step = dir * settings.speed;
+    if (settings.arcLength)
         m_Track.trainU = advanceByArcLength(m_Track, m_Track.trainU, step, splineType);
     else
         m_Track.trainU =
@@ -701,49 +772,47 @@ bool TrainWindow::applyOptions(const AppControl::Options &options, std::string &
         listTexturePacks(texturePackPath);
     }
 
-    auto set = [](Fl_Button *button, AppControl::Switch value) {
+    auto set = [](bool &setting, AppControl::Switch value) {
         if (value != AppControl::Switch::Keep)
-            button->value(value == AppControl::Switch::On ? 1 : 0);
+            setting = value == AppControl::Switch::On;
     };
-    set(sceneryButton, options.scenery);
-    set(lightingButton, options.light);
-    set(waterButton, options.water);
-    set(rainButton, options.rain);
-    set(shadowButton, options.shadows);
+    set(settings.scenery, options.scenery);
+    set(settings.lighting, options.light);
+    set(settings.water, options.water);
+    set(settings.rain, options.rain);
+    set(settings.shadows, options.shadows);
     if (options.time >= 0)
-        timeOfDay->value(options.time);
+        settings.timeOfDay = options.time;
     if (options.trainU >= 0)
         m_Track.trainU =
             wrapTrackParameter(options.trainU, static_cast<float>(m_Track.points.size()));
     if (options.width > 0)
         size(options.width, options.height);
 
-    Fl_Button *camera = nullptr;
+    bool cameraSet = true;
     switch (options.camera)
     {
     case AppControl::Camera::World:
-        camera = worldCam;
+        settings.camera = CameraView::World;
         break;
     case AppControl::Camera::Train:
-        camera = trainCam;
+        settings.camera = CameraView::Train;
         break;
     case AppControl::Camera::Chase:
-        camera = chaseCam;
+        settings.camera = CameraView::Chase;
         break;
     case AppControl::Camera::Top:
-        camera = topCam;
+        settings.camera = CameraView::Top;
         break;
     case AppControl::Camera::Fly:
-        camera = flyCam;
+        settings.camera = CameraView::Fly;
         break;
     case AppControl::Camera::Keep:
+        cameraSet = false;
         break;
     }
-    if (camera)
-    {
-        camera->setonly();
+    if (cameraSet)
         trainView->cameraChanged();
-    }
     damageMe();
     return true;
 }
