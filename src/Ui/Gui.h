@@ -108,6 +108,8 @@ class Gui
     void fill(const Rect &r, Color c);
     void panel(const Rect &r);
     void skin(const Rect &r, UiAtlas::SkinId id, Color tint = kWhite);
+    // An icon from the atlas, UiAtlas::kIconSize units square, top left at (x, y).
+    void icon(int x, int y, UiAtlas::IconId id, Color tint = kWhite);
     // Text at (x, y), the top of the capitals; align about x.
     void text(int x, int y, const std::string &s, Color c = kWhite, Align align = Align::Left,
               bool shadow = true);
@@ -119,11 +121,20 @@ class Gui
     // "label: option"; left click picks the next option, right click the one before.
     bool cycle(const Rect &r, const std::string &label, const std::vector<std::string> &options,
                int &index);
-    // "label: value" on the knob's track; drag or click to set. decimals: shown digits.
+    // "label: value" on the knob's track; drag or click to set. decimals: shown
+    // digits, or -1 to show the label alone (it already says the value).
     bool slider(const Rect &r, const std::string &label, float &value, float minimum, float maximum,
                 int decimals = 0);
     // A scrolling list of rows; a click selects, the wheel scrolls.
     bool list(const Rect &r, const std::vector<std::string> &items, int &selected, int &scroll);
+    // An area that takes the mouse like a button, for widgets drawn by the
+    // caller (the hotbar's slots): true when pressed this frame.
+    bool area(const Rect &r);
+    // Is the mouse over r (in units)?
+    bool isHovered(const Rect &r) const
+    {
+        return hovered(r);
+    }
 
     const std::vector<Quad> &quads() const
     {

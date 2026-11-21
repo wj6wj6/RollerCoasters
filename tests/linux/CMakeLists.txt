@@ -37,6 +37,8 @@ target_link_libraries(glad PUBLIC ${CMAKE_DL_LIBS})
 file(GLOB utility_sources CONFIGURE_DEPENDS "${ROOT}/src/Utilities/*.cpp")
 add_library(Utilities STATIC ${utility_sources})
 target_include_directories(Utilities PUBLIC "${ROOT}/src/Utilities")
+# GLFW's header only: GlfwInput.cpp reads its key numbers; the window code is Windows-only.
+target_include_directories(Utilities SYSTEM PUBLIC "${ROOT}/include/glfw-3.4/include")
 target_link_libraries(Utilities PUBLIC project_options fltk_deps)
 
 enable_testing()
@@ -70,6 +72,7 @@ check(TrackInsertCheck
     SOURCES src/TrackInsert.cpp src/Track.cpp src/ControlPoint.cpp src/TransformGizmo.cpp
     LIBS Utilities glad)
 check(GuiCheck SOURCES src/Ui/Gui.cpp src/Ui/PixelFont.cpp src/Ui/UiAtlas.cpp)
+check(GlfwInputCheck LIBS Utilities)
 check(FrustumCheck SOURCES src/Frustum.cpp LIBS glad)
 check(MobsCheck SOURCES src/Mobs.cpp src/PixelArt.cpp LIBS glad)
 check(TexturePackCheck
@@ -91,10 +94,10 @@ check(LandRideClearanceCheck TIMEOUT 120
     LIBS Utilities glad)
 
 # Compile the rest of the app as well (not linked), so an error in code that no
-# check uses still shows up here. These three need the real Win32 API; the
+# check uses still shows up here. These four need the real Win32 API; the
 # MinGW pass in win32-syntax.sh covers them.
 file(GLOB app_sources CONFIGURE_DEPENDS "${ROOT}/src/*.cpp" "${ROOT}/src/Ui/*.cpp")
-list(FILTER app_sources EXCLUDE REGEX "/(main|TrainView|TouchpadGestures)\\.cpp$")
+list(FILTER app_sources EXCLUDE REGEX "/(main|TrainView|TrainWindow|TouchpadGestures)\\.cpp$")
 add_library(AppObjects OBJECT ${app_sources})
 target_include_directories(AppObjects PRIVATE "${ROOT}/src")
 target_include_directories(AppObjects SYSTEM PRIVATE "${ROOT}/include/glm-0.9.8.5/glm")

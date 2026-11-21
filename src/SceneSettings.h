@@ -3,9 +3,8 @@
 
      Comment:     What the controls are set to: the ride, the camera, the
                   track's spline, editing, lighting and the world. The
-                  view and the callbacks read and change these; the
-                  control panel shows them and writes to them, so nothing
-                  outside the panel depends on its widgets.
+                  view, the callbacks and the menu (GameMenu) read and
+                  change these.
 
 *************************************************************************/
 #pragma once

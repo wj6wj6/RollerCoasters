@@ -13,7 +13,7 @@
 
 - 成功：`smoke -Only cameras-chase`；看列車細節可用 `screenshot -Name train-close -AppArgs '--camera','chase','--u','30'`。
 - 夜晚的車燈：`screenshot -Name train-night -AppArgs '--camera','chase','--time','22'`。
-- 枕木間距由 `TrackSpacingCheck` 測試；樣條沒有 CLI 參數，要在面板上切換。
+- 枕木間距由 `TrackSpacingCheck` 測試；樣條沒有 CLI 參數，要在選單 `Track` 的 `Spline` 切換。
 
 ## 容易騙過檢查的假象
 

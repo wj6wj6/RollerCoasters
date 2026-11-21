@@ -7,18 +7,10 @@
      Modifier
                   Yu-Chi Lai, yu-chi@cs.wisc.edu
      
-     Comment:     
-						The TrainView is the window that actually shows the 
-						train. Its a
-						GL display canvas (Fl_Gl_Window).  It is held within 
-						a TrainWindow
-						that is the outer window with all the widgets. 
-						The TrainView needs 
-						to be aware of the window - since it might need to 
-						check the widgets to see how to draw
-
-	  Note:        we need to have pointers to this, but maybe not know 
-						about it (beware circular references)
+     Comment:     The TrainView draws the scene into the OpenGL context of
+                  the program's window (TrainWindow) and handles the mouse
+                  and keyboard input the interface does not take. It reads
+                  what the controls are set to from TrainWindow::settings.
 
      Platform:    Visio Studio.Net 2003/2005
 
@@ -36,17 +28,8 @@ class CTrack;
 // be drawn, or adjust the lighting, or ...
 //#######################################################################
 
-// The TrainView also needs to handle its user interface events.
-// since this is an FLTk Window, we need to include FlTk Headers
-// the pragmas turn off the warnings from FlTk - our code should have no warnings,
-// but their code doesn't meet that standard
-#pragma warning(push)
-#pragma warning(disable : 4312)
-#pragma warning(disable : 4311)
-#include <FL/Fl_Gl_Window.H>
-#pragma warning(pop)
-
 // this uses the old ArcBall Code
+#include <string>
 #include <vector>
 
 #include "Utilities/ArcBallCam.H"
@@ -68,21 +51,54 @@ class CTrack;
 #include "TrackRenderer.H"
 #include "TouchpadGestures.H"
 
-class TrainView : public Fl_Gl_Window, public Viewport
+struct GLFWwindow;
+
+class TrainView : public Viewport
 {
   public:
-    // note that we keep the "standard widget" constructor arguments
-    TrainView(int x, int y, int w, int h, const char *l = 0);
+    TrainView();
     ~TrainView();
 
-    // overrides of important window things
-    int handle(int) override;
-    void draw() override;
-    void drawFrame(); // the scene; draw() adds the command line checks
+    // The window whose OpenGL context this draws into, once it is open.
+    void attach(GLFWwindow *window);
+    // The size of what is drawn, in pixels (TrainWindow passes it on).
+    void resize(int width, int height);
+    int w() const
+    {
+        return m_width;
+    }
+    int h() const
+    {
+        return m_height;
+    }
+    bool shown() const
+    {
+        return m_window != nullptr;
+    }
+    void make_current();
+    // Ask for a new frame; TrainWindow's loop draws it.
+    void damage(int)
+    {
+        m_needsDraw = true;
+    }
+    void redraw()
+    {
+        m_needsDraw = true;
+    }
+    bool needsDraw() const
+    {
+        return m_needsDraw;
+    }
 
-    // Mouse and keyboard input, already turned into InputEvent (handle() does
-    // that for FLTK's events). Returns 1 when the view used the event.
+    void draw();      // a frame: the scene, the interface, the command line checks
+    void drawFrame(); // the scene
+
+    // Mouse and keyboard input the interface did not take, as InputEvent
+    // (GlfwInput.H). Returns 1 when the view used the event.
     int handleInput(const InputEvent &e);
+    // A WM_MOUSEWHEEL or WM_MOUSEHWHEEL, read before GLFW rounds it, so
+    // touchpad scrolling and pinching are smooth (TrainView.cpp). True when used.
+    bool systemWheel(unsigned message, unsigned long long wParam, long long lParam);
 
     // Viewport, for the cameras
     int viewWidth() const override
@@ -141,6 +157,11 @@ class TrainView : public Fl_Gl_Window, public Viewport
     };
     bool canEdit() const;
     bool hasSelection() const;
+    // Is a move, tilt, point placing or carrying in progress (Esc cancels it)?
+    bool editing() const
+    {
+        return m_editMode != EDIT_IDLE || m_placing || m_carrying;
+    }
     void beginEdit(EditMode mode, TransformGizmo::Handle handle, int mouseX, int mouseY);
     void updateEdit(int mouseX, int mouseY, bool snap); // snap: Ctrl, whole units or 5 degrees
     void endEdit(bool keep);
@@ -150,7 +171,7 @@ class TrainView : public Fl_Gl_Window, public Viewport
     void finishEdits();
     void drawEditOverlay();
 
-    // Adding a point (Add Pt, Shift + D, Alt + D in Fly): the mouse shows
+    // Adding a point (hotbar slot 7, Shift + D, Alt + D in Fly): the mouse shows
     // where on the track the new point would go, a left click puts it there
     // and picks it up to drag, Esc or a right click gives up. See TrackInsert.h.
     void beginPlacePoint();
@@ -223,8 +244,6 @@ class TrainView : public Fl_Gl_Window, public Viewport
     // Spectator-style mouse look in the observer camera: the cursor is hidden
     // and held at the view centre while captured. Esc or losing focus frees it.
     void setMouseCaptured(bool captured);
-    // Turns the keyboard input method (IME) for this window on or off.
-    void setInputMethodEnabled(bool enabled);
     void centerCursor();
 
     // Train camera: look straight ahead again, and mouse drags that turn the
@@ -249,6 +268,15 @@ class TrainView : public Fl_Gl_Window, public Viewport
     unsigned int m_loadingTexture = 0; // the dirt behind the loading screen
     ui::Gui m_gui;                     // the block-game style interface (Ui/Gui.h)
     ui::GuiRenderer m_guiRenderer;     // ... and its atlas in this GL context
+    // What the view is doing, in a line the interface shows above the hotbar
+    // (the camera, the selected point, the edit in progress).
+    std::string m_statusText;
+
+    GLFWwindow *m_window = nullptr;
+    void *m_hwnd = nullptr; // the window's HWND (touchpad, cursor)
+    int m_width = 1, m_height = 1;
+    bool m_needsDraw = true;
+    bool m_contextValid = false; // the textures and shaders exist in this context
 
   public:
     ArcBallCam arcball; // keep an ArcBall for the UI

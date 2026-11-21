@@ -8,12 +8,17 @@ flowchart LR
     Main[main] --> Control[AppControl / 命令列、軌道檔檢查、畫面判讀、PNG]
     Script[scripts/control-app.ps1] -->|--doctor / --screenshot| Main
     Main -->|applyOptions| Window
-    Main --> Window[TrainWindow / 控制面板]
+    Main --> Window[TrainWindow / GLFW 視窗與主迴圈]
     View -->|每幀結束| ViewControl[TrainViewControl / 讀回畫面、回報、關閉視窗]
     ViewControl --> Control
     Window --> View[TrainView / OpenGL 畫布]
     Window --> Track[CTrack / 控制點與 trainU]
-    Window --> Theme[UiTheme / 深灰面板與圓角控制項樣式]
+    Window --> Menu[GameMenu / Esc 選單、快捷欄、按鍵提示]
+    Menu --> Callbacks
+    Menu --> Settings
+    Menu --> Gui
+    Glfw[GLFW 視窗事件 / 鍵盤、滑鼠、焦點] -->|GlfwInput| Input
+    Window -->|每輪：等事件或下一個 timer| Loop[PlatformLoop / platform:: timer 與事件迴圈]
     Window --> Callbacks[CallBacks / UI 動作]
     Window --> Settings[SceneSettings / 控制項的值]
     Callbacks --> Settings
@@ -31,17 +36,17 @@ flowchart LR
     View --> History
     History --> Track
     View --> Keys[EditKeys / 按鍵對應的編輯指令]
-    FltkEvents[FLTK 事件 / Fl::event_*] -->|platform::fltkEvent| Input[InputEvent / 自己的滑鼠鍵盤事件 Input.H]
-    Input -->|handleInput| View
+    Input[InputEvent / 自己的滑鼠鍵盤事件 Input.H] -->|先給 GameMenu，沒用到再 handleInput| View
     View --> Camera[ArcBallCam / World 相機與手勢平滑]
     View --> Fly[FlyCam / 觀察者自由相機]
     View --> Head[HeadLook / Train 視角轉頭]
     Camera -->|進入 Fly 時的視角| Fly
-    Camera --> Timer[platform:: timer / 目前由 FLTK event loop 實作]
+    Camera --> Timer[platform:: timer]
+    Loop --> Timer
     Timer --> Camera
     Fly -->|按住按鍵時| Timer
     Timer --> Fly
-    Wheel[Windows 滾輪訊息 / system handler] -->|原始位移| Camera
+    Wheel[Windows 滾輪訊息 / 視窗程序 subclass] -->|原始位移| Camera
     Wheel -->|Fly 模式| Fly
     Wheel -->|Train 模式的觸控板捲動| Head
     Touchpad[TouchpadGestures / Raw Input + Direct Manipulation] --> TwoFinger[TwoFingerGesture / 兩指濾波]
@@ -54,7 +59,7 @@ flowchart LR
     View --> GL[GLAD / OpenGL / GLU]
     View --> Land[LandWorld / 方塊島嶼與木棧橋]
     View --> Ocean[OceanWorld / 海床、海底景物與生物]
-    View --> Effects[TrainViewEffects / 讀取光影 widget]
+    View --> Effects[TrainViewEffects / 讀取光影設定]
     View --> Gui[Ui/Gui / 自己畫的方塊遊戲風介面：按鈕、滑桿、清單、像素字型]
     Gui --> Atlas[Ui/UiAtlas + PixelFont / 程式畫的字型與元件貼圖]
     Gui -->|quads| GuiGl[Ui/GuiGl / 以 OpenGL 畫出]
@@ -79,7 +84,7 @@ flowchart LR
     Ocean --> Cull
     LandTex --> Pixel[PixelArt / 程序貼圖]
     Ocean --> Pixel
-    Callbacks -->|Textures 選單| Packs[TexturePack / 資料夾或 zip 材質包]
+    Callbacks -->|World 畫面的材質包清單| Packs[TexturePack / 資料夾或 zip 材質包]
     Packs --> Zip[ZipArchive / zip 目錄與 DEFLATE 解碼]
     Packs -->|setTexturePack| Land
     Packs -->|entityPicture：entity 資料夾的動物圖| Mobs
@@ -92,18 +97,18 @@ flowchart LR
 
 | 路徑 | 職責 |
 |---|---|
-| `src/main.cpp` | 解析命令列，切到 exe 所在資料夾，建立 `TrainWindow` 並啟動 FLTK 事件迴圈；自動模式結束後回傳結果。 |
+| `src/main.cpp` | 解析命令列，切到 exe 所在資料夾，建立 `TrainWindow`、開啟視窗並執行 `run()`；自動模式結束後回傳結果。 |
 | `src/AppControl.h/.cpp` | 命令列（`--doctor`、`--screenshot` 與場景參數）的解析、軌道檔格式檢查、資料夾檢查、畫面判讀與 PNG 寫入；不需要視窗，由 `AppControlCheck` 測試。 |
 | `src/TrainViewControl.cpp` | 自動模式下每幀結束時：`--doctor` 回報 OpenGL 與 shader 路徑，`--screenshot` 從 back buffer 讀回畫面、存檔並判斷是否真的畫出東西，然後關閉視窗。 |
-| `src/TrainWindow.H/.cpp` | 主視窗與控制面板；持有唯一的 `CTrack`、`SceneSettings`、widget 與 `advanceTrain()`。`readPanel()` 把 widget 的值寫進設定，`syncPanel()`（每幀畫之前）讓 widget 顯示設定，按住中的 widget 不動。 |
-| `src/SceneSettings.h` | 控制項目前的值：Run、速度、ArcLength、相機（`CameraView`）、曲線種類、Edit、光影開關、時間、水、雨、景物。面板以外的程式只讀寫這裡，不碰 widget，換掉介面時不必改 `TrainView`。 |
-| `src/CallBacks.H/.cpp` | 按鈕、滑桿、idle 更新、軌道載入儲存與材質包選單。 |
-| `src/UiTheme.h/.cpp` | 控制面板配色與圓角控制項樣式。 |
+| `src/TrainWindow.H/.cpp` | GLFW 視窗（OpenGL 相容 context、IME 關閉、滾輪訊息先經自己的視窗程序）與主迴圈 `run()`；持有唯一的 `CTrack`、`SceneSettings`、`GameMenu`、上一步歷史與 `advanceTrain()`。GLFW callback 經 `GlfwInput` 轉成 `InputEvent`，先給 `GameMenu`，沒用到才給 `TrainView`。見 [ADR 0010](adr/0010-glfw-window-and-game-menu.md)。 |
+| `src/GameMenu.h/.cpp` | 用 `Ui/Gui` 畫出的介面：左上角按鍵提示、九格快捷欄、狀態列，以及 Esc 打開的選單（`Pause`、`Ride`、`Camera`、`Track`、`Lighting`、`World`）；全部只讀寫 `SceneSettings` 與呼叫 `CallBacks`。 |
+| `src/SceneSettings.h` | 控制項目前的值：Run、速度、ArcLength、相機（`CameraView`）、曲線種類、Edit、光影開關、時間、水、雨、景物。介面（`GameMenu`）、`TrainView` 與 callback 都只讀寫這裡。 |
+| `src/CallBacks.H/.cpp` | 選單按鈕與快捷欄的動作：新增刪除控制點、步進、軌道載入儲存、Reset、Grand Tour、材質包。 |
 | `src/Ui/Gui.h/.cpp` | 方塊遊戲風的即時模式介面：每幀呼叫 `button()`、`toggle()`、`cycle()`、`slider()`、`list()` 同時畫出元件並回報是否被使用；滑鼠以 `feed()` 在幀之間送入（按下即觸發），`feed()` 回報介面是否吃掉事件；GUI 縮放照方塊遊戲的 Auto（至少留 320 x 240 單位）。不需 OpenGL，由 `GuiCheck` 測試。見 [ADR 0009](adr/0009-own-block-game-style-ui.md)。 |
-| `src/Ui/PixelFont.h/.cpp`、`UiAtlas.h/.cpp` | 自己畫的 ASCII 像素字型（最寬 5、高 7 加一行下伸）與元件貼圖（按鈕三態、滑桿槽、面板、快捷欄格子），合成一張 256 x 256 atlas，以九宮格伸縮。 |
-| `src/Ui/GuiGl.h/.cpp` | 上傳 atlas（nearest 取樣）並以像素座標畫出 `Gui` 的 quads；GL context 重建時 `forget()`。目前載入畫面的文字由它畫。 |
-| `src/TrainView.H/.cpp` | OpenGL 畫布：相機投影、場景繪製、控制點選取與編輯、Windows 輸入訊息。 |
-| `src/TrainViewEffects.cpp` | 把光影 widget 的狀態轉成 `LightingFrame`，並呼叫 `renderAdvancedFrame()`。 |
+| `src/Ui/PixelFont.h/.cpp`、`UiAtlas.h/.cpp` | 自己畫的 ASCII 像素字型（最寬 5、高 7 加一行下伸）與元件貼圖（按鈕三態、滑桿槽、面板、快捷欄格子、快捷欄圖示），合成一張 256 x 256 atlas，以九宮格伸縮。 |
+| `src/Ui/GuiGl.h/.cpp` | 上傳 atlas（nearest 取樣）並以像素座標畫出 `Gui` 的 quads；GL context 重建時 `forget()`。載入畫面、選單與快捷欄都由它畫。 |
+| `src/TrainView.H/.cpp` | OpenGL 畫面：相機投影、場景繪製、控制點選取與編輯、滑鼠鎖定、觸控板與滾輪訊息；狀態文字交給 `GameMenu` 畫在快捷欄上方。 |
+| `src/TrainViewEffects.cpp` | 把 `SceneSettings` 的光影設定轉成 `LightingFrame`，並呼叫 `renderAdvancedFrame()`。 |
 | `src/AdvancedLighting.h/.cpp` | 跟著鏡頭的兩層 shadow map（鏡頭附近 150 單位的細圖、外圍 600 單位的粗圖，交界處混合）、GLSL 逐像素光照、日夜與頭燈。 |
 | `src/PostEffects.h/.cpp` | 浮點 frame buffer 與後製：天空、水面與 SSR、雨與濕地反射、SSAO、Bloom、god rays、ACES。 |
 | `src/UnderwaterOptics.h` | 水下吸收、caustics 與水色常數，三個 shader 共用。 |
@@ -129,11 +134,12 @@ flowchart LR
 | `src/PixelArt.h/.cpp` | 程序貼圖的雜湊、繪圖與上傳輔助函式。 |
 | `src/TexturePack.h/.cpp` | 找出並開啟材質包，對照方塊名稱、染色並交出貼圖。 |
 | `src/ZipArchive.h/.cpp` | 讀取 zip 目錄，以自己的 DEFLATE 解碼器解壓。 |
-| `src/FileDialogs.h/.cpp` | 系統檔案視窗（`Fl_Native_File_Chooser`）與用檔案總管開資料夾。 |
+| `src/FileDialogs.h/.cpp` | 系統檔案視窗（暫時仍用 FLTK 的 `Fl_Native_File_Chooser`）與用檔案總管開資料夾。 |
 | `src/TouchpadGestures.H/.cpp` | Raw Input 讀精準觸控板的手指座標；Direct Manipulation 接手手勢並作為備援。 |
 | `src/Utilities/TwoFingerGesture.*` | 兩指位移與張開比例的 1-euro 濾波與起動門檻。 |
-| `src/Utilities/Input.H` | 自己的輸入事件 `InputEvent`、`Key::`／`Mod::`／`Mouse::` 常數（數值與 FLTK 相同），以及相機用的 `Viewport` 介面。 |
-| `src/Utilities/Platform.H`、`PlatformFltk.*` | 計時器與事件迴圈（`platform::addTimeout()` 等），目前以 FLTK 實作；`platform::fltkEvent()` 把 FLTK 事件轉成 `InputEvent`。見 [ADR 0008](adr/0008-own-input-and-timer-layer.md)。 |
+| `src/Utilities/Input.H` | 自己的輸入事件 `InputEvent`、`Key::`／`Mod::`／`Mouse::` 常數，以及相機用的 `Viewport` 介面。 |
+| `src/Utilities/GlfwInput.H/.cpp` | 把 GLFW 的按鍵（依實體位置）、滑鼠鍵、游標、滾輪與焦點 callback 轉成 `InputEvent`，自己記錄按住的鍵與雙擊；由 `GlfwInputCheck` 測試。 |
+| `src/Utilities/Platform.H`、`PlatformLoop.cpp` | 計時器與事件迴圈（`platform::addTimeout()`、`processPending()`、`wait()` 等）：自己的 timer 清單，事件由 `setEventPump()` 設定的 GLFW pump 取得。見 [ADR 0008](adr/0008-own-input-and-timer-layer.md)。 |
 | `src/Utilities/ArcBallCam.*` | World 相機；以 `platform::` timer 分攤滾輪縮放。 |
 | `src/Utilities/FlyCam.*` | Fly 觀察者相機。 |
 | `src/Utilities/HeadLook.*` | Train 相機相對於列車的轉頭。 |
@@ -141,16 +147,17 @@ flowchart LR
 
 ## 事件與更新
 
-- 控制面板 callback 直接修改 `TrainWindow::m_Track`，再呼叫 `damageMe()` 要求重畫。開關、滑桿與相機按鈕的 callback 先呼叫 `readPanel()`；`TrainView` 與其他 callback（快捷鍵、`Reset`、`Grand Tour`、命令列）只改 `TrainWindow::settings`，面板在下一幀由 `syncPanel()` 跟上。
-- `Run` 開啟時，FLTK idle callback `runButtonCB()` 最多每秒 30 次呼叫 `advanceTrain()`；左右鍵以正負方向呼叫同一函式。
+- 主迴圈 `TrainWindow::run()`：算出到下一個 timer 與下一次列車更新的時間，以 `glfwWaitEventsTimeout()` 等待事件，執行到期的 `platform::` timer，需要時才重畫（`TrainView::needsDraw()`）並交換緩衝區。視窗被拖曳或縮放時 Windows 停在自己的迴圈裡，由 refresh callback 重畫。
+- 介面是即時模式：`TrainView::draw()` 畫完場景後呼叫 `TrainWindow::drawInterface()`，`GameMenu::draw()` 在同一幀畫出並處理按鈕；滑鼠事件在幀之間以 `Gui::feed()` 送入，按下的動作在下一幀生效。選單或 callback 直接修改 `TrainWindow::settings` 與 `m_Track`，再呼叫 `damageMe()` 要求重畫。
+- `Run` 開啟時，主迴圈最多每秒 30 次呼叫 `advanceTrain()`；`Step Back`／`Step Forward` 以正負方向呼叫同一函式。
 - `ArcLength` 開啟時，`advanceByArcLength()` 沿參數小步前進、累加歐氏距離，每次呼叫即時計算；關閉時直接改變 `trainU`，所以世界空間速度會隨區段長度變化。
-- 光影動畫（雨、時間）由每秒 30 次的 `animateEffectsCB` timeout 推進。
+- 光影動畫（雨、時間）由主迴圈每秒 30 次推進。
 - 世界在背景執行緒建造：`TrainView::draw()` 先呼叫 `worldReady()`，它對目前要畫的島與（`Water` 與 `Light+` 都開時）海床呼叫 `prepare()`。第一次呼叫時各開一條 `std::thread` 生成網格並逐塊產生頂點；display list 只能在主執行緒建立，所以 `prepare()` 每幀最多花約 30 ms 編譯已完成的塊，其餘時間畫載入畫面，並以 timeout 約每 1/30 秒重畫，直到全部完成。
-- 新增控制點（`Add Pt`、`Shift` + `D`）先進入放置模式，`TrackInsert::pick()` 找滑鼠附近的軌道參數，點下時 `insertAt()` 插點並進入拖曳。Fly 相機在滑鼠鎖定且 `Edit` 開啟時是建造狀態（`flyBuilding()`）：左鍵刪準心對到的點、中鍵或 `C` 選取、右鍵在準心前方放點；`G` 以 `beginCarry()`／`updateCarry()` 讓點跟著視角移動。
-- 修改控制點的每條路徑（新增、刪除、`Load`、`Reset`、`Grand Tour`、R±X／Z、`Transform` 欄位、拖曳與 `G`／`R`）都先存 `TrackHistory` 快照；拖曳只在點真的改變時才存入。
-- 相機的平滑、按住按鍵移動與觸控板慣性都走 `platform::` timer（目前由 FLTK 實作），依實際經過時間計算，與幀率無關。
-- 滑鼠與鍵盤事件：`TrainView::handle()` 以 `platform::fltkEvent()` 把當下的 FLTK 事件轉成 `InputEvent`，交給 `TrainView::handleInput()`；相機、控制點編輯與 Train 轉頭的處理函式只吃 `InputEvent`，不讀 `Fl::event_*()`。
-- 自動模式（`--doctor`／`--screenshot`）：`main()` 先以 `TrainWindow::applyOptions()` 設定場景（軌道檔先經 `checkTrackFile()`，壞檔直接失敗、不跳對話框），`TrainView::draw()` 畫完 `drawFrame()` 後呼叫 `finishAutomatedFrame()`。`--doctor` 在第一幀就回報；`--screenshot` 只計算真正畫出場景的幀（`frameShowsScene`，載入畫面不算），達到指定幀數才讀回畫面、寫 PNG、印出 `PASS`／`FAIL` 行與場景出現所花的秒數，再關閉視窗讓 `Fl::run()` 返回。300 秒內場景沒有出現也算失敗。結束碼：0 通過、1 檢查失敗、2 命令列錯誤。
+- 新增控制點（快捷欄 `7`、`Shift` + `D`）先進入放置模式，`TrackInsert::pick()` 找滑鼠附近的軌道參數，點下時 `insertAt()` 插點並進入拖曳。Fly 相機在滑鼠鎖定且 `Edit` 開啟時是建造狀態（`flyBuilding()`）：左鍵刪準心對到的點、中鍵或 `C` 選取、右鍵在準心前方放點；`G` 以 `beginCarry()`／`updateCarry()` 讓點跟著視角移動。
+- 修改控制點的每條路徑（新增、刪除、`Load`、`Reset`、`Grand Tour`、R±X／Z、X／Y／Z 微調、拖曳與 `G`／`R`）都先存 `TrackHistory` 快照；拖曳只在點真的改變時才存入。
+- 相機的平滑、按住按鍵移動與觸控板慣性都走 `platform::` timer，依實際經過時間計算，與幀率無關。
+- 滑鼠與鍵盤事件：GLFW callback 經 `GlfwInput` 轉成 `InputEvent`，`GameMenu::input()` 先看（Esc、F1、`1`–`9`、`P`、`[`／`]`，選單開著時吃掉全部事件，快捷欄上按下的滑鼠也歸它），沒用到才交給 `TrainView::handleInput()`；相機、控制點編輯與 Train 轉頭的處理函式只吃 `InputEvent`。Esc 在移動、傾斜或放置控制點時先交給 `TrainView` 取消。
+- 自動模式（`--doctor`／`--screenshot`）：`main()` 先以 `TrainWindow::applyOptions()` 設定場景（軌道檔先經 `checkTrackFile()`，壞檔直接失敗、不跳對話框），`TrainView::draw()` 畫完 `drawFrame()` 後呼叫 `finishAutomatedFrame()`。`--doctor` 在第一幀就回報；`--screenshot` 只計算真正畫出場景的幀（`frameShowsScene`，載入畫面不算），達到指定幀數才讀回畫面、寫 PNG、印出 `PASS`／`FAIL` 行與場景出現所花的秒數，再關閉視窗讓 `TrainWindow::run()` 返回。自動模式不畫快捷欄與按鍵提示。300 秒內場景沒有出現也算失敗。結束碼：0 通過、1 檢查失敗、2 命令列錯誤。
 
 ## 跨模組約定
 
@@ -164,9 +171,9 @@ flowchart LR
 - 列車方向由切線決定；`ControlPoint::orient` 會存檔，但目前不參與計算。
 
 **相機**
-- 所有透視相機共用 `FOV` 滑桿的視角（`TrainView::setFieldOfView()`），所以切到 Fly 時直接沿用上一幀的 modelview 矩陣，畫面不跳動；上一幀是 Top 時改從 `topViewCentre()` 上方往下看。
-- Fly 與 Train 模式的按鍵經掃描碼 system handler（`FlyCam::keyForScanCode()`）組成 `InputEvent` 送進 `TrainView::handleInput()`，輸入法開啟或使用其他鍵盤配置時按鍵位置仍有效。編輯鍵由 `EditKeys::forKey()` 決定，不能與飛行鍵衝突（`EditKeysCheck`）。
-- FLTK 1.3 會把滾輪訊息捨入為整格，所以 `TrainView.cpp` 直接讀 `WM_MOUSEWHEEL`／`WM_MOUSEHWHEEL` 的原始位移。觸控板的設計見 [ADR 0003](adr/0003-touchpad-direct-manipulation.md)。
+- 所有透視相機共用 `FOV` 滑桿（選單 `Camera`）的視角（`TrainView::setFieldOfView()`），所以切到 Fly 時直接沿用上一幀的 modelview 矩陣，畫面不跳動；上一幀是 Top 時改從 `topViewCentre()` 上方往下看。
+- GLFW 的按鍵碼代表實體位置（美式配置的名稱），視窗的輸入法一律關閉，所以中文輸入法或其他鍵盤配置下按鍵位置仍有效。編輯鍵由 `EditKeys::forKey()` 決定，不能與飛行鍵衝突（`EditKeysCheck`）。
+- 滾輪要保留原始位移與觸控板捏合時系統加上的 Ctrl，所以 `TrainWindow` 以視窗程序 subclass 先把 `WM_MOUSEWHEEL`／`WM_MOUSEHWHEEL` 交給 `TrainView::systemWheel()`，沒用到才給 GLFW。觸控板的設計見 [ADR 0003](adr/0003-touchpad-direct-manipulation.md)。
 
 **場景與列車淨空**
 - `Grand Tour` 的控制點以最初的座標寫在 `OceanWorld`，取用時乘上 `WorldShape::kScale`（水平）與 `kLift`（海面以上高度）。
@@ -194,4 +201,4 @@ flowchart LR
 
 目前 `TrainWindow` 只持有一條 `CTrack`，`TrainView::drawStuff()` 直接列出要畫的東西。加入多條軌道或其他遊樂設施前，建議先把世界狀態從視窗移出（例如 `ParkWorld` 持有軌道、設施與景物集合），每種設施各自實作 `update(dt)` 與 `draw(renderPass)`，不要把特定設施的邏輯塞進 `TrainView`；速度也應改用實際時間差 `dt`。
 
-工程決策見 [ADR 0001](adr/0001-windows-quality-gates.md)；Clang 工具鏈見 [ADR 0002](adr/0002-clang-cl-build.md)；Visual Studio 版本見 [ADR 0004](adr/0004-any-visual-studio-version.md)；內附 FLTK 升級到 1.3.11 見 [ADR 0007](adr/0007-fltk-1-3-11.md)。
+工程決策見 [ADR 0001](adr/0001-windows-quality-gates.md)；Clang 工具鏈見 [ADR 0002](adr/0002-clang-cl-build.md)；Visual Studio 版本見 [ADR 0004](adr/0004-any-visual-studio-version.md)；內附 FLTK 升級到 1.3.11 見 [ADR 0007](adr/0007-fltk-1-3-11.md)；GLFW 視窗與 Esc 選單見 [ADR 0010](adr/0010-glfw-window-and-game-menu.md)。

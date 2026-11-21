@@ -7,18 +7,7 @@
      Modifier
                   Yu-Chi Lai, yu-chi@cs.wisc.edu
      
-     Comment:     
-						The TrainView is the window that actually shows the 
-						train. Its a
-						GL display canvas (Fl_Gl_Window).  It is held within 
-						a TrainWindow
-						that is the outer window with all the widgets. 
-						The TrainView needs 
-						to be aware of the window - since it might need to 
-						check the widgets to see how to draw
-
-	  Note:        we need to have pointers to this, but maybe not know 
-						about it (beware circular references)
+     Comment:     See TrainView.H.
 
      Platform:    Visio Studio.Net 2003/2005
 
@@ -27,12 +16,9 @@
 #include <chrono>
 #include <iostream>
 #include <math.h>
-#include <FL/Fl.H>
 
 // we will need OpenGL, and OpenGL needs windows.h
 #include <windows.h>
-#include <imm.h>
-//#include "GL/gl.h"
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 #include "GL/GLU.h"
@@ -46,9 +32,11 @@
 #include "EditKeys.h"
 #include "TrackInsert.h"
 #include "Utilities/Platform.H"
-#include "Utilities/PlatformFltk.H"
-#include <FL/x.H>
-#include <FL/gl.h>
+
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
 
 // Touchpads send wheel deltas smaller than one notch. A burst that contains any
 // such delta stays precise for a moment, so a stray whole notch is not smoothed.
@@ -64,32 +52,34 @@ static bool isPreciseWheel(int delta)
     return now - lastPrecise < std::chrono::milliseconds(300);
 }
 
-// FLTK 1.3 rounds wheel messages to whole notches, which makes touchpad scrolling
-// and pinching move in coarse, delayed steps. Read the exact delta here instead.
-// The modifier flags come from the message, keeping the synthetic Ctrl of pinch.
-static int touchpadWheel(void *event, void *data)
+// GLFW turns wheel messages into scroll events without the keys held with
+// them, so read the exact delta and the modifier flags from the message here:
+// the synthetic Ctrl of a touchpad pinch is only in the message.
+bool TrainView::systemWheel(unsigned message, unsigned long long wParam, long long lParam)
 {
-    MSG *message = static_cast<MSG *>(event);
-    if (message->message != WM_MOUSEWHEEL && message->message != WM_MOUSEHWHEEL)
-        return 0;
-    TrainView *view = static_cast<TrainView *>(data);
-    if (!view->tw || !view->shown())
-        return 0;
-    const bool fly = view->tw->settings.camera == CameraView::Fly;
-    const bool train = view->tw->settings.camera == CameraView::Train;
-    if (view->tw->settings.camera != CameraView::World && !fly && !train)
-        return 0;
-    HWND canvas = fl_xid(view);
-    if (!canvas || GetAncestor(message->hwnd, GA_ROOT) != GetAncestor(canvas, GA_ROOT))
-        return 0;
+    if (message != WM_MOUSEWHEEL && message != WM_MOUSEHWHEEL)
+        return false;
+    if (!tw || !m_hwnd)
+        return false;
+    const bool fly = tw->settings.camera == CameraView::Fly;
+    const bool train = tw->settings.camera == CameraView::Train;
+    if (tw->settings.camera != CameraView::World && !fly && !train)
+        return false;
+    HWND canvas = static_cast<HWND>(m_hwnd);
     RECT bounds;
-    if (!GetWindowRect(canvas, &bounds))
-        return 0;
-    POINT position = {(short)LOWORD(message->lParam), (short)HIWORD(message->lParam)};
+    if (!GetClientRect(canvas, &bounds))
+        return false;
+    POINT corner = {bounds.left, bounds.top};
+    POINT opposite = {bounds.right, bounds.bottom};
+    ClientToScreen(canvas, &corner);
+    ClientToScreen(canvas, &opposite);
+    bounds = {corner.x, corner.y, opposite.x, opposite.y};
+    POINT position = {(short)LOWORD(lParam), (short)HIWORD(lParam)};
     if (!PtInRect(&bounds, position))
-        return 0;
-    const int delta = (short)HIWORD(message->wParam);
-    const WORD keys = LOWORD(message->wParam);
+        return false;
+    TrainView *view = this;
+    const int delta = (short)HIWORD(wParam);
+    const WORD keys = LOWORD(wParam);
     int state = 0;
     if (keys & MK_CONTROL)
         state |= Mod::Ctrl;
@@ -101,10 +91,10 @@ static int touchpadWheel(void *event, void *data)
     const bool precise = isPreciseWheel(delta);
     // Riding the train, touchpad scrolling turns the head; wheel notches do nothing.
     if (train && (!precise || (state & Mod::Ctrl)))
-        return 1;
+        return true;
     // Match InputEvent's signs: wheel up is -dy, tilting right is +dx.
-    const float dx = message->message == WM_MOUSEWHEEL ? 0.0f : steps;
-    const float dy = message->message == WM_MOUSEWHEEL ? -steps : 0.0f;
+    const float dx = message == WM_MOUSEWHEEL ? 0.0f : steps;
+    const float dy = message == WM_MOUSEWHEEL ? -steps : 0.0f;
     if (train)
     {
         view->headLook.scroll(dx, dy);
@@ -115,60 +105,12 @@ static int touchpadWheel(void *event, void *data)
     else if (fly)
     {
         view->flyCam.scroll(dx, dy, state, precise);
-        // The mouse wheel changes the flying speed (the panel shows it).
+        // The mouse wheel changes the flying speed (the menu shows it).
         view->damage(1);
     }
     else
         view->arcball.scroll(dx, dy, state, precise);
-    return 1;
-}
-
-// In Fly mode, take the flying keys before FLTK and the input method see them
-// and hand them to the view as key events.
-static int flyKeys(void *event, void *data)
-{
-    MSG *message = static_cast<MSG *>(event);
-    if (message->message != WM_KEYDOWN && message->message != WM_KEYUP)
-        return 0;
-    TrainView *view = static_cast<TrainView *>(data);
-    if (!view->tw || !view->shown())
-        return 0;
-    const bool train = view->tw->settings.camera == CameraView::Train;
-    if (view->tw->settings.camera != CameraView::Fly && !train)
-        return 0;
-    HWND canvas = fl_xid(view);
-    if (!canvas || GetAncestor(message->hwnd, GA_ROOT) != GetAncestor(canvas, GA_ROOT))
-        return 0;
-    // Only when the view has the keyboard, so typing in a panel widget still works.
-    if (train && Fl::focus() != view)
-        return 0;
-    const unsigned scan = (unsigned)(message->lParam >> 16) & 0xFF;
-    const bool extended = ((message->lParam >> 24) & 1) != 0;
-    const int key = FlyCam::keyForScanCode(scan, extended);
-    // Riding the train, only R (look ahead again) is read this way.
-    if (!key || (train && key != 'r'))
-        return 0;
-    if (train)
-    {
-        if (message->message == WM_KEYDOWN)
-            view->recenterHead();
-        return 1;
-    }
-    // FLTK never saw this message, so take the modifiers from the keyboard:
-    // editing commands such as Ctrl + snapping read them. The mouse is where
-    // FLTK last saw it, as for any key event.
-    InputEvent e = platform::fltkEvent(FL_KEYDOWN);
-    e.type = message->message == WM_KEYDOWN ? InputType::KeyDown : InputType::KeyUp;
-    e.key = key;
-    e.state &= ~(Mod::Shift | Mod::Ctrl | Mod::Alt);
-    if (GetKeyState(VK_SHIFT) < 0)
-        e.state |= Mod::Shift;
-    if (GetKeyState(VK_CONTROL) < 0)
-        e.state |= Mod::Ctrl;
-    if (GetKeyState(VK_MENU) < 0)
-        e.state |= Mod::Alt;
-    view->handleInput(e);
-    return 1;
+    return true;
 }
 
 static bool touchpadAccepts(void *data)
@@ -224,9 +166,9 @@ static const float flyLowest = -200.0f;
 
 //************************************************************************
 //
-// * Constructor to set up the GL window
+// * Constructor: the cameras; the window comes later (attach())
 //========================================================================
-TrainView::TrainView(int x, int y, int w, int h, const char *l) : Fl_Gl_Window(x, y, w, h, l)
+TrainView::TrainView()
 //========================================================================
 {
     tw = 0;
@@ -236,22 +178,39 @@ TrainView::TrainView(int x, int y, int w, int h, const char *l) : Fl_Gl_Window(x
     headDragging = false;
     headDragX = 0;
     headDragY = 0;
-    mode(FL_RGB | FL_ALPHA | FL_DOUBLE | FL_STENCIL);
 
     resetArcball();
     flyCam.setup(this, m_fieldOfView);
     flyCam.setGround(flyLowest - FlyCam::minHeight); // the eye stays minHeight above it
-    Fl::add_system_handler(touchpadWheel, this);
-    Fl::add_system_handler(flyKeys, this);
 }
 
 TrainView::~TrainView()
 {
     if (mouseCaptured)
         ClipCursor(nullptr);
-    Fl::remove_system_handler(touchpadWheel);
-    Fl::remove_system_handler(flyKeys);
+    touchpad.detach();
     platform::removeTimeout(redrawSoon, this);
+}
+
+void TrainView::attach(GLFWwindow *window)
+{
+    m_window = window;
+    m_hwnd = window ? glfwGetWin32Window(window) : nullptr;
+    m_contextValid = false;
+    damage(1);
+}
+
+void TrainView::resize(int width, int height)
+{
+    m_width = width > 0 ? width : 1;
+    m_height = height > 0 ? height : 1;
+    damage(1);
+}
+
+void TrainView::make_current()
+{
+    if (m_window)
+        glfwMakeContextCurrent(m_window);
 }
 
 //************************************************************************
@@ -341,10 +300,8 @@ void TrainView::placeFlyCamAtWorldView()
 void TrainView::centerCursor()
 //========================================================================
 {
-    POINT center = {w() / 2, h() / 2};
-    HWND canvas = fl_xid(this);
-    if (canvas && ClientToScreen(canvas, &center))
-        SetCursorPos(center.x, center.y);
+    if (m_window)
+        glfwSetCursorPos(m_window, w() / 2, h() / 2);
 }
 
 //========================================================================
@@ -354,20 +311,29 @@ void TrainView::setMouseCaptured(bool captured)
     if (captured == mouseCaptured)
         return;
     mouseCaptured = captured;
-    HWND canvas = fl_xid(this);
+    HWND canvas = static_cast<HWND>(m_hwnd);
     if (captured)
     {
-        cursor(FL_CURSOR_NONE);
+        if (m_window)
+            glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
         // Keep the hidden cursor over the view so no move is lost at an edge.
         RECT bounds;
-        if (canvas && GetWindowRect(canvas, &bounds))
+        if (canvas && GetClientRect(canvas, &bounds))
+        {
+            POINT corner = {bounds.left, bounds.top};
+            POINT opposite = {bounds.right, bounds.bottom};
+            ClientToScreen(canvas, &corner);
+            ClientToScreen(canvas, &opposite);
+            bounds = {corner.x, corner.y, opposite.x, opposite.y};
             ClipCursor(&bounds);
+        }
         centerCursor();
     }
     else
     {
         ClipCursor(nullptr);
-        cursor(FL_CURSOR_DEFAULT);
+        if (m_window)
+            glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     }
     damage(1);
 }
@@ -379,7 +345,6 @@ void TrainView::cameraChanged()
     // A first-person view that keeps spinning after a flick is disorienting.
     touchpad.inertia =
         tw->settings.camera != CameraView::Fly && tw->settings.camera != CameraView::Train;
-    setInputMethodEnabled(tw->settings.camera != CameraView::Fly);
     // Each ride starts looking ahead.
     headDragging = false;
     headLook.reset();
@@ -390,26 +355,6 @@ void TrainView::cameraChanged()
         return;
     }
     placeFlyCamAtCurrentView();
-    // Take keyboard focus from the camera button so WASD works at once.
-    Fl::focus(this);
-}
-
-//========================================================================
-void TrainView::setInputMethodEnabled(bool enabled)
-//========================================================================
-{
-    // A Chinese input method would catch WASD for its composition window, so
-    // switch it off for this window while flying and back on afterwards.
-    HWND canvas = fl_xid(this);
-    if (!canvas)
-        return;
-    const DWORD flags = enabled ? IACE_DEFAULT : 0;
-    // A null context is documented for these flags (0 detaches the input
-    // method, IACE_DEFAULT restores it), but the SAL annotation says _In_.
-#pragma warning(suppress : 6387)
-    (void)ImmAssociateContextEx(canvas, nullptr, flags);
-#pragma warning(suppress : 6387)
-    (void)ImmAssociateContextEx(GetAncestor(canvas, GA_ROOT), nullptr, flags);
 }
 
 //========================================================================
@@ -434,7 +379,6 @@ int TrainView::handleTrainLook(const InputEvent &e)
     case InputType::Push:
         if (e.button == Mouse::Middle)
             break;
-        Fl::focus(this);
         if (e.clicks)
         {
             recenterHead();
@@ -461,7 +405,7 @@ int TrainView::handleTrainLook(const InputEvent &e)
         headDragging = false;
         return 1;
     case InputType::KeyDown:
-        // R (or Home) looks ahead again; the scan-code handler covers input methods.
+        // R (or Home) looks ahead again
         if (e.key == 'r' || e.key == Key::Home)
         {
             recenterHead();
@@ -476,20 +420,8 @@ int TrainView::handleTrainLook(const InputEvent &e)
 
 //************************************************************************
 //
-// * FlTk Event handler for the window
-//########################################################################
-// TODO:
-//       if you want to make the train respond to other events
-//       (like key presses), you might want to hack this.
-//########################################################################
+// * Mouse and keyboard input the interface did not take
 //========================================================================
-int TrainView::handle(int event)
-{
-    if (handleInput(platform::fltkEvent(event)))
-        return 1;
-    return Fl_Gl_Window::handle(event);
-}
-
 int TrainView::handleInput(const InputEvent &e)
 {
     // an edit in progress sees every event before the camera does
@@ -663,10 +595,7 @@ int TrainView::handleInput(const InputEvent &e)
     case InputType::Focus:
         return 1;
 
-    // every time the mouse enters this window, aggressively take focus
-    // (returning 1 also asks FLTK for move events, used by mouse look)
     case InputType::Enter:
-        focus(this);
         return 1;
 
     case InputType::KeyDown:
@@ -990,7 +919,6 @@ void TrainView::beginPlacePoint()
     }
     if (m_editMode != EDIT_IDLE)
         endEdit(true);
-    take_focus(); // so Esc comes here even straight after the button
     // In Fly, building is on whenever the mouse steers the view: right click
     // places a point at the crosshair, so this only takes the mouse.
     if (tw->settings.camera == CameraView::Fly)
@@ -1308,7 +1236,7 @@ bool TrainView::editKey(const InputEvent &e)
         beginEdit(EDIT_ROTATE, TransformGizmo::NONE, e.x, e.y);
         return true;
     case EditKeys::REMOVE:
-        deletePointCB(nullptr, tw);
+        deletePointCB(tw);
         return true;
     default:
         return false;
@@ -1347,8 +1275,6 @@ void TrainView::drawEditOverlay()
         m_flyHandoverTop = tw->settings.camera == CameraView::Top;
         m_flyHandoverValid = true;
     }
-
-    tw->syncPanel();
 
     const bool selected = canEdit() && hasSelection();
     if (selected)
@@ -1436,7 +1362,7 @@ void TrainView::drawEditOverlay()
         glPopAttrib();
     }
 
-    // one line of text in the top left corner, as a 3D view has
+    // one line about what the view is doing
     char text[160] = "";
     const char *camera =
         (tw->settings.camera == CameraView::Top)
@@ -1471,7 +1397,7 @@ void TrainView::drawEditOverlay()
                  m_placeHit ? "click to put it here, hold to drag it"
                             : "point at the track where it should go");
     else if (!selected)
-        snprintf(text, sizeof(text), "%s", camera);
+        text[0] = '\0'; // the hotbar already shows the camera
     else
     {
         const ControlPoint &point = m_pTrack->points[static_cast<size_t>(selectedCube)];
@@ -1492,27 +1418,8 @@ void TrainView::drawEditOverlay()
                      camera, selectedCube, static_cast<double>(point.pos.x),
                      static_cast<double>(point.pos.y), static_cast<double>(point.pos.z));
     }
-    glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT);
-    glDisable(GL_LIGHTING);
-    glDisable(GL_TEXTURE_2D);
-    glDisable(GL_DEPTH_TEST);
-    glMatrixMode(GL_PROJECTION);
-    glPushMatrix();
-    glLoadIdentity();
-    glOrtho(0.0, static_cast<double>(w()), 0.0, static_cast<double>(h()), -1.0, 1.0);
-    glMatrixMode(GL_MODELVIEW);
-    glPushMatrix();
-    glLoadIdentity();
-    gl_font(FL_HELVETICA, 12);
-    glColor3f(0.0f, 0.0f, 0.0f);
-    gl_draw(text, 11.0f, static_cast<float>(h() - 21));
-    glColor3f(0.92f, 0.92f, 0.92f);
-    gl_draw(text, 10.0f, static_cast<float>(h() - 20));
-    glPopMatrix();
-    glMatrixMode(GL_PROJECTION);
-    glPopMatrix();
-    glMatrixMode(GL_MODELVIEW);
-    glPopAttrib();
+    // the interface shows it above the hotbar (GameMenu.cpp)
+    m_statusText = text;
 }
 
 //************************************************************************
@@ -1522,7 +1429,11 @@ void TrainView::drawEditOverlay()
 //========================================================================
 void TrainView::draw()
 {
+    // a request made while drawing (a timer, the interface) asks for another frame
+    m_needsDraw = false;
     drawFrame();
+    if (tw && frameShowsScene)
+        tw->drawInterface();
     finishAutomatedFrame();
 }
 
@@ -1550,12 +1461,15 @@ void TrainView::drawFrame()
         throw std::runtime_error("Could not initialize GLAD!");
 
     // FLTK may recreate the canvas window, so (re)attach to the current one.
-    touchpad.attach(fl_xid(this), touchpadAccepts, touchpadMoves, this);
+    // The window proc is wrapped once the window exists (attach()).
+    if (m_hwnd)
+        touchpad.attach(m_hwnd, touchpadAccepts, touchpadMoves, this);
 
     // A new GL context starts without our textures, shaders and frame
     // buffers; let the track and the lighting rebuild them.
-    if (!context_valid())
+    if (!m_contextValid)
     {
+        m_contextValid = true;
         m_trackRenderer.releaseTextures();
         TrainModel::releaseTextures();
         m_land.releaseResources();

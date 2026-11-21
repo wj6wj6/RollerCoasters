@@ -5,11 +5,12 @@
                   (AppControl.h): after each drawn frame, reports what the
                   OpenGL driver and the shader path did, or reads the frame
                   back, saves it and checks that it looks drawn, then
-                  closes the window so Fl::run() returns.
+                  closes the window so TrainWindow::run() returns.
 
-                  The frame is read from the back buffer before FLTK swaps
-                  it, so it is exactly what the user would see, including
-                  the edit and Fly overlays.
+                  The frame is read from the back buffer before the window
+                  swaps it, so it is exactly what the user would see,
+                  including the edit and Fly overlays; the hotbar and the
+                  key hints are left out of automated runs.
 
 *************************************************************************/
 
@@ -29,11 +30,10 @@
 #include "TrainView.H"
 #include "TrainWindow.H"
 
-#pragma warning(push)
-#pragma warning(disable : 4312)
-#pragma warning(disable : 4311)
-#include <FL/Fl.H>
-#pragma warning(pop)
+#include "Utilities/Platform.H"
+
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
 
 namespace
 {
@@ -61,7 +61,7 @@ void redrawCB(void *view)
 
 void closeCB(void *window)
 {
-    static_cast<Fl_Window *>(window)->hide();
+    glfwSetWindowShouldClose(static_cast<GLFWwindow *>(window), GLFW_TRUE);
 }
 
 void giveUpCB(void *view)
@@ -89,7 +89,7 @@ void TrainView::startAutomation(const AppControl::Options *options)
     automationResult = -1;
     automationStart = secondsNow();
     if (automation)
-        Fl::add_timeout(kGiveUpSeconds, giveUpCB, this);
+        platform::addTimeout(kGiveUpSeconds, giveUpCB, this);
 }
 
 //************************************************************************
@@ -99,9 +99,10 @@ void TrainView::startAutomation(const AppControl::Options *options)
 void TrainView::finishAutomation(int result)
 {
     automationResult = result;
-    Fl::remove_timeout(giveUpCB, this);
-    Fl::remove_timeout(redrawCB, this);
-    Fl::add_timeout(0.0, closeCB, window());
+    platform::removeTimeout(giveUpCB, this);
+    platform::removeTimeout(redrawCB, this);
+    if (m_window)
+        platform::addTimeout(0.0, closeCB, m_window);
 }
 
 //************************************************************************
@@ -144,7 +145,7 @@ void TrainView::finishAutomatedFrame()
     if (automationFrames < automation->frames)
     {
         // the next frame: the scenery and the textures settle over the first few
-        Fl::add_timeout(0.02, redrawCB, this);
+        platform::addTimeout(0.02, redrawCB, this);
         return;
     }
 

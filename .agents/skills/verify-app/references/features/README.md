@@ -4,14 +4,14 @@
 
 | 改到的程式 | 功能檔 |
 | --- | --- |
-| `main.cpp`、`TrainWindow.*`、`SceneSettings.h`、`UiTheme.*`、`CallBacks.cpp`（Run、Reset、Grand Tour） | [startup-and-panel.md](startup-and-panel.md) |
+| `main.cpp`、`TrainWindow.*`、`GameMenu.*`、`SceneSettings.h`、`CallBacks.cpp`（Run、Reset、Grand Tour）、`Platform.H`／`PlatformLoop.cpp`、`GlfwInput.*` | [startup-and-panel.md](startup-and-panel.md) |
 | `ArcBallCam.*`、`FlyCam.*`、`HeadLook.*`、`TouchpadGestures.*`、`TwoFingerGesture.*`、`TrainView.cpp` 的輸入處理 | [cameras-and-input.md](cameras-and-input.md) |
 | `TransformGizmo.*`、`EditKeys.*`、`TrackInsert.*`、`TrackHistory.*`、`ControlPoint.*`、`TrainView.cpp` 的編輯 | [editing.md](editing.md) |
 | `Track.*`、`FileDialogs.*`、`CallBacks.cpp` 的 Load／Save | [track-files.md](track-files.md) |
 | `TrainModel.*`、`TrackRenderer.*` | [train-and-rails.md](train-and-rails.md) |
 | `AdvancedLighting.*`、`PostEffects.*`、`TrainViewEffects.cpp`、`UnderwaterOptics.h`、`MatrixMath.h` | [lighting-and-weather.md](lighting-and-weather.md) |
 | `LandWorld.*`、`LandTextures.*`、`PixelArt.*`、`WaterFlow.*`、`LandWaterMotion.h`、`Mobs.*`、`WorldShape.*`、`Frustum.*`、`CellQueue.h` | [island.md](island.md) |
-| `WorldSave.h`、`worldReady()`／載入畫面、`Ui/*`（自繪介面元件，目前只畫載入畫面的文字） | [startup-and-panel.md](startup-and-panel.md) |
+| `WorldSave.h`、`worldReady()`／載入畫面、`Ui/*`（自繪介面元件：載入畫面、Esc 選單、快捷欄） | [startup-and-panel.md](startup-and-panel.md) |
 | `OceanWorld.*` | [underwater.md](underwater.md) |
 | `TexturePack.*`、`ZipArchive.*` | [texture-packs.md](texture-packs.md) |
 | `AppControl.*`、`TrainViewControl.cpp`、`scripts/control-app.ps1` | 本頁「驗證工具本身」 |

@@ -9,7 +9,7 @@
 
 ## 怎麼到達
 
-`Lighting` 與 `World` 面板。
+選單（Esc）的 `Lighting` 與 `World`。
 
 ## 怎麼用 CLI 驅動
 

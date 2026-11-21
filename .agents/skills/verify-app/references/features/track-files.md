@@ -7,7 +7,7 @@
 
 ## 怎麼到達
 
-`Track` 面板的 `Load`、`Save`。
+選單 `Track` 的 `Load`、`Save`。
 
 ## 怎麼用 CLI 驅動
 
