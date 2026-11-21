@@ -274,6 +274,24 @@ void useTexturePack(TrainWindow *tw, std::size_t index)
         usePackAt(tw, tw->texturePackPaths[index]);
 }
 
+bool addTexturePack(TrainWindow *tw, const std::string &path, std::string &name, std::string &error)
+{
+    TexturePack::Pack pack;
+    if (!pack.open(path))
+    {
+        error = "not a track file (.txt) or a texture pack";
+        return false;
+    }
+    const std::string copied = Folders::copyInto(path, TexturePack::searchFolders().front(), error);
+    if (copied.empty())
+        return false;
+    tw->listTexturePacks(tw->texturePackPath);
+    // listed as findIn() names it: a .zip without its extension
+    const bool zip = copied.size() > 4 && Folders::withExtension(copied, ".zip") == copied;
+    name = zip ? copied.substr(0, copied.size() - 4) : copied;
+    return true;
+}
+
 void openTexturePackFolder(TrainWindow *tw)
 {
     const std::string folder = TexturePack::searchFolders().front();

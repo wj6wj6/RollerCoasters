@@ -8,6 +8,7 @@
 #include "AppControl.h"
 
 #include "TexturePack.h"
+#include "Utilities/Utf8File.H"
 
 #include <cstdint>
 #include <cstdlib>
@@ -252,8 +253,8 @@ bool parse(int argc, const char *const *argv, Options &options, std::string &err
 
 bool checkTrackFile(const std::string &path, std::string &error)
 {
-    FILE *fp = nullptr;
-    if (fopen_s(&fp, path.c_str(), "r") != 0 || !fp)
+    FILE *fp = openUtf8(path.c_str(), "r");
+    if (!fp)
     {
         error = "cannot open " + path;
         return false;
@@ -299,9 +300,7 @@ std::vector<Check> environmentChecks()
 
     // Load and Save start in TrackFiles beside the program (main() moves there).
     const std::string probe = "TrackFiles/.doctor-probe";
-    FILE *fp = nullptr;
-    if (fopen_s(&fp, probe.c_str(), "w") != 0)
-        fp = nullptr;
+    FILE *fp = openUtf8(probe.c_str(), "w");
     const bool writable = fp && std::fputs("ok\n", fp) >= 0;
     if (fp)
         std::fclose(fp);
@@ -444,8 +443,8 @@ bool writePng(const std::string &path, const std::vector<unsigned char> &rgb, in
     putChunk(png, "IDAT", zlib);
     putChunk(png, "IEND", {});
 
-    FILE *fp = nullptr;
-    if (fopen_s(&fp, path.c_str(), "wb") != 0 || !fp)
+    FILE *fp = openUtf8(path.c_str(), "wb");
+    if (!fp)
     {
         error = "cannot write " + path;
         return false;

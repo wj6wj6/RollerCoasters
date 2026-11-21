@@ -5,7 +5,8 @@
                   TrackFiles\ for Load and Save (listed in the game's own
                   track screens instead of the system's file dialogs) and
                   the texture packs' folder, which can be opened in the
-                  file manager. Paths and names are UTF-8.
+                  file manager, and where files dropped on the window are
+                  copied. Paths and names are UTF-8.
 
 *************************************************************************/
 #pragma once
@@ -41,6 +42,14 @@ bool exists(const std::string &path);
 // Makes the folder (and the ones above it) if it is missing. False if it
 // still is not there.
 bool make(const std::string &folder);
+
+// Copies a file, or a folder with everything in it, into `folder` (made if
+// missing) and gives the name it has there, as a block game copies the packs
+// dropped on its window into its pack folder. Nothing is copied when the file
+// is in that folder already, or when the file of that name there has the same
+// bytes. Another file of the same name stays as it is: the copy is named
+// "loop (2).txt" instead. Empty, with `error` set, when it could not be copied.
+std::string copyInto(const std::string &path, const std::string &folder, std::string &error);
 
 // Opens the folder in the file manager, making it first if it is missing.
 // False if it could not be shown.

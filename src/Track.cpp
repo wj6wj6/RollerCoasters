@@ -25,6 +25,7 @@
 *************************************************************************/
 
 #include "Track.H"
+#include "Utilities/Utf8File.H"
 
 #include <math.h>
 #include <stdlib.h>
@@ -185,8 +186,8 @@ void breakString(char *str, std::vector<const char *> &words)
 bool CTrack::readPoints(const char *filename, std::string &error)
 //============================================================================
 {
-    FILE *fp = nullptr;
-    if (fopen_s(&fp, filename, "r") != 0)
+    FILE *fp = openUtf8(filename, "r");
+    if (!fp)
     {
         error = "The file could not be opened";
         return false;
@@ -263,8 +264,8 @@ bool CTrack::readPoints(const char *filename, std::string &error)
 bool CTrack::writePoints(const char *filename, std::string &error)
 //============================================================================
 {
-    FILE *fp = nullptr;
-    if (fopen_s(&fp, filename, "w") != 0 || !fp)
+    FILE *fp = openUtf8(filename, "w");
+    if (!fp)
     {
         error = "The file could not be opened for writing";
         return false;
