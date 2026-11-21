@@ -3,7 +3,8 @@
 
      Comment:     See UiAtlas.h. Layout: the font's 95 cells fill the top
                   left (16 per row, 6 rows of 8 texels); the skins sit in a
-                  row of 16 x 16 tiles below it, starting at y = 64.
+                  row of 16 x 16 tiles below it, starting at y = 64; the
+                  icons in a row of 16 x 16 cells at y = 96.
 
 *************************************************************************/
 
@@ -61,7 +62,240 @@ const ui::UiAtlas::Skin kSkins[ui::UiAtlas::SKIN_COUNT] = {
     {96, 64, 22, 22, 3},  // SLOT
     {120, 64, 24, 24, 4}, // SLOT_SELECTED
 };
+// The icons, one character per texel: '.' clear, the rest from colourOf().
+// clang-format off
+const char *const kIcons[ui::UiAtlas::ICON_COUNT][ui::UiAtlas::kIconSize] = {
+    // ICON_WORLD
+    {
+        "................",
+        ".....kkkkkk.....",
+        "...kkbbbbGGkk...",
+        "..kbbbbbGGGGbk..",
+        "..kbGGbbbGGbbk..",
+        ".kbGGGGbbbbbbbk.",
+        ".kbGGGGGbbbbbbk.",
+        ".kbbGGGbbbbGGbk.",
+        ".kbbbGbbbbGGGbk.",
+        ".kbbbbbbbbGGGbk.",
+        ".kbbbbbbbbbGbbk.",
+        "..kbbbGGbbbbbk..",
+        "..kbbGGGGbbbbk..",
+        "...kkbGGbbbkk...",
+        ".....kkkkkk.....",
+        "................",
+    },
+    // ICON_TRAIN
+    {
+        "................",
+        "................",
+        "................",
+        ".kkkkkkkkkkkkkk.",
+        ".kggggggggggggk.",
+        ".kgddddddddddgk.",
+        ".kgddddddddddgk.",
+        ".kgddddddddddgk.",
+        ".kggggggggggggk.",
+        "..kggggggggggk..",
+        "..kkkkkkkkkkkk..",
+        "...kNNk..kNNk...",
+        "...kNNk..kNNk...",
+        "....kk....kk....",
+        "................",
+        "................",
+    },
+    // ICON_CHASE
+    {
+        "................",
+        ".kkkkk..........",
+        "kwwwwwk.........",
+        "kwwbbwk.........",
+        "kwwbbwk.........",
+        ".kkkkk..........",
+        "......kkkkkkkkk.",
+        "......kgggggggk.",
+        "......kgdddddgk.",
+        "......kgdddddgk.",
+        "......kgggggggk.",
+        ".......kkkkkkk..",
+        ".......kNk.kNk..",
+        "........k...k...",
+        "................",
+        "................",
+    },
+    // ICON_TOP
+    {
+        "................",
+        ".kkkkkkkkkkkkkk.",
+        ".kGGGGGGGGGGGGk.",
+        ".kGGDGGGGGGDGGk.",
+        ".kGGGGnnnnnGGGk.",
+        ".kGGGnGGGGGnGGk.",
+        ".kGGnGGGGGGGnGk.",
+        ".kGGnGGGDGGGnGk.",
+        ".kGGnGGGGGGGnGk.",
+        ".kGGGnGGGGGnGGk.",
+        ".kGGGGnnnnnGGGk.",
+        ".kGDGGGGGGGGGGk.",
+        ".kGGGGGGGGGDGGk.",
+        ".kkkkkkkkkkkkkk.",
+        "................",
+        "................",
+    },
+    // ICON_FLY
+    {
+        "................",
+        "...........kkk..",
+        ".........kkwwwk.",
+        "........kwwwwgk.",
+        ".......kwwwwgk..",
+        "......kwwwwgk...",
+        ".....kwwwwgk....",
+        "....kwwwwgk.....",
+        "...kwwwwgk......",
+        "...kwwwgk.......",
+        "..kwwggk........",
+        "..kwgkk.........",
+        ".kgkk...........",
+        ".kk.............",
+        "k...............",
+        "................",
+    },
+    // ICON_EDIT
+    {
+        "................",
+        "............kk..",
+        "...........krrk.",
+        "..........kyrrk.",
+        ".........kyyyk..",
+        "........kyyyk...",
+        ".......kyyyk....",
+        "......kyyyk.....",
+        ".....kyyyk......",
+        "....kyyyk.......",
+        "...kpyyk........",
+        "...kppk.........",
+        "..kdpk..........",
+        "..kkk...........",
+        "................",
+        "................",
+    },
+    // ICON_ADD
+    {
+        "................",
+        "................",
+        "......kkkk......",
+        "......kGGk......",
+        "......kGGk......",
+        "......kGGk......",
+        "..kkkkkGGkkkkk..",
+        "..kGGGGGGGGGGk..",
+        "..kGGGGGGGGGGk..",
+        "..kkkkkGGkkkkk..",
+        "......kGGk......",
+        "......kGGk......",
+        "......kGGk......",
+        "......kkkk......",
+        "................",
+        "................",
+    },
+    // ICON_DELETE
+    {
+        "................",
+        "................",
+        "..kk........kk..",
+        ".krrk......krrk.",
+        ".krrrk....krrrk.",
+        "..krrrk..krrrk..",
+        "...krrrkkrrrk...",
+        "....krrrrrrk....",
+        "....krrrrrrk....",
+        "...krrrkkrrrk...",
+        "..krrrk..krrrk..",
+        ".krrrk....krrrk.",
+        ".krrk......krrk.",
+        "..kk........kk..",
+        "................",
+        "................",
+    },
+    // ICON_RUN
+    {
+        "................",
+        "................",
+        "....kk..........",
+        "....kGkk........",
+        "....kGGGkk......",
+        "....kGGGGGkk....",
+        "....kGGGGGGGkk..",
+        "....kGGGGGGGGGk.",
+        "....kGGGGGGGGGk.",
+        "....kGGGGGGGkk..",
+        "....kGGGGGkk....",
+        "....kGGGkk......",
+        "....kGkk........",
+        "....kk..........",
+        "................",
+        "................",
+    },
+    // ICON_STOP
+    {
+        "................",
+        "................",
+        "...kkkk..kkkk...",
+        "...kwwk..kwwk...",
+        "...kwwk..kwwk...",
+        "...kwwk..kwwk...",
+        "...kwwk..kwwk...",
+        "...kwwk..kwwk...",
+        "...kwwk..kwwk...",
+        "...kwwk..kwwk...",
+        "...kwwk..kwwk...",
+        "...kwwk..kwwk...",
+        "...kwwk..kwwk...",
+        "...kkkk..kkkk...",
+        "................",
+        "................",
+    },
+};
+// clang-format on
+
+struct PaletteEntry
+{
+    char key;
+    Rgba colour;
+};
+
+const PaletteEntry kPalette[] = {
+    {'k', {24, 24, 28, 255}},    // outline
+    {'w', {236, 236, 236, 255}}, // white
+    {'g', {150, 150, 158, 255}}, // grey
+    {'d', {90, 90, 98, 255}},    // dark grey
+    {'b', {70, 130, 220, 255}},  // blue
+    {'G', {90, 180, 70, 255}},   // green
+    {'D', {50, 120, 40, 255}},   // dark green
+    {'y', {250, 210, 60, 255}},  // yellow
+    {'r', {220, 60, 50, 255}},   // red
+    {'n', {130, 90, 50, 255}},   // brown
+    {'N', {90, 60, 30, 255}},    // dark brown
+    {'p', {250, 190, 160, 255}}, // pale wood
+};
+
+bool colourOf(char c, Rgba &out)
+{
+    for (const PaletteEntry &entry : kPalette)
+        if (entry.key == c)
+        {
+            out = entry.colour;
+            return true;
+        }
+    return false;
+}
 } // namespace
+
+void ui::UiAtlas::iconCell(IconId id, int &x, int &y)
+{
+    x = static_cast<int>(id) * kIconSize;
+    y = 96;
+}
 
 void ui::UiAtlas::fontCell(char c, int &x, int &y)
 {
@@ -131,5 +365,18 @@ std::vector<unsigned char> ui::UiAtlas::build()
     fillRect(image, chosen.x + 1, chosen.y + 1, chosen.w - 2, chosen.h - 2, {250, 250, 250, 255});
     fillRect(image, chosen.x + 3, chosen.y + 3, chosen.w - 6, chosen.h - 6, black);
     fillRect(image, chosen.x + 4, chosen.y + 4, chosen.w - 8, chosen.h - 8, {0, 0, 0, 0});
+
+    for (int id = 0; id < ICON_COUNT; ++id)
+    {
+        int ix = 0, iy = 0;
+        iconCell(static_cast<IconId>(id), ix, iy);
+        for (int y = 0; y < kIconSize; ++y)
+            for (int x = 0; x < kIconSize; ++x)
+            {
+                Rgba c = {0, 0, 0, 0};
+                if (colourOf(kIcons[id][y][x], c))
+                    put(image, ix + x, iy + y, c);
+            }
+    }
     return image;
 }

@@ -6,71 +6,45 @@
      Modifier
                   Yu-Chi Lai, yu-chi@cs.wisc.edu
      
-     Comment:     Header file to define callback functions.
-						define the callbacks for the TrainWindow
-
-						these are little functions that get called when the 
-						various widgets
-						get accessed (or the fltk timer ticks). these 
-						functions are used 
-						when TrainWindow sets itself up.
-
-     Platform:    Visio Studio.Net 2003/2005
+     Comment:     The actions of the menu's buttons and the hotbar
+                  (GameMenu.cpp): editing the track, loading and saving
+                  it, the demo ride and the texture packs.
 
 *************************************************************************/
 #pragma once
 
-// Preclarify to prevent the compiler error
+#include <cstddef>
+
 class TrainWindow;
-class Fl_Widget;
 
-// Reset the train window
-void resetCB(Fl_Widget *, TrainWindow *tw);
-// Something change and thus we need to update the view
-void damageCB(Fl_Widget *, TrainWindow *tw);
+// Reset the track to its starting points, for editing one's own
+void resetCB(TrainWindow *tw);
 
-// A camera button changed: start or stop the observer camera, then redraw
-void cameraCB(Fl_Widget *, TrainWindow *tw);
-// The observer camera speed slider moved
-void flySpeedCB(Fl_Widget *, TrainWindow *tw);
-// The observer camera field of view slider moved
-void fovCB(Fl_Widget *, TrainWindow *tw);
+// Add Point: the next click on the track puts a new point there
+void addPointCB(TrainWindow *tw);
+// Delete the selected point (or the last one)
+void deletePointCB(TrainWindow *tw);
 
-// Callback that adds a new point to the spline
-// idea: add the point AFTER the selected point
-void addPointCB(Fl_Widget *, TrainWindow *tw);
-// Undo and Redo buttons (TrackHistory.h)
-void undoCB(Fl_Widget *, TrainWindow *tw);
-void redoCB(Fl_Widget *, TrainWindow *tw);
+// Step the train forward or back
+void forwCB(TrainWindow *tw);
+void backCB(TrainWindow *tw);
 
-// Callback that deletes a point from the spline
-void deletePointCB(Fl_Widget *, TrainWindow *tw);
+// Load and save the control points
+void loadCB(TrainWindow *tw);
+void saveCB(TrainWindow *tw);
 
-// Callbacks for advancing/pulling back train
-void forwCB(Fl_Widget *, TrainWindow *tw);
-void backCB(Fl_Widget *, TrainWindow *tw);
+// Load the demo ride over the island and under the sea (see OceanWorld), ready to ride
+void grandTourCB(TrainWindow *tw);
 
-// Idle callback: for run the step of the window
-void runButtonCB(TrainWindow *tw);
+// Texture packs: use the one at this place in TrainWindow::texturePackPaths
+// (0 is built in), pick one anywhere with the system's file dialog, or show
+// the folder beside the program where downloaded packs go.
+void useTexturePack(TrainWindow *tw, std::size_t index);
+void openTexturePack(TrainWindow *tw);
+void openTexturePackFolder(TrainWindow *tw);
 
-// For load and save buttons
-void loadCB(Fl_Widget *, TrainWindow *tw);
-void saveCB(Fl_Widget *, TrainWindow *tw);
-
-// Load the demo ride over the island and under the sea (see OceanWorld) and ride it
-void grandTourCB(Fl_Widget *, TrainWindow *tw);
-
-// The texture pack list: a pack picked (load it for the island), "Open
-// pack..." or "Open texturepacks folder"
-void texturePackCB(Fl_Widget *, TrainWindow *tw);
-
-// roll the control points
-// Rotate the selected control point  about x axis by one more degree
-void rpxCB(Fl_Widget *, TrainWindow *tw);
-// Rotate the selected control point  about x axis by one less degree
-void rmxCB(Fl_Widget *, TrainWindow *tw);
-
-// Rotate the selected control point  about the z axis one more degree
-void rpzCB(Fl_Widget *, TrainWindow *tw);
-// Rotate the selected control point  about the z axis one less degree
-void rmzCB(Fl_Widget *, TrainWindow *tw);
+// Roll the selected control point about the x or z axis, one way or the other
+void rpxCB(TrainWindow *tw);
+void rmxCB(TrainWindow *tw);
+void rpzCB(TrainWindow *tw);
+void rmzCB(TrainWindow *tw);

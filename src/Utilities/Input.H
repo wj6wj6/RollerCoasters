@@ -3,14 +3,14 @@
 
      Comment:     Keyboard and mouse input in the program's own terms, so
                   the cameras and the view's event handling do not depend
-                  on a window toolkit. The window layer (PlatformFltk.cpp
-                  for now) turns its events into InputEvent.
+                  on a window toolkit. The window layer (GlfwInput.H) turns
+                  its events into InputEvent.
 
-                  The key and modifier values are the same numbers FLTK
-                  uses, so key tables (EditKeys, FlyCam) read the same and
-                  PlatformFltk.cpp checks that they stay equal. Letters are
-                  lower case ASCII ('w'), other printable keys their ASCII
-                  character, special keys the Key:: constants below.
+                  The key and modifier values are the numbers FLTK used,
+                  which the key tables (EditKeys, FlyCam) were written
+                  with. Letters are lower case ASCII ('w'), other printable
+                  keys their unshifted ASCII character, special keys the
+                  Key:: constants below.
 
 *************************************************************************/
 #pragma once

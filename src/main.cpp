@@ -6,17 +6,8 @@
      Modifier
                   Yu-Chi Lai, yu-chi@cs.wisc.edu
      
-     Comment:     
-						Programming Assignment 3 - Trains and Roller Coasters
-
-						The "main file" and entry point for the train project
-						this basically opens up the window and starts up the world
-
-	  Note:			this code is meant to serve as both the example solution, 
-						as well as the starting point for student projects. 
-						Therefore, some (questionable)
-						design tradeoffs have been made - please see the 
-						ReadMe-Initial.txt file
+     Comment:     The entry point: reads the command line, opens the
+                  window (TrainWindow) and runs it.
 
      Platform:    Visio Studio.Net 2003/2005
 
@@ -37,12 +28,6 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
-
-#pragma warning(push)
-#pragma warning(disable : 4312)
-#pragma warning(disable : 4311)
-#include <FL/Fl.H>
-#pragma warning(pop)
 
 // Load and Save default to TrackFiles\ beside the exe, however it was started
 // (Visual Studio, a double click, a terminal elsewhere). The build creates the
@@ -105,15 +90,22 @@ int main(int argc, char **argv)
         result = AppControl::report(AppControl::environmentChecks(), stdout);
 
     TrainWindow tw;
+    tw.automated = automated;
+    if (!tw.open(error))
+    {
+        if (automated)
+            AppControl::report({{"window", false, error}}, stdout);
+        else
+            MessageBoxA(nullptr, error.c_str(), "Train and Roller Coaster", MB_ICONERROR);
+        return AppControl::kFail;
+    }
     if (!tw.applyOptions(options, error))
     {
         AppControl::report({{"options", false, error}}, stdout);
         return AppControl::kFail;
     }
     tw.trainView->startAutomation(automated ? &options : nullptr);
-    tw.show();
-
-    Fl::run();
+    tw.run();
     if (!automated)
         return AppControl::kPass;
     if (tw.trainView->automationResult < 0)

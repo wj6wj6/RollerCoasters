@@ -343,32 +343,6 @@ static bool checkFieldOfView()
     return pass;
 }
 
-static bool checkScanCodes()
-{
-    // Physical key positions (set 1 scan codes), whatever the layout or input method.
-    const bool wasd =
-        FlyCam::keyForScanCode(0x11, false) == 'w' && FlyCam::keyForScanCode(0x1E, false) == 'a' &&
-        FlyCam::keyForScanCode(0x1F, false) == 's' && FlyCam::keyForScanCode(0x20, false) == 'd';
-    const bool upDown = FlyCam::keyForScanCode(0x39, false) == ' ' &&
-                        FlyCam::keyForScanCode(0x2A, false) == Key::ShiftL &&
-                        FlyCam::keyForScanCode(0x36, false) == Key::ShiftR &&
-                        FlyCam::keyForScanCode(0x12, false) == 'e' &&
-                        FlyCam::keyForScanCode(0x10, false) == 'q';
-    const bool other =
-        FlyCam::keyForScanCode(0x1D, false) == Key::ControlL &&
-        FlyCam::keyForScanCode(0x1D, true) == Key::ControlR &&
-        FlyCam::keyForScanCode(0x21, false) == 'f' && FlyCam::keyForScanCode(0x13, false) == 'r' &&
-        FlyCam::keyForScanCode(0x22, false) == 'g' && FlyCam::keyForScanCode(0x2E, false) == 'c' &&
-        FlyCam::keyForScanCode(0x47, true) == Key::Home &&
-        FlyCam::keyForScanCode(0x47, false) == 0 && // numpad 7: Top camera
-        FlyCam::keyForScanCode(0x2D, false) == 0 && // X never reaches Fly
-        FlyCam::keyForScanCode(0x2C, false) == 0;   // Z is not a flying key
-    const bool pass = wasd && upDown && other;
-    std::printf("%s: flying keys are read by physical position (scan code)\n",
-                pass ? "PASS" : "FAIL");
-    return pass;
-}
-
 static bool checkLookAt()
 {
     TestViewport window(600, 600);
@@ -422,9 +396,8 @@ int main()
     bool bounds = checkBounds();
     bool lookAt = checkLookAt();
     bool fov = checkFieldOfView();
-    bool scanCodes = checkScanCodes();
     return view && forward && back && left && up && down && upAlt && downAlt && fast && turn &&
-                   drag && scroll && mouse && speed && bounds && lookAt && fov && scanCodes
+                   drag && scroll && mouse && speed && bounds && lookAt && fov
                ? 0
                : 1;
 }

@@ -262,46 +262,6 @@ int FlyCam::keyFor(int key)
     return -1;
 }
 
-int FlyCam::keyForScanCode(unsigned scan, bool extended)
-{
-    switch (scan)
-    {
-    case 0x11:
-        return 'w';
-    case 0x1E:
-        return 'a';
-    case 0x1F:
-        return 's';
-    case 0x20:
-        return 'd';
-    case 0x10:
-        return 'q';
-    case 0x12:
-        return 'e';
-    case 0x21:
-        return 'f';
-    case 0x13:
-        return 'r'; // tilts the selected control point (TrainView)
-    case 0x22:
-        return 'g'; // moves the selected control point (TrainView)
-    case 0x2E:
-        return 'c'; // selects the control point at the crosshair (TrainView)
-    case 0x47:
-        // Home goes back to the World view. Without the E0 prefix this is
-        // numpad 7, which TrainView reads as the Top camera from its key events.
-        return extended ? Key::Home : 0;
-    case 0x39:
-        return ' ';
-    case 0x2A:
-        return Key::ShiftL;
-    case 0x36:
-        return Key::ShiftR;
-    case 0x1D:
-        return extended ? Key::ControlR : Key::ControlL;
-    }
-    return 0;
-}
-
 bool FlyCam::anyMotionHeld() const
 {
     for (int key = 0; key < KeyCount; ++key)

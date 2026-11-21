@@ -16,5 +16,6 @@ find src tests -maxdepth 2 -name '*.cpp' -not -path 'tests/linux/*' | sort |
         "$CXX" -std=c++17 -fsyntax-only -D_XKEYCHECK_H "-DROLLERCOASTERS_VERSION=\"0\"" \
             -D__STDC_WANT_SECURE_LIB__=1 -include stdio.h \
             -Iinclude -Iinclude/glad4.6/include -isystem include/glm-0.9.8.5/glm \
+            -isystem include/glfw-3.4/include \
             -Isrc -Isrc/Utilities "{}" || { echo "FAIL: {}"; exit 255; }'
 echo "PASS: Win32 syntax of src/ and tests/ with MinGW-w64"
