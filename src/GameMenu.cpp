@@ -20,6 +20,7 @@
 #include "CallBacks.H"
 #include "Folders.h"
 #include "Ui/PixelFont.h"
+#include "Utilities/Platform.H"
 #include "TrainView.H"
 #include "TrainWindow.H"
 
@@ -109,6 +110,15 @@ void GameMenu::show(TrainWindow &tw, Screen screen)
         m_trackScroll = 0;
         markSaveName();
     }
+    if (screen == Screen::None && !m_riding)
+    {
+        // Leaving the title: the ride starts looking ahead, not where the
+        // title's slow turn left the view.
+        m_riding = true;
+        tw.trainView->headLook.reset();
+    }
+    if (screen != Screen::Title)
+        m_titleSeconds = -1.0; // coming back, the turn goes on from there
     m_enter = false;
     m_screen = screen;
     m_guiHasMouse = false;
@@ -119,13 +129,18 @@ void GameMenu::back(TrainWindow &tw)
 {
     switch (m_screen)
     {
+    case Screen::Title:
+        break; // the title is where it starts; Quit is a button
+    case Screen::Options:
+        show(tw, Screen::Title);
+        break;
     case Screen::None:
     case Screen::Pause:
         show(tw, Screen::None);
         break;
     case Screen::LoadTrack:
     case Screen::SaveTrack:
-        show(tw, Screen::Track);
+        show(tw, m_riding ? Screen::Track : Screen::Title);
         break;
     case Screen::Notice:
     case Screen::Confirm:
@@ -133,7 +148,7 @@ void GameMenu::back(TrainWindow &tw)
         show(tw, m_return);
         break;
     default:
-        show(tw, Screen::Pause);
+        show(tw, m_riding ? Screen::Pause : Screen::Options);
         break;
     }
 }
@@ -338,6 +353,12 @@ void GameMenu::draw(TrainWindow &tw, ui::Gui &gui, double seconds)
         gui.fill({0, 0, gui.width(), gui.height()}, ui::kDim);
         switch (m_screen)
         {
+        case Screen::Title:
+            drawTitle(tw, gui, seconds);
+            break;
+        case Screen::Options:
+            drawOptions(tw, gui);
+            break;
         case Screen::Pause:
             drawPause(tw, gui);
             break;
@@ -458,6 +479,118 @@ bool GameMenu::done(TrainWindow &tw, ui::Gui &gui, int row)
     return true;
 }
 
+//************************************************************************
+//
+// * The title screen
+//========================================================================
+namespace
+{
+// Text in blocks: every lit pixel of the font is a block `size` units
+// square, its face lighter at the top and speckled like stone, over a darker
+// side and bottom, so the letters stand out of the screen.
+void blockText(ui::Gui &gui, int centerX, int y, const std::string &text, int size)
+{
+    const int width = ui::PixelFont::textWidth(text) * size;
+    const int depth = size / 2 > 0 ? size / 2 : 1;
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        int pen = centerX - width / 2;
+        for (char c : text)
+        {
+            const int glyph = ui::PixelFont::glyphWidth(c);
+            for (int row = 0; row < ui::PixelFont::kCell; ++row)
+                for (int column = 0; column < glyph; ++column)
+                {
+                    if (!ui::PixelFont::pixel(c, column, row))
+                        continue;
+                    const int x = pen + column * size, rowY = y + row * size;
+                    if (pass == 0)
+                    {
+                        gui.fill({x + depth, rowY + depth, size, size}, {40, 40, 46, 255});
+                        continue;
+                    }
+                    // a few shades, picked by position, as stone has
+                    const unsigned hash = (static_cast<unsigned>(x) * 73856093u) ^
+                                          (static_cast<unsigned>(rowY) * 19349663u);
+                    const int light = 228 - row * 12 - static_cast<int>(hash % 3) * 10;
+                    const auto shade = static_cast<unsigned char>(light);
+                    gui.fill({x, rowY, size, size},
+                             {shade, shade, static_cast<unsigned char>(light + 8), 255});
+                }
+            pen += (glyph + 1) * size;
+        }
+    }
+}
+
+void turnTitleView(void *window)
+{
+    static_cast<TrainWindow *>(window)->trainView->damage(1);
+}
+} // namespace
+
+void GameMenu::drawTitle(TrainWindow &tw, ui::Gui &gui, double seconds)
+{
+    TrainView &view = *tw.trainView;
+    // The world turns slowly behind the title, as a block game's panorama:
+    // the rider in the train looks round, about once a minute and a half.
+    if (view.frameShowsScene && tw.settings.camera == CameraView::Train)
+    {
+        if (m_titleSeconds >= 0.0)
+            view.headLook.turn(static_cast<float>((seconds - m_titleSeconds) * 4.0), 0.0f);
+        m_titleSeconds = seconds;
+        if (!platform::hasTimeout(turnTitleView, &tw))
+            platform::addTimeout(1.0 / 30.0, turnTitleView, &tw);
+    }
+
+    const int cx = gui.width() / 2;
+    const std::string name = "RollerCoasters";
+    const int size = (gui.width() - 40) / ui::PixelFont::textWidth(name) < 4
+                         ? (gui.width() - 40) / ui::PixelFont::textWidth(name)
+                         : 4;
+    const int logoY = gui.height() / 4 - 4 * size - 6;
+    blockText(gui, cx, logoY, name, size);
+    gui.text(cx, logoY + 8 * size + 6, "Train and Roller Coaster", ui::kYellow, ui::Align::Center);
+
+    const int y = gui.height() / 4 + 40;
+    if (gui.button({cx - 100, y, 200, kButtonH}, "Start Ride") || m_enter)
+    {
+        m_enter = false;
+        show(tw, Screen::None); // the loading screen shows if the world is still being built
+        return;
+    }
+    if (gui.button({cx - 100, y + 24, 200, kButtonH}, "Load Track..."))
+        show(tw, Screen::LoadTrack);
+    if (gui.button({cx - 100, y + 60, 98, kButtonH}, "Options..."))
+        show(tw, Screen::Options);
+    if (gui.button({cx + 2, y + 60, 98, kButtonH}, "Quit"))
+        tw.close();
+
+    gui.text(2, gui.height() - 10, std::string("RollerCoasters ") + ROLLERCOASTERS_VERSION,
+             ui::kWhite);
+    // while the world is still being built, how far it is
+    if (!view.frameShowsScene)
+    {
+        char status[64];
+        snprintf(status, sizeof(status), "%s %d%%", view.loadingStage,
+                 static_cast<int>(view.loadingDone * 100.0f));
+        gui.text(gui.width() - 2, gui.height() - 10, status, ui::kGrey, ui::Align::Right);
+    }
+}
+
+void GameMenu::drawOptions(TrainWindow &tw, ui::Gui &gui)
+{
+    title(gui, "Options");
+    if (gui.button(left(gui, 0), "Ride..."))
+        show(tw, Screen::Ride);
+    if (gui.button(right(gui, 0), "Camera..."))
+        show(tw, Screen::Camera);
+    if (gui.button(left(gui, 1), "Lighting..."))
+        show(tw, Screen::Lighting);
+    if (gui.button(right(gui, 1), "World..."))
+        show(tw, Screen::World);
+    done(tw, gui, 3);
+}
+
 void GameMenu::drawPause(TrainWindow &tw, ui::Gui &gui)
 {
     const int cx = gui.width() / 2;
@@ -480,8 +613,12 @@ void GameMenu::drawPause(TrainWindow &tw, ui::Gui &gui)
         grandTourCB(&tw);
         show(tw, Screen::None);
     }
-    if (gui.button({cx - 102, y + 108, 204, kButtonH}, "Quit"))
-        tw.close();
+    // as a block game's "Quit to Title": the program ends from the title
+    if (gui.button({cx - 102, y + 108, 204, kButtonH}, "Quit to Title"))
+    {
+        m_riding = false;
+        show(tw, Screen::Title);
+    }
 }
 
 void GameMenu::drawRide(TrainWindow &tw, ui::Gui &gui)

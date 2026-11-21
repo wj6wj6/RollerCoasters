@@ -1434,7 +1434,8 @@ void TrainView::draw()
     // a request made while drawing (a timer, the interface) asks for another frame
     m_needsDraw = false;
     drawFrame();
-    if (tw && frameShowsScene)
+    // the title screen also shows while the world is still being built
+    if (tw && (frameShowsScene || tw->menu.screen() == GameMenu::Screen::Title))
         tw->drawInterface();
     finishAutomatedFrame();
 }
