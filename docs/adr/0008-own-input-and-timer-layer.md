@@ -1,7 +1,7 @@
 # ADR 0008：相機與畫布改用自己的輸入事件與計時器介面
 
 日期：2026-11-19
-狀態：採用
+狀態：採用（`PlatformFltk.cpp` 已由 `PlatformLoop.cpp` 與 `GlfwInput` 取代，見 [ADR 0010](0010-glfw-window-and-game-menu.md)）
 
 ## 背景
 

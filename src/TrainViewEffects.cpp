@@ -2,7 +2,7 @@
      File:        TrainViewEffects.cpp
 
      Comment:     The TrainView side of the shader lighting: reads the
-                  widgets, describes the train for the headlight and hands
+                  settings, describes the train for the headlight and hands
                   the floor and drawStuff() to renderAdvancedFrame().
 
 *************************************************************************/

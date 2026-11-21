@@ -187,6 +187,15 @@ void ui::Gui::skin(const Rect &r, UiAtlas::SkinId id, Color tint)
     nineSlice(r, UiAtlas::skin(id), tint);
 }
 
+void ui::Gui::icon(int x, int y, UiAtlas::IconId id, Color tint)
+{
+    int u = 0, v = 0;
+    UiAtlas::iconCell(id, u, v);
+    const float size = static_cast<float>(UiAtlas::kIconSize);
+    quad(static_cast<float>(x), static_cast<float>(y), size, size, u, v, UiAtlas::kIconSize,
+         UiAtlas::kIconSize, tint);
+}
+
 void ui::Gui::panel(const Rect &r)
 {
     skin(r, UiAtlas::PANEL);
@@ -299,11 +308,23 @@ bool ui::Gui::slider(const Rect &r, const std::string &label, float &value, floa
     const int knobX = r.x + static_cast<int>(std::lround(t * static_cast<float>(r.w - knob)));
     const bool hot = hovered(r) || m_activeSlider == id;
     skin({knobX, r.y, knob, r.h}, hot ? UiAtlas::BUTTON_HOVER : UiAtlas::BUTTON);
-    char number[32];
-    std::snprintf(number, sizeof(number), "%.*f", decimals, static_cast<double>(value));
-    text(r.x + r.w / 2, r.y + (r.h - PixelFont::kAscent) / 2, label + ": " + number,
-         hot ? kYellow : kWhite, Align::Center);
+    std::string shown = label;
+    if (decimals >= 0)
+    {
+        char number[32];
+        std::snprintf(number, sizeof(number), "%.*f", decimals, static_cast<double>(value));
+        shown += std::string(": ") + number;
+    }
+    text(r.x + r.w / 2, r.y + (r.h - PixelFont::kAscent) / 2, shown, hot ? kYellow : kWhite,
+         Align::Center);
     return value != before;
+}
+
+bool ui::Gui::area(const Rect &r)
+{
+    ++m_widget;
+    solid(r);
+    return takePush(r);
 }
 
 bool ui::Gui::list(const Rect &r, const std::vector<std::string> &items, int &selected, int &scroll)

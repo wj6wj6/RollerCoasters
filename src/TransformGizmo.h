@@ -13,7 +13,7 @@
                   they can be tested (tests/GizmoDragCheck.cpp).
 
                   Mouse coordinates are in pixels from the top left of
-                  the view, as FLTK reports them.
+                  the view, as the window reports them.
 *************************************************************************/
 #pragma once
 

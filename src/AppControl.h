@@ -50,7 +50,7 @@ enum class Camera
     Fly
 };
 
-// An on/off panel button: left as the program starts it, or set.
+// An on/off switch in the menu: left as the program starts it, or set.
 enum class Switch
 {
     Keep,

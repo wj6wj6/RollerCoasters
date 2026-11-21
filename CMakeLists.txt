@@ -39,16 +39,36 @@ target_link_libraries(fltk INTERFACE
 add_library(glad STATIC include/glad4.6/src/glad.c)
 target_include_directories(glad SYSTEM PUBLIC "${PROJECT_SOURCE_DIR}/include/glad4.6/include")
 
+# GLFW 3.4 (include/glfw-3.4, zlib licence): the window, its OpenGL context and
+# the input. Built from source for Win32 only, outside the first-party warning
+# policy like glad.
+set(GLFW_DIR "${PROJECT_SOURCE_DIR}/include/glfw-3.4")
+add_library(glfw STATIC
+    ${GLFW_DIR}/src/context.c ${GLFW_DIR}/src/init.c ${GLFW_DIR}/src/input.c
+    ${GLFW_DIR}/src/monitor.c ${GLFW_DIR}/src/platform.c ${GLFW_DIR}/src/vulkan.c
+    ${GLFW_DIR}/src/window.c ${GLFW_DIR}/src/egl_context.c ${GLFW_DIR}/src/osmesa_context.c
+    ${GLFW_DIR}/src/null_init.c ${GLFW_DIR}/src/null_monitor.c ${GLFW_DIR}/src/null_window.c
+    ${GLFW_DIR}/src/null_joystick.c
+    ${GLFW_DIR}/src/win32_init.c ${GLFW_DIR}/src/win32_joystick.c ${GLFW_DIR}/src/win32_module.c
+    ${GLFW_DIR}/src/win32_monitor.c ${GLFW_DIR}/src/win32_time.c ${GLFW_DIR}/src/win32_thread.c
+    ${GLFW_DIR}/src/win32_window.c ${GLFW_DIR}/src/wgl_context.c)
+target_include_directories(glfw SYSTEM PUBLIC "${GLFW_DIR}/include")
+target_compile_definitions(glfw PRIVATE _GLFW_WIN32 UNICODE _UNICODE _CRT_SECURE_NO_WARNINGS)
+target_link_libraries(glfw PRIVATE gdi32 user32 shell32)
+
 add_library(Utilities
     src/Utilities/3DUtils.h src/Utilities/3DUtils.cpp
     src/Utilities/ArcBallCam.H src/Utilities/ArcBallCam.cpp
     src/Utilities/FlyCam.H src/Utilities/FlyCam.cpp
     src/Utilities/HeadLook.H src/Utilities/HeadLook.cpp
     src/Utilities/Input.H
-    src/Utilities/Platform.H src/Utilities/PlatformFltk.H src/Utilities/PlatformFltk.cpp
+    src/Utilities/GlfwInput.H src/Utilities/GlfwInput.cpp
+    src/Utilities/Platform.H src/Utilities/PlatformLoop.cpp
     src/Utilities/Pnt3f.H src/Utilities/Pnt3f.cpp
     src/Utilities/TwoFingerGesture.H src/Utilities/TwoFingerGesture.cpp)
 target_link_libraries(Utilities PUBLIC project_options fltk)
+# GlfwInput.cpp reads GLFW's key and button numbers from its header.
+target_include_directories(Utilities SYSTEM PUBLIC "${GLFW_DIR}/include")
 
 add_executable(RollerCoasters
     src/AdvancedLighting.h src/AdvancedLighting.cpp
@@ -74,6 +94,7 @@ add_executable(RollerCoasters
     src/ZipArchive.h src/ZipArchive.cpp
     src/CallBacks.H src/CallBacks.cpp
     src/FileDialogs.h src/FileDialogs.cpp
+    src/GameMenu.h src/GameMenu.cpp
     src/EditKeys.h src/EditKeys.cpp
     src/ControlPoint.H src/ControlPoint.cpp
     src/main.cpp
@@ -84,7 +105,7 @@ add_executable(RollerCoasters
     src/TrackRenderer.H src/TrackRenderer.cpp
     src/TrainView.H src/TrainView.cpp
     src/TrainWindow.H src/TrainWindow.cpp
-    src/UiTheme.h src/UiTheme.cpp
+    src/SceneSettings.h
     src/Ui/Gui.h src/Ui/Gui.cpp
     src/Ui/GuiGl.h src/Ui/GuiGl.cpp
     src/Ui/PixelFont.h src/Ui/PixelFont.cpp
@@ -92,7 +113,7 @@ add_executable(RollerCoasters
 target_include_directories(RollerCoasters SYSTEM PRIVATE
     "${PROJECT_SOURCE_DIR}/include/glm-0.9.8.5/glm")
 # hid: HidP_* parse the raw precision touchpad reports.
-target_link_libraries(RollerCoasters PRIVATE Utilities glad hid imm32)
+target_link_libraries(RollerCoasters PRIVATE Utilities glad glfw hid imm32)
 # Load/Save read and write TrackFiles\ beside the exe (main() moves there), so
 # the build makes the folder and Visual Studio debugs from the exe's folder.
 add_custom_command(TARGET RollerCoasters POST_BUILD
@@ -182,6 +203,12 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     target_link_libraries(GuiCheck PRIVATE project_options)
     add_test(NAME GuiCheck COMMAND GuiCheck)
     set_tests_properties(GuiCheck PROPERTIES TIMEOUT 10 LABELS integration)
+
+    add_executable(GlfwInputCheck tests/GlfwInputCheck.cpp)
+    target_include_directories(GlfwInputCheck PRIVATE src)
+    target_link_libraries(GlfwInputCheck PRIVATE Utilities)
+    add_test(NAME GlfwInputCheck COMMAND GlfwInputCheck)
+    set_tests_properties(GlfwInputCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
     add_executable(TexturePackCheck tests/TexturePackCheck.cpp
         src/TexturePack.cpp src/ZipArchive.cpp src/LandTextures.cpp src/PixelArt.cpp)

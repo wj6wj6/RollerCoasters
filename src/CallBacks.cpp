@@ -1,21 +1,12 @@
 /************************************************************************
-     File:        CallBacks.H
+     File:        CallBacks.cpp
 
      Author:     
                   Michael Gleicher, gleicher@cs.wisc.edu
      Modifier
                   Yu-Chi Lai, yu-chi@cs.wisc.edu
      
-     Comment:     Header file to define callback functions.
-						define the callbacks for the TrainWindow
-
-						these are little functions that get called when the 
-						various widgets
-						get accessed (or the fltk timer ticks). these 
-						functions are used 
-						when TrainWindow sets itself up.
-
-     Platform:    Visio Studio.Net 2003/2005
+     Comment:     See CallBacks.H.
 
 *************************************************************************/
 
@@ -45,7 +36,7 @@
 //
 // * Reset the control points back to their base setup
 //===========================================================================
-void resetCB(Fl_Widget *, TrainWindow *tw)
+void resetCB(TrainWindow *tw)
 //===========================================================================
 {
     tw->recordHistory();
@@ -56,57 +47,16 @@ void resetCB(Fl_Widget *, TrainWindow *tw)
     tw->settings.scenery = false;
     tw->settings.edit = true;
     tw->settings.run = false;
-    tw->settings.camera = CameraView::World;
-    tw->trainView->cameraChanged();
-    tw->damageMe();
+    tw->setCamera(CameraView::World);
 }
 
 //***************************************************************************
 //
-// * any time something changes, you need to force a redraw
-//===========================================================================
-void damageCB(Fl_Widget *, TrainWindow *tw)
-{
-    tw->readPanel();
-    tw->damageMe();
-}
-
-//***************************************************************************
-//
-// * The camera radio buttons changed
-//===========================================================================
-void cameraCB(Fl_Widget *, TrainWindow *tw)
-{
-    tw->readPanel();
-    tw->trainView->cameraChanged();
-    tw->damageMe();
-}
-
-//***************************************************************************
-//
-// * The observer camera speed slider moved
-//===========================================================================
-void flySpeedCB(Fl_Widget *, TrainWindow *tw)
-{
-    tw->trainView->flyCam.setSpeed(static_cast<float>(tw->flySpeed->value()));
-}
-
-//***************************************************************************
-//
-// * The observer camera field of view slider moved
-//===========================================================================
-void fovCB(Fl_Widget *, TrainWindow *tw)
-{
-    tw->trainView->setFieldOfView(static_cast<float>(tw->fovSlider->value()));
-}
-
-//***************************************************************************
-//
-// * Add Pt: the next click on the track puts a new point there, between
+// * Add point (hotbar slot 7): the next click on the track puts a new point there, between
 //   the two points around the spot, and picks it up to drag (TrainView::
 //   beginPlacePoint, TrackInsert.h). Esc or a right click gives up.
 //===========================================================================
-void addPointCB(Fl_Widget *, TrainWindow *tw)
+void addPointCB(TrainWindow *tw)
 //===========================================================================
 {
     tw->trainView->beginPlacePoint();
@@ -114,23 +64,9 @@ void addPointCB(Fl_Widget *, TrainWindow *tw)
 
 //***************************************************************************
 //
-// * Undo and Redo: step back and forward through the changes to the points
-//===========================================================================
-void undoCB(Fl_Widget *, TrainWindow *tw)
-{
-    tw->undoEdit();
-}
-
-void redoCB(Fl_Widget *, TrainWindow *tw)
-{
-    tw->redoEdit();
-}
-
-//***************************************************************************
-//
 // * Callback that deletes a point from the spline
 //===========================================================================
-void deletePointCB(Fl_Widget *, TrainWindow *tw)
+void deletePointCB(TrainWindow *tw)
 //===========================================================================
 {
     // the selected point, or the last one; the train stays about where it was
@@ -150,7 +86,7 @@ void deletePointCB(Fl_Widget *, TrainWindow *tw)
 //
 // * Advancing the train
 //===========================================================================
-void forwCB(Fl_Widget *, TrainWindow *tw)
+void forwCB(TrainWindow *tw)
 {
     tw->advanceTrain(2);
     tw->damageMe();
@@ -159,41 +95,18 @@ void forwCB(Fl_Widget *, TrainWindow *tw)
 //
 // * Reverse the movement of the train
 //===========================================================================
-void backCB(Fl_Widget *, TrainWindow *tw)
+void backCB(TrainWindow *tw)
 //===========================================================================
 {
     tw->advanceTrain(-2);
     tw->damageMe();
 }
 
-static unsigned long lastRedraw = 0;
-//***************************************************************************
-//
-// * Callback for idling - if things are sitting, this gets called
-// if the run button is pushed, then we need to make the train go.
-// This is taken from the old "RunButton" demo.
-// another nice problem to have - most likely, we'll be too fast
-// don't draw more than 30 times per second
-//===========================================================================
-void runButtonCB(TrainWindow *tw)
-//===========================================================================
-{
-    if (tw->settings.run)
-    { // only advance time if appropriate
-        if (clock() - lastRedraw > CLOCKS_PER_SEC / 30)
-        {
-            lastRedraw = clock();
-            tw->advanceTrain();
-            tw->damageMe();
-        }
-    }
-}
-
 //***************************************************************************
 //
 // * Load the control points from the files
 //===========================================================================
-void loadCB(Fl_Widget *, TrainWindow *tw)
+void loadCB(TrainWindow *tw)
 //===========================================================================
 {
     std::string path;
@@ -211,7 +124,7 @@ void loadCB(Fl_Widget *, TrainWindow *tw)
 //   scenery and the shader effects on, seen from the train, starting where
 //   the ride comes ashore so the island is the first thing in view
 //===========================================================================
-void grandTourCB(Fl_Widget *, TrainWindow *tw)
+void grandTourCB(TrainWindow *tw)
 //===========================================================================
 {
     const std::vector<float> xyz = OceanWorld::demoTrack();
@@ -228,18 +141,16 @@ void grandTourCB(Fl_Widget *, TrainWindow *tw)
     tw->settings.spline = TRACK_SPLINE_BSPLINE;
     tw->settings.arcLength = true;
     tw->settings.speed = 1.8f; // the world is larger: a little faster round it
-    tw->settings.camera = CameraView::Train;
     // the World camera frames the whole scenery island when switched to
     tw->trainView->resetArcball();
-    tw->trainView->cameraChanged();
-    tw->damageMe();
+    tw->setCamera(CameraView::Train);
 }
 
 //***************************************************************************
 //
 // * Save the control points
 //===========================================================================
-void saveCB(Fl_Widget *, TrainWindow *tw)
+void saveCB(TrainWindow *tw)
 //===========================================================================
 {
     std::string path;
@@ -271,7 +182,7 @@ void rollx(TrainWindow *tw, float dir)
 //
 // * Rotate the selected control point about x axis by one more degree
 //===========================================================================
-void rpxCB(Fl_Widget *, TrainWindow *tw)
+void rpxCB(TrainWindow *tw)
 //===========================================================================
 {
     rollx(tw, 1);
@@ -280,7 +191,7 @@ void rpxCB(Fl_Widget *, TrainWindow *tw)
 //
 // * Rotate the selected control point  about x axis by less one degree
 //===========================================================================
-void rmxCB(Fl_Widget *, TrainWindow *tw)
+void rmxCB(TrainWindow *tw)
 //===========================================================================
 {
     rollx(tw, -1);
@@ -314,7 +225,7 @@ void rollz(TrainWindow *tw, float dir)
 //
 // * Rotate the selected control point  about the z axis one more degree
 //===========================================================================
-void rpzCB(Fl_Widget *, TrainWindow *tw)
+void rpzCB(TrainWindow *tw)
 //===========================================================================
 {
     rollz(tw, 1);
@@ -324,7 +235,7 @@ void rpzCB(Fl_Widget *, TrainWindow *tw)
 //
 // *  Rotate the selected control point  about the z axis one less degree
 //===========================================================================
-void rmzCB(Fl_Widget *, TrainWindow *tw)
+void rmzCB(TrainWindow *tw)
 //===========================================================================
 {
     rollz(tw, -1);
@@ -332,41 +243,12 @@ void rmzCB(Fl_Widget *, TrainWindow *tw)
 
 //************************************************************************
 //
-// * The texture pack list: "Built-in" or a pack, read and put in place;
-//   "Open pack..." chooses a .zip (or a folder's pack.mcmeta) anywhere in
-//   the system's file dialog; "Open texturepacks folder" shows the folder
-//   beside the program where downloaded packs go. A pack that cannot be
-//   read is reported and the list stays on what was in use.
+// * Texture packs: put one in place for the island and the sea floor, or
+//   the built-in textures for an empty path. A pack that cannot be read is
+//   reported and the one in use stays.
 //========================================================================
-void texturePackCB(Fl_Widget *, TrainWindow *tw)
-//========================================================================
+static void usePackAt(TrainWindow *tw, const std::string &path)
 {
-    std::string &current = tw->texturePackPath; // the path in use, empty when built in
-    const int item = tw->texturePackMenu->value();
-    const int packs = 1 + static_cast<int>(tw->texturePackPaths.size()); // with "Built-in"
-    const std::string folder = TexturePack::searchFolders().front();
-    std::string path;
-    if (item == packs + 1)
-    {
-        if (!FileDialogs::showFolder(folder))
-            fl_alert("Put texture packs (.zip, or folders) in\n%s", folder.c_str());
-        tw->listTexturePacks(current);
-        return;
-    }
-    if (item == packs)
-    {
-        if (!FileDialogs::open("Open a texture pack",
-                               "Texture packs (*.zip)\t*.zip\n"
-                               "A pack in a folder (pack.mcmeta)\tpack.mcmeta",
-                               folder, path))
-        {
-            tw->listTexturePacks(current);
-            return;
-        }
-    }
-    else if (item > 0 && item < packs)
-        path = tw->texturePackPaths[static_cast<size_t>(item - 1)];
-
     std::shared_ptr<TexturePack::Pack> pack;
     if (!path.empty())
     {
@@ -374,22 +256,42 @@ void texturePackCB(Fl_Widget *, TrainWindow *tw)
         if (!pack->open(path))
         {
             fl_alert("No textures this program can use were found in\n%s", path.c_str());
-            tw->listTexturePacks(current);
             return;
         }
     }
-    current = path;
+    tw->texturePackPath = path;
     tw->trainView->setTexturePack(pack);
-    tw->listTexturePacks(current);
-    // the tooltip says how much of the island the pack covers
-    static std::string tip;
+    tw->listTexturePacks(path);
+    // how much of the island the pack covers
     if (pack)
-        tip = pack->name() + ": " + std::to_string(pack->coverage()) + " of " +
-              std::to_string(LandTextures::TEXTURE_COUNT) +
-              " textures from the pack, the rest built in.";
+        tw->texturePackNote = std::to_string(pack->coverage()) + " of " +
+                              std::to_string(LandTextures::TEXTURE_COUNT) +
+                              " textures from the pack";
     else
-        tip = "The island's block textures, drawn in the program.\n"
-              "Pick a texture pack in this list to use its textures.";
-    tw->texturePackMenu->tooltip(tip.c_str());
+        tw->texturePackNote.clear();
     tw->damageMe();
+}
+
+void useTexturePack(TrainWindow *tw, std::size_t index)
+{
+    if (index < tw->texturePackPaths.size())
+        usePackAt(tw, tw->texturePackPaths[index]);
+}
+
+void openTexturePack(TrainWindow *tw)
+{
+    std::string path;
+    if (FileDialogs::open("Open a texture pack",
+                          "Texture packs (*.zip)\t*.zip\n"
+                          "A pack in a folder (pack.mcmeta)\tpack.mcmeta",
+                          TexturePack::searchFolders().front(), path))
+        usePackAt(tw, path);
+}
+
+void openTexturePackFolder(TrainWindow *tw)
+{
+    const std::string folder = TexturePack::searchFolders().front();
+    if (!FileDialogs::showFolder(folder))
+        fl_alert("Put texture packs (.zip, or folders) in\n%s", folder.c_str());
+    tw->listTexturePacks(tw->texturePackPath);
 }

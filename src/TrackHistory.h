@@ -7,7 +7,7 @@
 
                   Every change to the points saves the whole track as it
                   was just before: adding, deleting, moving and tilting a
-                  point, the Transform fields, R+X ... R-Z, Load, Reset
+                  point, the X/Y/Z nudges, R+X ... R-Z, Load, Reset
                   and the Grand Tour. A track is a few dozen points, so a
                   copy each time is cheap and cannot get out of step the
                   way a list of individual changes could.

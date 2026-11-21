@@ -10,7 +10,7 @@
 
 ## 怎麼到達
 
-`Grand Tour` 用 `Train` 相機跑一圈；`World` 面板的 `Scenery` 開關。
+`Grand Tour` 用 `Train` 相機跑一圈；選單 `World` 的 `Scenery` 開關。
 
 ## 怎麼用 CLI 驅動
 

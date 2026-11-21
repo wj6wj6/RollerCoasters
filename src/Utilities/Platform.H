@@ -3,14 +3,14 @@
 
      Comment:     Timers and the event loop, for code that should not depend
                   on the window toolkit (the cameras, the touchpad, the
-                  view's animations). PlatformFltk.cpp implements them with
-                  FLTK; a later window layer only has to provide this file's
-                  functions again.
+                  view's animations). PlatformLoop.cpp implements them; the
+                  window (TrainWindow.cpp) hands it how to read the window's
+                  events and runs the due timers from its loop.
 
-                  The timers follow FLTK's model: a callback runs once, after
-                  at least the given time, from the event loop. Inside the
-                  callback, repeatTimeout() schedules it again measured from
-                  when it was due, so a steady rate does not drift.
+                  A callback runs once, after at least the given time, from
+                  the event loop. Inside the callback, repeatTimeout()
+                  schedules it again measured from when it was due, so a
+                  steady rate does not drift.
 
 *************************************************************************/
 #pragma once
@@ -34,4 +34,18 @@ void wait(double seconds);
 
 // The next Push does not count as a double click of the last one.
 void forgetClick();
+// For the window layer, which counts the clicks: was forgetClick() called
+// since the last time this was asked?
+bool takeForgetClick();
+
+// Seconds since the program started.
+double now();
+// For the window layer's loop: how long until the next timer is due (0 when
+// one is due now, negative when there is none), and run the due ones.
+double secondsToNextTimeout();
+void runDueTimeouts();
+// How the window's events are read: wait up to seconds for one (0: only
+// what is there now) and dispatch them. Without one, wait() sleeps.
+using EventPump = void (*)(double seconds);
+void setEventPump(EventPump pump);
 } // namespace platform
