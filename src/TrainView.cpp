@@ -1462,7 +1462,7 @@ void TrainView::drawFrame()
     else
         throw std::runtime_error("Could not initialize GLAD!");
 
-    // FLTK may recreate the canvas window, so (re)attach to the current one.
+    // A new GL context may come with a new window, so (re)attach to the current one.
     // The window proc is wrapped once the window exists (attach()).
     if (m_hwnd)
         touchpad.attach(m_hwnd, touchpadAccepts, touchpadMoves, this);

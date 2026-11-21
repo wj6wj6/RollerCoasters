@@ -14,7 +14,7 @@
 ## 必守規則
 
 - 使用原生 CMake、clang-format 與 PowerShell 7.4+；工具版本以 `tools.json` 為準，透過 `scripts/setup-tools.ps1` 準備。
-- Clang 建置使用 `clang-cl` 與 Ninja，先執行 `scripts/setup-tools.ps1 -WithClang`；保持 Windows x64／MSVC ABI 與內附 FLTK 相容。
+- Clang 建置使用 `clang-cl` 與 Ninja，先執行 `scripts/setup-tools.ps1 -WithClang`；保持 Windows x64／MSVC ABI。
 - `src/` 與 `tests/` 使用 clang-format；第三方 `include/`、`lib/` 保留原始內容。
 - 更新第三方檔案需說明來源與相容性，並用 `pwsh -File scripts/check.ps1 -Stage vendor-lock` 更新指紋。
 - 編譯器警告視為錯誤。修正原因；新增抑制需在附近註解原因及範圍。
