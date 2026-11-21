@@ -1,7 +1,8 @@
 #include "Track.H"
-#include <windows.h>
+#include "Utilities/Utf8File.H"
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
 #include <string>
 
 // Exercise the production serializer and parser against isolated real files.
@@ -11,8 +12,8 @@ namespace
 {
 bool writeText(const char *filename, const char *text)
 {
-    FILE *fp = nullptr;
-    if (fopen_s(&fp, filename, "w") != 0 || !fp)
+    FILE *fp = openUtf8(filename, "w");
+    if (!fp)
         return false;
     const bool ok = std::fputs(text, fp) >= 0;
     return std::fclose(fp) == 0 && ok;
@@ -67,11 +68,16 @@ bool rejects(const char *filename, const char *text, const char *what)
 
 int main()
 {
-    char directory[MAX_PATH];
-    char filename[MAX_PATH];
-    const DWORD length = GetTempPathA(MAX_PATH, directory);
-    if (length == 0 || length >= MAX_PATH || !GetTempFileNameA(directory, "rct", 0, filename))
+    // Paths are UTF-8, as in the program: the temporary folder may have a
+    // Chinese user name in it.
+    namespace fs = std::filesystem;
+    std::error_code fsError;
+    const fs::path folder = fs::temp_directory_path(fsError) / "rollercoasters-track-check";
+    fs::remove_all(folder, fsError);
+    if (!fs::create_directories(folder, fsError))
         return 1;
+    const std::string path = (folder / "track.txt").u8string();
+    const char *filename = path.c_str();
 
     bool pass = true;
 
@@ -125,7 +131,23 @@ int main()
                        "saving where there is no folder fails with a message");
     }
 
-    if (!DeleteFileA(filename))
-        pass = report(false, "temporary track file removed");
+    {
+        // a track named in Chinese (UTF-8 bytes for "roller coaster"), as one
+        // dropped on the window or listed in TrackFiles is
+        const std::string chinese =
+            (folder / fs::u8path("\xe9\x9b\xb2\xe9\x9c\x84\xe9\xa3\x9b\xe8\xbb\x8a.txt"))
+                .u8string();
+        CTrack original;
+        original.points[1].pos = Pnt3f(3, 4, 5);
+        CTrack restored;
+        std::string error;
+        const bool ok = original.writePoints(chinese.c_str(), error) &&
+                        restored.readPoints(chinese.c_str(), error) &&
+                        samePoints(original, restored);
+        pass &= report(ok, "a track with a Chinese file name saves and loads");
+    }
+
+    if (fs::remove_all(folder, fsError) == 0 || fsError)
+        pass = report(false, "temporary track files removed");
     return pass ? 0 : 1;
 }

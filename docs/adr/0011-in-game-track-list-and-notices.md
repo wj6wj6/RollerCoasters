@@ -18,7 +18,7 @@
 
 ## 取捨
 
-- 不能再從任意位置挑軌道檔；要先放進 `TrackFiles\`（`Open Folder` 一鍵打開）。命令列的 `--track` 仍可給任何路徑。
-- 清單只在打開畫面時讀資料夾，不監看變化。
+- 不能再從任意位置挑軌道檔；要先放進 `TrackFiles\`（`Open Folder` 一鍵打開）。命令列的 `--track` 仍可給任何路徑。後來加上把檔案拖進視窗就複製進來，見 [ADR 0013](0013-drop-files-on-the-window.md)。
+- 清單只在打開畫面時讀資料夾，不監看變化（ADR 0013 改成視窗回到前面時也重讀）。
 - 程式碼已不再 include FLTK，但 CMake 仍連結內附的 FLTK（也帶入 OpenGL／GLU 的系統函式庫）與 `vendor-lock`；下一步移除 FLTK 時一起改（[ADR 0012](0012-remove-fltk.md)）。
 - 外部函式庫（stb_image）建議先跟助教確認。

@@ -15,6 +15,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdio>
+#include <filesystem>
 #include <vector>
 
 #include "CallBacks.H"
@@ -120,6 +121,11 @@ void GameMenu::show(TrainWindow &tw, Screen screen)
     }
     if (screen != Screen::Title)
         m_titleSeconds = -1.0; // coming back, the turn goes on from there
+    // "Added ..." belongs to the screen the files were dropped on, also
+    // after a notice over it about the files that were not
+    const auto overlay = [](Screen s) { return s == Screen::Notice || s == Screen::Confirm; };
+    if (screen != m_screen && !overlay(screen) && !overlay(m_screen))
+        m_dropNote.clear();
     m_enter = false;
     m_screen = screen;
     m_guiHasMouse = false;
@@ -182,6 +188,78 @@ void GameMenu::say(const std::string &text)
 {
     m_slotName = text;
     m_slotNameUntil = m_now + kSlotNameSeconds;
+}
+
+//************************************************************************
+//
+// * Files dropped on the window, added as a block game adds the packs
+//   dropped on its pack screen: copied into the folder the list shows
+//========================================================================
+void GameMenu::dropped(TrainWindow &tw, const std::vector<std::string> &paths)
+{
+    // a question waits for Yes or No first
+    if (m_screen == Screen::Confirm || paths.empty())
+        return;
+    std::string track; // the last track added: picked in Load Track
+    std::vector<std::string> tracks, packs, refused;
+    for (const std::string &path : paths)
+    {
+        std::filesystem::path p = std::filesystem::u8path(path);
+        if (!p.has_filename())
+            p = p.parent_path();
+        const std::string name = p.filename().u8string();
+        std::string error;
+        if (Folders::withExtension(name, ".txt") == name) // a track file, .txt in any case
+        {
+            const std::string copied = Folders::copyInto(path, trackFolder(), error);
+            if (copied.empty())
+                refused.push_back(name + ": " + error);
+            else
+            {
+                track = copied;
+                tracks.push_back(copied);
+            }
+            continue;
+        }
+        std::string pack;
+        if (addTexturePack(&tw, path, pack, error))
+            packs.push_back(pack);
+        else
+            refused.push_back(name + ": " + error);
+    }
+
+    auto added = [](const std::vector<std::string> &names) {
+        std::string text = "Added " + names.front();
+        if (names.size() > 1)
+            text += " and " + std::to_string(names.size() - 1) + " more";
+        return text;
+    };
+    if (!tracks.empty())
+    {
+        if (m_screen != Screen::LoadTrack)
+            show(tw, Screen::LoadTrack);
+        readTracks(track);
+        m_dropNote = added(tracks);
+    }
+    else if (!packs.empty())
+    {
+        if (m_screen != Screen::World)
+            show(tw, Screen::World);
+        for (size_t i = 0; i < tw.texturePackNames.size(); ++i)
+            if (tw.texturePackNames[i] == packs.back())
+                m_packScroll = static_cast<int>(i);
+        m_dropNote = added(packs);
+    }
+    if (!refused.empty())
+    {
+        std::string text;
+        for (const std::string &line : refused)
+            text += (text.empty() ? "" : "\n") + line;
+        notify(tw,
+               tracks.empty() && packs.empty() ? "Nothing was added" : "Not everything was added",
+               text + "\nDrop track files (.txt) or texture packs (.zip or folders).");
+    }
+    tw.trainView->damage(1);
 }
 
 //************************************************************************
@@ -293,6 +371,11 @@ bool GameMenu::input(TrainWindow &tw, const InputEvent &e)
     case InputType::Hide:
         gui.feed(e);
         m_guiHasMouse = false;
+        return false;
+    case InputType::Focus:
+    case InputType::Enter:
+        // back from the file manager: files put in the folder meanwhile show up
+        readFolders(tw);
         return false;
     default:
         return false;
@@ -907,7 +990,11 @@ void GameMenu::drawWorld(TrainWindow &tw, ui::Gui &gui)
         useTexturePack(&tw, static_cast<size_t>(selected));
     if (gui.button(wide(gui, 4), "Open Pack Folder"))
         openTexturePackFolder(&tw);
-    done(tw, gui, 5);
+    gui.text(gui.width() / 2, top(gui) + 5 * kRowStep + 1,
+             fit(m_dropNote.empty() ? "Drop texture packs on this window to add them" : m_dropNote,
+                 gui.width() - 20),
+             m_dropNote.empty() ? ui::kGrey : ui::kWhite, ui::Align::Center);
+    done(tw, gui, 6);
 }
 
 //************************************************************************
@@ -915,6 +1002,32 @@ void GameMenu::drawWorld(TrainWindow &tw, ui::Gui &gui)
 // * Load Track and Save Track: the tracks in TrackFiles\, as a block game
 //   lists its worlds
 //========================================================================
+void GameMenu::readTracks(const std::string &pick)
+{
+    std::string keep = pick;
+    if (keep.empty() && m_trackSelected >= 0 && m_trackSelected < static_cast<int>(m_tracks.size()))
+        keep = m_tracks[static_cast<size_t>(m_trackSelected)];
+    m_tracks = Folders::list(trackFolder(), ".txt");
+    m_trackSelected = -1;
+    for (size_t i = 0; i < m_tracks.size(); ++i)
+        if (m_tracks[i] == keep)
+            m_trackSelected = static_cast<int>(i);
+    // a track just added scrolls into view (Gui::list keeps the list full)
+    if (!pick.empty() && m_trackSelected >= 0)
+        m_trackScroll = m_trackSelected;
+}
+
+void GameMenu::readFolders(TrainWindow &tw)
+{
+    if (m_screen == Screen::LoadTrack || m_screen == Screen::SaveTrack)
+        readTracks();
+    else if (m_screen == Screen::World)
+        tw.listTexturePacks(tw.texturePackPath);
+    else
+        return;
+    tw.trainView->damage(1);
+}
+
 void GameMenu::markSaveName()
 {
     // file names on Windows ignore case, so "Track" is the same file as "track.txt"
@@ -954,9 +1067,9 @@ void GameMenu::drawLoadTrack(TrainWindow &tw, ui::Gui &gui)
     gui.list(list, m_tracks, m_trackSelected, m_trackScroll, &doubleClicked);
     if (m_tracks.empty())
     {
-        gui.text(gui.width() / 2, list.y + 20, "No tracks yet. Save one, or put", ui::kGrey,
+        gui.text(gui.width() / 2, list.y + 20, "No tracks yet. Save one, or drop", ui::kGrey,
                  ui::Align::Center);
-        gui.text(gui.width() / 2, list.y + 31, "track files (.txt) in the folder.", ui::kGrey,
+        gui.text(gui.width() / 2, list.y + 31, "track files (.txt) on this window.", ui::kGrey,
                  ui::Align::Center);
     }
     const bool picked = m_trackSelected >= 0;
@@ -969,7 +1082,12 @@ void GameMenu::drawLoadTrack(TrainWindow &tw, ui::Gui &gui)
     m_enter = false;
     if (gui.button(right(gui, 4), "Open Folder"))
         Folders::show(trackFolder());
-    gui.text(gui.width() / 2, top(gui) + 5 * kRowStep + 6, fit(trackFolder(), gui.width() - 20),
+    // what a drop did, or that dropping is how files get here
+    gui.text(gui.width() / 2, top(gui) + 5 * kRowStep + 1,
+             fit(m_dropNote.empty() ? "Drop track files on this window to add them" : m_dropNote,
+                 gui.width() - 20),
+             m_dropNote.empty() ? ui::kGrey : ui::kWhite, ui::Align::Center);
+    gui.text(gui.width() / 2, top(gui) + 5 * kRowStep + 12, fit(trackFolder(), gui.width() - 20),
              ui::kGrey, ui::Align::Center);
     if (gui.button({gui.width() / 2 - 100, top(gui) + 6 * kRowStep + 8, 200, kButtonH}, "Cancel"))
         back(tw);

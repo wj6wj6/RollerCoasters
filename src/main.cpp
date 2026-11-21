@@ -16,7 +16,9 @@
 #include "stdio.h"
 #include <cstring>
 #include <cwchar>
+#include <filesystem>
 #include <string>
+#include <vector>
 #include "AppControl.h"
 #include "TrainView.H"
 #include "TrainWindow.H"
@@ -28,6 +30,7 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <shellapi.h> // CommandLineToArgvW
 
 // Load and Save default to TrackFiles\ beside the exe, however it was started
 // (Visual Studio, a double click, a terminal elsewhere). The build creates the
@@ -52,17 +55,40 @@ static void makeAbsolute(std::string &path)
 {
     if (path.empty())
         return;
-    char full[MAX_PATH] = {};
-    const DWORD length = GetFullPathNameA(path.c_str(), MAX_PATH, full, nullptr);
-    if (length > 0 && length < MAX_PATH)
-        path = full;
+    std::error_code error;
+    const std::filesystem::path full =
+        std::filesystem::absolute(std::filesystem::u8path(path), error);
+    if (!error)
+        path = full.u8string();
+}
+
+// The command line in UTF-8, as every path in the program is (Utf8File.H):
+// main()'s argv is in the ANSI code page, which cannot hold every name.
+static std::vector<std::string> utf8Arguments(int argc, char **argv)
+{
+    std::vector<std::string> args;
+    int count = 0;
+    LPWSTR *wide = CommandLineToArgvW(GetCommandLineW(), &count);
+    if (wide && count == argc)
+        for (int i = 0; i < count; ++i)
+            args.push_back(std::filesystem::path(wide[i]).u8string());
+    else
+        args.assign(argv, argv + argc); // not expected; the ANSI words as they are
+    if (wide)
+        LocalFree(wide);
+    return args;
 }
 
 int main(int argc, char **argv)
 {
     AppControl::Options options;
     std::string error;
-    if (!AppControl::parse(argc, argv, options, error))
+    std::vector<std::string> args = utf8Arguments(argc, argv);
+    std::vector<char *> argPointers;
+    for (std::string &arg : args)
+        argPointers.push_back(arg.data());
+    if (!AppControl::parse(static_cast<int>(argPointers.size()), argPointers.data(), options,
+                           error))
     {
         fprintf(stderr, "%s\n%s", error.c_str(), AppControl::usage());
         return AppControl::kUsage;

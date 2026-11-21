@@ -52,6 +52,12 @@ void playFlat(TrainWindow *tw);
 // packs go, as a block game's "Open Pack Folder" does.
 void useTexturePack(TrainWindow *tw, std::size_t index);
 void openTexturePackFolder(TrainWindow *tw);
+// A pack dropped on the window (a .zip or a folder): copied into that folder
+// and listed, as a block game adds dropped packs. False, with the reason in
+// `error`, when it is not a pack or could not be copied; `name` is what it
+// is listed as.
+bool addTexturePack(TrainWindow *tw, const std::string &path, std::string &name,
+                    std::string &error);
 
 // Roll the selected control point about the x or z axis, one way or the other
 void rpxCB(TrainWindow *tw);

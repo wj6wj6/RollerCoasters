@@ -68,7 +68,8 @@ add_library(Utilities
     src/Utilities/GlfwInput.H src/Utilities/GlfwInput.cpp
     src/Utilities/Platform.H src/Utilities/PlatformLoop.cpp
     src/Utilities/Pnt3f.H src/Utilities/Pnt3f.cpp
-    src/Utilities/TwoFingerGesture.H src/Utilities/TwoFingerGesture.cpp)
+    src/Utilities/TwoFingerGesture.H src/Utilities/TwoFingerGesture.cpp
+    src/Utilities/Utf8File.H)
 # stb_image goes along with Utilities: every target that builds TexturePack.cpp links it.
 target_link_libraries(Utilities PUBLIC project_options opengl stb_image)
 # GlfwInput.cpp reads GLFW's key and button numbers from its header.
