@@ -1917,11 +1917,16 @@ void TrainView::drawStuff(bool doingShadows)
         TrainModel::draw(*m_pTrack, splineType, doingShadows, animationTime());
     }
 
-    // the island's see-through water last, blended over everything behind it
+    // the island's see-through water and glass last, blended over everything
+    // behind them (only the glass when the sea's shader draws the water after
+    // the scene: landWaterLater)
     if (!doingShadows)
     {
         lighting.setTranslucent(true);
-        m_land.drawWater(!sceneryOn());
+        if (landWaterLater)
+            m_land.drawGlass(!sceneryOn());
+        else
+            m_land.drawWater(!sceneryOn());
         lighting.setTranslucent(false);
     }
 }

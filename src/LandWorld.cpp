@@ -3979,6 +3979,26 @@ struct BuildProgress
     }
 };
 
+// Sand under the shallow water at the shore where neither world would
+// draw a sea bed: the sea leaves its blocks whose middle is on the island
+// to the island, but its blocks are twice the size, so at the inner
+// corners of the coast part of such a block is not on the island, and
+// there the water looked down into a deep blue hole. The sand stands a
+// block under the island's lowest layer of land, well under the sea's
+// surface, and goes in last so nothing is set on it.
+void fillShoreGaps(Grid &g)
+{
+    for (int bx = kMinBX; bx < kMaxBX; ++bx)
+        for (int bz = kMinBZ; bz < kMaxBZ; ++bz)
+        {
+            if (onIsland(bx, bz) || !OceanWorld::leftToIsland(centerOf(bx), centerOf(bz)))
+                continue;
+            for (int j = kMinY; j <= kSeaLayer - 2; ++j)
+                if (g.get(bx, j, bz) == AIR && !g.carved[Grid::index(bx, j, bz)])
+                    g.put(bx, j, bz, SAND);
+        }
+}
+
 void buildScenery(Grid &g, Extras &extras, const BuildProgress &progress = BuildProgress())
 {
     const std::vector<float> ride = OceanWorld::rideSamples();
@@ -4050,6 +4070,7 @@ void buildScenery(Grid &g, Extras &extras, const BuildProgress &progress = Build
         return;
     spreadGlow(g);
     placeAnimals(g, clear, extras);
+    fillShoreGaps(g);
     step(150);
 }
 
@@ -4231,12 +4252,106 @@ float waterHeight(const Grid &g, int bx, int j, int bz)
     return static_cast<float>(8 - level) / 9.0f;
 }
 
+// The first extra value of a water vertex (otherwise how much it glows) is
+// negative, which marks it as water for the shaders, and says how the
+// corner moves: -(0.5 + 1 if it bobs with the open surface + 2 if it sways
+// on a fall + how stirred up the surface is there, 0 to 0.4). The shaders
+// ripple the surface and move the corners a little, as the sea's waves do
+// (AdvancedLighting, PostEffects); a corner's movement depends only on
+// where it is, so the faces that share it stay joined.
+float waterMark(bool bob, bool sway, float stirred)
+{
+    return -(0.5f + (bob ? 1.0f : 0.0f) + (sway ? 2.0f : 0.0f) + stirred);
+}
+
+// Can a fall's corner at the grid point (gx, gz) sway? Not where it
+// touches anything but water and air: in the four cells round its upright
+// edge, in the layer it is in, or both layers when it is on the line
+// between them (corners there are shared by the faces above and below).
+bool swayFree(const Grid &g, int gx, int gz, int layer, bool onLine)
+{
+    for (int l = onLine ? layer - 1 : layer; l <= layer; ++l)
+        for (int dx = -1; dx <= 0; ++dx)
+            for (int dz = -1; dz <= 0; ++dz)
+            {
+                const int b = g.get(gx + dx, l, gz + dz);
+                if (b != AIR && b != WATER)
+                    return false;
+            }
+    return true;
+}
+
+// How far the open surface at the grid point (gx, gz) of layer j bends
+// down, in blocks, where the water pours over an edge: a cell whose water
+// falls on below it slopes down to its open side, so the surface curves
+// into the fall instead of meeting it at a right angle; the water just
+// behind it dips a little too. Every face with a corner there bends it the
+// same, so they stay joined.
+float lipDrop(const Grid &g, int gx, int gz, int j)
+{
+    bool pours = false, open = false;
+    for (int dx = -1; dx <= 0; ++dx)
+        for (int dz = -1; dz <= 0; ++dz)
+        {
+            const int cx = gx + dx, cz = gz + dz;
+            if (g.get(cx, j, cz) == WATER && g.get(cx, j - 1, cz) == WATER &&
+                g.level[Grid::index(cx, j - 1, cz)] == WaterFlow::FALLING)
+                pours = true;
+            if (g.get(cx, j, cz) == AIR)
+                open = true;
+        }
+    return pours ? (open ? 0.55f : 0.15f) : 0.0f;
+}
+
+// Which way the water pours over the edge at the grid point (gx, gz) of
+// layer j: towards the open cells round it (x, z); false if none is open.
+bool lipOutward(const Grid &g, int gx, int gz, int j, float out[2])
+{
+    out[0] = out[1] = 0.0f;
+    for (int dx = -1; dx <= 0; ++dx)
+        for (int dz = -1; dz <= 0; ++dz)
+            if (g.get(gx + dx, j, gz + dz) == AIR)
+            {
+                out[0] += static_cast<float>(dx) + 0.5f;
+                out[1] += static_cast<float>(dz) + 0.5f;
+            }
+    const float length = sqrtf(out[0] * out[0] + out[1] * out[1]);
+    if (length < 0.01f)
+        return false;
+    out[0] /= length;
+    out[1] /= length;
+    return true;
+}
+
+// How stirred up the surface is at the grid point (gx, gz) of layer j:
+// most right beside falling water landing there, nothing three and a
+// half blocks away.
+float stirredAt(const Grid &g, int gx, int gz, int j)
+{
+    float nearest = 1.0e9f;
+    for (int cx = gx - 4; cx < gx + 4; ++cx)
+        for (int cz = gz - 4; cz < gz + 4; ++cz)
+            for (int l = j; l <= j + 1; ++l)
+                if (g.get(cx, l, cz) == WATER &&
+                    g.level[Grid::index(cx, l, cz)] == WaterFlow::FALLING)
+                {
+                    const float dx = static_cast<float>(cx) + 0.5f - static_cast<float>(gx);
+                    const float dz = static_cast<float>(cz) + 0.5f - static_cast<float>(gz);
+                    const float d = sqrtf(dx * dx + dz * dz);
+                    nearest = d < nearest ? d : nearest;
+                }
+    // (not "near": windows.h defines it as nothing)
+    const float closeness = 1.0f - nearest / 3.5f;
+    return 0.4f * (closeness < 0.0f ? 0.0f : closeness);
+}
+
 // The faces of a water block: towards the air, and the part of a side that
 // stands above lower water next to it. Lit by the light of the open cell
 // each face looks into.
 void addWaterFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
 {
     const float top = waterHeight(g, bx, j, bz);
+    const bool open = g.get(bx, j + 1, bz) != WATER; // its top is the surface
     // Where it meets the sea it takes the sea's colour; everywhere else,
     // falling or still, it is the same water.
     const int texture = j <= kSeaLayer ? LandTextures::SEA_WATER : LandTextures::WATER;
@@ -4275,7 +4390,6 @@ void addWaterFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
             v.normal[k] = static_cast<float>(f.normal[k]);
             v.color[k] = 1.0f;
         }
-        v.extra[0] = 0.0f;
         v.extra[1] = -glowFactor(static_cast<float>(g.warmAt(lx, ly, lz)));
         v.extra[2] = glowFactor(static_cast<float>(g.coolAt(lx, ly, lz)));
         v.extra[3] = skyFactor(static_cast<float>(g.skyAt(lx, ly, lz)));
@@ -4284,8 +4398,37 @@ void addWaterFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
             const float y = f.normal[1] > 0
                                 ? top
                                 : (f.normal[1] < 0 ? 0.0f : (f.corner[c][1] == 1 ? top : bottom));
+            // The corners at the open surface bob, and so do those of a
+            // side where it meets the open surface of lower water beside
+            // it; the other corners of a side facing the air sway, where
+            // they touch nothing but water and air (waterMark).
+            const int gx = bx + f.corner[c][0], gz = bz + f.corner[c][2];
+            const bool meetsLower =
+                f.normal[1] == 0 && y == bottom && bottom > 0.0f && g.get(ox, oy + 1, oz) != WATER;
+            const bool bob = (open && y == top) || meetsLower;
+            const bool sway = !bob && f.normal[1] == 0 && beside == AIR &&
+                              swayFree(g, gx, gz, j + (y >= 1.0f ? 1 : 0), y == 0.0f || y >= 1.0f);
+            v.extra[0] = waterMark(bob, sway, bob ? stirredAt(g, gx, gz, j) : 0.0f);
+            // the surface bends down where it pours over an edge (lipDrop)
+            const float drop = bob ? lipDrop(g, gx, gz, j) : 0.0f;
+            // Over the edge itself its normal is halfway between up and out,
+            // on the surface and on the face it pours down, so the light and
+            // the ripples go smoothly round the bend.
+            for (int k = 0; k < 3; ++k)
+                v.normal[k] = static_cast<float>(f.normal[k]);
+            float outward[2];
+            if (drop > 0.3f && lipOutward(g, gx, gz, j, outward) &&
+                (f.normal[1] > 0 || static_cast<float>(f.normal[0]) * outward[0] +
+                                            static_cast<float>(f.normal[2]) * outward[1] >
+                                        0.5f))
+            {
+                const float s = 1.0f / sqrtf(2.0f);
+                v.normal[0] = outward[0] * s;
+                v.normal[1] = s;
+                v.normal[2] = outward[1] * s;
+            }
             v.pos[0] = static_cast<float>(bx + f.corner[c][0]) * kBlock;
-            v.pos[1] = (static_cast<float>(j) + y) * kBlock;
+            v.pos[1] = (static_cast<float>(j) + y - drop) * kBlock;
             v.pos[2] = static_cast<float>(bz + f.corner[c][2]) * kBlock;
             v.uv[0] = f.uv[c][0];
             // side faces show as much of the texture as they are tall
@@ -5110,6 +5253,7 @@ struct LandChunk
 {
     unsigned int solid = 0, plant = 0;
     unsigned int water = 0; // see-through, drawn last (drawWater)
+    unsigned int glass = 0; // the same, kept apart so the water can be drawn as the sea is
     float lo[3], hi[3];
 };
 
@@ -5118,7 +5262,7 @@ namespace
 // A chunk the builder has meshed, waiting for its display lists.
 struct MeshedChunk
 {
-    Batches solids, plants, water;
+    Batches solids, plants, water, glass;
     float lo[3], hi[3];
 };
 } // namespace
@@ -5386,6 +5530,7 @@ void LandWorld::buildScene(Scene &s, bool flat)
             chunk.solids.resize(LandTextures::TEXTURE_COUNT);
             chunk.plants.resize(LandTextures::TEXTURE_COUNT);
             chunk.water.resize(LandTextures::TEXTURE_COUNT);
+            chunk.glass.resize(LandTextures::TEXTURE_COUNT);
             int low = kMaxY + 1, high = kMinY - 1;
             for (int bx = cx; bx < cx + kChunk && bx < kMaxBX; ++bx)
                 for (int bz = cz; bz < cz + kChunk && bz < kMaxBZ; ++bz)
@@ -5404,7 +5549,7 @@ void LandWorld::buildScene(Scene &s, bool flat)
                                 addLilyPad(s.grid, bx, j, bz, chunk.plants);
                         }
                         else if (b == WINDOW)
-                            addGlassFaces(s.grid, bx, j, bz, chunk.water);
+                            addGlassFaces(s.grid, bx, j, bz, chunk.glass);
                         else if (b == DOOR)
                             addDoor(s.grid, bx, j, bz, chunk.solids);
                         else if (b != AIR)
@@ -5481,6 +5626,7 @@ bool LandWorld::prepare(bool flat, float seconds)
             chunk.solid = compileList(ready[i].solids, m_textures);
             chunk.plant = compileList(ready[i].plants, m_textures);
             chunk.water = compileList(ready[i].water, m_textures);
+            chunk.glass = compileList(ready[i].glass, m_textures);
             s.chunks.push_back(chunk);
             if (std::chrono::steady_clock::now() > until && i + 1 < ready.size())
             {
@@ -5599,6 +5745,16 @@ void LandWorld::draw(bool flat, bool shadowPass, float time)
 
 void LandWorld::drawWater(bool flat)
 {
+    drawSeeThrough(flat, true);
+}
+
+void LandWorld::drawGlass(bool flat)
+{
+    drawSeeThrough(flat, false);
+}
+
+void LandWorld::drawSeeThrough(bool flat, bool withWater)
+{
     if (!(flat ? m_flat : m_scenery) || !(flat ? m_flat : m_scenery)->built)
         return;
     const Scene &s = flat ? *m_flat : *m_scenery;
@@ -5618,7 +5774,11 @@ void LandWorld::drawWater(bool flat)
     std::vector<unsigned int> lists;
     for (const LandChunk &c : s.chunks)
         if (view.sees(c.lo, c.hi))
-            lists.push_back(c.water);
+        {
+            if (withWater)
+                lists.push_back(c.water);
+            lists.push_back(c.glass);
+        }
     for (unsigned int list : lists)
         glCallList(list);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
@@ -5630,6 +5790,17 @@ void LandWorld::drawWater(bool flat)
         glCallList(list);
     setGlow(0.0f);
     glPopAttrib();
+}
+
+void LandWorld::drawWaterSurface(bool flat)
+{
+    if (!(flat ? m_flat : m_scenery) || !(flat ? m_flat : m_scenery)->built)
+        return;
+    const Scene &s = flat ? *m_flat : *m_scenery;
+    const Frustum view = Frustum::current();
+    for (const LandChunk &c : s.chunks)
+        if (view.sees(c.lo, c.hi))
+            glCallList(c.water);
 }
 
 void LandWorld::drawMoving(const Scene &s, float time)

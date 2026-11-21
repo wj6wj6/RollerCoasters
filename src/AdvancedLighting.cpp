@@ -16,6 +16,7 @@
 
 #include "AdvancedLighting.h"
 #include "MatrixMath.h"
+#include "LandWaterMotion.h"
 #include "UnderwaterOptics.h"
 
 namespace
@@ -23,8 +24,8 @@ namespace
 
 const int kShadowMapSize = 2048;
 
+// Pasted after "#version 120" and the island water's motion (LandWaterMotion.h).
 const char *kVertexShader = R"GLSL(
-#version 120
 // World space is recovered from the fixed function modelview matrix, so the
 // existing glBegin/glEnd drawing code works unchanged.
 uniform mat4 uInvView;
@@ -33,7 +34,8 @@ uniform float uTime;
 varying vec3 vWorldPos;
 varying vec3 vWorldNormal;
 varying vec4 vColor;
-// emissive; sway (when positive) or the warm light of lava and lanterns on
+// emissive (negative on the island's water: -1 at its open surface, -0.5
+// elsewhere); sway (when positive) or the warm light of lava and lanterns on
 // a block that does not sway (as minus that); cool block light; sky light
 varying vec4 vExtra;
 
@@ -60,6 +62,16 @@ void main()
         world.x += sin(phase) * 1.4 * sway;
         world.z += cos(phase * 0.8 + 1.3) * 1.0 * sway;
         eyePos = uView * world;
+    }
+
+    // The island's water moves a little, as the sea does (LandWaterMotion.h);
+    // the picture on its surface drifts slowly.
+    if (gl_MultiTexCoord1.x < -0.25) {
+        float stirred;
+        world.xyz += landWaterMotion(gl_MultiTexCoord1.x, world.xyz, uTime, stirred);
+        eyePos = uView * world;
+        if (vWorldNormal.y > 0.5)
+            gl_TexCoord[0].s += uTime * 0.02;
     }
 
     vWorldPos = world.xyz;
@@ -155,6 +167,13 @@ void main()
     if (vWorldPos.y < uClipY)
         discard;
     vec3 n = normalize(vWorldNormal);
+    if (vExtra.x < -0.25 && n.y > 0.5) {
+        // the island's water: small ripples running over it catch the sun
+        vec2 p = vWorldPos.xz;
+        float a = cos((p.x + p.y) * 0.6 - uTime * 1.2) * 0.35;
+        vec2 slope = vec2(cos(p.x * 0.9 + uTime * 1.6) * 0.5 + a, cos(p.y * 0.8 - uTime * 1.4) * 0.5 + a);
+        n = normalize(vec3(-slope.x * 0.12, 1.0, -slope.y * 0.12));
+    }
     vec3 cameraPos = uInvView[3].xyz;
     vec4 texel = texture2D(uTexture, gl_TexCoord[0].st);
     if (texel.a < 0.5)
@@ -221,7 +240,7 @@ void main()
     float warm = max(-vExtra.y, 0.0);
     color += albedo * vec3(1.0, 0.62, 0.32) * warm * 1.6 * spill; // lava, lanterns
     color += albedo * uBlockLightColor * vExtra.z * spill;       // crystals, sea lanterns
-    color += albedo * vExtra.x * 3.0 * own;
+    color += albedo * max(vExtra.x, 0.0) * 3.0 * own;
 
     if (uHeadlightOn != 0) {
         vec3 toLamp = uHeadPos - vWorldPos;
@@ -415,9 +434,9 @@ bool AdvancedLighting::init()
         return false;
     }
 
-    const char *vertexParts[1] = {kVertexShader};
+    const char *vertexParts[3] = {"#version 120\n", kLandWaterMotionGlsl, kVertexShader};
     const char *fragmentParts[3] = {"#version 120\n", kUnderwaterOpticsGlsl, kFragmentShader};
-    GLuint vs = compileShader(GL_VERTEX_SHADER, vertexParts, 1);
+    GLuint vs = compileShader(GL_VERTEX_SHADER, vertexParts, 3);
     GLuint fs = compileShader(GL_FRAGMENT_SHADER, fragmentParts, 3);
     if (!vs || !fs)
     {

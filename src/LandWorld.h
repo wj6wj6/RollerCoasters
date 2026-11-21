@@ -84,6 +84,13 @@ class LandWorld
     // over what is behind them.
     void drawWater(bool flat);
 
+    // The same water's faces only (no textures, colour or blending), for a
+    // caller that draws them with its own shader: the sea's (PostEffects).
+    void drawWaterSurface(bool flat);
+    // The see-through glass only, as drawWater() draws it, for when the
+    // water is drawn with drawWaterSurface().
+    void drawGlass(bool flat);
+
     // Stands the track on wooden trestles, one every 16 units along it
     // wherever it is above the water and well above the ground; off the
     // island the posts go down to the sea bed. path: points along the whole
@@ -136,6 +143,8 @@ class LandWorld
 
     std::unique_ptr<Scene> m_scenery;
     std::unique_ptr<Scene> m_flat;
+    // drawWater() and drawGlass(): the glass, and the water as well
+    void drawSeeThrough(bool flat, bool withWater);
     // the pack's picture for a texture, or the built-in one
     PixelArt::Image pictureOf(int texture) const;
 

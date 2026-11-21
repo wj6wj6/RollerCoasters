@@ -2078,6 +2078,12 @@ float OceanWorld::seaFloor(float x, float z)
     return static_cast<float>(seaBedTop(cx, cz, edge) + 1) * kBlock;
 }
 
+bool OceanWorld::leftToIsland(float x, float z)
+{
+    // as buildTerrain decides it, for the block holding (x, z)
+    return WorldShape::inland(centerOf(blockOf(x)), centerOf(blockOf(z))) > 0.0f;
+}
+
 float OceanWorld::waterLevel()
 {
     return kWaterLevel;

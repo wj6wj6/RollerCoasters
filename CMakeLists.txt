@@ -53,6 +53,7 @@ add_executable(RollerCoasters
     src/AppControl.h src/AppControl.cpp
     src/Frustum.h src/Frustum.cpp
     src/LandTextures.h src/LandTextures.cpp
+    src/LandWaterMotion.h
     src/LandWorld.h src/LandWorld.cpp
     src/MatrixMath.h
     src/OceanWorld.h src/OceanWorld.cpp

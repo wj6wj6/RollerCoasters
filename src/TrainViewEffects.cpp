@@ -50,7 +50,13 @@ class TrainViewScene : public SceneCallbacks
             setupObjects();
         else
             m_view->drawGround(true); // the mountains cast shadows too
+        m_view->landWaterLater = waterLater;
         m_view->drawStuff(shadowPass);
+        m_view->landWaterLater = false;
+    }
+    void drawSurfaceWater() override
+    {
+        m_view->drawLandWater();
     }
     void drawUnderwater(bool shadowPass) override
     {
@@ -183,6 +189,11 @@ float TrainView::animationTime() const
 void TrainView::drawUnderwater(bool shadowPass)
 {
     m_ocean.draw(shadowPass, secondsSinceStart());
+}
+
+void TrainView::drawLandWater()
+{
+    m_land.drawWaterSurface(!sceneryOn());
 }
 
 //************************************************************************

@@ -53,7 +53,7 @@ flowchart LR
     Effects --> Frame[renderAdvancedFrame]
     Frame --> Lighting[AdvancedLighting / shadow map、逐像素光照、頭燈]
     Frame --> Post[PostEffects / 天空、水面、雨、SSAO、Bloom、色調映射]
-    Frame -->|drawGround / drawUnderwater / drawObjects| View
+    Frame -->|drawGround / drawUnderwater / drawObjects / drawSurfaceWater| View
     View -->|worldReady：未建好前畫載入畫面| Loading[載入畫面 / 泥土背景、階段文字、進度條]
     Land -->|背景執行緒：生成網格、切塊 mesh| LandWorker[LandWorld::buildScene]
     LandWorker -->|prepare：每幀約 30 ms 編 display list| Land
@@ -93,6 +93,7 @@ flowchart LR
 | `src/AdvancedLighting.h/.cpp` | 跟著鏡頭的 shadow map、GLSL 逐像素光照、日夜與頭燈。 |
 | `src/PostEffects.h/.cpp` | 浮點 frame buffer 與後製：天空、水面與 SSR、雨與濕地反射、SSAO、Bloom、god rays、ACES。 |
 | `src/UnderwaterOptics.h` | 水下吸收、caustics 與水色常數，三個 shader 共用。 |
+| `src/LandWaterMotion.h` | 島上的水怎麼動（水面輕微起伏、落水處攪動、瀑布朝空氣的面輕微擺動），光照 shader 與水面 shader 共用，依 `LandWorld` 寫在頂點上的標記。 |
 | `src/MatrixMath.h` | 光影程式用的 column-major 4×4 矩陣輔助函式。 |
 | `src/Track.H/.cpp` | 控制點容器、三種樣條的位置與切線、`trainU`、軌道文字檔讀寫。 |
 | `src/ControlPoint.H/.cpp` | 控制點位置、方向向量與標記繪製。 |
@@ -163,7 +164,7 @@ flowchart LR
 - 光照烘焙（天光、發光方塊、ambient occlusion）寫進頂點的 texture unit 1 座標；依朝向的明暗一律由 shader 依法線計算，不寫進頂點顏色，否則會暗兩次。
 - 光照 shader 是 GLSL 1.20，直接讀固定管線的 `gl_Vertex`、`gl_Normal`、`gl_Color` 與 texture unit 0，既有的 `glBegin` 繪圖不需修改。shader 或 frame buffer 建立失敗時自動退回固定管線。
 - 場景 frame buffer 的 alpha 存「對天空的開放程度」，供濕地反射使用；所以開啟 shader 時植物不能用 alpha test。
-- 半透明的水與玻璃最後畫：先寫深度，再在最近的水面混合顏色，不進 shadow map。
+- 半透明的水與玻璃最後畫：先寫深度，再在最近的水面混合顏色，不進 shadow map。有後製時，島上的水不在場景裡畫，改由 `PostEffects::drawSurfaceWater()` 在海面之後用海的 shader 畫（`SceneCallbacks::waterLater` 期間 `drawObjects()` 只畫玻璃、略過水；倒影 pass 仍畫貼圖的水）。水與玻璃分開編成兩個 display list，玻璃永遠用混合的方式畫。
 - `Scenery` 關閉時改建平坦的編輯用島；固定管線的平面陰影只在這個模式使用。
 
 ## 軌道檔
