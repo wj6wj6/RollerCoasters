@@ -1879,11 +1879,14 @@ void renderAdvancedFrame(AdvancedLighting &lighting, PostEffects &effects, Light
     lighting.prepare(frame);
     if (frame.shadows)
     {
-        lighting.beginShadowPass();
-        scene.drawObjects(true);
-        if (toggles.water)
-            scene.drawUnderwater(true);
-        lighting.endShadowPass();
+        for (int cascade = 0; cascade < lighting.shadowCascades(); ++cascade)
+        {
+            lighting.beginShadowPass(cascade);
+            scene.drawObjects(true);
+            if (toggles.water)
+                scene.drawUnderwater(true);
+            lighting.endShadowPass();
+        }
     }
 
     const bool post = (toggles.water || toggles.bloom || toggles.ssao) && effects.init();

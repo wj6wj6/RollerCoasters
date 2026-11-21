@@ -71,6 +71,9 @@ struct LightingFrame
 
 // How far from the focus the shadow map reaches (world units).
 const float kShadowReach = 150.0f;
+// ... and the second, coarser one round it, which carries the shadows on
+// out to most of the island, so the far mountains and woods keep theirs.
+const float kFarShadowReach = 600.0f;
 
 // Sun, moon and sky colours for one time of day (linear colour space).
 struct SkyState
@@ -136,10 +139,16 @@ class AdvancedLighting
         return m_headDir;
     }
 
-    // Shadow pass. Between these two calls the caller draws every shadow caster
-    // with colours off. Both matrix stacks, the viewport and the framebuffer are
-    // restored by endShadowPass().
-    void beginShadowPass();
+    // Shadow pass, once for each cascade (0: the fine map round the camera,
+    // 1: the coarse one out to kFarShadowReach; shadowCascades() says how
+    // many this frame needs). Between these two calls the caller draws every
+    // shadow caster with colours off. Both matrix stacks, the viewport and
+    // the framebuffer are restored by endShadowPass().
+    int shadowCascades() const
+    {
+        return m_farUsed ? 2 : 1;
+    }
+    void beginShadowPass(int cascade = 0);
     void endShadowPass();
 
     // Main pass. Call begin() with the camera view matrix on GL_MODELVIEW (right
@@ -169,16 +178,28 @@ class AdvancedLighting
     bool m_ok;
     bool m_active;
     bool m_shadowMapValid;
+    bool m_farUsed;  // this frame has the coarse cascade
+    bool m_farValid; // ... and it has been drawn
+    int m_cascade;   // the one being drawn
 
     unsigned int m_program;
     unsigned int m_shadowFbo;
     unsigned int m_shadowTexture;
     int m_shadowSize;
+    unsigned int m_farFbo;
+    unsigned int m_farTexture;
+    int m_farSize;
     int m_previousFbo;
 
     int m_locInvView;
     int m_locLightMatrix;
     int m_locShadowMap;
+    int m_locFarMatrix;
+    int m_locFarShadowMap;
+    int m_locFarOn;
+    int m_locFarTexel;
+    int m_locFarNormalOffset;
+    int m_locFarDepthBias;
     int m_locShadowsOn;
     int m_locShadowTexel;
     int m_locNormalOffset;
@@ -213,6 +234,11 @@ class AdvancedLighting
     float m_fogColor[3];
     float m_lightView[16];
     float m_lightProj[16];
+    float m_farView[16];
+    float m_farProj[16];
+    float m_farMatrix[16];
+    float m_farNormalOffset = 0.0f;
+    float m_farDepthBias = 0.0f;
     float m_lightMatrix[16];
     float m_normalOffset;
     float m_depthBias;
