@@ -56,6 +56,15 @@ target_include_directories(glfw SYSTEM PUBLIC "${GLFW_DIR}/include")
 target_compile_definitions(glfw PRIVATE _GLFW_WIN32 UNICODE _UNICODE _CRT_SECURE_NO_WARNINGS)
 target_link_libraries(glfw PRIVATE gdi32 user32 shell32)
 
+# stb_image 2.30 (include/stb-2.30, public domain): decodes the PNG pictures of
+# texture packs. Its implementation is one generated C file, outside the
+# first-party warning policy like glad.
+file(WRITE "${CMAKE_BINARY_DIR}/stb_image.c"
+    "#define STB_IMAGE_IMPLEMENTATION\n#define STBI_ONLY_PNG\n#define STBI_NO_STDIO\n"
+    "#include <stb_image.h>\n")
+add_library(stb_image STATIC "${CMAKE_BINARY_DIR}/stb_image.c")
+target_include_directories(stb_image SYSTEM PUBLIC "${PROJECT_SOURCE_DIR}/include/stb-2.30")
+
 add_library(Utilities
     src/Utilities/3DUtils.h src/Utilities/3DUtils.cpp
     src/Utilities/ArcBallCam.H src/Utilities/ArcBallCam.cpp
@@ -66,7 +75,8 @@ add_library(Utilities
     src/Utilities/Platform.H src/Utilities/PlatformLoop.cpp
     src/Utilities/Pnt3f.H src/Utilities/Pnt3f.cpp
     src/Utilities/TwoFingerGesture.H src/Utilities/TwoFingerGesture.cpp)
-target_link_libraries(Utilities PUBLIC project_options fltk)
+# stb_image goes along with Utilities: every target that builds TexturePack.cpp links it.
+target_link_libraries(Utilities PUBLIC project_options fltk stb_image)
 # GlfwInput.cpp reads GLFW's key and button numbers from its header.
 target_include_directories(Utilities SYSTEM PUBLIC "${GLFW_DIR}/include")
 
@@ -93,7 +103,7 @@ add_executable(RollerCoasters
     src/WorldShape.h src/WorldShape.cpp
     src/ZipArchive.h src/ZipArchive.cpp
     src/CallBacks.H src/CallBacks.cpp
-    src/FileDialogs.h src/FileDialogs.cpp
+    src/Folders.h src/Folders.cpp
     src/GameMenu.h src/GameMenu.cpp
     src/EditKeys.h src/EditKeys.cpp
     src/ControlPoint.H src/ControlPoint.cpp
@@ -203,6 +213,12 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     target_link_libraries(GuiCheck PRIVATE project_options)
     add_test(NAME GuiCheck COMMAND GuiCheck)
     set_tests_properties(GuiCheck PROPERTIES TIMEOUT 10 LABELS integration)
+
+    add_executable(FoldersCheck tests/FoldersCheck.cpp src/Folders.cpp)
+    target_include_directories(FoldersCheck PRIVATE src)
+    target_link_libraries(FoldersCheck PRIVATE project_options shell32)
+    add_test(NAME FoldersCheck COMMAND FoldersCheck)
+    set_tests_properties(FoldersCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
     add_executable(GlfwInputCheck tests/GlfwInputCheck.cpp)
     target_include_directories(GlfwInputCheck PRIVATE src)

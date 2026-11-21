@@ -16,6 +16,6 @@
 
 ## 取捨
 
-- 檔案視窗（`Fl_Native_File_Chooser`）、`fl_alert`／`fl_ask` 與材質包的 PNG 解碼暫時仍用 FLTK，所以仍連結內附的 FLTK。下一步改成遊戲內的軌道清單與確認畫面、以 stb_image 解 PNG，之後才完全移除 FLTK。
+- 檔案視窗（`Fl_Native_File_Chooser`）、`fl_alert`／`fl_ask` 與材質包的 PNG 解碼暫時仍用 FLTK，所以仍連結內附的 FLTK。下一步改成遊戲內的軌道清單與確認畫面、以 stb_image 解 PNG（[ADR 0011](0011-in-game-track-list-and-notices.md)），之後才完全移除 FLTK。
 - 課程規定列出的其他 UI 工具包含 glfw；外部函式庫仍建議先跟助教確認。
 - Linux 檢查不編 `TrainWindow.cpp`（需要 Win32 視窗程序），只做 MinGW 語法檢查；`GlfwInput` 的轉換由 `GlfwInputCheck` 測試，`GameMenu` 在 Linux 上只編譯，元件本身由 `GuiCheck` 測試，選單的畫面與操作要在 Windows 上確認。

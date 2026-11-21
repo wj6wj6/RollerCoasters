@@ -1,7 +1,7 @@
 // Checks the block-game style interface without OpenGL: the pixel font's metrics, the atlas,
 // the GUI scale, and that buttons, toggles, cycle buttons, sliders and lists react to fed mouse
 // input the way the game's do (a button fires on the press, the interface takes events over
-// what it drew and leaves the rest to the 3D view).
+// what it drew and leaves the rest to the 3D view), and that a text field takes typing.
 #include "Ui/Gui.h"
 #include "Ui/PixelFont.h"
 #include "Ui/UiAtlas.h"
@@ -181,6 +181,52 @@ int main()
     gui.feed(mouse(InputType::Release, px(140), px(12 + Gui::kRowHeight)));
     f = frame();
     expect(f.list && selected == scroll + 1, "a click selects the row under the mouse");
+
+    // A double click on the selected row reports it (Load Track loads that track).
+    bool doubleClicked = false;
+    InputEvent second = mouse(InputType::Push, px(140), px(12 + Gui::kRowHeight));
+    second.clicks = 1;
+    gui.feed(second);
+    gui.feed(mouse(InputType::Release, px(140), px(12 + Gui::kRowHeight)));
+    gui.beginFrame(640, 480, 2);
+    gui.list(listRect, rows, selected, scroll, &doubleClicked);
+    expect(doubleClicked && selected == scroll + 1, "a double click on the row is reported");
+    doubleClicked = false;
+    gui.beginFrame(640, 480, 2);
+    gui.list(listRect, rows, selected, scroll, &doubleClicked);
+    expect(!doubleClicked, "... once");
+
+    // Text field: printable characters and Backspace typed since the last frame, up to the limit.
+    std::string name = "ab";
+    auto typed = [](unsigned int codepoint) {
+        InputEvent e;
+        e.type = InputType::Text;
+        e.key = static_cast<int>(codepoint);
+        return e;
+    };
+    InputEvent backspace;
+    backspace.type = InputType::KeyDown;
+    backspace.key = Key::BackSpace;
+    expect(!gui.feed(typed('c')), "typing is not taken from the caller, who decides");
+    gui.feed(backspace);
+    gui.feed(backspace);
+    gui.feed(typed('X'));
+    gui.feed(typed(0x4e2d)); // a character the pixel font cannot draw is left out
+    expect(gui.pending(), "typed input waits for the next frame");
+    gui.beginFrame(640, 480, 2);
+    expect(gui.textField({10, 130, 100, 20}, name, 4) && name == "aX", "c, two Backspaces, then X");
+    gui.beginFrame(640, 480, 2);
+    expect(!gui.textField({10, 130, 100, 20}, name, 4), "nothing typed, nothing changes");
+    for (char c : std::string("12345"))
+        gui.feed(typed(static_cast<unsigned char>(c)));
+    gui.beginFrame(640, 480, 2);
+    gui.textField({10, 130, 100, 20}, name, 4);
+    expect(name == "aX12", "the text stops at its limit");
+    for (int i = 0; i < 6; ++i)
+        gui.feed(backspace);
+    gui.beginFrame(640, 480, 2);
+    gui.textField({10, 130, 100, 20}, name, 4);
+    expect(name.empty(), "Backspace on empty text does nothing");
 
     std::printf("%s\n", failures == 0 ? "GuiCheck passed" : "GuiCheck FAILED");
     return failures == 0 ? 0 : 1;

@@ -57,7 +57,8 @@ flowchart LR
     Touchpad -->|Train 模式| Head
     Touchpad -->|Update 計時| Timer
     Track <-->|readPoints / writePoints| File[使用者軌道文字檔]
-    Callbacks -->|Load / Save / Open pack| Dialogs[FileDialogs / 系統檔案視窗與檔案總管]
+    Menu -->|Load Track / Save Track 清單| Folders[Folders / TrackFiles 清單、檔名檢查、用檔案總管開資料夾]
+    Callbacks -->|Open Pack Folder| Folders
     View --> GL[GLAD / OpenGL / GLU]
     View --> Land[LandWorld / 方塊島嶼與木棧橋]
     View --> Ocean[OceanWorld / 海床、海底景物與生物]
@@ -103,7 +104,7 @@ flowchart LR
 | `src/AppControl.h/.cpp` | 命令列（`--doctor`、`--screenshot` 與場景參數）的解析、軌道檔格式檢查、資料夾檢查、畫面判讀與 PNG 寫入；不需要視窗，由 `AppControlCheck` 測試。 |
 | `src/TrainViewControl.cpp` | 自動模式下每幀結束時：`--doctor` 回報 OpenGL 與 shader 路徑，`--screenshot` 從 back buffer 讀回畫面、存檔並判斷是否真的畫出東西，然後關閉視窗。 |
 | `src/TrainWindow.H/.cpp` | GLFW 視窗（OpenGL 相容 context、IME 關閉、滾輪訊息先經自己的視窗程序）與主迴圈 `run()`；持有唯一的 `CTrack`、`SceneSettings`、`GameMenu`、上一步歷史與 `advanceTrain()`。GLFW callback 經 `GlfwInput` 轉成 `InputEvent`，先給 `GameMenu`，沒用到才給 `TrainView`。見 [ADR 0010](adr/0010-glfw-window-and-game-menu.md)。 |
-| `src/GameMenu.h/.cpp` | 用 `Ui/Gui` 畫出的介面：左上角按鍵提示、九格快捷欄、狀態列，以及 Esc 打開的選單（`Pause`、`Ride`、`Camera`、`Track`、`Lighting`、`World`）；全部只讀寫 `SceneSettings` 與呼叫 `CallBacks`。 |
+| `src/GameMenu.h/.cpp` | 用 `Ui/Gui` 畫出的介面：左上角按鍵提示、九格快捷欄、狀態列，以及 Esc 打開的選單（`Pause`、`Ride`、`Camera`、`Track`、`Lighting`、`World`、`Load Track`、`Save Track`），和取代系統訊息視窗的 `notify()`（訊息與 OK）、`confirm()`（Yes／No）；全部只讀寫 `SceneSettings` 與呼叫 `CallBacks`。 |
 | `src/SceneSettings.h` | 控制項目前的值：Run、速度、ArcLength、相機（`CameraView`）、曲線種類、Edit、光影開關、時間、水、雨、景物。介面（`GameMenu`）、`TrainView` 與 callback 都只讀寫這裡。 |
 | `src/CallBacks.H/.cpp` | 選單按鈕與快捷欄的動作：新增刪除控制點、步進、軌道載入儲存、Reset、Grand Tour、材質包。 |
 | `src/Ui/Gui.h/.cpp` | 方塊遊戲風的即時模式介面：每幀呼叫 `button()`、`toggle()`、`cycle()`、`slider()`、`list()` 同時畫出元件並回報是否被使用；滑鼠以 `feed()` 在幀之間送入（按下即觸發），`feed()` 回報介面是否吃掉事件；GUI 縮放照方塊遊戲的 Auto（至少留 320 x 240 單位）。不需 OpenGL，由 `GuiCheck` 測試。見 [ADR 0009](adr/0009-own-block-game-style-ui.md)。 |
@@ -135,9 +136,9 @@ flowchart LR
 | `src/WaterFlow.h/.cpp` | 方塊遊戲式的水流擴散規則。 |
 | `src/Frustum.h/.cpp` | 從目前矩陣取出視錐平面，做分塊剔除。 |
 | `src/PixelArt.h/.cpp` | 程序貼圖的雜湊、繪圖與上傳輔助函式。 |
-| `src/TexturePack.h/.cpp` | 找出並開啟材質包，對照方塊名稱、染色並交出貼圖。 |
+| `src/TexturePack.h/.cpp` | 找出並開啟材質包，對照方塊名稱、染色並交出貼圖；PNG 以 stb_image 解碼。 |
 | `src/ZipArchive.h/.cpp` | 讀取 zip 目錄，以自己的 DEFLATE 解碼器解壓。 |
-| `src/FileDialogs.h/.cpp` | 系統檔案視窗（暫時仍用 FLTK 的 `Fl_Native_File_Chooser`）與用檔案總管開資料夾。 |
+| `src/Folders.h/.cpp` | 遊戲內清單用的資料夾工具：列出某副檔名的檔案（不分大小寫排序）、Windows 能不能用這個檔名、補副檔名、建立資料夾、用檔案總管打開資料夾；由 `FoldersCheck` 測試。見 [ADR 0011](adr/0011-in-game-track-list-and-notices.md)。 |
 | `src/TouchpadGestures.H/.cpp` | Raw Input 讀精準觸控板的手指座標；Direct Manipulation 接手手勢並作為備援。 |
 | `src/Utilities/TwoFingerGesture.*` | 兩指位移與張開比例的 1-euro 濾波與起動門檻。 |
 | `src/Utilities/Input.H` | 自己的輸入事件 `InputEvent`、`Key::`／`Mod::`／`Mouse::` 常數，以及相機用的 `Viewport` 介面。 |
@@ -159,7 +160,7 @@ flowchart LR
 - 新增控制點（快捷欄 `7`、`Shift` + `D`）先進入放置模式，`TrackInsert::pick()` 找滑鼠附近的軌道參數，點下時 `insertAt()` 插點並進入拖曳。Fly 相機在滑鼠鎖定且 `Edit` 開啟時是建造狀態（`flyBuilding()`）：左鍵刪準心對到的點、中鍵或 `C` 選取、右鍵在準心前方放點；`G` 以 `beginCarry()`／`updateCarry()` 讓點跟著視角移動。
 - 修改控制點的每條路徑（新增、刪除、`Load`、`Reset`、`Grand Tour`、R±X／Z、X／Y／Z 微調、拖曳與 `G`／`R`）都先存 `TrackHistory` 快照；拖曳只在點真的改變時才存入。
 - 相機的平滑、按住按鍵移動與觸控板慣性都走 `platform::` timer，依實際經過時間計算，與幀率無關。
-- 滑鼠與鍵盤事件：GLFW callback 經 `GlfwInput` 轉成 `InputEvent`，`GameMenu::input()` 先看（Esc、F1、`1`–`9`、`P`、`[`／`]`，選單開著時吃掉全部事件，快捷欄上按下的滑鼠也歸它），沒用到才交給 `TrainView::handleInput()`；相機、控制點編輯與 Train 轉頭的處理函式只吃 `InputEvent`。Esc 在移動、傾斜或放置控制點時先交給 `TrainView` 取消。
+- 滑鼠與鍵盤事件：GLFW callback 經 `GlfwInput` 轉成 `InputEvent`，`GameMenu::input()` 先看（Esc、F1、`1`–`9`、`P`、`[`／`]`，選單開著時吃掉全部事件，打字與 Backspace 給 `Save Track` 的名稱欄、Enter 等於 `Load`／`Save`／`OK`／`Yes`，快捷欄上按下的滑鼠也歸它），沒用到才交給 `TrainView::handleInput()`；相機、控制點編輯與 Train 轉頭的處理函式只吃 `InputEvent`。Esc 在移動、傾斜或放置控制點時先交給 `TrainView` 取消。
 - 自動模式（`--doctor`／`--screenshot`）：`main()` 先以 `TrainWindow::applyOptions()` 設定場景（軌道檔先經 `checkTrackFile()`，壞檔直接失敗、不跳對話框），`TrainView::draw()` 畫完 `drawFrame()` 後呼叫 `finishAutomatedFrame()`。`--doctor` 在第一幀就回報；`--screenshot` 只計算真正畫出場景的幀（`frameShowsScene`，載入畫面不算），達到指定幀數才讀回畫面、寫 PNG、印出 `PASS`／`FAIL` 行與場景出現所花的秒數，再關閉視窗讓 `TrainWindow::run()` 返回。自動模式不畫快捷欄與按鍵提示。300 秒內場景沒有出現也算失敗。結束碼：0 通過、1 檢查失敗、2 命令列錯誤。
 
 ## 跨模組約定
@@ -204,4 +205,4 @@ flowchart LR
 
 目前 `TrainWindow` 只持有一條 `CTrack`，`TrainView::drawStuff()` 直接列出要畫的東西。加入多條軌道或其他遊樂設施前，建議先把世界狀態從視窗移出（例如 `ParkWorld` 持有軌道、設施與景物集合），每種設施各自實作 `update(dt)` 與 `draw(renderPass)`，不要把特定設施的邏輯塞進 `TrainView`；速度也應改用實際時間差 `dt`。
 
-工程決策見 [ADR 0001](adr/0001-windows-quality-gates.md)；Clang 工具鏈見 [ADR 0002](adr/0002-clang-cl-build.md)；Visual Studio 版本見 [ADR 0004](adr/0004-any-visual-studio-version.md)；內附 FLTK 升級到 1.3.11 見 [ADR 0007](adr/0007-fltk-1-3-11.md)；GLFW 視窗與 Esc 選單見 [ADR 0010](adr/0010-glfw-window-and-game-menu.md)。
+工程決策見 [ADR 0001](adr/0001-windows-quality-gates.md)；Clang 工具鏈見 [ADR 0002](adr/0002-clang-cl-build.md)；Visual Studio 版本見 [ADR 0004](adr/0004-any-visual-studio-version.md)；內附 FLTK 升級到 1.3.11 見 [ADR 0007](adr/0007-fltk-1-3-11.md)；GLFW 視窗與 Esc 選單見 [ADR 0010](adr/0010-glfw-window-and-game-menu.md)；遊戲內的軌道清單、提示與 stb_image 見 [ADR 0011](adr/0011-in-game-track-list-and-notices.md)。

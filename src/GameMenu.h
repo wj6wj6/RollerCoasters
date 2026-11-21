@@ -10,7 +10,11 @@
                     status line above the hotbar; F1 hides all of it;
                   - Esc opens the game menu, whose screens (Ride, Camera,
                     Track, Lighting, World) hold every control the old side
-                    panel had. Esc goes back a screen.
+                    panel had. Esc goes back a screen;
+                  - Load Track and Save Track list the tracks in
+                    TrackFiles\ (a block game's world list, not the
+                    system's file dialogs), and a notice or a yes / no
+                    question takes the place of a message box.
 
                   It changes TrainWindow::settings and calls the same
                   actions (CallBacks.H) the panel did. Every frame draw()
@@ -20,7 +24,9 @@
 *************************************************************************/
 #pragma once
 
+#include <functional>
 #include <string>
+#include <vector>
 
 #include "Ui/Gui.h"
 #include "Utilities/Input.H"
@@ -38,7 +44,11 @@ class GameMenu
         Camera,
         Track,
         Lighting,
-        World
+        World,
+        LoadTrack,
+        SaveTrack,
+        Notice, // notify(): a message and OK
+        Confirm // confirm(): a question, Yes and No
     };
     static constexpr int kSlots = 9;
 
@@ -63,6 +73,13 @@ class GameMenu
     // What a hotbar slot (0 to 8) does, by key or click.
     void useSlot(TrainWindow &tw, int slot, double seconds);
 
+    // A message over everything, with OK to go back to where the menu was
+    // (or to the ride). Lines are split at '\n'.
+    void notify(TrainWindow &tw, const std::string &title, const std::string &text);
+    // A question: Yes runs `yes`, No (or Esc) goes back to where the menu was.
+    void confirm(TrainWindow &tw, const std::string &question,
+                 std::function<void(TrainWindow &)> yes);
+
     bool hudHidden = false; // F1
 
   private:
@@ -73,6 +90,14 @@ class GameMenu
     void drawTrack(TrainWindow &tw, ui::Gui &gui);
     void drawLighting(TrainWindow &tw, ui::Gui &gui);
     void drawWorld(TrainWindow &tw, ui::Gui &gui);
+    void drawLoadTrack(TrainWindow &tw, ui::Gui &gui);
+    void drawSaveTrack(TrainWindow &tw, ui::Gui &gui);
+    void drawNotice(TrainWindow &tw, ui::Gui &gui);
+    void drawConfirm(TrainWindow &tw, ui::Gui &gui);
+    void markSaveName(); // select the listed track that m_saveName would save over
+    void loadSelected(TrainWindow &tw);
+    void save(TrainWindow &tw);
+    void say(const std::string &text); // a line above the hotbar for a moment
     void title(ui::Gui &gui, const std::string &text);
     bool done(TrainWindow &tw, ui::Gui &gui, int row);
 
@@ -80,6 +105,20 @@ class GameMenu
     bool m_guiHasMouse = false; // a press on the hotbar: its drag and release go there too
     double m_now = 0.0;         // the time input() was last given, for useSlot()
     int m_packScroll = 0;
+    bool m_enter = false; // Enter was pressed: Load or Save, as their button
+
+    // Load Track and Save Track: the files in TrackFiles\, the one picked,
+    // and the name being typed.
+    std::vector<std::string> m_tracks;
+    int m_trackSelected = -1;
+    int m_trackScroll = 0;
+    std::string m_saveName = "track";
+
+    // Notice and Confirm, and the screen to go back to.
+    std::string m_title;
+    std::vector<std::string> m_lines;
+    std::function<void(TrainWindow &)> m_yes;
+    Screen m_return = Screen::None;
     // the slot's name shows above the hotbar for a moment, as an item's does
     std::string m_slotName;
     double m_slotNameUntil = 0.0;

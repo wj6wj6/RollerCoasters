@@ -131,8 +131,9 @@ int main()
     check(AppControl::checkTrackFile(good.u8string(), error), "a well formed track passes");
     {
         CTrack track;
-        track.readPoints(good.u8string().c_str());
-        check(track.points.size() == 4, "and CTrack::readPoints() loads all of it");
+        std::string readError;
+        check(track.readPoints(good.u8string().c_str(), readError) && track.points.size() == 4,
+              "and CTrack::readPoints() loads all of it");
     }
     struct Bad
     {
@@ -150,6 +151,11 @@ int main()
         writeText(folder / b.name, b.text);
         check(!AppControl::checkTrackFile((folder / b.name).u8string(), error) && !error.empty(),
               b.what);
+        CTrack track;
+        std::string readError;
+        check(!track.readPoints((folder / b.name).u8string().c_str(), readError) &&
+                  !readError.empty(),
+              "and CTrack::readPoints() refuses it too");
     }
     check(!AppControl::checkTrackFile((folder / "missing.txt").u8string(), error),
           "a missing file fails");

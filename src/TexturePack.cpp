@@ -12,14 +12,7 @@
 #include <windows.h>
 #endif
 
-// The same guard as the other FLTK includes: FLTK's headers convert between
-// pointers and long (C4311, C4312); it covers these includes only.
-#pragma warning(push)
-#pragma warning(disable : 4311)
-#pragma warning(disable : 4312)
-#include <FL/Fl.H>
-#include <FL/Fl_PNG_Image.H>
-#pragma warning(pop)
+#include <stb_image.h>
 
 #include <algorithm>
 #include <filesystem>
@@ -287,10 +280,6 @@ bool readWhole(const fs::path &p, ZipArchive::Bytes &out)
 
 // The files that mark a pack's root, one of which a pack must have there.
 const char *const kRootMarks[] = {"pack.mcmeta", "assets/minecraft/textures/", "textures/"};
-
-void quiet(const char *, ...)
-{
-}
 
 // Where a resource pack keeps its block pictures: newer packs, older ones.
 const char *const kBlockFolders[] = {"assets/minecraft/textures/block/",
@@ -693,45 +682,20 @@ bool decodePng(const ZipArchive::Bytes &file, int &width, int &height,
     if (file.size() < 8 || file.size() > 64u * 1024u * 1024u ||
         !std::equal(signature, signature + 8, file.begin()))
         return false;
-    // A broken picture is reported through Fl::error and Fl::warning, which
-    // on Windows open a message box: the pack's picture is left out
-    // instead, quietly.
-    void (*const error)(const char *, ...) = Fl::error;
-    void (*const warning)(const char *, ...) = Fl::warning;
-    Fl::error = quiet;
-    Fl::warning = quiet;
-    Fl_PNG_Image png("texture pack picture", file.data(), static_cast<int>(file.size()));
-    Fl::error = error;
-    Fl::warning = warning;
-    width = png.w();
-    height = png.h();
-    const int depth = png.d();
-    if (png.fail() || width <= 0 || height <= 0 || depth < 1 || depth > 4 || png.count() < 1)
+    // stb_image (include/stb-2.30) turns any PNG (palette, grey, 16 bit,
+    // with or without alpha) into 8 bit RGBA; a broken one is left out.
+    int channels = 0;
+    unsigned char *pixels = stbi_load_from_memory(file.data(), static_cast<int>(file.size()),
+                                                  &width, &height, &channels, 4);
+    if (!pixels)
         return false;
-    const unsigned char *data = reinterpret_cast<const unsigned char *>(png.data()[0]);
-    const int line = png.ld() > 0 ? png.ld() : width * depth;
-    rgba.assign(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u, 255);
-    for (int y = 0; y < height; ++y)
-        for (int x = 0; x < width; ++x)
-        {
-            const unsigned char *p = data + static_cast<size_t>(y) * static_cast<size_t>(line) +
-                                     static_cast<size_t>(x) * static_cast<size_t>(depth);
-            unsigned char *q = &rgba[(static_cast<size_t>(y) * static_cast<size_t>(width) +
-                                      static_cast<size_t>(x)) *
-                                     4u];
-            if (depth <= 2)
-            {
-                q[0] = q[1] = q[2] = p[0];
-                q[3] = depth == 2 ? p[1] : 255;
-            }
-            else
-            {
-                q[0] = p[0];
-                q[1] = p[1];
-                q[2] = p[2];
-                q[3] = depth == 4 ? p[3] : 255;
-            }
-        }
+    if (width <= 0 || height <= 0)
+    {
+        stbi_image_free(pixels);
+        return false;
+    }
+    rgba.assign(pixels, pixels + static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
+    stbi_image_free(pixels);
     return true;
 }
 

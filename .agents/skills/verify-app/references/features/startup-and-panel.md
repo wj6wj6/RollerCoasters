@@ -35,7 +35,7 @@
 - 左上角提示與快捷欄清楚可讀；縮放視窗、最大化或在高 DPI 螢幕上，介面以整數倍放大、文字不模糊不被裁切；F1 隱藏與顯示。
 - 按 `P` 列車開始與停止，提示行跟著變成 `Stop the train`／`Run the train`；`[`、`]` 每次改 0.5，停在 0 與 10。
 - `1`–`5` 與點格子切換五種相機，選中的格子有白框，上方短暫顯示名稱；`6` 切換 Edit（格子變綠）；`7` 進入新增點；`8` 刪除選取的點；`9` 與 `P` 相同。
-- Esc 打開選單時場景變暗、不再回應 WASD 或拖曳；每個子畫面的按鈕都做一次，確認效果與舊面板相同：`Ride`（Run、Arc Length、Speed、Step Back／Forward）、`Camera`（相機循環、FOV、Fly Speed）、`Track`（Spline 左鍵往後右鍵往前、Edit、Add／Delete、Undo／Redo 依歷史啟用、Load／Save、R±X／R±Z、X／Y／Z 微調、Reset Track）、`Lighting`（五個開關、Time 以 15 分鐘為單位）、`World`（Water、Rain、Scenery、Grand Tour、材質包清單、Open Pack...、Open Packs Folder）。
+- Esc 打開選單時場景變暗、不再回應 WASD 或拖曳；每個子畫面的按鈕都做一次，確認效果與舊面板相同：`Ride`（Run、Arc Length、Speed、Step Back／Forward）、`Camera`（相機循環、FOV、Fly Speed）、`Track`（Spline 左鍵往後右鍵往前、Edit、Add／Delete、Undo／Redo 依歷史啟用、Load／Save、R±X／R±Z、X／Y／Z 微調、Reset Track）、`Lighting`（五個開關、Time 以 15 分鐘為單位）、`World`（Water、Rain、Scenery、Grand Tour、材質包清單、Open Pack Folder）。
 - Fly 相機鎖定滑鼠時按 Esc：滑鼠放開並打開選單；按 `G` 搬點、`R` 傾斜或放置新點時按 Esc 只取消該動作，不打開選單。
 - 選單 `Quit` 與視窗的關閉鈕都會結束程序。
 - 開著中文輸入法（注音）時，WASD、`P`、數字鍵與 Esc 都照常作用，不會跳出選字視窗。

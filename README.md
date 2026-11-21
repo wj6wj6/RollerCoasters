@@ -1,6 +1,6 @@
 # RollerCoasters
 
-電腦圖學課程的 Windows 桌面過山車編輯器，使用 C++、GLFW 3.4 與 OpenGL；介面是自己畫的方塊遊戲風選單與快捷欄（檔案視窗與錯誤提示暫時仍用 FLTK 1.3.11）。
+電腦圖學課程的 Windows 桌面過山車編輯器，使用 C++、GLFW 3.4 與 OpenGL；介面是自己畫的方塊遊戲風選單與快捷欄；軌道的載入儲存、提示與確認都在遊戲內的畫面裡，不跳出系統視窗。
 
 ## 建置與啟動
 
@@ -51,7 +51,7 @@ pwsh -File scripts/check.ps1 -Stage all -Compiler clang -Config Release
 | `1`–`9` | 快捷欄：`1` World、`2` Train、`3` Chase、`4` Top、`5` Fly 相機，`6` Edit 開關，`7` 新增控制點，`8` 刪除控制點，`9` Run；也可以直接點格子 |
 | F1 | 隱藏／顯示左上角提示與快捷欄 |
 
-選單（Esc）：`Back to Ride`、`Ride`（Run、Arc Length、Speed、前後步進）、`Camera`（相機、FOV、Fly 速度）、`Track`（Spline、Edit、新增／刪除、Undo／Redo、Load／Save、R±X／R±Z、選取控制點的 X／Y／Z 微調、Reset Track）、`Lighting`（Light+、Shadows、Headlight、Bloom、SSAO、Time）、`World`（Water、Rain、Scenery、Grand Tour、材質包）、`Grand Tour`、`Quit`。開關按一下切換，滑桿可拖曳或點；按鈕按下就生效。
+選單（Esc）：`Back to Ride`、`Ride`（Run、Arc Length、Speed、前後步進）、`Camera`（相機、FOV、Fly 速度）、`Track`（Spline、Edit、新增／刪除、Undo／Redo、Load／Save、R±X／R±Z、選取控制點的 X／Y／Z 微調、Reset Track）、`Lighting`（Light+、Shadows、Headlight、Bloom、SSAO、Time）、`World`（Water、Rain、Scenery、Grand Tour、材質包、Open Pack Folder）、`Grand Tour`、`Quit`。開關按一下切換，滑桿可拖曳或點；按鈕按下就生效。
 
 - `Grand Tour` 是一條 62 個控制點的長路線（每個轉彎的夾角都不小於 90 度，沒有銳角的急彎或髮夾彎），繞行整座方塊風島嶼與東北新大陸後潛入海底再回來：
   從海上飛向村莊（風車、小屋、麥田、路燈）→ 沿雪山岩壁螺旋爬升，跨過從山上一路跌進海裡的溪流瀑布 →
@@ -77,7 +77,7 @@ pwsh -File scripts/check.ps1 -Stage all -Compiler clang -Config Release
   - 觸控板：雙指張開／捏合（或 Ctrl + 捲動）沿視線前進後退，可以一邊轉頭一邊前進；Alt + 雙指移動左右、上下平移。
   - 找方向：畫面中央有準星；地面延伸到地平線。按 F 平滑轉向列車，按 `Home` 回到 World 視角位置（`R` 留給傾斜控制點）。
   - 範圍：相機最低可以飛到 y = −200（可以鑽到地面以下看潛入地底或海底的軌道，從下方也看得到地面），最高 600，且不會離場景中心超過 1000 單位。
-- Load／Save（選單 `Track`）讀寫軌道文字檔，開的是 Windows 檔案總管的「開啟」／「另存新檔」視窗（存檔時會自動補上 `.txt`，覆蓋舊檔前會先詢問；點數不合法、行數少於宣告或某行缺 x y z 的檔案會跳出錯誤並保留目前軌道），預設位置是 exe 旁邊的 `TrackFiles\`（build 與安裝時建立，程式啟動時會切到 exe 所在資料夾，不論從 Visual Studio、雙擊或終端機啟動都一樣）。
+- Load／Save（選單 `Track`）像方塊遊戲的世界清單一樣，列出 exe 旁 `TrackFiles\` 裡的 `.txt` 軌道檔（build 與安裝時建立；不論從 Visual Studio、雙擊或終端機啟動都是同一個資料夾）。`Load Track` 點一個再按 `Load`（或雙擊、Enter）；`Open Folder` 用檔案總管打開這個資料夾，放進去的檔案下次打開清單就會出現。`Save Track` 輸入名稱（自動補上 `.txt`，不能用 `\ / : * ? " < > |`），或點清單裡的檔案沿用它的名稱，按 `Save` 或 Enter；同名檔案會先問 `Replace ...?`。點數不合法、行數少於宣告或某行缺 x y z 的檔案會顯示原因並保留目前軌道。
 - 編輯控制點（先開啟 `Edit`：快捷欄 `6` 或 `F4`，像方塊遊戲切換遊戲模式；World、Top 與 Fly 相機）：`Edit` 關閉時控制點不顯示也不能選取。左鍵點選，選到的控制點變橘色並出現移動把手；中鍵也能選取（只選不拖），沒有中鍵的觸控板按 `C` 選游標下的點（Fly 鎖定滑鼠時選準心對到的點）。
   - 拖紅／綠／藍箭頭沿 X／Y／Z 軸移動，拖小方塊在該平面內移動，直接拖控制點則平行於畫面移動。
   - 鍵盤操作與 3D 建模軟體相同：`G` 移動、`R` 傾斜（改變控制點的上方向），之後按 `X`／`Y`／`Z` 鎖定軸，`Shift` + `X`／`Y`／`Z` 鎖定另外兩軸的平面；
@@ -118,14 +118,14 @@ pwsh -File scripts/check.ps1 -Stage all -Compiler clang -Config Release
 
 島上的方塊與植物貼圖可以在執行中切換，像方塊遊戲換資源包一樣：選單 `World` 的 `Texture Pack` 清單裡點 `Built-in`（內建）或一個材質包，畫面立刻換上，不需要重新建島。
 
-- 放材質包的位置：`RollerCoasters.exe` 旁的 `texturepacks/` 資料夾（建置與安裝時會建立空的資料夾），或 exe 旁的 `data/texturepacks/`。每個 `.zip` 或資料夾就是一個材質包，清單依名稱列出，每次打開 `World` 畫面都會重新讀資料夾，所以程式開著時放進去的材質包也會出現。`Open Packs Folder` 會用檔案總管打開這個資料夾（沒有就先建立），直接把下載的 zip 拖進去；`Open Pack...` 會開 Windows 檔案總管的「開啟」視窗，挑放在任何地方的 `.zip` 或資料夾裡的 `pack.mcmeta`。
+- 放材質包的位置：`RollerCoasters.exe` 旁的 `texturepacks/` 資料夾（建置與安裝時會建立空的資料夾），或 exe 旁的 `data/texturepacks/`。每個 `.zip` 或資料夾就是一個材質包，清單依名稱列出，每次打開 `World` 畫面都會重新讀資料夾，所以程式開著時放進去的材質包也會出現。`Open Pack Folder` 會用檔案總管打開這個資料夾（沒有就先建立），直接把下載的 zip 拖進去，和方塊遊戲一樣；放在其他地方的材質包可以用 `--pack <zip 或資料夾>` 啟動時套用。
 - 讀得懂兩種格式：
   - 方塊遊戲的資源包（Java 版格式）：`assets/minecraft/textures/block/*.png`，較舊的資源包是 `textures/blocks/`；包在 zip 裡多一層資料夾也可以。依方塊名稱對應到島上的方塊（草地、泥土、石頭、圓石、沙、礫石、雪、原木與樹葉、木板、陶土、礦石、花草等），灰階的草地、樹葉、蕨類和藤蔓會照方塊遊戲的方式染成綠色；動畫材質（熔岩等）取第一格；16×、32×、64× 等解析度都可以，最大用到 256×256。
   - 本程式自己的格式：`textures/<名稱>.png`，名稱見 `src/TexturePack.cpp` 的對照表（例如 `grass_top`、`stone`、`leaves_oak`），每一種貼圖都能換，包含方塊遊戲沒有對應的（窗戶、門、水晶、秋色樹葉、竹子）。
 - 島上、海底、軌道（枕木與鋼軌）、風車與熱氣球都會換成材質包的圖；只有海裡的生物（魚、水母等）、列車、雲與天空不換。
 - 島上的羊、豬、牛是照方塊遊戲比例做的方塊模型，皮膚用材質包 `entity` 資料夾裡的圖（新版的 `pig_temperate`、`cow_temperate`、`sheep_wool` 與舊版的 `pig`、`cow`、`sheep_fur` 都認得），沒有時用同樣配置的內建皮膚；少數羊的羊毛是灰、黑或棕色。
 - 材質包缺某種方塊時，改用最接近的方塊代替（例如秋色樹改用染橘的橡樹葉、窗戶用玻璃），所以用完整的材質包時不會留下內建畫風的方塊；材質包真的沒有的貼圖（例如有些材質包沒有水）才維持內建。替代規則見 [ADR 0005](docs/adr/0005-texture-packs.md)。
-- 清單右上方顯示目前的材質包換了幾種貼圖。讀不到任何可用貼圖的材質包會跳出提示，清單回到原本的選擇。
+- 清單右上方顯示目前的材質包換了幾種貼圖。讀不到任何可用貼圖的材質包會顯示 `Not a texture pack`，清單回到原本的選擇。材質包的 PNG 以 stb_image 2.30（public domain，`include/stb-2.30/`）解碼。
 - 材質包是使用者自己的檔案，不納入版控，也不隨程式散布；請遵守各材質包的授權。
 
 個人軌道請存 `data/`，備份存 `backups/`，兩者均不納入版控。

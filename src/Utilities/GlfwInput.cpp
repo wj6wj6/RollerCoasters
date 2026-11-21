@@ -194,3 +194,10 @@ InputEvent GlfwInput::enter(bool entered)
 {
     return event(entered ? InputType::Enter : InputType::Leave);
 }
+
+InputEvent GlfwInput::text(unsigned int codepoint)
+{
+    InputEvent e = event(InputType::Text);
+    e.key = codepoint <= 0x10ffffu ? static_cast<int>(codepoint) : 0;
+    return e;
+}

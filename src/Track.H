@@ -25,6 +25,8 @@
 *************************************************************************/
 #pragma once
 
+#include <string>
+
 #include <vector>
 
 using std::vector; // avoid having to say std::vector all of the time
@@ -51,10 +53,11 @@ class CTrack
     // than 4 points)
     void resetPoints();
 
-    // read and write to files; readPoints() leaves the track unchanged and
-    // shows fl_alert() when the file is short, malformed or cannot be opened
-    void readPoints(const char *filename);
-    void writePoints(const char *filename);
+    // read and write to files; false, with what went wrong in `error`, when
+    // the file cannot be opened or (reading) is short or malformed. A failed
+    // read leaves the track unchanged.
+    bool readPoints(const char *filename, std::string &error);
+    bool writePoints(const char *filename, std::string &error);
 
     // Evaluate the selected closed spline at parameter u.
     // One unit of u spans one control-point segment.
