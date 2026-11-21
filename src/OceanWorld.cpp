@@ -2076,6 +2076,7 @@ struct OceanWorld::Build
     std::vector<Chunk> chunks; // the boxes; the lists are made from the meshes below
     std::vector<Batches> solids, plants;
     Batches beyond = Batches(kTextureCount);
+    std::vector<unsigned char> solid; // per block: kept for solidAt()
 
     ~Build()
     {
@@ -2101,6 +2102,14 @@ float OceanWorld::seaFloor(float x, float z)
     if (edge < 0.0f)
         return 0.0f; // under the island
     return static_cast<float>(seaBedTop(cx, cz, edge) + 1) * kBlock;
+}
+
+bool OceanWorld::solidAt(float x, float y, float z) const
+{
+    const int bx = blockOf(x), j = blockOf(y), bz = blockOf(z);
+    if (m_solid.empty() || !Grid::inside(bx, j, bz))
+        return false;
+    return m_solid[Grid::index(bx, j, bz)] != 0;
 }
 
 bool OceanWorld::leftToIsland(float x, float z)
@@ -2555,6 +2564,9 @@ void OceanWorld::Build::run()
             plants.push_back(std::move(plant));
         }
     addFarFloor(beyond);
+    solid.resize(g.block.size());
+    for (size_t i = 0; i < g.block.size(); ++i)
+        solid[i] = g.block[i] != AIR ? 1 : 0;
     permille = 1000;
     done = true;
 }
@@ -2581,6 +2593,8 @@ bool OceanWorld::prepare()
         m_chunks[i].plant = compileList(m_build->plants[i], m_textures);
     }
     m_farList = compileList(m_build->beyond, m_textures);
+    if (!m_build->solid.empty())
+        m_solid = std::move(m_build->solid);
     m_build.reset(); // the meshes are in the lists now
     m_built = true;
     return true;

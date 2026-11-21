@@ -71,6 +71,7 @@ check(TrackInsertCheck
     LIBS Utilities glad)
 check(GuiCheck SOURCES src/Ui/Gui.cpp src/Ui/PixelFont.cpp src/Ui/UiAtlas.cpp)
 check(FrustumCheck SOURCES src/Frustum.cpp LIBS glad)
+check(ChaseRigCheck SOURCES src/ChaseRig.cpp)
 check(MobsCheck SOURCES src/Mobs.cpp src/PixelArt.cpp LIBS glad)
 check(TexturePackCheck
     SOURCES src/TexturePack.cpp src/ZipArchive.cpp src/LandTextures.cpp src/PixelArt.cpp

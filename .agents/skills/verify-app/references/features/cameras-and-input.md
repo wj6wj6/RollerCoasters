@@ -2,7 +2,7 @@
 
 ## 有什麼
 
-- `World`（環繞）、`Train`（第一人稱，可轉頭）、`Chase`（跟在車尾後上方）、`Top`（正交俯視）、`Fly`（觀察者自由飛行）。
+- `World`（環繞）、`Train`（第一人稱，可轉頭）、`Chase`（第三人稱追車，車尾後上方）、`Top`（正交俯視）、`Fly`（觀察者自由飛行）。
 - 滑鼠、滾輪（直接讀 Windows 原始位移）、精準觸控板（Raw Input 加 Direct Manipulation）、鍵盤（Fly 與 Train 依實體按鍵位置讀取，輸入法開啟時仍有效）。
 - `FOV` 滑桿同時套用到所有透視相機；`Fly` 滑桿調整飛行速度。
 
@@ -14,7 +14,8 @@
 
 - 成功：`smoke -Only cameras`（`--camera world|train|chase|top|fly`）。
 - 錯誤：`smoke -Only usage-bad-camera`（未知的相機名稱回 2）。
-- 不同軌道位置：`screenshot -Name chase-tunnel -AppArgs '--camera','chase','--u','40'`。
+- 不同軌道位置：`smoke -Only cameras-chase` 另拍水晶隧道（`--u 18`）、礦坑隧道（`--u 38`）與海上棧橋（`--u 48`）；其他位置用 `screenshot -Name chase-x -AppArgs '--camera','chase','--u','<值>'`。
+- 取景數學：`ChaseRigCheck`。
 - 拖曳、觸控板、輸入法、切換相機時的接續沒有 CLI，只能手動檢查；相機數學另有 `GestureMotionCheck`、`FlyCamCheck`、`HeadLookCheck`、`TwoFingerGestureCheck`、`EditKeysCheck`。
 
 ## 容易騙過檢查的假象
@@ -22,6 +23,7 @@
 - `--camera fly` 是從 Train 畫面切過去的；「切換時畫面不跳動」要看前後兩張截圖是否接續，單張截圖看不出來。
 - CTest 用的是合成的 FLTK 事件，不是真的 Windows 觸控訊息；觸控板手感一定要在實機上試。
 - Chase 在直線段看起來正常，彎道和隧道裡才會穿進岩壁，所以要多換幾個 `--u` 位置。
+- 截圖是靜止的一幀：Chase 平滑跟隨（進出隧道時降低、拉近再回去）只能在實際跑一圈時看。
 
 ## 手動檢查
 
@@ -36,7 +38,9 @@
 
 **Top 與 Chase**
 - Top：不論視窗寬或窄，主島與東北陸地都在畫面內、上下不被切掉，雲不擋住地圖；Top 中可點選並拖曳控制點，從 Top 切到 Fly 時畫面不跳動。
-- Chase 沿軌道跟在車尾後方，看得到熔爐礦車、五節礦車與乘客，彎道與隧道中不穿進岩壁。
+- Chase 像第三人稱追車鏡頭：在車尾後上方，看得到熔爐礦車、五節礦車與前方的軌道，最後一位乘客只佔畫面下方一小部分，不擋住畫面中央。
+- 用 Chase 跑完一圈 `Grand Tour`：過彎、爬升、下坡時鏡頭平滑跟隨，不跳動；進入礦坑隧道、岩石隧道與海底水晶隧道時鏡頭平滑降低、拉近，出隧道後平滑回到原位；全程不穿進地形、隧道頂或方塊；改變 `FOV` 後取景跟著調整。
+- Train、World、Fly 相機不受影響。
 
 **Fly**
 - 分別從 World、Train、Chase 切到 Fly，畫面都從當下視角接續、不跳動（只有 Train 的傾斜會擺正）；從 Top 切換時改從島中央上方往下看。

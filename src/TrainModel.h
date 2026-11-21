@@ -47,6 +47,9 @@ void releaseTextures();
 // along the track.
 float length();
 
+// How high above the rails the riders' heads reach (world units).
+float riderTop();
+
 // The track parameter `distance` further back along the track from u.
 float parameterBehind(const CTrack &track, float u, float distance, TrackSplineType splineType);
 } // namespace TrainModel
