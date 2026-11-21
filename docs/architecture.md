@@ -15,6 +15,9 @@ flowchart LR
     Window --> Track[CTrack / 控制點與 trainU]
     Window --> Theme[UiTheme / 深灰面板與圓角控制項樣式]
     Window --> Callbacks[CallBacks / UI 動作]
+    Window --> Settings[SceneSettings / 控制項的值]
+    Callbacks --> Settings
+    View --> Settings
     Callbacks --> Track
     View --> Track
     View --> Rails[TrackRenderer / 鐵軌、枕木與弧長表]
@@ -92,7 +95,8 @@ flowchart LR
 | `src/main.cpp` | 解析命令列，切到 exe 所在資料夾，建立 `TrainWindow` 並啟動 FLTK 事件迴圈；自動模式結束後回傳結果。 |
 | `src/AppControl.h/.cpp` | 命令列（`--doctor`、`--screenshot` 與場景參數）的解析、軌道檔格式檢查、資料夾檢查、畫面判讀與 PNG 寫入；不需要視窗，由 `AppControlCheck` 測試。 |
 | `src/TrainViewControl.cpp` | 自動模式下每幀結束時：`--doctor` 回報 OpenGL 與 shader 路徑，`--screenshot` 從 back buffer 讀回畫面、存檔並判斷是否真的畫出東西，然後關閉視窗。 |
-| `src/TrainWindow.H/.cpp` | 主視窗與控制面板；持有唯一的 `CTrack`、widget 與 `advanceTrain()`。 |
+| `src/TrainWindow.H/.cpp` | 主視窗與控制面板；持有唯一的 `CTrack`、`SceneSettings`、widget 與 `advanceTrain()`。`readPanel()` 把 widget 的值寫進設定，`syncPanel()`（每幀畫之前）讓 widget 顯示設定，按住中的 widget 不動。 |
+| `src/SceneSettings.h` | 控制項目前的值：Run、速度、ArcLength、相機（`CameraView`）、曲線種類、Edit、光影開關、時間、水、雨、景物。面板以外的程式只讀寫這裡，不碰 widget，換掉介面時不必改 `TrainView`。 |
 | `src/CallBacks.H/.cpp` | 按鈕、滑桿、idle 更新、軌道載入儲存與材質包選單。 |
 | `src/UiTheme.h/.cpp` | 控制面板配色與圓角控制項樣式。 |
 | `src/Ui/Gui.h/.cpp` | 方塊遊戲風的即時模式介面：每幀呼叫 `button()`、`toggle()`、`cycle()`、`slider()`、`list()` 同時畫出元件並回報是否被使用；滑鼠以 `feed()` 在幀之間送入（按下即觸發），`feed()` 回報介面是否吃掉事件；GUI 縮放照方塊遊戲的 Auto（至少留 320 x 240 單位）。不需 OpenGL，由 `GuiCheck` 測試。見 [ADR 0009](adr/0009-own-block-game-style-ui.md)。 |
@@ -137,7 +141,7 @@ flowchart LR
 
 ## 事件與更新
 
-- 控制面板 callback 直接修改 `TrainWindow::m_Track`，再呼叫 `damageMe()` 要求重畫。
+- 控制面板 callback 直接修改 `TrainWindow::m_Track`，再呼叫 `damageMe()` 要求重畫。開關、滑桿與相機按鈕的 callback 先呼叫 `readPanel()`；`TrainView` 與其他 callback（快捷鍵、`Reset`、`Grand Tour`、命令列）只改 `TrainWindow::settings`，面板在下一幀由 `syncPanel()` 跟上。
 - `Run` 開啟時，FLTK idle callback `runButtonCB()` 最多每秒 30 次呼叫 `advanceTrain()`；左右鍵以正負方向呼叫同一函式。
 - `ArcLength` 開啟時，`advanceByArcLength()` 沿參數小步前進、累加歐氏距離，每次呼叫即時計算；關閉時直接改變 `trainU`，所以世界空間速度會隨區段長度變化。
 - 光影動畫（雨、時間）由每秒 30 次的 `animateEffectsCB` timeout 推進。

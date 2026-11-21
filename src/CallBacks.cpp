@@ -53,10 +53,10 @@ void resetCB(Fl_Widget *, TrainWindow *tw)
     tw->trainView->selectedCube = -1;
     tw->m_Track.trainU = 0;
     // a track of one's own is edited on the level island, seen from outside
-    tw->sceneryButton->value(0);
-    tw->editButton->value(1);
-    tw->runButton->value(0);
-    tw->worldCam->setonly();
+    tw->settings.scenery = false;
+    tw->settings.edit = true;
+    tw->settings.run = false;
+    tw->settings.camera = CameraView::World;
     tw->trainView->cameraChanged();
     tw->damageMe();
 }
@@ -67,6 +67,7 @@ void resetCB(Fl_Widget *, TrainWindow *tw)
 //===========================================================================
 void damageCB(Fl_Widget *, TrainWindow *tw)
 {
+    tw->readPanel();
     tw->damageMe();
 }
 
@@ -76,6 +77,7 @@ void damageCB(Fl_Widget *, TrainWindow *tw)
 //===========================================================================
 void cameraCB(Fl_Widget *, TrainWindow *tw)
 {
+    tw->readPanel();
     tw->trainView->cameraChanged();
     tw->damageMe();
 }
@@ -176,7 +178,7 @@ static unsigned long lastRedraw = 0;
 void runButtonCB(TrainWindow *tw)
 //===========================================================================
 {
-    if (tw->runButton->value())
+    if (tw->settings.run)
     { // only advance time if appropriate
         if (clock() - lastRedraw > CLOCKS_PER_SEC / 30)
         {
@@ -219,14 +221,14 @@ void grandTourCB(Fl_Widget *, TrainWindow *tw)
         tw->m_Track.points.push_back(ControlPoint(Pnt3f(xyz[i], xyz[i + 1], xyz[i + 2])));
     tw->m_Track.trainU = static_cast<float>(OceanWorld::landStart()) - 1.3f;
     tw->trainView->selectedCube = -1;
-    tw->lightingButton->value(1);
-    tw->waterButton->value(1);
-    tw->sceneryButton->value(1);
-    tw->editButton->value(0);
-    tw->splineBrowser->select(3);
-    tw->arcLength->value(1);
-    tw->speed->value(1.8); // the world is larger: a little faster round it
-    tw->trainCam->setonly();
+    tw->settings.lighting = true;
+    tw->settings.water = true;
+    tw->settings.scenery = true;
+    tw->settings.edit = false;
+    tw->settings.spline = TRACK_SPLINE_BSPLINE;
+    tw->settings.arcLength = true;
+    tw->settings.speed = 1.8f; // the world is larger: a little faster round it
+    tw->settings.camera = CameraView::Train;
     // the World camera frames the whole scenery island when switched to
     tw->trainView->resetArcball();
     tw->trainView->cameraChanged();

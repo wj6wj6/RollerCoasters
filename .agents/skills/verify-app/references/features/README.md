@@ -4,7 +4,7 @@
 
 | 改到的程式 | 功能檔 |
 | --- | --- |
-| `main.cpp`、`TrainWindow.*`、`UiTheme.*`、`CallBacks.cpp`（Run、Reset、Grand Tour） | [startup-and-panel.md](startup-and-panel.md) |
+| `main.cpp`、`TrainWindow.*`、`SceneSettings.h`、`UiTheme.*`、`CallBacks.cpp`（Run、Reset、Grand Tour） | [startup-and-panel.md](startup-and-panel.md) |
 | `ArcBallCam.*`、`FlyCam.*`、`HeadLook.*`、`TouchpadGestures.*`、`TwoFingerGesture.*`、`TrainView.cpp` 的輸入處理 | [cameras-and-input.md](cameras-and-input.md) |
 | `TransformGizmo.*`、`EditKeys.*`、`TrackInsert.*`、`TrackHistory.*`、`ControlPoint.*`、`TrainView.cpp` 的編輯 | [editing.md](editing.md) |
 | `Track.*`、`FileDialogs.*`、`CallBacks.cpp` 的 Load／Save | [track-files.md](track-files.md) |

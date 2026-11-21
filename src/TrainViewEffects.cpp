@@ -125,7 +125,7 @@ void TrainView::topViewCentre(float &x, float &z) const
 
 bool TrainView::sceneryOn() const
 {
-    return tw->sceneryButton->value() != 0;
+    return tw->settings.scenery;
 }
 
 void TrainView::drawGround(bool shadowPass)
@@ -141,7 +141,7 @@ void TrainView::drawSupports(bool shadowPass)
 {
     // Points along the whole track about a unit apart; worked out again only
     // when the track or the spline type changes.
-    const int splineType = tw->splineBrowser->value();
+    const int splineType = tw->settings.spline;
     bool same = splineType == m_supportSpline && m_pTrack->points.size() == m_supportPoints.size();
     for (size_t i = 0; same && i < m_supportPoints.size(); ++i)
     {
@@ -201,7 +201,7 @@ void TrainView::drawLandWater()
 //========================================================================
 bool TrainView::advancedLightingOn()
 {
-    return tw->lightingButton->value() && lighting.init();
+    return tw->settings.lighting && lighting.init();
 }
 
 //************************************************************************
@@ -214,9 +214,9 @@ void TrainView::drawAdvanced()
     fillLightingFrame(frame);
 
     EffectToggles toggles;
-    toggles.water = tw->waterButton->value() != 0;
-    toggles.bloom = tw->bloomButton->value() != 0;
-    toggles.ssao = tw->ssaoButton->value() != 0;
+    toggles.water = tw->settings.water;
+    toggles.bloom = tw->settings.bloom;
+    toggles.ssao = tw->settings.ssao;
 
     if (effects.bubbleSources.empty())
         effects.bubbleSources = OceanWorld::bubbleSources();
@@ -232,17 +232,17 @@ void TrainView::drawAdvanced()
 //========================================================================
 void TrainView::fillLightingFrame(LightingFrame &frame)
 {
-    frame.timeOfDay = static_cast<float>(tw->timeOfDay->value());
-    frame.shadows = tw->shadowButton->value() != 0;
-    frame.headlight = tw->headlightButton->value() != 0;
-    frame.orthographic = tw->topCam->value() != 0;
+    frame.timeOfDay = tw->settings.timeOfDay;
+    frame.shadows = tw->settings.shadows;
+    frame.headlight = tw->settings.headlight;
+    frame.orthographic = tw->settings.camera == CameraView::Top;
     frame.time = secondsSinceStart();
 
     // Rain sets in within a couple of seconds; the ground takes longer to
     // get wet and much longer to dry again.
     const float elapsed = m_weatherTime < 0.0f ? 0.0f : fminf(frame.time - m_weatherTime, 0.5f);
     m_weatherTime = frame.time;
-    const bool raining = tw->rainButton->value() != 0;
+    const bool raining = tw->settings.rain;
     m_rain = fmaxf(0.0f, fminf(1.0f, m_rain + (raining ? elapsed : -elapsed) / 2.0f));
     m_wetness = fmaxf(0.0f, fminf(1.0f, m_wetness + (raining ? elapsed / 6.0f : -elapsed / 25.0f)));
     frame.rain = m_rain;
@@ -254,7 +254,7 @@ void TrainView::fillLightingFrame(LightingFrame &frame)
     float hi[3] = {102.0f, 24.0f, 102.0f};
     if (sceneryOn())
         LandWorld::shadowBounds(lo, hi);
-    if (tw->waterButton->value())
+    if (tw->settings.water)
     {
         // the islet, ruins and wreck too
         float seaLo[3], seaHi[3];
@@ -284,7 +284,7 @@ void TrainView::fillLightingFrame(LightingFrame &frame)
     frame.hasTrain = m_pTrack->points.size() >= 4;
     if (frame.hasTrain)
     {
-        const TrackSplineType splineType = static_cast<TrackSplineType>(tw->splineBrowser->value());
+        const TrackSplineType splineType = static_cast<TrackSplineType>(tw->settings.spline);
         const Pnt3f position = m_pTrack->evaluatePosition(m_pTrack->trainU, splineType);
         Pnt3f forward = m_pTrack->evaluateTangent(m_pTrack->trainU, splineType);
         forward.normalize();
@@ -335,7 +335,7 @@ bool TrainView::worldReady()
     // The sea floor builds alongside the island, so it is there when Water
     // is turned on; it is waited for only when it is drawn.
     const bool oceanReady = m_ocean.prepare();
-    const bool needOcean = tw->waterButton->value() && tw->lightingButton->value();
+    const bool needOcean = tw->settings.water && tw->settings.lighting;
     const bool flat = !sceneryOn();
     // about two frames' worth of display lists at a time, so the bar moves
     const bool landReady = m_land.prepare(flat, 0.03f);
