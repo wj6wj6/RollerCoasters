@@ -28,6 +28,7 @@
 
 #include <FL/fl_ask.H>
 #include <math.h>
+#include <stdlib.h>
 
 //****************************************************************************
 //
@@ -179,6 +180,8 @@ void breakString(char *str, std::vector<const char *> &words)
 //   first line: an integer with the number of control points
 //	  other lines: one line per control point
 //   either 3 (X,Y,Z) numbers on the line, or 6 numbers (X,Y,Z, orientation)
+//   readPoints() keeps the current track and alerts if the file has fewer point
+//   lines than declared or a line has fewer than 3 numbers.
 //============================================================================
 void CTrack::readPoints(const char *filename)
 //============================================================================
@@ -187,64 +190,69 @@ void CTrack::readPoints(const char *filename)
     if (fopen_s(&fp, filename, "r") != 0)
     {
         fl_alert("Can't Open File!\n");
+        return;
     }
-    else
-    {
-        char buf[512];
 
-        // first line = number of points
-        if (!fgets(buf, 512, fp))
+    // Parse into a temporary list and only replace the track when the whole
+    // file is valid, so a broken file never leaves fewer than 4 points behind.
+    char buf[512];
+    if (!fgets(buf, 512, fp))
+    {
+        fclose(fp);
+        fl_alert("Missing Number of Points in File");
+        return;
+    }
+    const long npts = strtol(buf, nullptr, 10);
+    if ((npts < 4) || (npts > 65535))
+    {
+        fclose(fp);
+        fl_alert("Illegal Number of Points Specified in File");
+        return;
+    }
+
+    vector<ControlPoint> loaded;
+    loaded.reserve(static_cast<size_t>(npts));
+    while ((loaded.size() < static_cast<size_t>(npts)) && fgets(buf, 512, fp))
+    {
+        vector<const char *> words;
+        breakString(buf, words);
+        if (words.size() < 3)
         {
             fclose(fp);
-            fl_alert("Missing Number of Points in File");
-            trainU = 0;
+            // The count is line 1, so control point i is on line i + 2.
+            fl_alert("Line %zu needs x y z; the track was not changed", loaded.size() + 2);
             return;
         }
-        size_t npts = (size_t)atoi(buf);
 
-        if ((npts < 4) || (npts > 65535))
+        Pnt3f pos, orient;
+        pos.x = (float)strtod(words[0], 0);
+        pos.y = (float)strtod(words[1], 0);
+        pos.z = (float)strtod(words[2], 0);
+        if (words.size() >= 6)
         {
-            fl_alert("Illegal Number of Points Specified in File");
+            orient.x = (float)strtod(words[3], 0);
+            orient.y = (float)strtod(words[4], 0);
+            orient.z = (float)strtod(words[5], 0);
         }
         else
         {
-            points.clear();
-            // get lines until EOF or we have enough points
-            while ((points.size() < npts) && fgets(buf, 512, fp))
-            {
-                Pnt3f pos, orient;
-                vector<const char *> words;
-                breakString(buf, words);
-                if (words.size() >= 3)
-                {
-                    pos.x = (float)strtod(words[0], 0);
-                    pos.y = (float)strtod(words[1], 0);
-                    pos.z = (float)strtod(words[2], 0);
-                }
-                else
-                {
-                    pos.x = 0;
-                    pos.y = 0;
-                    pos.z = 0;
-                }
-                if (words.size() >= 6)
-                {
-                    orient.x = (float)strtod(words[3], 0);
-                    orient.y = (float)strtod(words[4], 0);
-                    orient.z = (float)strtod(words[5], 0);
-                }
-                else
-                {
-                    orient.x = 0;
-                    orient.y = 1;
-                    orient.z = 0;
-                }
-                orient.normalize();
-                points.push_back(ControlPoint(pos, orient));
-            }
+            orient.x = 0;
+            orient.y = 1;
+            orient.z = 0;
         }
-        fclose(fp);
+        orient.normalize();
+        loaded.push_back(ControlPoint(pos, orient));
     }
+    fclose(fp);
+
+    if (loaded.size() < static_cast<size_t>(npts))
+    {
+        fl_alert("The file says %ld points but has %zu; the track was not changed", npts,
+                 loaded.size());
+        return;
+    }
+
+    points.swap(loaded);
     trainU = 0;
 }
 

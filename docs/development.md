@@ -110,10 +110,10 @@ tests/linux/win32-syntax.sh
 - `OceanRideClearanceCheck`：三種 spline 下海底的方塊與植物不碰到列車，以正式 `CTrack` 取樣，與挖空景物的程式互相獨立。
 - `TexturePackCheck`：zip 的三種 DEFLATE 區塊解碼與截斷資料、PNG 解碼與取動畫第一格、zip 與資料夾材質包的開啟、替代與染色、不是材質包的資料夾被拒絕、依名稱列出材質包。
 - `TwoFingerGestureCheck`：觸控板兩指濾波，驗證靜止不動、純捏合不轉動、純移動不縮放、兩者明顯時同時作用。
-- `TrackRoundTripCheck`：正式 `CTrack::writePoints/readPoints` 與真實暫存檔，驗證座標、方向、控制點數與載入後列車位置歸零。
+- `TrackRoundTripCheck`：正式 `CTrack::writePoints/readPoints` 與真實暫存檔，驗證座標、方向、控制點數與載入後列車位置歸零；只有 x y z 的舊檔仍可載入；點數不合法、空檔、點的行數少於宣告或某行缺 x y z 時，原軌道與列車位置不變，並且只跳出一次 `fl_alert`（測試以 FLTK timer 關閉正式的對話框）。
 - `AppControlCheck`：命令列解析與錯誤、`checkTrackFile()` 與正式 `CTrack::readPoints()` 對同一份檔案的結果一致、PNG 寫入後以材質包用的同一個解碼器讀回逐像素相同、空白畫面不被當成已畫出、`--doctor` 的資料夾檢查（隔離的暫存資料夾）。
 - `VersionCheck`：啟動正式 executable 的 `--version`，不建立 GUI。
 
 測試有明確 timeout，找不到測試時視為失敗；Release 的檢查不用會被移除的 `assert`。
 相機測試使用真實時間；忙碌機器可能受排程影響，失敗時檢查 CTest 日誌，保留原失敗證據。
-這些測試未涵蓋實際 GPU 畫面與 Windows 觸控訊息。實際畫面用 `scripts/control-app.ps1` 在 Windows 上截圖驗證，觸控與手感仍需手動檢查；兩者都依 [驗證流程](../.agents/skills/verify-app/SKILL.md)。
+這些測試未涵蓋實際 GPU 畫面與 Windows 觸控訊息，也未涵蓋數字以外的文字（例如 `a b c` 仍讀成 0）等其他損壞軌道檔。實際畫面用 `scripts/control-app.ps1` 在 Windows 上截圖驗證，觸控與手感仍需手動檢查；兩者都依 [驗證流程](../.agents/skills/verify-app/SKILL.md)。
