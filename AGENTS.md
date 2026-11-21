@@ -10,7 +10,6 @@
 - 修改模組責任、事件流程或資料流時，同步更新 `docs/architecture.md` 的 Mermaid 圖；改變重要技術決策時追加 `docs/adr/`。
 - 修改建置、封裝或發布流程時，同步更新 `docs/operations.md`。
 - 改變使用者看得到的行為時，同步更新 `.agents/skills/verify-app/references/features/` 中對應的功能檔；可自動化的情境加進 `scripts/control-app.ps1`。
-- 新增或修改測試的來源檔時，同步更新 `CMakeLists.txt` 與 `tests/linux/CMakeLists.txt`。
 
 ## 必守規則
 

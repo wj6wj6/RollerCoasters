@@ -50,6 +50,7 @@ pwsh -File scripts/check.ps1 -Stage all -Compiler clang -Config Release
 ```
 
 `all` 依序執行格式、repository 規範與腳本語法、MSVC 靜態分析、一般編譯、CTest、安裝與已安裝程式的版本檢查。任一步驟失敗立即停止。
+repository 規範另外檢查曾經漏掉過的同步：`src/` 的 `.cpp` 都在 Windows 目標的清單裡（Linux 建置自動收集，抓不到這種漏列）、每個 `tests/*.cpp` 都在兩個 CMakeLists 和下方「測試範圍」裡、每個原始檔在功能地圖的對照表裡都有一列、文件沒有超過 800 字的單行。再犯同一種錯時，優先把它加成這裡的檢查，而不是在 AGENTS.md 多寫一條規則。
 `-Compiler` 預設為 `msvc`；設為 `clang` 時，編譯、測試與封裝都使用 clang-cl 的產物。`lint` 仍執行共用 MSVC `/analyze`，不將它當成 Clang Static Analyzer。
 MSVC 發布目錄是 `out/package/<Config>/`，Clang 是 `out/package/clang/<Config>/`。
 
