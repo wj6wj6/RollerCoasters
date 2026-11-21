@@ -77,9 +77,9 @@ static int touchpadWheel(void *event, void *data)
     TrainView *view = static_cast<TrainView *>(data);
     if (!view->tw || !view->shown())
         return 0;
-    const bool fly = view->tw->flyCam->value() != 0;
-    const bool train = view->tw->trainCam->value() != 0;
-    if (!view->tw->worldCam->value() && !fly && !train)
+    const bool fly = view->tw->settings.camera == CameraView::Fly;
+    const bool train = view->tw->settings.camera == CameraView::Train;
+    if (view->tw->settings.camera != CameraView::World && !fly && !train)
         return 0;
     HWND canvas = fl_xid(view);
     if (!canvas || GetAncestor(message->hwnd, GA_ROOT) != GetAncestor(canvas, GA_ROOT))
@@ -117,8 +117,8 @@ static int touchpadWheel(void *event, void *data)
     else if (fly)
     {
         view->flyCam.scroll(dx, dy, state, precise);
-        // The mouse wheel changes the flying speed; keep the slider in step.
-        view->tw->flySpeed->value(view->flyCam.speed());
+        // The mouse wheel changes the flying speed (the panel shows it).
+        view->damage(1);
     }
     else
         view->arcball.scroll(dx, dy, state, precise);
@@ -135,8 +135,8 @@ static int flyKeys(void *event, void *data)
     TrainView *view = static_cast<TrainView *>(data);
     if (!view->tw || !view->shown())
         return 0;
-    const bool train = view->tw->trainCam->value() != 0;
-    if (!view->tw->flyCam->value() && !train)
+    const bool train = view->tw->settings.camera == CameraView::Train;
+    if (view->tw->settings.camera != CameraView::Fly && !train)
         return 0;
     HWND canvas = fl_xid(view);
     if (!canvas || GetAncestor(message->hwnd, GA_ROOT) != GetAncestor(canvas, GA_ROOT))
@@ -176,8 +176,9 @@ static int flyKeys(void *event, void *data)
 static bool touchpadAccepts(void *data)
 {
     TrainView *view = static_cast<TrainView *>(data);
-    return view->tw && (view->tw->worldCam->value() || view->tw->flyCam->value() ||
-                        view->tw->trainCam->value());
+    return view->tw && ((view->tw->settings.camera == CameraView::World) ||
+                        (view->tw->settings.camera == CameraView::Fly) ||
+                        (view->tw->settings.camera == CameraView::Train));
 }
 
 // Direct Manipulation reports finger movement and pinch together, so the
@@ -190,7 +191,7 @@ static void touchpadMoves(void *data, float dx, float dy, float scale)
     const bool pan = alt || GetKeyState(VK_SHIFT) < 0;
     TrainView *view = static_cast<TrainView *>(data);
     // Riding the train, two fingers turn the head; spreading does nothing.
-    if (view->tw->trainCam->value())
+    if (view->tw->settings.camera == CameraView::Train)
     {
         if (!view->headDragging && (dx != 0 || dy != 0))
         {
@@ -199,7 +200,7 @@ static void touchpadMoves(void *data, float dx, float dy, float scale)
         }
     }
     // In Fly mode Shift sinks the camera, so only Alt slides.
-    else if (view->tw->flyCam->value())
+    else if (view->tw->settings.camera == CameraView::Fly)
         view->flyCam.touchpadGesture(dx, dy, scale, alt);
     else
         view->arcball.touchpadGesture(dx, dy, scale, pan);
@@ -378,12 +379,13 @@ void TrainView::cameraChanged()
 //========================================================================
 {
     // A first-person view that keeps spinning after a flick is disorienting.
-    touchpad.inertia = !tw->flyCam->value() && !tw->trainCam->value();
-    setInputMethodEnabled(!tw->flyCam->value());
+    touchpad.inertia =
+        tw->settings.camera != CameraView::Fly && tw->settings.camera != CameraView::Train;
+    setInputMethodEnabled(tw->settings.camera != CameraView::Fly);
     // Each ride starts looking ahead.
     headDragging = false;
     headLook.reset();
-    if (!tw->flyCam->value())
+    if (tw->settings.camera != CameraView::Fly)
     {
         setMouseCaptured(false);
         flyCam.stop();
@@ -505,16 +507,16 @@ int TrainView::handleInput(const InputEvent &e)
     // see if the ArcBall will handle the event - if it does,
     // then we're done
     // note: the arcball only gets the event if we're in world view
-    if (tw->worldCam->value())
+    if (tw->settings.camera == CameraView::World)
         if (arcball.handle(e))
             return 1;
 
     // Riding the train, drags turn the rider's head.
-    if (tw->trainCam->value() && handleTrainLook(e))
+    if (tw->settings.camera == CameraView::Train && handleTrainLook(e))
         return 1;
 
     // The observer camera takes held keys, right drags and the wheel.
-    if (tw->flyCam->value())
+    if (tw->settings.camera == CameraView::Fly)
     {
         if (mouseCaptured)
         {
@@ -568,7 +570,7 @@ int TrainView::handleInput(const InputEvent &e)
         const float speedBefore = flyCam.speed();
         const int used = flyCam.handle(e);
         if (flyCam.speed() != speedBefore)
-            tw->flySpeed->value(flyCam.speed());
+            damage(1); // the panel shows the new speed
         if (used)
             return 1;
         // Home puts the observer back at the world camera's viewpoint (R
@@ -618,11 +620,11 @@ int TrainView::handleInput(const InputEvent &e)
             // dragging empty space orbits (Alt pans), so one finger is enough on a touchpad
             if (canEdit() && hasSelection() && m_editCameraValid)
                 beginEdit(EDIT_DRAG, TransformGizmo::VIEW, mx, my);
-            else if (selectedCube < 0 && tw->worldCam->value())
+            else if (selectedCube < 0 && tw->settings.camera == CameraView::World)
                 arcball.beginDrag(mx, my, (e.state & Mod::Alt) != 0);
             // In the observer camera a click on empty space captures the mouse
             // for spectator-style mouse look (Esc frees it).
-            else if (selectedCube < 0 && tw->flyCam->value())
+            else if (selectedCube < 0 && tw->settings.camera == CameraView::Fly)
                 setMouseCaptured(true);
             damage(1);
             return 1;
@@ -715,7 +717,8 @@ int TrainView::handleInput(const InputEvent &e)
 bool TrainView::canEdit() const
 {
     // the control points are shown with Edit on, and hidden while riding the train
-    return tw->editButton->value() && !tw->trainCam->value() && !tw->chaseCam->value();
+    return tw->settings.edit && tw->settings.camera != CameraView::Train &&
+           tw->settings.camera != CameraView::Chase;
 }
 
 bool TrainView::hasSelection() const
@@ -735,7 +738,7 @@ void TrainView::beginEdit(EditMode mode, TransformGizmo::Handle handle, int mous
     // In Fly the camera holds still while a point is moved or tilted, so the
     // point follows the mouse and Shift can lock a plane (it sinks the camera
     // otherwise). Keys still held fly again once the edit ends.
-    if (tw->flyCam->value())
+    if (tw->settings.camera == CameraView::Fly)
     {
         flyCam.stop();
         setMouseCaptured(false);
@@ -924,7 +927,7 @@ void TrainView::endCarry(bool keep)
 // still fly; the wheel sets the distance, a left click puts it down.
 bool TrainView::carryEvent(const InputEvent &e)
 {
-    if (!canEdit() || !tw->flyCam->value() || !hasSelection())
+    if (!canEdit() || tw->settings.camera != CameraView::Fly || !hasSelection())
     {
         endCarry(true);
         return false;
@@ -960,7 +963,7 @@ bool TrainView::carryEvent(const InputEvent &e)
 // Fly holds the mouse, else under the mouse; -1 when none is near.
 int TrainView::pointUnderMouse(int mouseX, int mouseY) const
 {
-    if (tw->flyCam->value() && mouseCaptured)
+    if (tw->settings.camera == CameraView::Fly && mouseCaptured)
         return crosshairPoint();
     if (!m_editCameraValid)
         return -1;
@@ -981,11 +984,10 @@ void TrainView::beginPlacePoint()
     if (m_pTrack->points.size() < 4)
         return;
     // the points must be showing, and cannot be edited from the train
-    if (!tw->editButton->value())
-        tw->editButton->value(1);
-    if (tw->trainCam->value() || tw->chaseCam->value())
+    tw->settings.edit = true;
+    if (tw->settings.camera == CameraView::Train || tw->settings.camera == CameraView::Chase)
     {
-        tw->worldCam->setonly();
+        tw->settings.camera = CameraView::World;
         cameraChanged();
     }
     if (m_editMode != EDIT_IDLE)
@@ -993,7 +995,7 @@ void TrainView::beginPlacePoint()
     take_focus(); // so Esc comes here even straight after the button
     // In Fly, building is on whenever the mouse steers the view: right click
     // places a point at the crosshair, so this only takes the mouse.
-    if (tw->flyCam->value())
+    if (tw->settings.camera == CameraView::Fly)
     {
         setMouseCaptured(true);
         tw->damageMe();
@@ -1008,8 +1010,8 @@ void TrainView::beginPlacePoint()
 // Fly with the mouse captured and Edit on: the mouse buttons build.
 bool TrainView::flyBuilding() const
 {
-    return tw->flyCam->value() && mouseCaptured && canEdit() && m_editMode == EDIT_IDLE &&
-           !m_placing && !m_carrying;
+    return (tw->settings.camera == CameraView::Fly) && mouseCaptured && canEdit() &&
+           m_editMode == EDIT_IDLE && !m_placing && !m_carrying;
 }
 
 // The wheel sets a distance (not the flying speed) while building or carrying.
@@ -1041,7 +1043,7 @@ void TrainView::flyBuildClick(int button)
     else if (button == Mouse::Right)
     {
         updateFlyPlace();
-        const TrackSplineType splineType = static_cast<TrackSplineType>(tw->splineBrowser->value());
+        const TrackSplineType splineType = static_cast<TrackSplineType>(tw->settings.spline);
         const TrackHistory::Snapshot before = TrackHistory::capture(*m_pTrack, selectedCube);
         const int index = TrackInsert::insertNear(*m_pTrack, m_placeSpot, splineType);
         if (index >= 0)
@@ -1090,7 +1092,7 @@ void TrainView::updateFlyPlace()
     flyCam.position(ex, ey, ez);
     flyCam.forward(fx, fy, fz);
     m_placeSpot = Pnt3f(ex + fx * m_placeDepth, ey + fy * m_placeDepth, ez + fz * m_placeDepth);
-    const TrackSplineType splineType = static_cast<TrackSplineType>(tw->splineBrowser->value());
+    const TrackSplineType splineType = static_cast<TrackSplineType>(tw->settings.spline);
     m_placeU = TrackInsert::nearest(*m_pTrack, m_placeSpot, splineType);
 }
 
@@ -1107,7 +1109,7 @@ void TrainView::updatePlaceHover(int mouseX, int mouseY)
     m_placeHit = false;
     if (m_editCameraValid)
     {
-        const TrackSplineType splineType = static_cast<TrackSplineType>(tw->splineBrowser->value());
+        const TrackSplineType splineType = static_cast<TrackSplineType>(tw->settings.spline);
         float u = 0.0f;
         if (TrackInsert::pick(*m_pTrack, splineType, m_editCamera, mouseX, mouseY, 14.0f, u))
         {
@@ -1125,7 +1127,7 @@ void TrainView::updatePlaceHover(int mouseX, int mouseY)
 bool TrainView::placeEvent(const InputEvent &e)
 {
     // gave up when Edit goes off or the camera changes to Fly
-    if (!canEdit() || tw->flyCam->value())
+    if (!canEdit() || tw->settings.camera == CameraView::Fly)
     {
         endPlacePoint();
         return false;
@@ -1146,7 +1148,7 @@ bool TrainView::placeEvent(const InputEvent &e)
         updatePlaceHover(mx, my);
         if (!m_placeHit)
             return false; // off the track: orbit or pick a point as usual
-        const TrackSplineType splineType = static_cast<TrackSplineType>(tw->splineBrowser->value());
+        const TrackSplineType splineType = static_cast<TrackSplineType>(tw->settings.spline);
         const TrackHistory::Snapshot before = TrackHistory::capture(*m_pTrack, selectedCube);
         const int index = TrackInsert::insertAt(*m_pTrack, m_placeU, splineType);
         endPlacePoint();
@@ -1235,14 +1237,14 @@ bool TrainView::editEvent(const InputEvent &e)
 // which command, in Fly and in the other cameras, is in EditKeys.h.
 bool TrainView::editKey(const InputEvent &e)
 {
-    const EditKeys::Action action = EditKeys::forKey(e.key, e.state, tw->flyCam->value() != 0);
+    const EditKeys::Action action =
+        EditKeys::forKey(e.key, e.state, tw->settings.camera == CameraView::Fly);
     if (action == EditKeys::CAMERA_WORLD || action == EditKeys::CAMERA_TOP ||
         action == EditKeys::CAMERA_TRAIN)
     {
-        Fl_Button *camera = action == EditKeys::CAMERA_WORLD
-                                ? tw->worldCam
-                                : (action == EditKeys::CAMERA_TOP ? tw->topCam : tw->trainCam);
-        camera->setonly();
+        tw->settings.camera = action == EditKeys::CAMERA_WORLD ? CameraView::World
+                              : action == EditKeys::CAMERA_TOP ? CameraView::Top
+                                                               : CameraView::Train;
         cameraChanged();
         tw->damageMe();
         return true;
@@ -1252,7 +1254,7 @@ bool TrainView::editKey(const InputEvent &e)
         // F4: show or hide the control points and their editing, as the Edit
         // button does; whatever is in progress is kept first
         finishEdits();
-        tw->editButton->value(tw->editButton->value() ? 0 : 1);
+        tw->settings.edit = !tw->settings.edit;
         tw->damageMe();
         return true;
     }
@@ -1284,7 +1286,7 @@ bool TrainView::editKey(const InputEvent &e)
     }
     // In Fly, G picks up a point to carry along with the view (the view does
     // not stop), and G again puts it down.
-    if (action == EditKeys::GRAB && tw->flyCam->value())
+    if (action == EditKeys::GRAB && tw->settings.camera == CameraView::Fly)
     {
         if (m_carrying)
             endCarry(true);
@@ -1331,7 +1333,7 @@ void TrainView::drawEditOverlay()
     m_editCamera.viewport[1] = 0;
     m_editCamera.viewport[2] = w();
     m_editCamera.viewport[3] = h();
-    m_editCameraOrthographic = tw->topCam->value() != 0;
+    m_editCameraOrthographic = tw->settings.camera == CameraView::Top;
     m_editCameraValid = true;
 
     // Remember the last frame a camera other than Fly drew, for switching to
@@ -1339,16 +1341,16 @@ void TrainView::drawEditOverlay()
     // Fly. While the Fly button is held down both it and the old camera's
     // button are on, and a redraw then may already be a Fly frame (from the
     // old Fly pose); those must not count.
-    const bool drawnByFly = !tw->worldCam->value() && tw->flyCam->value();
+    const bool drawnByFly = tw->settings.camera == CameraView::Fly;
     if (!drawnByFly)
     {
         for (int i = 0; i < 16; ++i)
             m_flyHandover[i] = m_editCamera.view[i];
-        m_flyHandoverTop = !tw->worldCam->value() && tw->topCam->value();
+        m_flyHandoverTop = tw->settings.camera == CameraView::Top;
         m_flyHandoverValid = true;
     }
 
-    tw->syncTransform();
+    tw->syncPanel();
 
     const bool selected = canEdit() && hasSelection();
     if (selected)
@@ -1409,8 +1411,7 @@ void TrainView::drawEditOverlay()
         float dotSize = 10.0f;
         if (building)
         {
-            const TrackSplineType splineType =
-                static_cast<TrackSplineType>(tw->splineBrowser->value());
+            const TrackSplineType splineType = static_cast<TrackSplineType>(tw->settings.spline);
             const Pnt3f joint = m_pTrack->evaluatePosition(m_placeU, splineType);
             glLineWidth(2.0f);
             glColor3f(1.0f, 0.85f, 0.1f);
@@ -1440,13 +1441,14 @@ void TrainView::drawEditOverlay()
     // one line of text in the top left corner, as a 3D view has
     char text[160] = "";
     const char *camera =
-        tw->topCam->value()
+        (tw->settings.camera == CameraView::Top)
             ? "Top Orthographic"
-            : (tw->trainCam->value()
+            : ((tw->settings.camera == CameraView::Train)
                    ? "Train Camera"
-                   : (tw->chaseCam->value()
+                   : ((tw->settings.camera == CameraView::Chase)
                           ? "Chase Camera"
-                          : (tw->flyCam->value() ? "Fly Camera" : "User Perspective")));
+                          : ((tw->settings.camera == CameraView::Fly) ? "Fly Camera"
+                                                                      : "User Perspective")));
     if (m_carrying && hasSelection())
     {
         const float away =
@@ -1581,7 +1583,7 @@ void TrainView::drawFrame()
     if (advanced)
     {
         float sky[3];
-        AdvancedLighting::skyColor(static_cast<float>(tw->timeOfDay->value()), sky);
+        AdvancedLighting::skyColor(tw->settings.timeOfDay, sky);
         glClearColor(sky[0], sky[1], sky[2], 0);
     }
     else
@@ -1613,7 +1615,7 @@ void TrainView::drawFrame()
     glEnable(GL_LIGHT0);
 
     // top view only needs one light
-    if (tw->topCam->value())
+    if (tw->settings.camera == CameraView::Top)
     {
         glDisable(GL_LIGHT1);
         glDisable(GL_LIGHT2);
@@ -1658,12 +1660,12 @@ void TrainView::drawFrame()
     {
         drawAdvanced();
         drawEditOverlay();
-        if (tw->flyCam->value())
+        if (tw->settings.camera == CameraView::Fly)
             drawFlyOverlay();
         return;
     }
 
-    if (tw->flyCam->value())
+    if (tw->settings.camera == CameraView::Fly)
         drawFlyHorizon();
 
     // the island is lit like everything else: its cliffs need the shading
@@ -1680,7 +1682,7 @@ void TrainView::drawFrame()
 
     // this time drawing is for shadows (except for top view). They are
     // flattened onto y = 0, which is only right on the level editor island.
-    if (tw->shadowButton->value() && !tw->topCam->value() && !sceneryOn())
+    if (tw->settings.shadows && tw->settings.camera != CameraView::Top && !sceneryOn())
     {
         setupShadows();
         drawStuff(true);
@@ -1688,7 +1690,7 @@ void TrainView::drawFrame()
     }
     drawEditOverlay();
 
-    if (tw->flyCam->value())
+    if (tw->settings.camera == CameraView::Fly)
         drawFlyOverlay();
 }
 
@@ -1698,7 +1700,7 @@ Pnt3f TrainView::trainPosition() const
 {
     if (m_pTrack->points.size() < 4)
         return Pnt3f(0, 0, 0);
-    const TrackSplineType splineType = static_cast<TrackSplineType>(tw->splineBrowser->value());
+    const TrackSplineType splineType = static_cast<TrackSplineType>(tw->settings.spline);
     return m_pTrack->evaluatePosition(m_pTrack->trainU, splineType);
 }
 
@@ -1790,13 +1792,13 @@ void TrainView::setProjection()
     float aspect = static_cast<float>(w()) / static_cast<float>(h());
 
     // Check whether we use the world camp
-    if (tw->worldCam->value())
+    if (tw->settings.camera == CameraView::World)
         arcball.setProjection(false);
     // The free-moving observer camera
-    else if (tw->flyCam->value())
+    else if (tw->settings.camera == CameraView::Fly)
         flyCam.setProjection(false);
     // Or we use the top cam
-    else if (tw->topCam->value())
+    else if (tw->settings.camera == CameraView::Top)
     {
         // The shorter side of the window shows the whole island, so none of
         // it is cut off whatever the window's shape.
@@ -1835,8 +1837,7 @@ void TrainView::setProjection()
 
         if (m_pTrack->points.size() >= 4)
         {
-            const TrackSplineType splineType =
-                static_cast<TrackSplineType>(tw->splineBrowser->value());
+            const TrackSplineType splineType = static_cast<TrackSplineType>(tw->settings.spline);
             const Pnt3f position = m_pTrack->evaluatePosition(m_pTrack->trainU, splineType);
             forward = m_pTrack->evaluateTangent(m_pTrack->trainU, splineType);
             Pnt3f side;
@@ -1850,7 +1851,7 @@ void TrainView::setProjection()
             // for the ride; where a tunnel's roof or an overhang leaves less
             // room it comes lower and nearer, and it moves there smoothly,
             // dropping at once rather than going through the rock.
-            if (tw->chaseCam->value())
+            if (tw->settings.camera == CameraView::Chase)
             {
                 const ChaseRig::Train train = {TrainModel::length(), TrainModel::riderTop()};
                 const float fovY = m_fieldOfView;
@@ -2005,7 +2006,7 @@ void TrainView::drawStuff(bool doingShadows)
     // and square iron rails, see TrackRenderer
     if (m_pTrack->points.size() >= 4)
     {
-        const TrackSplineType splineType = static_cast<TrackSplineType>(tw->splineBrowser->value());
+        const TrackSplineType splineType = static_cast<TrackSplineType>(tw->settings.spline);
         m_trackRenderer.draw(*m_pTrack, splineType, doingShadows);
     }
 
@@ -2018,9 +2019,9 @@ void TrainView::drawStuff(bool doingShadows)
         drawSupports(doingShadows);
 
     // draw the train: a locomotive and five carts with riders (TrainModel)
-    if (!tw->trainCam->value() && m_pTrack->points.size() >= 4)
+    if (tw->settings.camera != CameraView::Train && m_pTrack->points.size() >= 4)
     {
-        const TrackSplineType splineType = static_cast<TrackSplineType>(tw->splineBrowser->value());
+        const TrackSplineType splineType = static_cast<TrackSplineType>(tw->settings.spline);
         TrainModel::draw(*m_pTrack, splineType, doingShadows, animationTime());
     }
 

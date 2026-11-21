@@ -42,6 +42,7 @@
 #include <vector>
 
 // we need to know what is in the world to show
+#include "SceneSettings.h"
 #include "Track.H"
 #include "TrackHistory.h"
 
@@ -75,6 +76,15 @@ class TrainWindow : public Fl_Double_Window
     // simple helper function to set up a button: makes it a toggle and gives
     // it the panel's on/off colours (see UiTheme.h)
     void togglify(Fl_Button *, int state = 0);
+
+    // What the controls are set to. Everything outside the panel reads and
+    // changes these; the panel's widgets follow them.
+    SceneSettings settings;
+    // the widgets show settings (and the Fly speed, field of view and
+    // selected point); TrainView calls it before every frame
+    void syncPanel();
+    // a widget was used: settings take what the widgets show
+    void readPanel();
 
     // shows the selected control point in the Transform panel's fields
     void syncTransform();
