@@ -60,7 +60,46 @@ function Test-Policy {
         $null = [Management.Automation.Language.Parser]::ParseFile($script.FullName, [ref] $null, [ref] $parseErrors)
         if ($parseErrors.Count) { throw "Invalid PowerShell syntax in $($script.Name): $parseErrors" }
     }
+    Test-Consistency
     Write-Host 'PASS: dependency fingerprints, repository policy and PowerShell syntax'
+}
+
+# Mistakes that once reached review or CI, kept out by a check instead of a rule
+# in AGENTS.md: the Linux build globs src/, so only the Windows list can miss a file.
+function Test-Consistency {
+    $problems = [Collections.Generic.List[string]]::new()
+    $windowsList = Get-Content -LiteralPath CMakeLists.txt -Raw
+    $linuxList = Get-Content -LiteralPath tests/linux/CMakeLists.txt -Raw
+    $testDocs = Get-Content -LiteralPath docs/development.md -Raw
+    $featureMap = Get-Content -LiteralPath .agents/skills/verify-app/references/features/README.md -Raw
+
+    foreach ($file in Get-ChildItem -Path src/*.cpp, src/Utilities/*.cpp -File) {
+        $path = [IO.Path]::GetRelativePath($ProjectRoot, $file.FullName).Replace('\', '/')
+        if (!$windowsList.Contains($path)) { $problems.Add("$path is not in the Windows target in CMakeLists.txt") }
+    }
+    foreach ($file in Get-ChildItem -Path tests/*.cpp -File) {
+        $name = $file.BaseName
+        if (!$windowsList.Contains("tests/$name.cpp")) { $problems.Add("tests/$name.cpp is not in CMakeLists.txt") }
+        if (!$linuxList.Contains($name)) { $problems.Add("$name is not in tests/linux/CMakeLists.txt") }
+        if (!$testDocs.Contains("``$name``")) { $problems.Add("$name is not described under 測試範圍 in docs/development.md") }
+    }
+    $modules = Get-ChildItem -Path src/* -File -Include *.cpp, *.h, *.H | ForEach-Object BaseName | Sort-Object -Unique
+    foreach ($module in $modules) {
+        if (!$featureMap.Contains($module)) {
+            $problems.Add("src/$module.* has no row in .agents/skills/verify-app/references/features/README.md")
+        }
+    }
+    # One paragraph per line is fine; a whole changelog on one line is not.
+    $docs = @('README.md', 'AGENTS.md') + @(Get-ChildItem -Path docs, .agents -Recurse -File -Filter *.md |
+            ForEach-Object { [IO.Path]::GetRelativePath($ProjectRoot, $_.FullName) })
+    foreach ($doc in $docs) {
+        $number = 0
+        foreach ($line in Get-Content -LiteralPath $doc) {
+            $number++
+            if ($line.Length -gt 800) { $problems.Add("${doc}:$number is $($line.Length) characters; split it (limit 800)") }
+        }
+    }
+    if ($problems.Count) { throw "Repository consistency:`n  " + ($problems -join "`n  ") }
 }
 
 function Invoke-Formatting {
