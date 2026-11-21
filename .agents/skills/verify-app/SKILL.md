@@ -15,7 +15,7 @@ description: 驗證 RollerCoasters 的改動在實際程式裡真的有效。改
 
 ## 2. 確認環境能取得證據
 
-程式只能在 Windows 上執行（Win32 輸入、MSVC 版 FLTK）。
+程式只能在 Windows 上執行（Win32 視窗程序與輸入、觸控板的 Direct Manipulation）。
 
 - 有 Windows 且有顯示卡：先建置，再跑 `pwsh -File scripts/control-app.ps1 doctor`。任何 `FAIL` 都要先處理，尤其是 `shader lighting` 與 `post effects`。
 - 只有 Linux（例如雲端環境）：跑 `docs/development.md`「Linux 上的檢查」，並在 PR **明確寫出畫面證據尚未取得**、列出需要在 Windows 上跑的情境。不可以用 Linux 檢查代替截圖。

@@ -1,5 +1,5 @@
 # Linux build of the platform-neutral code and its CTest checks, for the cheap
-# Linux CI job. The real app needs Windows (bundled MSVC FLTK, Win32 input),
+# Linux CI job. The real app needs Windows (Win32 window and input),
 # so the Windows workflow and scripts/check.ps1 stay the full gate; this only
 # catches compile errors, warnings and failing checks early.
 #
@@ -14,7 +14,6 @@ if(WIN32)
 endif()
 
 get_filename_component(ROOT "${PROJECT_SOURCE_DIR}/../.." ABSOLUTE)
-find_package(FLTK REQUIRED)
 find_package(OpenGL REQUIRED COMPONENTS OpenGL)
 
 add_library(project_options INTERFACE)
@@ -26,9 +25,8 @@ target_compile_definitions(project_options INTERFACE ROLLERCOASTERS_VERSION="lin
 target_compile_options(project_options INTERFACE -Wall -Werror -Wno-unknown-pragmas
     "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-include ${PROJECT_SOURCE_DIR}/stubs/msvc_crt.h>")
 
-add_library(fltk_deps INTERFACE)
-target_include_directories(fltk_deps SYSTEM INTERFACE ${FLTK_INCLUDE_DIR})
-target_link_libraries(fltk_deps INTERFACE ${FLTK_LIBRARIES} OpenGL::GL ${OPENGL_glu_LIBRARY})
+add_library(opengl INTERFACE)
+target_link_libraries(opengl INTERFACE OpenGL::GL ${OPENGL_glu_LIBRARY})
 
 add_library(glad STATIC "${ROOT}/include/glad4.6/src/glad.c")
 target_include_directories(glad SYSTEM PUBLIC "${ROOT}/include/glad4.6/include")
@@ -45,7 +43,7 @@ add_library(Utilities STATIC ${utility_sources})
 target_include_directories(Utilities PUBLIC "${ROOT}/src/Utilities")
 # GLFW's header only: GlfwInput.cpp reads its key numbers; the window code is Windows-only.
 target_include_directories(Utilities SYSTEM PUBLIC "${ROOT}/include/glfw-3.4/include")
-target_link_libraries(Utilities PUBLIC project_options fltk_deps stb_image)
+target_link_libraries(Utilities PUBLIC project_options opengl stb_image)
 
 enable_testing()
 # check(<name> [TIMEOUT s] [GUI] SOURCES <files relative to the repo> LIBS <targets>)

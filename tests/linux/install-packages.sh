@@ -1,6 +1,5 @@
 #!/bin/sh
-# Installs what the Linux checks need on Ubuntu 24.04 (clang, FLTK and fluid,
-# which its CMake config requires, GLU, xvfb,
+# Installs what the Linux checks need on Ubuntu 24.04 (clang, GLU, xvfb,
 # MinGW-w64, and clang-format at the version pinned in tools.json).
 #
 #   tests/linux/install-packages.sh [--only core|mingw] [deb-directory]
@@ -15,7 +14,7 @@
 # directory: a slow Ubuntu mirror once took 15 minutes over these downloads.
 set -eu
 cd "$(dirname "$0")/../.."
-CORE="clang ninja-build libfltk1.3-dev fluid libglu1-mesa-dev xvfb xauth"
+CORE="clang ninja-build libglu1-mesa-dev xvfb xauth"
 MINGW="g++-mingw-w64-x86-64-posix"
 ONLY=
 if [ "${1:-}" = "--only" ]; then
