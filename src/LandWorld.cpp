@@ -513,6 +513,17 @@ struct Site
     int biome;
 };
 
+// What the shore at (x, z) of the first layout is like, so the coast is not
+// one thin strip of sand all round: rocky (0..1) where the land rises
+// straight out of the sea in rock, dunes (0..1) where a wider beach rolls
+// in low hills of sand, and a plain beach between them.
+void shoreKind(float x, float z, float &rocky, float &dunes)
+{
+    const float n = valueNoise(x * 0.028f + 3.1f, z * 0.028f - 1.7f, 93u);
+    rocky = ramp(0.53f, 0.63f, n);
+    dunes = ramp(0.45f, 0.35f, n);
+}
+
 // The land at (x, z) of the first layout, coast units from the shore.
 Site firstSite(float x, float z, float coast)
 {
@@ -521,6 +532,22 @@ Site firstSite(float x, float z, float coast)
     site.height = 1.0f + inland * 4.2f + (fbm(x * 0.035f, z * 0.035f, 3u) - 0.5f) * 6.0f * inland +
                   (valueNoise(x * 0.09f, z * 0.09f, 5u) - 0.5f) * 1.5f * inland;
     site.biome = MEADOW;
+    // the shore: rock rising steeply from the water on the headlands, low
+    // dunes on the wide beaches
+    float rocky, dunes;
+    shoreKind(x, z, rocky, dunes);
+    if (rocky > 0.0f)
+        site.height =
+            fmaxf(site.height, 1.0f + rocky * ramp(0.3f, 3.0f, coast) *
+                                          (7.0f + 5.0f * valueNoise(x * 0.12f, z * 0.12f, 95u)));
+    if (dunes > 0.0f && coast < 16.0f)
+    {
+        // a wide beach: the land keeps low further in, rolling in dunes
+        const float beach = dunes * ramp(16.0f, 9.0f, coast);
+        const float rolls =
+            1.0f + ramp(1.0f, 3.5f, coast) * valueNoise(x * 0.16f, z * 0.16f, 97u) * 2.6f;
+        site.height += (rolls - site.height) * beach;
+    }
 
     // the snow mountain
     {
@@ -977,12 +1004,31 @@ void buildTerrain(Grid &g)
                     else
                         b = depth == 0 ? GRASS : (depth < 3 ? DIRT : stoneOrOre(bx, j, bz, false));
                     break;
-                default:
-                    if (topY <= 2.5f && coast < 14.0f)
-                        b = depth < 3 ? SAND : STONE; // the beach
+                default: {
+                    float rocky, dunes;
+                    shoreKind(cx / kScale, cz / kScale, rocky, dunes);
+                    if (coast < 18.0f && rocky > 0.5f && (steep >= 2 || topY <= 5.0f))
+                    {
+                        // the headlands' sea cliffs: rock in layers of stone
+                        // and cobble, moss on the tops and gravel at the
+                        // water's edge, not one grey wall
+                        const unsigned int r = hash(bx * 7 + j, bz * 3 - j, 99u) % 10u;
+                        if (depth == 0 && topY <= 2.5f)
+                            b = patch > 0.45f ? GRAVEL : STONE;
+                        else if (depth == 0 && patch > 0.58f)
+                            b = MOSSY;
+                        else
+                            b = (j + static_cast<int>(patch * 3.0f)) % 4 == 0 || r < 2u
+                                    ? COBBLE
+                                    : stoneOrOre(bx, j, bz, false);
+                    }
+                    else if ((topY <= 2.5f && coast < 14.0f) ||
+                             (dunes > 0.5f && coast < 40.0f && topY <= 8.0f))
+                        b = depth < 3 ? SAND : STONE; // the beach, and its dunes
                     else
                         b = depth == 0 ? GRASS : (depth < 3 ? DIRT : stoneOrOre(bx, j, bz, false));
                     break;
+                }
                 }
                 g.put(bx, j, bz, b);
             }
@@ -2427,7 +2473,12 @@ void scatterBoulders(Grid &g, const Clearance &clear)
         {
             const int biome = g.biome[Grid::column(bx, bz)];
             const unsigned int h = hash(bx, bz, 817u);
-            const unsigned int every = biome == ALPINE          ? 60u
+            // on the beaches too, a few more than on the meadows, the sand
+            // between them left open
+            const int ground = g.get(bx, g.top(bx, bz), bz);
+            const bool beach = biome == MEADOW && (ground == SAND || ground == GRAVEL);
+            const unsigned int every = beach                    ? 90u
+                                       : biome == ALPINE        ? 60u
                                        : biome == BAMBOO_JUNGLE ? 110u
                                        : biome == CRAG          ? 80u
                                        : biome == MEADOW        ? 150u
@@ -2438,14 +2489,15 @@ void scatterBoulders(Grid &g, const Clearance &clear)
             if (vx * vx + vz * vz < (kVillageRadius + 10.0f) * (kVillageRadius + 10.0f))
                 continue;
             const int top = g.top(bx, bz);
-            bool fits = top > kSeaLayer;
+            bool fits = beach ? top >= kSeaLayer : top > kSeaLayer;
             for (int dx = -1; dx <= 1 && fits; ++dx)
                 for (int dz = -1; dz <= 1 && fits; ++dz)
                 {
                     const int t = g.top(bx + dx, bz + dz), b = g.get(bx + dx, t, bz + dz);
-                    fits = (b == GRASS || b == PODZOL || b == STONE || b == DIRT ||
-                            b == SNOWY_DIRT || b == SNOW || b == COARSE_DIRT) &&
-                           abs(t - top) <= 1;
+                    fits =
+                        (b == GRASS || b == PODZOL || b == STONE || b == DIRT || b == SNOWY_DIRT ||
+                         b == SNOW || b == COARSE_DIRT || b == SAND || b == GRAVEL) &&
+                        abs(t - top) <= 1;
                     for (int j = t + 1; j <= t + 3 && fits; ++j)
                         fits = g.get(bx + dx, j, bz + dz) == AIR &&
                                !isFixture(g.plant[Grid::index(bx + dx, j, bz + dz)]) &&
