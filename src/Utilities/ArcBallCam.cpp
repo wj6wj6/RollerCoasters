@@ -7,7 +7,7 @@
                   Yu-Chi Lai, yu-chi@cs.wisc.edu
 
      Comment:    
-						This is a camera UI for FlTk OpenGL Applications.
+						This is a camera UI for OpenGL views (Input.H).
 
 	 
 						An arcball is a user interface for rotating an object 
@@ -39,7 +39,7 @@
 							double right click resets the arcball if you get lost
 
 						To use it:
-						1) instantiate it in your Fl_Gl_Window class
+						1) instantiate it in your view class (a Viewport)
 						2) call setup in the constructor of your window class
 						3) call its handle method inside of your handle method
 						4) use its SetProjection method when you need to set the 
@@ -54,17 +54,10 @@
 #include <math.h>
 #include <windows.h>
 
-// the FlTk headers have lots of warnings - these are bad, but there's not
-// much we can do about them
-#pragma warning(push)
-#pragma warning(disable : 4311) // convert void* to long
-#pragma warning(disable : 4312) // convert long to void*
-#include <FL/Fl_Gl_Window.H>
-#include <FL/Fl.H>
 #include <GL/GL.h>
 #include <GL/GLU.h>
-#include <FL/Fl_Double_Window.H>
-#pragma warning(pop)
+
+#include "Platform.H"
 
 #include "stdio.h"
 
@@ -86,7 +79,7 @@ ArcBallCam::~ArcBallCam()
 
 void ArcBallCam::stopGesture()
 {
-    Fl::remove_timeout(animateGesture, this);
+    platform::removeTimeout(animateGesture, this);
     gestureActive = false;
     pendingGestureX = pendingGestureY = 0;
     pendingZoom = 0;
@@ -98,7 +91,7 @@ void ArcBallCam::startGesture()
     {
         gestureActive = true;
         gestureTime = std::chrono::steady_clock::now();
-        Fl::add_timeout(1.0 / 60.0, animateGesture, this);
+        platform::addTimeout(1.0 / 60.0, animateGesture, this);
     }
 }
 
@@ -110,7 +103,7 @@ void ArcBallCam::zoomByWheel(float steps, bool precise)
     if (precise)
     {
         applyZoom(steps);
-        wind->damage(1);
+        wind->requestRedraw();
         return;
     }
     pendingZoom += steps;
@@ -128,7 +121,7 @@ void ArcBallCam::applyZoom(float steps)
 
 void ArcBallCam::scroll(float dx, float dy, int state, bool precise)
 {
-    if (state & FL_CTRL)
+    if (state & Mod::Ctrl)
     {
         zoomByWheel(-dy, precise);
     }
@@ -139,7 +132,7 @@ void ArcBallCam::scroll(float dx, float dy, int state, bool precise)
         zoomByWheel(-dy, precise);
         return;
     }
-    else if (state & (FL_ALT | FL_SHIFT))
+    else if (state & (Mod::Alt | Mod::Shift))
     {
         stopGesture();
         eyeX += dx * eyeZ * .02f;
@@ -166,7 +159,7 @@ void ArcBallCam::scroll(float dx, float dy, int state, bool precise)
             startGesture();
         }
     }
-    wind->damage(1);
+    wind->requestRedraw();
 }
 
 void ArcBallCam::touchpadGesture(float dx, float dy, float scale, bool pan)
@@ -177,8 +170,8 @@ void ArcBallCam::touchpadGesture(float dx, float dy, float scale, bool pan)
     if (mode == None && (dx != 0 || dy != 0))
     {
         // Same feel as dragging: the scene follows the fingers.
-        const float ndcX = dx * 2.0f / (float)wind->w();
-        const float ndcY = -dy * 2.0f / (float)wind->h();
+        const float ndcX = dx * 2.0f / (float)wind->viewWidth();
+        const float ndcY = -dy * 2.0f / (float)wind->viewHeight();
         if (pan)
         {
             eyeX -= ndcX * eyeZ;
@@ -189,17 +182,17 @@ void ArcBallCam::touchpadGesture(float dx, float dy, float scale, bool pan)
             orbit(ndcX * 1.5f, -ndcY * 1.5f);
         }
     }
-    wind->damage(1);
+    wind->requestRedraw();
 }
 
-void ArcBallCam::beginDrag(bool pan)
+void ArcBallCam::beginDrag(int mouseX, int mouseY, bool pan)
 {
     stopGesture();
     float x, y;
-    getMouseNDC(x, y);
+    getMouseNDC(mouseX, mouseY, x, y);
     down(x, y);
     mode = pan ? Pan : Rotate;
-    wind->damage(1);
+    wind->requestRedraw();
 }
 
 void ArcBallCam::orbit(float yawDelta, float pitchDelta)
@@ -245,14 +238,14 @@ void ArcBallCam::animateGesture(void *data)
     const float zoom = camera->pendingZoom * blend;
     camera->pendingZoom -= zoom;
     camera->applyZoom(zoom);
-    camera->wind->damage(1);
+    camera->wind->requestRedraw();
     if (blend == 1)
     {
         camera->gestureActive = false;
     }
     else
     {
-        Fl::repeat_timeout(1.0 / 60.0, animateGesture, camera);
+        platform::repeatTimeout(1.0 / 60.0, animateGesture, camera);
     }
 }
 
@@ -260,7 +253,7 @@ void ArcBallCam::animateGesture(void *data)
 //
 // * really do the setup stuff, once you have the window
 //==========================================================================
-void ArcBallCam::setup(Fl_Gl_Window *_wind, float _fieldOfView, float _eyeZ, float _isx, float _isy,
+void ArcBallCam::setup(Viewport *_wind, float _fieldOfView, float _eyeZ, float _isx, float _isy,
                        float _isz)
 //==========================================================================
 {
@@ -293,7 +286,7 @@ void ArcBallCam::setProjection(bool doClear)
         glLoadIdentity();
 
     // Compute the aspect ratio so we don't distort things
-    double aspect = ((double)wind->w()) / ((double)wind->h());
+    double aspect = ((double)wind->viewWidth()) / ((double)wind->viewHeight());
     // The far plane follows the camera out, so zoomed all the way out the far
     // side of the island and the sea round it are still drawn; the near
     // plane moves out with it to keep the depth buffer precise.
@@ -314,66 +307,67 @@ void ArcBallCam::setProjection(bool doClear)
 //
 // * Handle the event happen to this camera
 //==========================================================================
-int ArcBallCam::handle(int e)
+int ArcBallCam::handle(const InputEvent &e)
 //==========================================================================
 {
-    switch (e)
+    switch (e.type)
     {
-    case FL_PUSH:
+    case InputType::Push:
         stopGesture();
         mode = None;
         // Shift-left drag also controls the camera on touchpads.
-        if (Fl::event_button() == FL_RIGHT_MOUSE ||
-            (Fl::event_button() == FL_LEFT_MOUSE && (Fl::event_state() & FL_SHIFT)))
+        if (e.button == Mouse::Right || (e.button == Mouse::Left && (e.state & Mod::Shift)))
         {
             // double click? do a reset
-            if (Fl::event_clicks())
+            if (e.clicks)
             {
                 setup(wind, fieldOfView, initEyeZ, isx, isy, isz);
-                wind->damage(1);
+                wind->requestRedraw();
                 return 1;
             }
 
             // Get the mouse position
             float x, y;
-            getMouseNDC(x, y);
+            getMouseNDC(e.x, e.y, x, y);
 
             // Compute the mouse position
             down(x, y);
 
             // Tell window to refresh
-            wind->damage(1);
+            wind->requestRedraw();
 
             // Set up the mode
-            mode = (Fl::event_state() & FL_ALT) ? Pan : Rotate;
+            mode = (e.state & Mod::Alt) ? Pan : Rotate;
             return 1;
         };
         break;
 
-    case FL_RELEASE:
+    case InputType::Release:
         if (mode != None)
         {
-            wind->damage(1);
+            wind->requestRedraw();
             mode = None;
             return 1;
         }
         break;
 
-    case FL_DRAG: // if the user drags the mouse
+    case InputType::Drag: // if the user drags the mouse
         if (mode != None)
         { // we're taking the drags
             float x, y;
-            getMouseNDC(x, y);
+            getMouseNDC(e.x, e.y, x, y);
             computeNow(x, y);
-            wind->damage(1);
+            wind->requestRedraw();
             return 1;
         };
         break;
-    case FL_MOUSEWHEEL:
-        // FLTK rounds wheel input to whole notches; Windows touchpads reach
+    case InputType::Wheel:
+        // Wheel events come in whole notches; Windows touchpads reach
         // scroll() with their exact deltas through TrainView's system handler.
-        scroll((float)Fl::event_dx(), (float)Fl::event_dy(), Fl::event_state(), false);
+        scroll(e.dx, e.dy, e.state, false);
         return 1;
+    default:
+        break;
     }
     return 0;
 }
@@ -382,18 +376,18 @@ int ArcBallCam::handle(int e)
 //
 // * Get the mouse in NDC
 //==========================================================================
-void ArcBallCam::getMouseNDC(float &x, float &y)
+void ArcBallCam::getMouseNDC(int mouseX, int mouseY, float &x, float &y)
 //==========================================================================
 {
     // notice, we put everything into doubles so we can do the math
-    float mx = (float)Fl::event_x(); // remeber where the mouse went down
-    float my = (float)Fl::event_y();
+    float mx = (float)mouseX; // remeber where the mouse went down
+    float my = (float)mouseY;
 
     // we will assume that the viewport is the same as the window size
-    float wd = (float)wind->w();
-    float hd = (float)wind->h();
+    float wd = (float)wind->viewWidth();
+    float hd = (float)wind->viewHeight();
 
-    // remember that FlTk has Y going the wrong way!
+    // remember that window Y goes down, the wrong way for OpenGL!
     my = hd - my;
 
     x = (mx / wd) * 2.0f - 1.f;

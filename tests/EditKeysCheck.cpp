@@ -4,9 +4,8 @@
 // and Top keys are unchanged.
 #include "EditKeys.h"
 #include "FlyCam.H"
-
-#include <FL/Fl.H>
-#include <FL/Fl_Gl_Window.H>
+#include "Platform.H"
+#include "TestViewport.h"
 
 #include <cstdio>
 
@@ -24,12 +23,9 @@ void expect(bool ok, const char *what)
 // Does the real FlyCam take this key press? Released again at once.
 bool flyTakes(FlyCam &camera, int key, int state)
 {
-    Fl::e_keysym = key;
-    Fl::e_state = state;
-    const int used = camera.handle(FL_KEYDOWN);
-    camera.handle(FL_KEYUP);
+    const int used = camera.handle(keyEvent(InputType::KeyDown, key, state));
+    camera.handle(keyEvent(InputType::KeyUp, key, state));
     camera.stop();
-    Fl::e_state = 0;
     return used != 0;
 }
 } // namespace
@@ -41,42 +37,43 @@ int main()
     // World and Top: as before.
     expect(forKey('g', 0, false) == EditKeys::GRAB, "World: G moves");
     expect(forKey('r', 0, false) == EditKeys::TILT, "World: R tilts");
-    expect(forKey('d', FL_SHIFT, false) == EditKeys::ADD_POINT, "World: Shift + D adds a point");
+    expect(forKey('d', Mod::Shift, false) == EditKeys::ADD_POINT, "World: Shift + D adds a point");
     expect(forKey('d', 0, false) == EditKeys::NONE, "World: D alone does nothing");
     expect(forKey('x', 0, false) == EditKeys::REMOVE, "World: X removes");
-    expect(forKey(FL_Delete, 0, false) == EditKeys::REMOVE, "World: Delete removes");
-    expect(forKey('y', FL_CTRL, false) == EditKeys::REDO, "World: Ctrl + Y redoes");
-    expect(forKey('z', FL_CTRL | FL_SHIFT, false) == EditKeys::REDO,
+    expect(forKey(Key::Delete, 0, false) == EditKeys::REMOVE, "World: Delete removes");
+    expect(forKey('y', Mod::Ctrl, false) == EditKeys::REDO, "World: Ctrl + Y redoes");
+    expect(forKey('z', Mod::Ctrl | Mod::Shift, false) == EditKeys::REDO,
            "World: Ctrl + Shift + Z redoes");
     expect(forKey('y', 0, false) == EditKeys::NONE, "World: Y alone does nothing");
-    expect(forKey(FL_F + 4, 0, false) == EditKeys::TOGGLE_EDIT, "World: F4 turns Edit on / off");
+    expect(forKey(Key::F + 4, 0, false) == EditKeys::TOGGLE_EDIT, "World: F4 turns Edit on / off");
     expect(forKey('c', 0, false) == EditKeys::PICK_POINT, "World: C selects (middle button)");
     expect(forKey('c', 0, true) == EditKeys::PICK_POINT, "Fly: C selects (middle button)");
-    expect(forKey('c', FL_CTRL, false) == EditKeys::NONE, "Ctrl + C is not a selection");
-    expect(forKey(FL_F + 4, 0, true) == EditKeys::TOGGLE_EDIT, "Fly: F4 turns Edit on / off");
-    expect(forKey('z', FL_CTRL, false) == EditKeys::UNDO, "World: Ctrl + Z undoes");
-    expect(forKey(FL_KP + '7', 0, false) == EditKeys::CAMERA_TOP, "World: numpad 7 is Top");
+    expect(forKey('c', Mod::Ctrl, false) == EditKeys::NONE, "Ctrl + C is not a selection");
+    expect(forKey(Key::F + 4, 0, true) == EditKeys::TOGGLE_EDIT, "Fly: F4 turns Edit on / off");
+    expect(forKey('z', Mod::Ctrl, false) == EditKeys::UNDO, "World: Ctrl + Z undoes");
+    expect(forKey(Key::Keypad + '7', 0, false) == EditKeys::CAMERA_TOP, "World: numpad 7 is Top");
 
     // Fly: the editing commands that do not clash.
     expect(forKey('g', 0, true) == EditKeys::GRAB, "Fly: G moves");
     expect(forKey('r', 0, true) == EditKeys::TILT, "Fly: R tilts");
-    expect(forKey('d', FL_ALT, true) == EditKeys::ADD_POINT, "Fly: Alt + D adds a point");
-    expect(forKey(FL_Delete, 0, true) == EditKeys::REMOVE, "Fly: Delete removes");
-    expect(forKey('z', FL_CTRL, true) == EditKeys::UNDO, "Fly: Ctrl + Z undoes");
-    expect(forKey('y', FL_CTRL, true) == EditKeys::REDO, "Fly: Ctrl + Y redoes");
-    expect(forKey('z', FL_CTRL | FL_SHIFT, true) == EditKeys::REDO, "Fly: Ctrl + Shift + Z redoes");
+    expect(forKey('d', Mod::Alt, true) == EditKeys::ADD_POINT, "Fly: Alt + D adds a point");
+    expect(forKey(Key::Delete, 0, true) == EditKeys::REMOVE, "Fly: Delete removes");
+    expect(forKey('z', Mod::Ctrl, true) == EditKeys::UNDO, "Fly: Ctrl + Z undoes");
+    expect(forKey('y', Mod::Ctrl, true) == EditKeys::REDO, "Fly: Ctrl + Y redoes");
+    expect(forKey('z', Mod::Ctrl | Mod::Shift, true) == EditKeys::REDO,
+           "Fly: Ctrl + Shift + Z redoes");
     expect(forKey('x', 0, true) == EditKeys::NONE, "Fly: X does not remove a point");
-    expect(forKey('d', FL_SHIFT, true) == EditKeys::NONE,
+    expect(forKey('d', Mod::Shift, true) == EditKeys::NONE,
            "Fly: Shift + D flies (sink and right), it does not add a point");
-    expect(forKey('d', FL_CTRL, true) == EditKeys::NONE,
+    expect(forKey('d', Mod::Ctrl, true) == EditKeys::NONE,
            "Fly: Ctrl + D flies right faster, it does not add a point");
 
     // No flying key is an editing command in Fly, whatever the modifiers.
-    const int flying[] = {'w',          'a',        's',          'd',        ' ',
-                          'e',          'q',        FL_Shift_L,   FL_Shift_R, FL_Control_L,
-                          FL_Control_R, FL_Page_Up, FL_Page_Down, FL_Left,    FL_Right,
-                          FL_Up,        FL_Down,    'f',          FL_Home};
-    const int modifiers[] = {0, FL_SHIFT, FL_CTRL, FL_SHIFT | FL_CTRL};
+    const int flying[] = {'w',           'a',         's',           'd',         ' ',
+                          'e',           'q',         Key::ShiftL,   Key::ShiftR, Key::ControlL,
+                          Key::ControlR, Key::PageUp, Key::PageDown, Key::Left,   Key::Right,
+                          Key::Up,       Key::Down,   'f',           Key::Home};
+    const int modifiers[] = {0, Mod::Shift, Mod::Ctrl, Mod::Shift | Mod::Ctrl};
     bool clear = true;
     for (int key : flying)
         for (int state : modifiers)
@@ -87,11 +84,19 @@ int main()
     // ... and the real FlyCam leaves every Fly editing key alone, so TrainView can hand it to
     // editing without the camera also moving. (D itself is a flying key: with Alt, TrainView
     // asks EditKeys before FlyCam, which is why Alt was chosen.)
-    Fl_Gl_Window window(400, 300);
+    TestViewport window(400, 300);
     FlyCam camera;
     camera.setup(&window, 90);
-    const int editing[] = {'g',         'r',         FL_Delete,   'z',      'y',
-                           FL_KP + '1', FL_KP + '7', FL_KP + '0', FL_F + 4, 'c'};
+    const int editing[] = {'g',
+                           'r',
+                           Key::Delete,
+                           'z',
+                           'y',
+                           Key::Keypad + '1',
+                           Key::Keypad + '7',
+                           Key::Keypad + '0',
+                           Key::F + 4,
+                           'c'};
     bool untouched = true;
     for (int key : editing)
         if (flyTakes(camera, key, 0))
@@ -100,15 +105,13 @@ int main()
     expect(flyTakes(camera, 'w', 0), "FlyCam still takes W (the check can see a used key)");
 
     // Key releases always reach FlyCam: a release of a held key stops the camera.
-    Fl::e_keysym = 'w';
-    camera.handle(FL_KEYDOWN);
+    camera.handle(keyEvent(InputType::KeyDown, 'w'));
     const bool movingWhileHeld = camera.moving();
-    Fl::e_keysym = 'w';
-    camera.handle(FL_KEYUP);
+    camera.handle(keyEvent(InputType::KeyUp, 'w'));
     float x0, y0, z0, x1, y1, z1;
     camera.position(x0, y0, z0);
     for (int i = 0; i < 10; ++i)
-        Fl::wait(0.02);
+        platform::wait(0.02);
     camera.position(x1, y1, z1);
     expect(movingWhileHeld && x0 == x1 && y0 == y1 && z0 == z1,
            "a released W stops the camera on the next tick");

@@ -50,6 +50,7 @@ pwsh -File scripts/check.ps1 -Stage all -Compiler clang -Config Release
 ```
 
 `all` 依序執行格式、repository 規範與腳本語法、MSVC 靜態分析、一般編譯、CTest、安裝與已安裝程式的版本檢查。任一步驟失敗立即停止。
+repository 規範另外檢查曾經漏掉過的同步：`src/` 的 `.cpp` 都在 Windows 目標的清單裡（Linux 建置自動收集，抓不到這種漏列）、每個 `tests/*.cpp` 都在兩個 CMakeLists 和下方「測試範圍」裡、每個原始檔在功能地圖的對照表裡都有一列、文件沒有超過 800 字的單行。再犯同一種錯時，優先把它加成這裡的檢查，而不是在 AGENTS.md 多寫一條規則。
 `-Compiler` 預設為 `msvc`；設為 `clang` 時，編譯、測試與封裝都使用 clang-cl 的產物。`lint` 仍執行共用 MSVC `/analyze`，不將它當成 Clang Static Analyzer。
 MSVC 發布目錄是 `out/package/<Config>/`，Clang 是 `out/package/clang/<Config>/`。
 
@@ -95,14 +96,15 @@ tests/linux/win32-syntax.sh
 
 ## 測試範圍
 
-- `GestureMotionCheck`：正式 FLTK event loop／timer 與 `ArcBallCam`，涵蓋手勢平滑度、總旋轉量、重設、水平線、縮放、俯仰限制、觸控板細小位移立即套用、空白處拖曳旋轉、旋轉與縮放同時作用及拖曳中縮放。
-- `FlyCamCheck`：正式 FLTK event loop／timer 與 `FlyCam`，涵蓋由 World 視圖矩陣接續、視角差補償、WASD／空白鍵／Shift／QE 依實際時間移動與放開即停、Ctrl 加速、方向鍵轉向與俯仰限制、拖曳看、滑鼠看、滾輪調速、觸控板捲動／捏合／平移、速度按鍵與失去焦點時停止、地面（含 `setGround()` 降低與升高後不跳動）與場景範圍限制、視野設定與上下限、飛行按鍵的掃描碼對應，以及 `lookAt()` 走短邊平滑轉向且使用者轉頭時立即讓出。
+- `GestureMotionCheck`：正式 `platform::` event loop／timer（目前由 FLTK 實作）與 `ArcBallCam`，以 `InputEvent` 送入事件，涵蓋手勢平滑度、總旋轉量、重設、水平線、縮放、俯仰限制、觸控板細小位移立即套用、空白處拖曳旋轉、旋轉與縮放同時作用及拖曳中縮放。
+- `FlyCamCheck`：正式 `platform::` event loop／timer 與 `FlyCam`，以 `InputEvent` 送入事件，涵蓋由 World 視圖矩陣接續、視角差補償、WASD／空白鍵／Shift／QE 依實際時間移動與放開即停、Ctrl 加速、方向鍵轉向與俯仰限制、拖曳看、滑鼠看、滾輪調速、觸控板捲動／捏合／平移、速度按鍵與失去焦點時停止、地面（含 `setGround()` 降低與升高後不跳動）與場景範圍限制、視野設定與上下限、飛行按鍵的掃描碼對應，以及 `lookAt()` 走短邊平滑轉向且使用者轉頭時立即讓出。
 - `WaterFlowCheck`：水流規則（`src/WaterFlow.*`）：平地擴散 7 格、方向權重（999、落差在鄰格下方為 0、4 格內最短路徑）、只往最近落差流、超出 4 格時平均擴散、繞牆搜尋、落地後從水位 1 重新擴散、大海吸收。
 - `FrustumCheck`：分塊剔除用的視錐判斷（`src/Frustum.*`）：透視視角前方的盒子看得到，後方、遠平面外、側邊外的看不到，跨過邊界的仍算看得到；正交（陰影 pass）視角移動後跟著移動。
 - `ChaseRigCheck`：`Chase` 相機取景（`src/ChaseRig.*`）：不同列車長度、乘客高度與視野下，最後一位乘客的頭在畫面下半約一半處、列車前端在畫面內；列車越長退得越遠、乘客越高架得越高；有天花板時相機不高於天花板、不比下限更近，天花板比乘客頭高一格半以上時頭仍在畫面中線以下；平滑跟隨朝目標前進且不超過。
 - `MobsCheck`：島上動物的模型與皮膚（`src/Mobs.*`）：羊、豬、牛每個方塊的每一面都落在內建皮膚有上色的位置（材質包同樣配置的皮膚因此也對得上），站立方塊的大小與貼圖配置一致，各有四條腿；只接受方塊遊戲的皮膚尺寸（64 x 32 的倍數，或 64 x 64 配置）。
 - `LandRideClearanceCheck`：三種 spline 下島上的方塊與植物不碰到列車，軌道左右 6、下方 6 到上方 10 單位內沒有水。
 - `HeadLookCheck`：Train 視角轉頭（`src/Utilities/HeadLook.*`）：起始看正前方、yaw 正值往右、pitch 停在上下限、yaw 跨過 ±180 度回繞、可轉到正後方，視線上方始終與視線垂直且朝上。
+- `GuiCheck`：方塊遊戲風介面（`src/Ui/*`）不需 OpenGL：像素字型的寬度、下伸與未知字元、atlas 內容與配置、自動 GUI 縮放，以及按鈕按下即觸發且只觸發一次、空白處不吃事件、停用的按鈕不觸發、開關翻轉、循環按鈕左鍵往後右鍵往前並回繞、滑桿按下設值、拖出範圍時夾住、放開後停止、清單滾輪捲動到底即停、點選滑鼠下的列。
 - `EditKeysCheck`：控制點編輯鍵位對照正式 `FlyCam`：Fly 下沒有飛行鍵是編輯指令、Fly 的編輯鍵都是 `FlyCam` 不用的鍵、World／Top 的鍵位不變。
 - `GizmoDragCheck`：移動把手（`src/TransformGizmo.*`）找得到滑鼠下的把手，拖曳時點正好落在滑鼠下，且只沿把手允許的軸或平面移動。
 - `TrackInsertCheck`：新增控制點（`src/TrackInsert.*`）後軌道仍經過點擊處、新點插在前後兩點之間並內插傾斜、列車留在原位、螢幕上找得到滑鼠下的軌道位置。
@@ -111,10 +113,10 @@ tests/linux/win32-syntax.sh
 - `OceanRideClearanceCheck`：三種 spline 下海底的方塊與植物不碰到列車，以正式 `CTrack` 取樣，與挖空景物的程式互相獨立。
 - `TexturePackCheck`：zip 的三種 DEFLATE 區塊解碼與截斷資料、PNG 解碼與取動畫第一格、zip 與資料夾材質包的開啟、替代與染色、不是材質包的資料夾被拒絕、依名稱列出材質包。
 - `TwoFingerGestureCheck`：觸控板兩指濾波，驗證靜止不動、純捏合不轉動、純移動不縮放、兩者明顯時同時作用。
-- `TrackRoundTripCheck`：正式 `CTrack::writePoints/readPoints` 與真實暫存檔，驗證座標、方向、控制點數與載入後列車位置歸零。
+- `TrackRoundTripCheck`：正式 `CTrack::writePoints/readPoints` 與真實暫存檔，驗證座標、方向、控制點數與載入後列車位置歸零；只有 x y z 的舊檔仍可載入；點數不合法、空檔、點的行數少於宣告或某行缺 x y z 時，原軌道與列車位置不變，並且只跳出一次 `fl_alert`（測試以 FLTK timer 關閉正式的對話框）。
 - `AppControlCheck`：命令列解析與錯誤、`checkTrackFile()` 與正式 `CTrack::readPoints()` 對同一份檔案的結果一致、PNG 寫入後以材質包用的同一個解碼器讀回逐像素相同、空白畫面不被當成已畫出、`--doctor` 的資料夾檢查（隔離的暫存資料夾）。
 - `VersionCheck`：啟動正式 executable 的 `--version`，不建立 GUI。
 
 測試有明確 timeout，找不到測試時視為失敗；Release 的檢查不用會被移除的 `assert`。
 相機測試使用真實時間；忙碌機器可能受排程影響，失敗時檢查 CTest 日誌，保留原失敗證據。
-這些測試未涵蓋實際 GPU 畫面與 Windows 觸控訊息。實際畫面用 `scripts/control-app.ps1` 在 Windows 上截圖驗證，觸控與手感仍需手動檢查；兩者都依 [驗證流程](../.agents/skills/verify-app/SKILL.md)。
+這些測試未涵蓋實際 GPU 畫面與 Windows 觸控訊息，也未涵蓋數字以外的文字（例如 `a b c` 仍讀成 0）等其他損壞軌道檔。實際畫面用 `scripts/control-app.ps1` 在 Windows 上截圖驗證，觸控與手感仍需手動檢查；兩者都依 [驗證流程](../.agents/skills/verify-app/SKILL.md)。

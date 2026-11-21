@@ -12,19 +12,22 @@
 #include <glad/glad.h>
 
 #include <math.h>
+#include <initializer_list>
 #include <stdio.h>
 
 #include "AdvancedLighting.h"
 #include "MatrixMath.h"
+#include "LandWaterMotion.h"
 #include "UnderwaterOptics.h"
 
 namespace
 {
 
 const int kShadowMapSize = 2048;
+const int kFarShadowMapSize = 4096; // over kFarShadowReach: texels of about a third of a unit
 
+// Pasted after "#version 120" and the island water's motion (LandWaterMotion.h).
 const char *kVertexShader = R"GLSL(
-#version 120
 // World space is recovered from the fixed function modelview matrix, so the
 // existing glBegin/glEnd drawing code works unchanged.
 uniform mat4 uInvView;
@@ -33,7 +36,8 @@ uniform float uTime;
 varying vec3 vWorldPos;
 varying vec3 vWorldNormal;
 varying vec4 vColor;
-// emissive; sway (when positive) or the warm light of lava and lanterns on
+// emissive (negative on the island's water: -1 at its open surface, -0.5
+// elsewhere); sway (when positive) or the warm light of lava and lanterns on
 // a block that does not sway (as minus that); cool block light; sky light
 varying vec4 vExtra;
 
@@ -62,6 +66,16 @@ void main()
         eyePos = uView * world;
     }
 
+    // The island's water moves a little, as the sea does (LandWaterMotion.h);
+    // the picture on its surface drifts slowly.
+    if (gl_MultiTexCoord1.x < -0.25) {
+        float stirred;
+        world.xyz += landWaterMotion(gl_MultiTexCoord1.x, world.xyz, uTime, stirred);
+        eyePos = uView * world;
+        if (vWorldNormal.y > 0.5)
+            gl_TexCoord[0].s += uTime * 0.02;
+    }
+
     vWorldPos = world.xyz;
     gl_Position = gl_ProjectionMatrix * eyePos;
 }
@@ -76,6 +90,12 @@ uniform int uShadowsOn;
 uniform float uShadowTexel;    // 1 / shadow map size
 uniform float uNormalOffset;   // world units, pushes the lookup off the surface
 uniform float uDepthBias;      // shadow map depth units
+uniform mat4 uFarMatrix;       // the coarse cascade round the fine one
+uniform sampler2DShadow uFarShadowMap;
+uniform int uFarOn;
+uniform float uFarTexel;
+uniform float uFarNormalOffset;
+uniform float uFarDepthBias;
 
 uniform vec3 uLightDir;        // towards the sun or moon
 uniform vec3 uLightColor;
@@ -106,24 +126,50 @@ varying vec4 vColor;
 varying vec4 vExtra;
 
 // Percentage closer filtering over a 12 tap spiral. Each tap is itself a
-// hardware 2x2 comparison, so the edge comes out soft.
-float shadowAt(vec3 p, vec3 n)
+// hardware 2x2 comparison, so the edge comes out soft. edge: how near the
+// edge of the map p lies (0.5 at it), 1 past its far plane.
+float shadowIn(sampler2DShadow map, mat4 m, vec3 p, vec3 n, float offset, float bias, float texel,
+               int taps, out float edge)
 {
-    vec4 sc = uLightMatrix * vec4(p + n * uNormalOffset, 1.0);
+    vec4 sc = m * vec4(p + n * offset, 1.0);
     vec3 c = sc.xyz / sc.w;
-    if (c.z >= 1.0)
+    edge = max(abs(c.x - 0.5), abs(c.y - 0.5));
+    if (c.z >= 1.0) {
+        edge = 1.0;
         return 1.0;
-    c.z -= uDepthBias;
+    }
+    c.z -= bias;
     float lit = 0.0;
     for (int i = 0; i < 12; ++i) {
+        if (i >= taps)
+            break;
         float a = float(i) * 2.39996;
-        float r = sqrt((float(i) + 0.5) / 12.0) * 1.8;
-        vec2 o = vec2(cos(a), sin(a)) * (r * uShadowTexel);
-        lit += shadow2D(uShadowMap, vec3(c.xy + o, c.z)).r;
+        float r = sqrt((float(i) + 0.5) / float(taps)) * 1.8;
+        vec2 o = vec2(cos(a), sin(a)) * (r * texel);
+        lit += shadow2D(map, vec3(c.xy + o, c.z)).r;
     }
-    // the map covers the ground round the camera: fade out towards its edge
-    float edge = max(abs(c.x - 0.5), abs(c.y - 0.5));
-    return mix(lit / 12.0, 1.0, smoothstep(0.42, 0.5, edge));
+    return lit / float(taps);
+}
+
+// The fine map round the camera, and past its edge the coarse one, which
+// fades out at its own edge; between them they blend, so no line shows
+// where one hands over to the other.
+float shadowAt(vec3 p, vec3 n)
+{
+    float edge;
+    float fine = shadowIn(uShadowMap, uLightMatrix, p, n, uNormalOffset, uDepthBias, uShadowTexel,
+                          12, edge);
+    float toCoarse = smoothstep(0.42, 0.5, edge);
+    if (toCoarse <= 0.0)
+        return fine;
+    float coarse = 1.0;
+    if (uFarOn != 0) {
+        float farEdge;
+        coarse = shadowIn(uFarShadowMap, uFarMatrix, p, n, uFarNormalOffset, uFarDepthBias,
+                          uFarTexel, 5, farEdge);
+        coarse = mix(coarse, 1.0, smoothstep(0.44, 0.5, farEdge));
+    }
+    return mix(fine, coarse, toCoarse);
 }
 
 // A smooth value noise in 0..1, for the water running down wet walls.
@@ -155,6 +201,13 @@ void main()
     if (vWorldPos.y < uClipY)
         discard;
     vec3 n = normalize(vWorldNormal);
+    if (vExtra.x < -0.25 && n.y > 0.5) {
+        // the island's water: small ripples running over it catch the sun
+        vec2 p = vWorldPos.xz;
+        float a = cos((p.x + p.y) * 0.6 - uTime * 1.2) * 0.35;
+        vec2 slope = vec2(cos(p.x * 0.9 + uTime * 1.6) * 0.5 + a, cos(p.y * 0.8 - uTime * 1.4) * 0.5 + a);
+        n = normalize(vec3(-slope.x * 0.12, 1.0, -slope.y * 0.12));
+    }
     vec3 cameraPos = uInvView[3].xyz;
     vec4 texel = texture2D(uTexture, gl_TexCoord[0].st);
     if (texel.a < 0.5)
@@ -221,7 +274,7 @@ void main()
     float warm = max(-vExtra.y, 0.0);
     color += albedo * vec3(1.0, 0.62, 0.32) * warm * 1.6 * spill; // lava, lanterns
     color += albedo * uBlockLightColor * vExtra.z * spill;       // crystals, sea lanterns
-    color += albedo * vExtra.x * 3.0 * own;
+    color += albedo * max(vExtra.x, 0.0) * 3.0 * own;
 
     if (uHeadlightOn != 0) {
         vec3 toLamp = uHeadPos - vWorldPos;
@@ -380,6 +433,11 @@ void AdvancedLighting::invalidate()
     m_shadowFbo = 0;
     m_shadowTexture = 0;
     m_shadowSize = kShadowMapSize;
+    m_farUsed = m_farValid = false;
+    m_cascade = 0;
+    m_farFbo = 0;
+    m_farTexture = 0;
+    m_farSize = kFarShadowMapSize;
     m_previousFbo = 0;
     m_normalOffset = 0.0f;
     m_depthBias = 0.0f;
@@ -390,16 +448,62 @@ void AdvancedLighting::invalidate()
     identity(m_lightView);
     identity(m_lightProj);
     identity(m_lightMatrix);
+    identity(m_farView);
+    identity(m_farProj);
+    identity(m_farMatrix);
 }
 
 void AdvancedLighting::releaseFramebuffer()
 {
-    if (m_shadowFbo)
-        glDeleteFramebuffers(1, &m_shadowFbo);
-    if (m_shadowTexture)
-        glDeleteTextures(1, &m_shadowTexture);
-    m_shadowFbo = 0;
-    m_shadowTexture = 0;
+    for (unsigned int *fbo : {&m_shadowFbo, &m_farFbo})
+        if (*fbo)
+        {
+            glDeleteFramebuffers(1, fbo);
+            *fbo = 0;
+        }
+    for (unsigned int *texture : {&m_shadowTexture, &m_farTexture})
+        if (*texture)
+        {
+            glDeleteTextures(1, texture);
+            *texture = 0;
+        }
+}
+
+// A depth texture with hardware comparison, so shadow2D() returns 0 or 1
+// (bilinearly filtered between the four nearest texels), lit beyond its
+// edge, and a framebuffer drawing into it. False if the framebuffer is not
+// complete.
+static bool makeShadowTarget(int size, unsigned int &texture, unsigned int &fbo)
+{
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, size, size, 0, GL_DEPTH_COMPONENT,
+                 GL_UNSIGNED_INT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    const GLfloat border[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, border);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    GLint previous = 0;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previous);
+    glGenFramebuffers(1, &fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, texture, 0);
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+    const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previous));
+    if (status != GL_FRAMEBUFFER_COMPLETE)
+    {
+        fprintf(stderr, "AdvancedLighting: shadow framebuffer incomplete (0x%x)\n", status);
+        return false;
+    }
+    return true;
 }
 
 bool AdvancedLighting::init()
@@ -415,9 +519,9 @@ bool AdvancedLighting::init()
         return false;
     }
 
-    const char *vertexParts[1] = {kVertexShader};
+    const char *vertexParts[3] = {"#version 120\n", kLandWaterMotionGlsl, kVertexShader};
     const char *fragmentParts[3] = {"#version 120\n", kUnderwaterOpticsGlsl, kFragmentShader};
-    GLuint vs = compileShader(GL_VERTEX_SHADER, vertexParts, 1);
+    GLuint vs = compileShader(GL_VERTEX_SHADER, vertexParts, 3);
     GLuint fs = compileShader(GL_FRAGMENT_SHADER, fragmentParts, 3);
     if (!vs || !fs)
     {
@@ -449,6 +553,12 @@ bool AdvancedLighting::init()
     m_locInvView = glGetUniformLocation(m_program, "uInvView");
     m_locLightMatrix = glGetUniformLocation(m_program, "uLightMatrix");
     m_locShadowMap = glGetUniformLocation(m_program, "uShadowMap");
+    m_locFarMatrix = glGetUniformLocation(m_program, "uFarMatrix");
+    m_locFarShadowMap = glGetUniformLocation(m_program, "uFarShadowMap");
+    m_locFarOn = glGetUniformLocation(m_program, "uFarOn");
+    m_locFarTexel = glGetUniformLocation(m_program, "uFarTexel");
+    m_locFarNormalOffset = glGetUniformLocation(m_program, "uFarNormalOffset");
+    m_locFarDepthBias = glGetUniformLocation(m_program, "uFarDepthBias");
     m_locShadowsOn = glGetUniformLocation(m_program, "uShadowsOn");
     m_locShadowTexel = glGetUniformLocation(m_program, "uShadowTexel");
     m_locNormalOffset = glGetUniformLocation(m_program, "uNormalOffset");
@@ -487,38 +597,22 @@ bool AdvancedLighting::init()
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     }
 
-    // Depth texture with hardware comparison, so shadow2D() returns 0 or 1
-    // (bilinearly filtered between the four nearest texels).
-    glGenTextures(1, &m_shadowTexture);
-    glBindTexture(GL_TEXTURE_2D, m_shadowTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, m_shadowSize, m_shadowSize, 0,
-                 GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    const GLfloat border[4] = {1.0f, 1.0f, 1.0f, 1.0f};
-    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, border);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-    GLint previous = 0;
-    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previous);
-    glGenFramebuffers(1, &m_shadowFbo);
-    glBindFramebuffer(GL_FRAMEBUFFER, m_shadowFbo);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_shadowTexture, 0);
-    glDrawBuffer(GL_NONE);
-    glReadBuffer(GL_NONE);
-    const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-    glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previous));
-    if (status != GL_FRAMEBUFFER_COMPLETE)
+    // The fine shadow map, and the coarse one round it; without the coarse
+    // one (a GPU that cannot make it) the shadows fade out past the fine one.
+    if (!makeShadowTarget(m_shadowSize, m_shadowTexture, m_shadowFbo))
     {
-        fprintf(stderr, "AdvancedLighting: shadow framebuffer incomplete (0x%x)\n", status);
         releaseFramebuffer();
         glDeleteProgram(m_program);
         m_program = 0;
         return false;
+    }
+    if (!makeShadowTarget(m_farSize, m_farTexture, m_farFbo))
+    {
+        if (m_farFbo)
+            glDeleteFramebuffers(1, &m_farFbo);
+        if (m_farTexture)
+            glDeleteTextures(1, &m_farTexture);
+        m_farFbo = m_farTexture = 0;
     }
 
     m_ok = true;
@@ -546,6 +640,8 @@ void AdvancedLighting::skyColor(float timeOfDay, float rgb[3])
 void AdvancedLighting::prepare(const LightingFrame &frame)
 {
     m_shadowMapValid = false;
+    m_farValid = false;
+    m_farUsed = false;
     if (!m_ok)
         return;
 
@@ -666,8 +762,10 @@ void AdvancedLighting::prepare(const LightingFrame &frame)
     const float upY[3] = {0.0f, 1.0f, 0.0f};
     const float upZ[3] = {0.0f, 0.0f, 1.0f};
     const float *up = fabsf(lightDir[1]) > 0.99f ? upZ : upY;
+    bool focused = false; // the fine map covers only the ground round the focus
     if (frame.hasFocus && !frame.orthographic && kShadowReach < radius)
     {
+        focused = true;
         radius = kShadowReach;
         for (int i = 0; i < 3; ++i)
             center[i] = frame.focus[i];
@@ -707,26 +805,59 @@ void AdvancedLighting::prepare(const LightingFrame &frame)
     const float texelWorld = 2.0f * radius / static_cast<float>(m_shadowSize);
     m_normalOffset = texelWorld * 1.5f;
     m_depthBias = 0.15f / (farPlane - nearPlane);
+
+    // The coarse cascade: the same light, over kFarShadowReach round the
+    // focus, its centre moved in whole texels too. Only when the fine map
+    // covers just part of the casters.
+    if (m_farTexture && focused)
+    {
+        m_farUsed = true;
+        const float farRadius = kFarShadowReach;
+        float farCenter[3] = {frame.focus[0], frame.focus[1], frame.focus[2]};
+        float s[3], u[3];
+        const float f[3] = {-lightDir[0], -lightDir[1], -lightDir[2]};
+        cross3(f, up, s);
+        normalize3(s);
+        cross3(s, f, u);
+        const float texel = 2.0f * farRadius / static_cast<float>(m_farSize);
+        const float cs = dot3(s, farCenter), cu = dot3(u, farCenter);
+        const float ds = floorf(cs / texel + 0.5f) * texel - cs;
+        const float du = floorf(cu / texel + 0.5f) * texel - cu;
+        for (int i = 0; i < 3; ++i)
+            farCenter[i] += s[i] * ds + u[i] * du;
+        const float farEye[3] = {farCenter[0] + lightDir[0] * reach,
+                                 farCenter[1] + lightDir[1] * reach,
+                                 farCenter[2] + lightDir[2] * reach};
+        lookAt(farEye, farCenter, up, m_farView);
+        ortho(-farRadius, farRadius, -farRadius, farRadius, nearPlane, farPlane, m_farProj);
+        float farViewProj[16];
+        multiply(m_farProj, m_farView, farViewProj);
+        multiply(bias, farViewProj, m_farMatrix);
+        m_farNormalOffset = texel * 1.5f;
+        m_farDepthBias = 0.3f / (farPlane - nearPlane);
+    }
 }
 
-void AdvancedLighting::beginShadowPass()
+void AdvancedLighting::beginShadowPass(int cascade)
 {
     if (!m_ok)
         return;
+    m_cascade = cascade == 1 && m_farUsed ? 1 : 0;
+    const bool coarse = m_cascade == 1;
 
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &m_previousFbo);
     glPushAttrib(GL_VIEWPORT_BIT | GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_POLYGON_BIT |
                  GL_CURRENT_BIT | GL_DEPTH_BUFFER_BIT);
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
-    glLoadMatrixf(m_lightProj);
+    glLoadMatrixf(coarse ? m_farProj : m_lightProj);
     glMatrixMode(GL_MODELVIEW);
     glPushMatrix();
-    glLoadMatrixf(m_lightView);
+    glLoadMatrixf(coarse ? m_farView : m_lightView);
 
     glUseProgram(0);
-    glBindFramebuffer(GL_FRAMEBUFFER, m_shadowFbo);
-    glViewport(0, 0, m_shadowSize, m_shadowSize);
+    glBindFramebuffer(GL_FRAMEBUFFER, coarse ? m_farFbo : m_shadowFbo);
+    glViewport(0, 0, coarse ? m_farSize : m_shadowSize, coarse ? m_farSize : m_shadowSize);
     glDepthMask(GL_TRUE);
     glClear(GL_DEPTH_BUFFER_BIT);
     glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
@@ -749,7 +880,10 @@ void AdvancedLighting::endShadowPass()
     glMatrixMode(GL_MODELVIEW);
     glPopMatrix();
     glPopAttrib();
-    m_shadowMapValid = true;
+    if (m_cascade == 1)
+        m_farValid = true;
+    else
+        m_shadowMapValid = true;
 }
 
 void AdvancedLighting::begin(const LightingFrame &frame)
@@ -771,6 +905,12 @@ void AdvancedLighting::begin(const LightingFrame &frame)
     glUniform1f(m_locShadowTexel, 1.0f / static_cast<float>(m_shadowSize));
     glUniform1f(m_locNormalOffset, m_normalOffset);
     glUniform1f(m_locDepthBias, m_depthBias);
+    glUniformMatrix4fv(m_locFarMatrix, 1, GL_FALSE, m_farMatrix);
+    glUniform1i(m_locFarShadowMap, 2);
+    glUniform1i(m_locFarOn, (frame.shadows && m_farValid) ? 1 : 0);
+    glUniform1f(m_locFarTexel, 1.0f / static_cast<float>(m_farSize));
+    glUniform1f(m_locFarNormalOffset, m_farNormalOffset);
+    glUniform1f(m_locFarDepthBias, m_farDepthBias);
     glUniform3fv(m_locLightDir, 1, m_sky.lightDir);
     glUniform3fv(m_locLightColor, 1, m_sky.lightColor);
     glUniformMatrix4fv(m_locView, 1, GL_FALSE, view);
@@ -819,6 +959,8 @@ void AdvancedLighting::begin(const LightingFrame &frame)
         glUniform3fv(m_locHeadColor, 1, lampColor);
     }
 
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, m_farTexture);
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, m_shadowTexture);
     glActiveTexture(GL_TEXTURE0);
@@ -830,6 +972,8 @@ void AdvancedLighting::end()
 {
     if (!m_active)
         return;
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, 0);
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, 0);
     glActiveTexture(GL_TEXTURE0);

@@ -1,6 +1,6 @@
-#include <FL/Fl.H>
-#include <FL/Fl_Gl_Window.H>
 #include "ArcBallCam.H"
+#include "Platform.H"
+#include "TestViewport.h"
 #include <cmath>
 #include <cstdio>
 #include <chrono>
@@ -22,23 +22,20 @@ static double angle(const HMatrix a, const HMatrix b)
 
 static bool checkMotion(int dx, int dy)
 {
-    Fl_Gl_Window window(600, 600);
+    TestViewport window(600, 600);
     ArcBallCam camera;
     camera.setup(&window, 40, 250, 0, 0, 0);
     HMatrix initial, previous, current;
     camera.getMatrix(initial);
     camera.getMatrix(previous);
-    Fl::e_dx = dx;
-    Fl::e_dy = dy;
-    Fl::e_state = 0;
-    camera.handle(FL_MOUSEWHEEL);
+    camera.handle(wheelEvent((float)dx, (float)dy));
     camera.getMatrix(current);
     double maxJump = angle(previous, current);
     camera.getMatrix(previous);
     for (int frame = 0; frame < 40; ++frame)
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
-        Fl::check();
+        platform::processPending();
         camera.getMatrix(current);
         double jump = angle(previous, current);
         if (jump > maxJump)
@@ -52,15 +49,13 @@ static bool checkMotion(int dx, int dy)
     std::printf("%s: a wheel unit must spread across frames and retain total rotation\n",
                 pass ? "PASS" : "FAIL");
     // Reset must stop any outstanding animation callbacks.
-    Fl::e_dx = dx;
-    Fl::e_dy = dy;
-    camera.handle(FL_MOUSEWHEEL);
+    camera.handle(wheelEvent((float)dx, (float)dy));
     camera.setup(&window, 40, 250, 0, 0, 0);
     camera.getMatrix(previous);
     for (int frame = 0; frame < 4; ++frame)
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
-        Fl::check();
+        platform::processPending();
     }
     camera.getMatrix(current);
     bool resetPass = angle(previous, current) < .01;
@@ -70,18 +65,15 @@ static bool checkMotion(int dx, int dy)
 
 static bool checkLevelHorizon()
 {
-    Fl_Gl_Window window(600, 600);
+    TestViewport window(600, 600);
     ArcBallCam camera;
     camera.setup(&window, 40, 250, .2f, 0, 0);
-    Fl::e_dx = 5;
-    Fl::e_dy = 0;
-    Fl::e_state = 0;
-    camera.handle(FL_MOUSEWHEEL);
+    camera.handle(wheelEvent(5, 0));
     double roll = 0;
     for (int frame = 0; frame < 40; ++frame)
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
-        Fl::check();
+        platform::processPending();
         HMatrix matrix;
         camera.getMatrix(matrix);
         if (std::fabs(matrix[1][0]) > roll)
@@ -95,7 +87,7 @@ static bool checkLevelHorizon()
 
 static bool checkZoom(float steps)
 {
-    Fl_Gl_Window window(600, 600);
+    TestViewport window(600, 600);
     ArcBallCam camera;
     camera.setup(&window, 40, 250, .2f, .4f, 0);
     HMatrix initial, current;
@@ -106,7 +98,7 @@ static bool checkZoom(float steps)
     for (int frame = 0; frame < 40; ++frame)
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
-        Fl::check();
+        platform::processPending();
     }
     const double expected = before * std::pow(1.1, -steps);
     camera.getMatrix(current);
@@ -119,7 +111,7 @@ static bool checkZoom(float steps)
 
 static bool checkPitchLimit()
 {
-    Fl_Gl_Window window(600, 600);
+    TestViewport window(600, 600);
     ArcBallCam camera;
     camera.setup(&window, 40, 250, 0, 0, 0);
     // A long upward touchpad swipe must stop short of the pole.
@@ -128,7 +120,7 @@ static bool checkPitchLimit()
     for (int frame = 0; frame < 50; ++frame)
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
-        Fl::check();
+        platform::processPending();
     }
     HMatrix matrix;
     camera.getMatrix(matrix);
@@ -139,20 +131,17 @@ static bool checkPitchLimit()
 
 static bool checkWheelZoom()
 {
-    Fl_Gl_Window window(600, 600);
+    TestViewport window(600, 600);
     ArcBallCam camera;
     camera.setup(&window, 40, 250, .2f, .4f, 0);
     HMatrix initial, current;
     camera.getMatrix(initial);
-    Fl::e_dx = 0;
-    Fl::e_dy = -1; // one notch up
-    Fl::e_state = 0;
-    camera.handle(FL_MOUSEWHEEL);
+    camera.handle(wheelEvent(0, -1)); // one notch up
     bool smooth = camera.cameraDistance() == 250;
     for (int frame = 0; frame < 40; ++frame)
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
-        Fl::check();
+        platform::processPending();
     }
     camera.getMatrix(current);
     bool pass = smooth && std::fabs(camera.cameraDistance() - 250 / 1.1) < .1 &&
@@ -164,7 +153,7 @@ static bool checkWheelZoom()
 
 static bool checkPreciseScroll()
 {
-    Fl_Gl_Window window(600, 600);
+    TestViewport window(600, 600);
     ArcBallCam camera;
     camera.setup(&window, 40, 250, 0, 0, 0);
     HMatrix initial, current;
@@ -194,31 +183,27 @@ static bool checkPreciseScroll()
 
 static bool checkEmptySpaceDrag()
 {
-    Fl_Gl_Window window(600, 600);
+    TestViewport window(600, 600);
     ArcBallCam camera;
     camera.setup(&window, 40, 250, 0, 0, 0);
     HMatrix initial, current;
     camera.getMatrix(initial);
-    Fl::e_x = 300;
-    Fl::e_y = 300;
-    Fl::e_state = FL_BUTTON1;
-    camera.beginDrag(false);
-    Fl::e_x = 360;
-    bool taken = camera.handle(FL_DRAG) == 1;
+    camera.beginDrag(300, 300, false);
+    bool taken = camera.handle(mouseEvent(InputType::Drag, 360, 300, 0, Mod::Button1)) == 1;
     camera.getMatrix(current);
     // 60 px of a 600 px window is .2 NDC; drags orbit 1.5 rad per NDC unit.
     const double expected = .3 * 180 / 3.141592653589793;
     bool rotate = taken && std::fabs(angle(initial, current) - expected) < .05;
-    bool released = camera.handle(FL_RELEASE) == 1 && camera.handle(FL_DRAG) == 0;
+    bool released = camera.handle(mouseEvent(InputType::Release, 360, 300, Mouse::Left)) == 1 &&
+                    camera.handle(mouseEvent(InputType::Drag, 360, 300)) == 0;
     std::printf("%s: left drag on empty space orbits %.3f deg and ends on release\n",
                 rotate && released ? "PASS" : "FAIL", angle(initial, current));
-    Fl::e_state = 0;
     return rotate && released;
 }
 
 static bool checkOrbitAndZoomTogether()
 {
-    Fl_Gl_Window window(600, 600);
+    TestViewport window(600, 600);
     ArcBallCam camera;
     camera.setup(&window, 40, 250, 0, 0, 0);
     HMatrix initial, current;
@@ -235,15 +220,12 @@ static bool checkOrbitAndZoomTogether()
     // Mouse wheel rotation and zoom queued together both finish.
     camera.setup(&window, 40, 250, 0, 0, 0);
     camera.getMatrix(initial);
-    Fl::e_dx = 1;
-    Fl::e_dy = 0;
-    Fl::e_state = 0;
-    camera.handle(FL_MOUSEWHEEL);
+    camera.handle(wheelEvent(1, 0));
     camera.zoomByWheel(1);
     for (int frame = 0; frame < 40; ++frame)
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
-        Fl::check();
+        platform::processPending();
     }
     camera.getMatrix(current);
     bool queued =
@@ -252,26 +234,19 @@ static bool checkOrbitAndZoomTogether()
 
     // Zoom while dragging, and a pan drag stays continuous after the zoom.
     camera.setup(&window, 40, 250, 0, 0, 0);
-    Fl::e_x = 300;
-    Fl::e_y = 300;
-    Fl::e_state = FL_BUTTON1;
-    camera.beginDrag(true);
+    camera.beginDrag(300, 300, true);
     camera.zoomByWheel(1, true);
     bool zoomDuringDrag = std::fabs(camera.cameraDistance() - 250 / 1.1) < .01;
     // A mouse-wheel notch while the drag is still held zooms in too.
-    Fl::e_dx = 0;
-    Fl::e_dy = -1;
-    camera.handle(FL_MOUSEWHEEL);
+    camera.handle(wheelEvent(0, -1));
     for (int frame = 0; frame < 40; ++frame)
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
-        Fl::check();
+        platform::processPending();
     }
     zoomDuringDrag = zoomDuringDrag && std::fabs(camera.cameraDistance() - 250 / 1.21) < .1;
-    Fl::e_x = 330;
-    camera.handle(FL_DRAG);
-    camera.handle(FL_RELEASE);
-    Fl::e_state = 0;
+    camera.handle(mouseEvent(InputType::Drag, 330, 300, 0, Mod::Button1));
+    camera.handle(mouseEvent(InputType::Release, 330, 300, Mouse::Left));
     std::printf("%s: zoom works during a drag\n", zoomDuringDrag ? "PASS" : "FAIL");
     return both && queued && zoomDuringDrag;
 }

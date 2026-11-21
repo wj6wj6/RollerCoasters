@@ -28,13 +28,15 @@ flowchart LR
     View --> History
     History --> Track
     View --> Keys[EditKeys / 按鍵對應的編輯指令]
+    FltkEvents[FLTK 事件 / Fl::event_*] -->|platform::fltkEvent| Input[InputEvent / 自己的滑鼠鍵盤事件 Input.H]
+    Input -->|handleInput| View
     View --> Camera[ArcBallCam / World 相機與手勢平滑]
     View --> Fly[FlyCam / 觀察者自由相機]
     View --> Head[HeadLook / Train 視角轉頭]
     View --> Chase[ChaseRig / Chase 相機取景與平滑跟隨]
     Chase -.->|避開方塊：solidAt| Land
     Camera -->|進入 Fly 時的視角| Fly
-    Camera --> Timer[FLTK event loop / timeout]
+    Camera --> Timer[platform:: timer / 目前由 FLTK event loop 實作]
     Timer --> Camera
     Fly -->|按住按鍵時| Timer
     Timer --> Fly
@@ -52,10 +54,13 @@ flowchart LR
     View --> Land[LandWorld / 方塊島嶼與木棧橋]
     View --> Ocean[OceanWorld / 海床、海底景物與生物]
     View --> Effects[TrainViewEffects / 讀取光影 widget]
+    View --> Gui[Ui/Gui / 自己畫的方塊遊戲風介面：按鈕、滑桿、清單、像素字型]
+    Gui --> Atlas[Ui/UiAtlas + PixelFont / 程式畫的字型與元件貼圖]
+    Gui -->|quads| GuiGl[Ui/GuiGl / 以 OpenGL 畫出]
     Effects --> Frame[renderAdvancedFrame]
-    Frame --> Lighting[AdvancedLighting / shadow map、逐像素光照、頭燈]
+    Frame --> Lighting[AdvancedLighting / 兩層 shadow map、逐像素光照、頭燈]
     Frame --> Post[PostEffects / 天空、水面、雨、SSAO、Bloom、色調映射]
-    Frame -->|drawGround / drawUnderwater / drawObjects| View
+    Frame -->|drawGround / drawUnderwater / drawObjects / drawSurfaceWater| View
     View -->|worldReady：未建好前畫載入畫面| Loading[載入畫面 / 泥土背景、階段文字、進度條]
     Land -->|背景執行緒：生成網格、切塊 mesh| LandWorker[LandWorld::buildScene]
     LandWorker -->|prepare：每幀約 30 ms 編 display list| Land
@@ -92,11 +97,15 @@ flowchart LR
 | `src/TrainWindow.H/.cpp` | 主視窗與控制面板；持有唯一的 `CTrack`、widget 與 `advanceTrain()`。 |
 | `src/CallBacks.H/.cpp` | 按鈕、滑桿、idle 更新、軌道載入儲存與材質包選單。 |
 | `src/UiTheme.h/.cpp` | 控制面板配色與圓角控制項樣式。 |
+| `src/Ui/Gui.h/.cpp` | 方塊遊戲風的即時模式介面：每幀呼叫 `button()`、`toggle()`、`cycle()`、`slider()`、`list()` 同時畫出元件並回報是否被使用；滑鼠以 `feed()` 在幀之間送入（按下即觸發），`feed()` 回報介面是否吃掉事件；GUI 縮放照方塊遊戲的 Auto（至少留 320 x 240 單位）。不需 OpenGL，由 `GuiCheck` 測試。見 [ADR 0009](adr/0009-own-block-game-style-ui.md)。 |
+| `src/Ui/PixelFont.h/.cpp`、`UiAtlas.h/.cpp` | 自己畫的 ASCII 像素字型（最寬 5、高 7 加一行下伸）與元件貼圖（按鈕三態、滑桿槽、面板、快捷欄格子），合成一張 256 x 256 atlas，以九宮格伸縮。 |
+| `src/Ui/GuiGl.h/.cpp` | 上傳 atlas（nearest 取樣）並以像素座標畫出 `Gui` 的 quads；GL context 重建時 `forget()`。目前載入畫面的文字由它畫。 |
 | `src/TrainView.H/.cpp` | OpenGL 畫布：相機投影、場景繪製、控制點選取與編輯、Windows 輸入訊息。 |
 | `src/TrainViewEffects.cpp` | 把光影 widget 的狀態轉成 `LightingFrame`，並呼叫 `renderAdvancedFrame()`。 |
-| `src/AdvancedLighting.h/.cpp` | 跟著鏡頭的 shadow map、GLSL 逐像素光照、日夜與頭燈。 |
+| `src/AdvancedLighting.h/.cpp` | 跟著鏡頭的兩層 shadow map（鏡頭附近 150 單位的細圖、外圍 600 單位的粗圖，交界處混合）、GLSL 逐像素光照、日夜與頭燈。 |
 | `src/PostEffects.h/.cpp` | 浮點 frame buffer 與後製：天空、水面與 SSR、雨與濕地反射、SSAO、Bloom、god rays、ACES。 |
 | `src/UnderwaterOptics.h` | 水下吸收、caustics 與水色常數，三個 shader 共用。 |
+| `src/LandWaterMotion.h` | 島上的水怎麼動（水面輕微起伏、落水處攪動、瀑布朝空氣的面輕微擺動），光照 shader 與水面 shader 共用，依 `LandWorld` 寫在頂點上的標記。 |
 | `src/MatrixMath.h` | 光影程式用的 column-major 4×4 矩陣輔助函式。 |
 | `src/Track.H/.cpp` | 控制點容器、三種樣條的位置與切線、`trainU`、軌道文字檔讀寫。 |
 | `src/ControlPoint.H/.cpp` | 控制點位置、方向向量與標記繪製。 |
@@ -122,7 +131,9 @@ flowchart LR
 | `src/FileDialogs.h/.cpp` | 系統檔案視窗（`Fl_Native_File_Chooser`）與用檔案總管開資料夾。 |
 | `src/TouchpadGestures.H/.cpp` | Raw Input 讀精準觸控板的手指座標；Direct Manipulation 接手手勢並作為備援。 |
 | `src/Utilities/TwoFingerGesture.*` | 兩指位移與張開比例的 1-euro 濾波與起動門檻。 |
-| `src/Utilities/ArcBallCam.*` | World 相機；以 FLTK timeout 分攤滾輪縮放。 |
+| `src/Utilities/Input.H` | 自己的輸入事件 `InputEvent`、`Key::`／`Mod::`／`Mouse::` 常數（數值與 FLTK 相同），以及相機用的 `Viewport` 介面。 |
+| `src/Utilities/Platform.H`、`PlatformFltk.*` | 計時器與事件迴圈（`platform::addTimeout()` 等），目前以 FLTK 實作；`platform::fltkEvent()` 把 FLTK 事件轉成 `InputEvent`。見 [ADR 0008](adr/0008-own-input-and-timer-layer.md)。 |
+| `src/Utilities/ArcBallCam.*` | World 相機；以 `platform::` timer 分攤滾輪縮放。 |
 | `src/Utilities/FlyCam.*` | Fly 觀察者相機。 |
 | `src/Utilities/HeadLook.*` | Train 相機相對於列車的轉頭。 |
 | `src/Utilities/Pnt3f.*`、`3DUtils.*` | 三維向量型別與 OpenGL 輔助函式（課程原始碼）。 |
@@ -136,7 +147,8 @@ flowchart LR
 - 世界在背景執行緒建造：`TrainView::draw()` 先呼叫 `worldReady()`，它對目前要畫的島與（`Water` 與 `Light+` 都開時）海床呼叫 `prepare()`。第一次呼叫時各開一條 `std::thread` 生成網格並逐塊產生頂點；display list 只能在主執行緒建立，所以 `prepare()` 每幀最多花約 30 ms 編譯已完成的塊，其餘時間畫載入畫面，並以 timeout 約每 1/30 秒重畫，直到全部完成。
 - 新增控制點（`Add Pt`、`Shift` + `D`）先進入放置模式，`TrackInsert::pick()` 找滑鼠附近的軌道參數，點下時 `insertAt()` 插點並進入拖曳。Fly 相機在滑鼠鎖定且 `Edit` 開啟時是建造狀態（`flyBuilding()`）：左鍵刪準心對到的點、中鍵或 `C` 選取、右鍵在準心前方放點；`G` 以 `beginCarry()`／`updateCarry()` 讓點跟著視角移動。
 - 修改控制點的每條路徑（新增、刪除、`Load`、`Reset`、`Grand Tour`、R±X／Z、`Transform` 欄位、拖曳與 `G`／`R`）都先存 `TrackHistory` 快照；拖曳只在點真的改變時才存入。
-- 相機的平滑、按住按鍵移動與觸控板慣性都走 FLTK timeout，依實際經過時間計算，與幀率無關。
+- 相機的平滑、按住按鍵移動與觸控板慣性都走 `platform::` timer（目前由 FLTK 實作），依實際經過時間計算，與幀率無關。
+- 滑鼠與鍵盤事件：`TrainView::handle()` 以 `platform::fltkEvent()` 把當下的 FLTK 事件轉成 `InputEvent`，交給 `TrainView::handleInput()`；相機、控制點編輯與 Train 轉頭的處理函式只吃 `InputEvent`，不讀 `Fl::event_*()`。
 - 自動模式（`--doctor`／`--screenshot`）：`main()` 先以 `TrainWindow::applyOptions()` 設定場景（軌道檔先經 `checkTrackFile()`，壞檔直接失敗、不跳對話框），`TrainView::draw()` 畫完 `drawFrame()` 後呼叫 `finishAutomatedFrame()`。`--doctor` 在第一幀就回報；`--screenshot` 只計算真正畫出場景的幀（`frameShowsScene`，載入畫面不算），達到指定幀數才讀回畫面、寫 PNG、印出 `PASS`／`FAIL` 行與場景出現所花的秒數，再關閉視窗讓 `Fl::run()` 返回。300 秒內場景沒有出現也算失敗。結束碼：0 通過、1 檢查失敗、2 命令列錯誤。
 
 ## 跨模組約定
@@ -152,7 +164,7 @@ flowchart LR
 
 **相機**
 - 所有透視相機共用 `FOV` 滑桿的視角（`TrainView::setFieldOfView()`），所以切到 Fly 時直接沿用上一幀的 modelview 矩陣，畫面不跳動；上一幀是 Top 時改從 `topViewCentre()` 上方往下看。
-- Fly 與 Train 模式的按鍵經掃描碼 system handler（`FlyCam::keyForScanCode()`）送進 `TrainView::handle()`，輸入法開啟或使用其他鍵盤配置時按鍵位置仍有效。編輯鍵由 `EditKeys::forKey()` 決定，不能與飛行鍵衝突（`EditKeysCheck`）。
+- Fly 與 Train 模式的按鍵經掃描碼 system handler（`FlyCam::keyForScanCode()`）組成 `InputEvent` 送進 `TrainView::handleInput()`，輸入法開啟或使用其他鍵盤配置時按鍵位置仍有效。編輯鍵由 `EditKeys::forKey()` 決定，不能與飛行鍵衝突（`EditKeysCheck`）。
 - FLTK 1.3 會把滾輪訊息捨入為整格，所以 `TrainView.cpp` 直接讀 `WM_MOUSEWHEEL`／`WM_MOUSEHWHEEL` 的原始位移。觸控板的設計見 [ADR 0003](adr/0003-touchpad-direct-manipulation.md)。
 
 **場景與列車淨空**
@@ -163,13 +175,13 @@ flowchart LR
 - 世界存檔的 key 由影響該世界的每個原始檔以 `buildStamp()` 回傳編譯時間組成：重新編譯生成程式就會重新生成，檔案損壞或格式不符時當作沒有存檔。改變生成結果的修改必須讓 key 改變。存檔先寫 `.tmp` 再改名。
 
 **繪製**
-- 島與海床以 16×16 欄為一塊，各自編成 display list；`Frustum` 用當下的矩陣剔除，所以陰影與反射 pass 也只畫自己看得到的塊。
+- 島與海床以 16×16 欄為一塊，各自編成 display list；`Frustum` 用當下的矩陣剔除，所以陰影與反射 pass 也只畫自己看得到的塊；陰影 pass 每層各畫一次（`AdvancedLighting::shadowCascades()`）。
 - 顯示清單綁定貼圖名稱：換材質包時只改寫貼圖內容（`PixelArt::uploadInto()`），不重建島嶼。
 - 場景中的每種方塊與植物都要對應到材質包對照表裡的方塊名稱；只有生物、雲、熱氣球、鐵軌與列車維持程式自己的顏色。小構件（樓梯、半磚、柵欄、燈籠等）放在植物格，見 [ADR 0006](adr/0006-building-parts-in-plant-cells.md)。材質包格式見 [ADR 0005](adr/0005-texture-packs.md)。
 - 光照烘焙（天光、發光方塊、ambient occlusion）寫進頂點的 texture unit 1 座標；依朝向的明暗一律由 shader 依法線計算，不寫進頂點顏色，否則會暗兩次。
 - 光照 shader 是 GLSL 1.20，直接讀固定管線的 `gl_Vertex`、`gl_Normal`、`gl_Color` 與 texture unit 0，既有的 `glBegin` 繪圖不需修改。shader 或 frame buffer 建立失敗時自動退回固定管線。
 - 場景 frame buffer 的 alpha 存「對天空的開放程度」，供濕地反射使用；所以開啟 shader 時植物不能用 alpha test。
-- 半透明的水與玻璃最後畫：先寫深度，再在最近的水面混合顏色，不進 shadow map。
+- 半透明的水與玻璃最後畫：先寫深度，再在最近的水面混合顏色，不進 shadow map。有後製時，島上的水不在場景裡畫，改由 `PostEffects::drawSurfaceWater()` 在海面之後用海的 shader 畫（`SceneCallbacks::waterLater` 期間 `drawObjects()` 只畫玻璃、略過水；倒影 pass 仍畫貼圖的水）。水與玻璃分開編成兩個 display list，玻璃永遠用混合的方式畫。
 - `Scenery` 關閉時改建平坦的編輯用島；固定管線的平面陰影只在這個模式使用。
 
 ## 軌道檔

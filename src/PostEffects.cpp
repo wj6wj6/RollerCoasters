@@ -16,6 +16,7 @@
 
 #include "PostEffects.h"
 #include "MatrixMath.h"
+#include "LandWaterMotion.h"
 #include "UnderwaterOptics.h"
 
 namespace
@@ -207,15 +208,34 @@ void oceanWaves(vec2 p, float t, float shortest, out vec3 disp, out vec3 normal)
 // The surface is a grid of quads around the camera; the waves move its
 // vertices. Further out the grid ends in flat skirts, so the waves fade to
 // nothing before they get there.
+// The water on land (uIsland) is the faces of its blocks instead, in world
+// space, moved as LandWaterMotion.h says.
 const char *kWaterVertex = R"GLSL(
 uniform vec2 uCenter;      // where the grid is, snapped to its cell size
 uniform float uTime;
 uniform float uWaveReach;  // half the size of the grid
+uniform int uIsland;
 varying vec3 vWorld;
 varying vec2 vBase;
 varying float vWave;
+varying vec3 vFaceNormal;
+varying float vStirred;    // the water on land: how stirred up it is, 0 to 0.4
 void main()
 {
+    vStirred = 0.0;
+    if (uIsland != 0) {
+        vec3 land = gl_Vertex.xyz;
+        float stirred;
+        land += landWaterMotion(gl_MultiTexCoord1.x, land, uTime, stirred);
+        vStirred = stirred;
+        vBase = land.xz;
+        vWave = 0.0;
+        vWorld = land;
+        vFaceNormal = gl_Normal;
+        gl_Position = gl_ProjectionMatrix * (gl_ModelViewMatrix * vec4(land, 1.0));
+        return;
+    }
+    vFaceNormal = vec3(0.0, 1.0, 0.0);
     // The modelview matrix holds only the camera here.
     vec3 base = vec3(gl_Vertex.x + uCenter.x, gl_Vertex.y, gl_Vertex.z + uCenter.y);
     float fade = 1.0 - smoothstep(0.55 * uWaveReach, 0.95 * uWaveReach, length(gl_Vertex.xz));
@@ -304,6 +324,9 @@ const char *kWaterFragment = R"GLSL(
 varying vec3 vWorld;
 varying vec2 vBase;
 varying float vWave;
+varying vec3 vFaceNormal;
+varying float vStirred;
+uniform int uIsland;       // the water on land: no big waves, nothing under it to see from below
 uniform sampler2D uReflection;
 uniform sampler2DShadow uShadowMap;
 uniform mat4 uLightMatrix;
@@ -365,38 +388,66 @@ void main()
     float dist = length(toCam);
     vec3 V = toCam / dist;
 
-    // Normal: the big waves, then the ripples (and rain rings) on top.
-    vec3 disp;
-    vec3 N;
-    oceanWaves(vBase, uTime, 0.0, disp, N);
-    vec2 g = rippleSlope(vBase, uTime);
-    if (uRain > 0.0)
-        g += rainSlope(vBase, uTime) * uRain;
-    N = normalize(vec3(N.x - g.x, N.y, N.z - g.y));
+    // Normal: the big waves, then the ripples (and rain rings) on top. The
+    // water on land has only the ripples, a little stronger; on a fall or
+    // the side of a step they run down it.
+    vec3 disp = vec3(0.0);
+    vec3 N = vec3(0.0, 1.0, 0.0);
+    // The water on land's normal is smooth over the bend where it pours
+    // over an edge (LandWorld gives the corners there a normal between up
+    // and out), so the flat water, the bend and the fall are one surface:
+    // `fall` goes from 0 on the flat to 1 on an upright face, and the
+    // ripples, the colour and the foam go over with it.
+    vec3 faceN = normalize(vFaceNormal);
+    float fall = uIsland != 0 ? 1.0 - smoothstep(0.35, 0.85, faceN.y) : 0.0;
+    if (uIsland != 0) {
+        // where falling water lands the ripples are stronger and quicker
+        vec2 g = rippleSlope(vBase, uTime * (1.0 + vStirred * 3.0)) * (2.5 + vStirred * 8.0);
+        if (uRain > 0.0)
+            g += rainSlope(vBase, uTime) * uRain;
+        vec3 flatRipple = vec3(-g.x, 0.0, -g.y);
+        // on a fall the same ripples run down it
+        vec3 across = normalize(vec3(-faceN.z, 0.0, faceN.x) + vec3(1e-4, 0.0, 0.0));
+        vec2 s = rippleSlope(vec2(dot(P, across), P.y + uTime * 3.0), uTime) * 2.5;
+        vec3 fallRipple = across * s.x + vec3(0.0, s.y, 0.0);
+        N = normalize(faceN + mix(flatRipple, fallRipple, fall));
+    } else {
+        oceanWaves(vBase, uTime, 0.0, disp, N);
+        vec2 g = rippleSlope(vBase, uTime);
+        if (uRain > 0.0)
+            g += rainSlope(vBase, uTime) * uRain;
+        N = normalize(vec3(N.x - g.x, N.y, N.z - g.y));
+    }
     // Calm the waves far away so they do not shimmer.
     N = normalize(mix(N, vec3(0.0, 1.0, 0.0), clamp(dist / 500.0, 0.0, 0.85)));
 
     vec2 suv = gl_FragCoord.xy / uScreen;
     if (uUnder != 0) {
-        // Seen from below, light from above only gets through inside Snell's
-        // window, a cone of about 48 degrees around straight up. Outside it
-        // the surface mirrors the water below.
+        // Seen from below, light from above comes through Snell's window,
+        // a cone round straight up; outside it the surface mirrors the water
+        // below. The window is drawn wider and softer than the real 48
+        // degrees, with a little of the sky still showing in the mirror,
+        // and the waves bend the view only a little: a narrow window with
+        // the rest of the surface a solid blue looked like a lid.
         float cosView = abs(dot(V, N));
-        float window = smoothstep(0.62, 0.70, cosView);
-        vec3 above = texture2D(uRefraction, suv + N.xz * 0.08).rgb;
+        float window = smoothstep(0.22, 0.55, cosView);
+        vec3 above = texture2D(uRefraction, suv + N.xz * 0.025).rgb;
         // The sun through the waves: each facet that happens to bend the
         // line of sight towards the sun flashes.
         vec3 out1 = refract(-V, -N, 1.33);
         float sunHit = max(dot(out1, normalize(uLightDir)), 0.0);
         vec3 glitter = uLightColor * (pow(sunHit, 180.0) * 14.0 + pow(sunHit, 14.0) * 0.5);
-        vec3 col = mix(uDeepColor * 1.6, above * 1.15 + glitter, window);
-        float rim = smoothstep(0.54, 0.65, cosView) - smoothstep(0.65, 0.74, cosView);
-        col += (uDeepColor * 3.0 + uLightColor * 0.12) * rim;
+        vec3 mirror = uDeepColor * 1.6 + above * 0.2;
+        vec3 col = mix(mirror, above + glitter, window);
+        float rim = smoothstep(0.16, 0.26, cosView) - smoothstep(0.26, 0.4, cosView);
+        col += (uDeepColor * 2.0 + uLightColor * 0.06) * rim;
         gl_FragColor = vec4(col, 1.0);
         return;
     }
     vec3 waterView = viewPos(suv, gl_FragCoord.z);
-    vec2 distort = N.xz * 0.03;
+    // (on the water on land only the ripples bend the view, not the slope
+    // of the face, or the bend over an edge would show what is far away)
+    vec2 distort = (uIsland != 0 ? N.xz - faceN.xz : N.xz) * 0.03;
 
     // Refraction: look through the surface at the sea bed. If the bent ray
     // lands on something in front of the water, fall back to the straight one.
@@ -426,34 +477,53 @@ void main()
     // turquoise, deep water blue.
     float sunUp = clamp(uLightDir.y * 2.0, 0.0, 1.0);
     vec3 scatter = vec3(0.004, 0.050, 0.11) * (uLightColor * sunUp * mix(0.6, 1.0, shadow) + uZenith * 2.0);
-    vec3 absorb = exp(-thickness * vec3(0.12, 0.030, 0.020));
+    // The water on land is only a few blocks deep: it takes its colour as
+    // if it were deeper, so a shallow pond still looks like water.
+    // A fall has the rock right behind it, so it takes the colour of a
+    // pool about a block deep as well, and looks like the water it pours
+    // from.
+    float looksDeep = thickness;
+    if (uIsland != 0)
+        looksDeep = thickness * 3.0 + mix(0.8, 3.0, fall);
+    vec3 absorb = exp(-looksDeep * vec3(0.12, 0.030, 0.020));
     vec3 body = refr * absorb + scatter * (1.0 - absorb);
 
     // Reflection: what is on screen where the mirrored ray lands (SSR);
-    // where that finds nothing, the mirrored view drawn beforehand.
+    // where that finds nothing, the mirrored view drawn beforehand (it is
+    // mirrored in the sea's surface, so the water on land, higher up, takes
+    // the sky's colour instead).
     vec3 refl = texture2D(uReflection, suv + distort).rgb;
+    if (uIsland != 0)
+        refl = mix(uHorizon, uZenith, clamp(reflect(-V, N).y * 1.5, 0.0, 1.0));
     if (uSsrOn != 0) {
         mat3 viewRot = mat3(uView[0].xyz, uView[1].xyz, uView[2].xyz);
         vec3 nView = viewRot * N;
-        vec4 hit = traceReflection(waterView, reflect(normalize(waterView), nView), viewRot * vec3(0.0, 1.0, 0.0));
+        vec3 plane = uIsland != 0 ? faceN : vec3(0.0, 1.0, 0.0);
+        vec4 hit = traceReflection(waterView, reflect(normalize(waterView), nView), viewRot * plane);
         refl = mix(refl, hit.rgb, hit.a);
     }
     // Fresnel (Schlick): a mirror at grazing angles, clear looking straight down.
     float fresnel = 0.02 + 0.98 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+    fresnel *= 1.0 - 2.4 * fall * (1.0 - fall); // the bend over an edge mirrors less of the sky
     vec3 col = mix(body, refl, fresnel);
 
     // Sun glints.
     vec3 H = normalize(normalize(uLightDir) + V);
     float nh = max(dot(N, H), 0.0);
     float spec = pow(nh, 600.0) * 40.0 + pow(nh, 80.0) * 0.6;
-    col += uLightColor * spec * shadow * (0.3 + fresnel);
+    // (hardly any on the bend over an edge and down a fall, where the
+    // midday sun would make a white band across the water)
+    float glints = uIsland != 0 ? mix(0.1, 1.0, smoothstep(0.93, 0.995, faceN.y)) : 1.0;
+    col += uLightColor * spec * shadow * (0.3 + fresnel) * glints;
 
     // Foam where the water is shallow and on the steepest crests, broken up
     // by moving noise. Out at sea a crest only breaks where a gust is
     // blowing (a slowly drifting field of patches) and where its own
     // random threshold is passed, so whitecaps come and go here and there
     // instead of on every crest; more of them in the rain.
-    float edge = 1.0 - smoothstep(0.0, 1.2, thickness);
+    // (a little on the water on land, none on its falls, which stay clear)
+    float edgeFoam = uIsland == 0 ? 1.0 : 0.4 * (1.0 - fall);
+    float edge = (1.0 - smoothstep(0.0, 1.2, thickness)) * edgeFoam;
     float pattern = noise(P.xz * 0.9 + vec2(uTime * 0.3, uTime * 0.2)) *
                     noise(P.xz * 2.3 - vec2(uTime * 0.25));
     float gust = noise(P.xz * 0.011 + vec2(uTime * 0.021, uTime * 0.013)) * 0.65 +
@@ -1086,9 +1156,9 @@ bool PostEffects::init()
 
     m_skyProgram = makeProgram(kSkyFragment, "sky", kNoise);
     {
-        const char *vertex[2] = {kWaveGlsl, kWaterVertex};
+        const char *vertex[3] = {kWaveGlsl, kLandWaterMotionGlsl, kWaterVertex};
         const char *fragment[4] = {kNoise, kWaveGlsl, kSsrGlsl, kWaterFragment};
-        m_waterProgram = makeProgramParts(vertex, 2, fragment, 4, "water");
+        m_waterProgram = makeProgramParts(vertex, 3, fragment, 4, "water");
     }
     m_wetProgram = makeProgram(kWetFragment, "wet ground", kNoise, kSsrGlsl);
     m_ssaoProgram = makeProgram(kSsaoFragment, "ssao", kNoise);
@@ -1397,8 +1467,7 @@ void PostEffects::buildWaterMesh()
     glEndList();
 }
 
-void PostEffects::drawWater(const AdvancedLighting &lighting, float time, bool orthographic,
-                            bool underwater, float rain)
+void PostEffects::copyScene()
 {
     // The water needs to see what is under it: copy colour and depth first,
     // because a texture cannot be read while it is being drawn into.
@@ -1408,11 +1477,54 @@ void PostEffects::drawWater(const AdvancedLighting &lighting, float time, bool o
                       GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT,
                       GL_NEAREST);
     bindTarget(m_scene);
+}
 
+void PostEffects::useWaterProgram(const AdvancedLighting &lighting, float time, bool orthographic,
+                                  bool underwater, float rain, int island)
+{
     float invView[16];
     if (!invert(m_view, invView))
         identity(invView);
     const SkyState &sky = lighting.sky();
+    const GLuint p = m_waterProgram;
+    glUseProgram(p);
+    bindTexture(0, m_reflection.color);
+    bindTexture(1, m_copy.color);
+    bindTexture(2, m_copy.depth);
+    bindTexture(3, lighting.shadowTexture());
+    glUniform1i(loc(p, "uReflection"), 0);
+    glUniform1i(loc(p, "uRefraction"), 1);
+    glUniform1i(loc(p, "uDepth"), 2);
+    glUniform1i(loc(p, "uShadowMap"), 3);
+    glUniformMatrix4fv(loc(p, "uLightMatrix"), 1, GL_FALSE, lighting.lightMatrix());
+    glUniform1i(loc(p, "uShadowsOn"), lighting.shadowMapValid() ? 1 : 0);
+    glUniform1f(loc(p, "uShadowTexel"), 1.0f / 2048.0f);
+    glUniformMatrix4fv(loc(p, "uProj"), 1, GL_FALSE, m_proj);
+    glUniformMatrix4fv(loc(p, "uInvProj"), 1, GL_FALSE, m_invProj);
+    glUniformMatrix4fv(loc(p, "uView"), 1, GL_FALSE, m_view);
+    glUniform2f(loc(p, "uScreen"), static_cast<float>(m_width), static_cast<float>(m_height));
+    glUniform3f(loc(p, "uCamPos"), invView[12], invView[13], invView[14]);
+    glUniform1f(loc(p, "uTime"), time);
+    glUniform3fv(loc(p, "uLightDir"), 1, sky.lightDir);
+    glUniform3fv(loc(p, "uLightColor"), 1, sky.lightColor);
+    glUniform3fv(loc(p, "uZenith"), 1, sky.zenith);
+    glUniform3fv(loc(p, "uHorizon"), 1, sky.horizon);
+    glUniform1f(loc(p, "uFogDensity"), orthographic ? 0.0f : 0.0009f + 0.0016f * rain);
+    glUniform1i(loc(p, "uUnder"), underwater ? 1 : 0);
+    glUniform3fv(loc(p, "uDeepColor"), 1, m_deepColor);
+    glUniform1i(loc(p, "uSsrOn"), orthographic ? 0 : 1);
+    glUniform1f(loc(p, "uRain"), rain);
+    glUniform1i(loc(p, "uIsland"), island);
+}
+
+void PostEffects::drawWater(const AdvancedLighting &lighting, float time, bool orthographic,
+                            bool underwater, float rain)
+{
+    copyScene();
+
+    float invView[16];
+    if (!invert(m_view, invView))
+        identity(invView);
 
     // Put the fine grid where the camera is looking: under it when it looks
     // down, a little ahead when it looks along the surface. Snapping to the
@@ -1436,36 +1548,10 @@ void PostEffects::drawWater(const AdvancedLighting &lighting, float time, bool o
     cx = floorf(cx / kWaterGridCell) * kWaterGridCell;
     cz = floorf(cz / kWaterGridCell) * kWaterGridCell;
 
+    useWaterProgram(lighting, time, orthographic, underwater, rain, 0);
     const GLuint p = m_waterProgram;
-    glUseProgram(p);
-    bindTexture(0, m_reflection.color);
-    bindTexture(1, m_copy.color);
-    bindTexture(2, m_copy.depth);
-    bindTexture(3, lighting.shadowTexture());
-    glUniform1i(loc(p, "uReflection"), 0);
-    glUniform1i(loc(p, "uRefraction"), 1);
-    glUniform1i(loc(p, "uDepth"), 2);
-    glUniform1i(loc(p, "uShadowMap"), 3);
-    glUniformMatrix4fv(loc(p, "uLightMatrix"), 1, GL_FALSE, lighting.lightMatrix());
-    glUniform1i(loc(p, "uShadowsOn"), lighting.shadowMapValid() ? 1 : 0);
-    glUniform1f(loc(p, "uShadowTexel"), 1.0f / 2048.0f);
-    glUniformMatrix4fv(loc(p, "uProj"), 1, GL_FALSE, m_proj);
-    glUniformMatrix4fv(loc(p, "uInvProj"), 1, GL_FALSE, m_invProj);
-    glUniformMatrix4fv(loc(p, "uView"), 1, GL_FALSE, m_view);
-    glUniform2f(loc(p, "uScreen"), static_cast<float>(m_width), static_cast<float>(m_height));
-    glUniform3f(loc(p, "uCamPos"), invView[12], invView[13], invView[14]);
     glUniform2f(loc(p, "uCenter"), cx, cz);
     glUniform1f(loc(p, "uWaveReach"), reach);
-    glUniform1f(loc(p, "uTime"), time);
-    glUniform3fv(loc(p, "uLightDir"), 1, sky.lightDir);
-    glUniform3fv(loc(p, "uLightColor"), 1, sky.lightColor);
-    glUniform3fv(loc(p, "uZenith"), 1, sky.zenith);
-    glUniform3fv(loc(p, "uHorizon"), 1, sky.horizon);
-    glUniform1f(loc(p, "uFogDensity"), orthographic ? 0.0f : 0.0009f + 0.0016f * rain);
-    glUniform1i(loc(p, "uUnder"), underwater ? 1 : 0);
-    glUniform3fv(loc(p, "uDeepColor"), 1, m_deepColor);
-    glUniform1i(loc(p, "uSsrOn"), orthographic ? 0 : 1);
-    glUniform1f(loc(p, "uRain"), rain);
 
     glPushAttrib(GL_ENABLE_BIT | GL_DEPTH_BUFFER_BIT | GL_POLYGON_BIT);
     glEnable(GL_DEPTH_TEST);
@@ -1476,6 +1562,31 @@ void PostEffects::drawWater(const AdvancedLighting &lighting, float time, bool o
     if (!m_waterList)
         buildWaterMesh();
     glCallList(m_waterList);
+    glPopAttrib();
+
+    unbindTextures(4);
+    glUseProgram(0);
+}
+
+void PostEffects::drawSurfaceWater(const AdvancedLighting &lighting, float time, bool orthographic,
+                                   float rain, SceneCallbacks &scene)
+{
+    // after the sea, so the water on land sees the sea through it too
+    copyScene();
+    useWaterProgram(lighting, time, orthographic, false, rain, 1);
+
+    glPushAttrib(GL_ENABLE_BIT | GL_DEPTH_BUFFER_BIT | GL_POLYGON_BIT | GL_CURRENT_BIT);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LEQUAL);
+    glDisable(GL_STENCIL_TEST);
+    glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
+    glDepthMask(GL_TRUE);
+    // the water's display lists bind their textures: on a unit the
+    // program does not read
+    glActiveTexture(GL_TEXTURE7);
+    scene.drawSurfaceWater();
+    glBindTexture(GL_TEXTURE_2D, 0);
     glPopAttrib();
 
     unbindTextures(4);
@@ -1772,11 +1883,14 @@ void renderAdvancedFrame(AdvancedLighting &lighting, PostEffects &effects, Light
     lighting.prepare(frame);
     if (frame.shadows)
     {
-        lighting.beginShadowPass();
-        scene.drawObjects(true);
-        if (toggles.water)
-            scene.drawUnderwater(true);
-        lighting.endShadowPass();
+        for (int cascade = 0; cascade < lighting.shadowCascades(); ++cascade)
+        {
+            lighting.beginShadowPass(cascade);
+            scene.drawObjects(true);
+            if (toggles.water)
+                scene.drawUnderwater(true);
+            lighting.endShadowPass();
+        }
     }
 
     const bool post = (toggles.water || toggles.bloom || toggles.ssao) && effects.init();
@@ -1829,7 +1943,9 @@ void renderAdvancedFrame(AdvancedLighting &lighting, PostEffects &effects, Light
     scene.drawGround();
     if (toggles.water)
         scene.drawUnderwater(false);
+    scene.waterLater = true; // drawn below, as the sea is
     scene.drawObjects(false);
+    scene.waterLater = false;
     lighting.end();
     glDisable(GL_STENCIL_TEST);
 
@@ -1841,6 +1957,7 @@ void renderAdvancedFrame(AdvancedLighting &lighting, PostEffects &effects, Light
         effects.drawParticles(sky, frame.time);
     if (toggles.water)
         effects.drawWater(lighting, frame.time, frame.orthographic, underwater, frame.rain);
+    effects.drawSurfaceWater(lighting, frame.time, frame.orthographic, frame.rain, scene);
     if (frame.rain > 0.01f && !underwater && !frame.orthographic)
         effects.drawRain(sky, frame.time, frame.rain);
     if (underwater)

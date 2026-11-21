@@ -7,7 +7,7 @@
                   Yu-Chi Lai, yu-chi@cs.wisc.edu
 
      Comment:    
-						This is a camera UI for FlTk OpenGL Applications.
+						This is a camera UI for OpenGL views (Input.H).
 
 	 
 						An arcball is a user interface for rotating an object 
@@ -39,7 +39,7 @@
 							double right click resets the arcball if you get lost
 
 						To use it:
-						1) instantiate it in your Fl_Gl_Window class
+						1) instantiate it in your view class (a Viewport)
 						2) call setup in the constructor of your window class
 						3) call its handle method inside of your handle method
 						4) use its SetProjection method when you need to set the 
@@ -51,6 +51,7 @@
 #pragma once
 
 #include "3DUtils.h"
+#include "Input.H"
 #include <chrono>
 
 //***************************************************************************
@@ -62,9 +63,6 @@ inline float *asGlMatrix(HMatrix m)
 {
     return (float *)m;
 };
-
-// the arcball must be aware of FlTk
-class Fl_Gl_Window;
 
 //**************************************************************************
 //
@@ -116,7 +114,7 @@ class Quat
 class ArcBallCam
 {
   public:
-    // we now must connect the ArcBall to an FlTk Window
+    // we now must connect the ArcBall to a view
     // note: this initializes things to a bad state (since the window might
     // not be available when we instantiate this - be sure to use setup!
     ArcBallCam();
@@ -134,7 +132,7 @@ class ArcBallCam
     }
 
     // you must call setup before doing anything!
-    void setup(Fl_Gl_Window *wind,
+    void setup(Viewport *wind,
                float fieldOfView = 40.0, // field of view, in degrees
                float eyeZ = 20.0,        // how far away camera is from the center of the world
                float isx = 0, float isy = 0, float isz = 0 // initial rotation
@@ -146,23 +144,23 @@ class ArcBallCam
     //
     //*********************************************************************
 
-    // handle mimics the FlTk widget handler - have your widget call this
+    // handle mimics a widget event handler - have your view call this
     // if the arcball takes the event, it will return 1, otherwise it will
     // return 0 (and something else has to take the event)
-    int handle(int e);
+    int handle(const InputEvent &e);
 
     // Positive wheel steps zoom in; Windows pinch gestures use this too.
     // Precise steps (touchpad) apply at once; whole mouse-wheel notches are smoothed.
     void zoomByWheel(float steps, bool precise = false);
 
-    // Scroll in wheel notches with FLTK signs (+dx right, +dy down): the wheel
+    // Scroll in wheel notches (+dx right, +dy down; state holds Mod:: bits): the wheel
     // zooms, a sideways tilt orbits, Alt or Shift pans. Precise (sub-notch)
     // deltas apply at once; whole mouse-wheel notches are spread over frames.
     void scroll(float dx, float dy, int state, bool precise);
 
-    // Start a camera drag for a button the caller already took, such as a left
-    // drag on empty space. Later FL_DRAG/FL_RELEASE events go through handle().
-    void beginDrag(bool pan);
+    // Start a camera drag at mouse (x, y) for a button the caller already took,
+    // such as a left drag on empty space. Later Drag/Release events go through handle().
+    void beginDrag(int mouseX, int mouseY, bool pan);
 
     // Apply one touchpad update where the fingers moved (dx, dy) window pixels
     // and spread apart by scale, so orbit (or pan) and zoom happen together.
@@ -211,7 +209,7 @@ class ArcBallCam
     // that is X & Y go from -1 to 1 (with zero at the center)
     // this really goes with the window, but its handy here, and we can't
     // assume the window does it
-    void getMouseNDC(float &x, float &y);
+    void getMouseNDC(int mouseX, int mouseY, float &x, float &y);
 
   private:
     static void animateGesture(void *data);
@@ -252,5 +250,5 @@ class ArcBallCam
     float isy;
     float isz;
 
-    Fl_Gl_Window *wind; // Draw window
+    Viewport *wind; // Draw window
 };

@@ -513,6 +513,17 @@ struct Site
     int biome;
 };
 
+// What the shore at (x, z) of the first layout is like, so the coast is not
+// one thin strip of sand all round: rocky (0..1) where the land rises
+// straight out of the sea in rock, dunes (0..1) where a wider beach rolls
+// in low hills of sand, and a plain beach between them.
+void shoreKind(float x, float z, float &rocky, float &dunes)
+{
+    const float n = valueNoise(x * 0.028f + 3.1f, z * 0.028f - 1.7f, 93u);
+    rocky = ramp(0.53f, 0.63f, n);
+    dunes = ramp(0.45f, 0.35f, n);
+}
+
 // The land at (x, z) of the first layout, coast units from the shore.
 Site firstSite(float x, float z, float coast)
 {
@@ -521,6 +532,22 @@ Site firstSite(float x, float z, float coast)
     site.height = 1.0f + inland * 4.2f + (fbm(x * 0.035f, z * 0.035f, 3u) - 0.5f) * 6.0f * inland +
                   (valueNoise(x * 0.09f, z * 0.09f, 5u) - 0.5f) * 1.5f * inland;
     site.biome = MEADOW;
+    // the shore: rock rising steeply from the water on the headlands, low
+    // dunes on the wide beaches
+    float rocky, dunes;
+    shoreKind(x, z, rocky, dunes);
+    if (rocky > 0.0f)
+        site.height =
+            fmaxf(site.height, 1.0f + rocky * ramp(0.3f, 3.0f, coast) *
+                                          (7.0f + 5.0f * valueNoise(x * 0.12f, z * 0.12f, 95u)));
+    if (dunes > 0.0f && coast < 16.0f)
+    {
+        // a wide beach: the land keeps low further in, rolling in dunes
+        const float beach = dunes * ramp(16.0f, 9.0f, coast);
+        const float rolls =
+            1.0f + ramp(1.0f, 3.5f, coast) * valueNoise(x * 0.16f, z * 0.16f, 97u) * 2.6f;
+        site.height += (rolls - site.height) * beach;
+    }
 
     // the snow mountain
     {
@@ -529,14 +556,23 @@ Site firstSite(float x, float z, float coast)
         const float r = sqrtf(dx * dx + dz * dz) / kAlpineRadius * warp;
         if (r < 1.0f)
         {
-            // jagged peaks: sharp ridges running out from the summit, with
-            // crags along them, rather than one smooth cone
-            const float ridge = 1.0f - fabsf(valueNoise(x * 0.07f, z * 0.07f, 15u) * 2.0f - 1.0f);
-            const float crags = valueNoise(x * 0.22f, z * 0.22f, 16u) - 0.5f;
+            // Jagged peaks, as a block game grows them: spurs running out
+            // from the summit (ridges round it, by the direction from the
+            // top, with gullies between them) and broader ridges across
+            // them, so it is a massif with shoulders rather than one cone;
+            // the small crags only roughen it a little, as too many of them
+            // made every slope a staircase of grey steps.
+            const float ax = dx / (sqrtf(dx * dx + dz * dz) + 1e-3f),
+                        az = dz / (sqrtf(dx * dx + dz * dz) + 1e-3f);
+            const float spur =
+                1.0f -
+                fabsf(valueNoise(ax * 2.4f + 7.0f, az * 2.4f + 3.0f + r * 1.2f, 14u) * 2.0f - 1.0f);
+            const float ridge = 1.0f - fabsf(valueNoise(x * 0.045f, z * 0.045f, 15u) * 2.0f - 1.0f);
+            const float crags = valueNoise(x * 0.16f, z * 0.16f, 16u) - 0.5f;
             const float h = kAlpineHeight * (1.0f - r) *
-                                (0.72f + 0.16f * valueNoise(x * 0.035f, z * 0.035f, 13u) +
-                                 0.34f * ridge * ridge) +
-                            crags * 9.0f * (1.0f - r);
+                                (0.58f + 0.12f * valueNoise(x * 0.035f, z * 0.035f, 13u) +
+                                 0.35f * spur * spur + 0.3f * ridge * ridge) +
+                            crags * 3.5f * (1.0f - r);
             if (h > site.height)
             {
                 site.height = h;
@@ -909,13 +945,25 @@ void buildTerrain(Grid &g)
                 switch (biome)
                 {
                 case ALPINE: {
-                    const float snowLine = (56.0f + patch * 10.0f) * kLift;
+                    // Above the snow line the ground is snow two blocks deep,
+                    // so the sides of the small steps are white too and the
+                    // slopes read as one field of snow; where they drop
+                    // further the rock shows under it in grey bands, and the
+                    // sheer cliffs (six blocks or more) are bare. Below it,
+                    // grassy slopes, snowy near the line, with rock where
+                    // they are steep.
+                    const float snowLine = (44.0f + patch * 6.0f) * kLift;
                     if (topY > snowLine)
-                        b = depth < 2 ? SNOW : stoneOrOre(bx, j, bz, false);
+                        b = (depth < 2 && steep < 6) ? SNOW : stoneOrOre(bx, j, bz, false);
                     else if (topY > 34.0f * kLift || steep >= 3)
-                        b = (depth == 0 && steep < 2 && patch > 0.55f)
-                                ? (topY > 44.0f * kLift ? SNOWY_DIRT : GRASS)
-                                : stoneOrOre(bx, j, bz, false);
+                    {
+                        if (steep >= 3)
+                            b = stoneOrOre(bx, j, bz, false);
+                        else if (depth == 0)
+                            b = topY > 40.0f * kLift ? SNOWY_DIRT : GRASS;
+                        else
+                            b = depth < 3 ? DIRT : stoneOrOre(bx, j, bz, false);
+                    }
                     else
                         b = depth == 0 ? (topY > 26.0f * kLift && patch > 0.4f ? SNOWY_DIRT : GRASS)
                                        : (depth < 3 ? DIRT : stoneOrOre(bx, j, bz, false));
@@ -956,12 +1004,31 @@ void buildTerrain(Grid &g)
                     else
                         b = depth == 0 ? GRASS : (depth < 3 ? DIRT : stoneOrOre(bx, j, bz, false));
                     break;
-                default:
-                    if (topY <= 2.5f && coast < 14.0f)
-                        b = depth < 3 ? SAND : STONE; // the beach
+                default: {
+                    float rocky, dunes;
+                    shoreKind(cx / kScale, cz / kScale, rocky, dunes);
+                    if (coast < 18.0f && rocky > 0.5f && (steep >= 2 || topY <= 5.0f))
+                    {
+                        // the headlands' sea cliffs: rock in layers of stone
+                        // and cobble, moss on the tops and gravel at the
+                        // water's edge, not one grey wall
+                        const unsigned int r = hash(bx * 7 + j, bz * 3 - j, 99u) % 10u;
+                        if (depth == 0 && topY <= 2.5f)
+                            b = patch > 0.45f ? GRAVEL : STONE;
+                        else if (depth == 0 && patch > 0.58f)
+                            b = MOSSY;
+                        else
+                            b = (j + static_cast<int>(patch * 3.0f)) % 4 == 0 || r < 2u
+                                    ? COBBLE
+                                    : stoneOrOre(bx, j, bz, false);
+                    }
+                    else if ((topY <= 2.5f && coast < 14.0f) ||
+                             (dunes > 0.5f && coast < 40.0f && topY <= 8.0f))
+                        b = depth < 3 ? SAND : STONE; // the beach, and its dunes
                     else
                         b = depth == 0 ? GRASS : (depth < 3 ? DIRT : stoneOrOre(bx, j, bz, false));
                     break;
+                }
                 }
                 g.put(bx, j, bz, b);
             }
@@ -2406,7 +2473,12 @@ void scatterBoulders(Grid &g, const Clearance &clear)
         {
             const int biome = g.biome[Grid::column(bx, bz)];
             const unsigned int h = hash(bx, bz, 817u);
-            const unsigned int every = biome == ALPINE          ? 60u
+            // on the beaches too, a few more than on the meadows, the sand
+            // between them left open
+            const int ground = g.get(bx, g.top(bx, bz), bz);
+            const bool beach = biome == MEADOW && (ground == SAND || ground == GRAVEL);
+            const unsigned int every = beach                    ? 90u
+                                       : biome == ALPINE        ? 60u
                                        : biome == BAMBOO_JUNGLE ? 110u
                                        : biome == CRAG          ? 80u
                                        : biome == MEADOW        ? 150u
@@ -2417,14 +2489,15 @@ void scatterBoulders(Grid &g, const Clearance &clear)
             if (vx * vx + vz * vz < (kVillageRadius + 10.0f) * (kVillageRadius + 10.0f))
                 continue;
             const int top = g.top(bx, bz);
-            bool fits = top > kSeaLayer;
+            bool fits = beach ? top >= kSeaLayer : top > kSeaLayer;
             for (int dx = -1; dx <= 1 && fits; ++dx)
                 for (int dz = -1; dz <= 1 && fits; ++dz)
                 {
                     const int t = g.top(bx + dx, bz + dz), b = g.get(bx + dx, t, bz + dz);
-                    fits = (b == GRASS || b == PODZOL || b == STONE || b == DIRT ||
-                            b == SNOWY_DIRT || b == SNOW || b == COARSE_DIRT) &&
-                           abs(t - top) <= 1;
+                    fits =
+                        (b == GRASS || b == PODZOL || b == STONE || b == DIRT || b == SNOWY_DIRT ||
+                         b == SNOW || b == COARSE_DIRT || b == SAND || b == GRAVEL) &&
+                        abs(t - top) <= 1;
                     for (int j = t + 1; j <= t + 3 && fits; ++j)
                         fits = g.get(bx + dx, j, bz + dz) == AIR &&
                                !isFixture(g.plant[Grid::index(bx + dx, j, bz + dz)]) &&
@@ -2532,28 +2605,134 @@ bool commit(Grid &g, const Clearance &clear, const std::vector<Placed> &blocks)
     return true;
 }
 
-// A round-crowned tree: oak, birch, cherry or an autumn one.
+// A round-crowned tree: oak, birch or an autumn one, as a block game grows
+// them, but no two alike: the crown is four or five layers, the outer
+// leaves of each layer gone here and there (more of them on the corners
+// and on the top), and a tree now and then has a leaf or two sticking out
+// beyond the rest, so a wood is not rows of the same green box.
 void roundTree(std::vector<Placed> &out, int bx, int base, int bz, int log, int leaves, int trunk,
                bool wide)
 {
     for (int k = 0; k < trunk; ++k)
         out.push_back(Placed{bx, base + k, bz, log});
-    const int crown = base + trunk - 2;
-    for (int layer = 0; layer < 4; ++layer)
+    const unsigned int seed = hash(bx, bz, 71u);
+    const int layers = 4 + static_cast<int>(seed % 2u);
+    const int crown = base + trunk - 2 - (layers - 4);
+    for (int layer = 0; layer < layers; ++layer)
     {
-        const int radius = layer < 2 ? (wide ? 3 : 2) : (layer == 2 ? (wide ? 2 : 1) : 1);
+        const int fromTop = layers - 1 - layer;
+        const int radius = fromTop >= 2 ? (wide ? 3 : 2) : (fromTop == 1 ? (wide ? 2 : 1) : 1);
         for (int dx = -radius; dx <= radius; ++dx)
             for (int dz = -radius; dz <= radius; ++dz)
             {
-                if (dx == 0 && dz == 0 && layer < 2)
+                if (dx == 0 && dz == 0 && fromTop >= 2)
                     continue; // the trunk
+                const bool edge = dx == radius || dx == -radius || dz == radius || dz == -radius;
                 const bool corner =
                     (dx == radius || dx == -radius) && (dz == radius || dz == -radius);
-                if (corner && (layer == 3 || hash(bx + dx, bz + dz + layer, 73u) % 2u == 0))
+                const unsigned int r = hash(bx * 3 + dx, bz * 5 + dz + layer * 17, 73u) % 8u;
+                if (corner && (fromTop == 0 || r < 5u))
+                    continue;
+                if (edge && !corner && radius >= 2 && r < (fromTop == 0 ? 4u : 2u))
                     continue;
                 out.push_back(Placed{bx + dx, crown + layer, bz + dz, leaves});
             }
     }
+    // a leaf sticking out from the widest layer
+    if (seed % 3u == 0u)
+    {
+        const int r = wide ? 4 : 3;
+        const int side = static_cast<int>((seed >> 4) % 4u);
+        const int ox = side == 0 ? r : (side == 1 ? -r : 0),
+                  oz = side == 2 ? r : (side == 3 ? -r : 0);
+        out.push_back(Placed{bx + ox, crown + 1, bz + oz, leaves});
+    }
+}
+
+// A cherry tree as a block game grows one: a short trunk that splits into
+// two or three branches leaning out and up, each ending in a wide, flat
+// crown of blossom, its underside hanging down in places, so the grove is
+// a pink roof on crooked dark trunks rather than stacked pyramids.
+void cherryTree(std::vector<Placed> &out, int bx, int base, int bz, unsigned int h)
+{
+    const int trunk = 3 + static_cast<int>(h % 2u);
+    for (int k = 0; k < trunk; ++k)
+        out.push_back(Placed{bx, base + k, bz, DARK_OAK_LOG});
+    const int branches = 2 + static_cast<int>((h >> 3) % 2u);
+    const float start = static_cast<float>((h >> 5) % 360u) * 0.0174533f;
+    for (int b = 0; b < branches; ++b)
+    {
+        const float a = start + 6.2831853f * static_cast<float>(b) / static_cast<float>(branches) +
+                        (static_cast<float>((h >> (8 + b * 3)) % 7u) - 3.0f) * 0.12f;
+        const float ux = cosf(a), uz = sinf(a);
+        const int length = 2 + static_cast<int>((h >> (12 + b * 2)) % 2u);
+        int ex = bx, ey = base + trunk - 1, ez = bz;
+        for (int k = 1; k <= length; ++k)
+        {
+            ex = bx + static_cast<int>(lroundf(ux * static_cast<float>(k) * 1.2f));
+            ez = bz + static_cast<int>(lroundf(uz * static_cast<float>(k) * 1.2f));
+            ey = base + trunk - 1 + k;
+            out.push_back(Placed{ex, ey, ez, DARK_OAK_LOG});
+        }
+        // the crown at the branch's end: a flat dome, widest a block above it
+        for (int dy = -1; dy <= 2; ++dy)
+        {
+            const float radius = dy == -1 ? 2.6f : (dy == 0 ? 3.6f : (dy == 1 ? 3.1f : 1.9f));
+            for (int dx = -4; dx <= 4; ++dx)
+                for (int dz = -4; dz <= 4; ++dz)
+                {
+                    const float d = sqrtf(static_cast<float>(dx * dx + dz * dz)) +
+                                    (lattice(ex + dx * 7, ez + dz * 3 + dy, 79u) - 0.5f) * 0.9f;
+                    if (d > radius || (dx == 0 && dz == 0 && dy < 1))
+                        continue;
+                    out.push_back(Placed{ex + dx, ey + dy, ez + dz, LEAVES_CHERRY});
+                    // blossom hanging from the underside
+                    if (dy == -1 && hash(ex + dx, ez + dz, 81u) % 4u == 0u)
+                        out.push_back(Placed{ex + dx, ey - 2, ez + dz, LEAVES_CHERRY});
+                }
+        }
+    }
+}
+
+// A big oak, as a block game sometimes grows one: a taller trunk with
+// three or four branches reaching out at different heights, each with
+// its own ball of leaves, and a crown on top, so the big trees of a wood
+// stand out from the small ones.
+void bigOak(std::vector<Placed> &out, int bx, int base, int bz, unsigned int h)
+{
+    const int trunk = 7 + static_cast<int>(h % 3u);
+    for (int k = 0; k < trunk; ++k)
+        out.push_back(Placed{bx, base + k, bz, OAK_LOG});
+    auto ball = [&](int cx, int cy, int cz, float radius) {
+        for (int dy = -2; dy <= 2; ++dy)
+            for (int dx = -3; dx <= 3; ++dx)
+                for (int dz = -3; dz <= 3; ++dz)
+                {
+                    const float d = sqrtf(static_cast<float>(dx * dx + dz * dz) +
+                                          1.8f * static_cast<float>(dy * dy)) +
+                                    (lattice(cx + dx * 5, cz + dz * 7 + dy, 83u) - 0.5f) * 0.8f;
+                    if (d <= radius)
+                        out.push_back(Placed{cx + dx, cy + dy, cz + dz, LEAVES_OAK});
+                }
+    };
+    const int branches = 3 + static_cast<int>((h >> 3) % 2u);
+    for (int b = 0; b < branches; ++b)
+    {
+        const float a = static_cast<float>((h >> 5) % 360u) * 0.0174533f +
+                        6.2831853f * static_cast<float>(b) / static_cast<float>(branches);
+        const int from = base + trunk - 4 + b % 3;
+        const int length = 2 + static_cast<int>((h >> (9 + b)) % 2u);
+        int ex = bx, ey = from, ez = bz;
+        for (int k = 1; k <= length; ++k)
+        {
+            ex = bx + static_cast<int>(lroundf(cosf(a) * static_cast<float>(k)));
+            ez = bz + static_cast<int>(lroundf(sinf(a) * static_cast<float>(k)));
+            ey = from + k / 2;
+            out.push_back(Placed{ex, ey, ez, OAK_LOG});
+        }
+        ball(ex, ey + 1, ez, 2.4f);
+    }
+    ball(bx, base + trunk, bz, 2.9f);
 }
 
 // A spruce as a block game grows one: the trunk ends a block under a
@@ -2767,7 +2946,7 @@ void buildLake(Grid &g, const Clearance &clear, Extras &extras)
             if (abs(x - bestX) + abs(z - bestZ) <= 3)
                 g.put(x, level + 1, z, abs(x - bestX) + abs(z - bestZ) <= 1 ? GRASS : SAND);
     std::vector<Placed> tree;
-    roundTree(tree, bestX, level + 2, bestZ, OAK_LOG, LEAVES_CHERRY, 5, true);
+    cherryTree(tree, bestX, level + 2, bestZ, 5u);
     commit(g, clear, tree);
     // the jetty from the south bank
     for (int z = bestZ + radius + 1; z >= bestZ + radius - 5; --z)
@@ -3013,10 +3192,19 @@ void buildIceSpikes(Grid &g, const Clearance &clear)
     for (int bx = kMinBX + 2; bx < kMaxBX - 2; ++bx)
         for (int bz = kMinBZ + 2; bz < kMaxBZ - 2; ++bz)
         {
-            if (g.biome[Grid::column(bx, bz)] != ALPINE || hash(bx, bz, 481u) % 70u != 0)
+            // few of them, and only on level snow: on the slopes they stood
+            // out like rows of glass pillars
+            if (g.biome[Grid::column(bx, bz)] != ALPINE || hash(bx, bz, 481u) % 240u != 0)
                 continue;
             const int top = g.top(bx, bz);
             if (g.get(bx, top, bz) != SNOW || top + 16 > kMaxY)
+                continue;
+            bool level = true;
+            for (int k = 0; k < 4 && level; ++k)
+                level = abs(g.top(bx + (k == 0 ? 2 : (k == 1 ? -2 : 0)),
+                                  bz + (k == 2 ? 2 : (k == 3 ? -2 : 0))) -
+                            top) <= 1;
+            if (!level)
                 continue;
             const int height = 5 + static_cast<int>(hash(bx, bz, 483u) % 10u);
             const bool thick = height > 9;
@@ -3109,7 +3297,9 @@ void buildSwampWater(Grid &g, const std::vector<unsigned char> &zone)
 void mangrove(Grid &g, const Clearance &clear, int bx, int base, int bz, unsigned int h)
 {
     std::vector<Placed> tree;
-    const int lift = 3, trunk = 5 + static_cast<int>(h % 3u);
+    // trunks of different heights, so the crowns stand at different levels
+    // and the swamp is not one flat green roof
+    const int lift = 3, trunk = 4 + static_cast<int>(h % 6u);
     const int dirs[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
     for (const int *d : dirs)
     {
@@ -3344,8 +3534,8 @@ void plantNorthEast(Grid &g, const Clearance &clear, const Extras &extras)
             const float cx = centerOf(bx), cz = centerOf(bz);
             if (biome == MANGROVE)
             {
-                if ((ground == MUD || ground == WATER) && h % 34u == 0 && top + 14 < kMaxY &&
-                    !crowded(g, bx, top + 1, bz, 7))
+                if ((ground == MUD || ground == WATER) && h % 34u == 0 && top + 18 < kMaxY &&
+                    !crowded(g, bx, top + 1, bz, 9))
                     mangrove(g, clear, bx, top + 1, bz, h >> 4);
                 continue;
             }
@@ -3359,14 +3549,17 @@ void plantNorthEast(Grid &g, const Clearance &clear, const Extras &extras)
                 if (tx * tx + tz * tz < ragged * ragged)
                     continue;
             }
+            // thickets of bamboo with grassy clearings between them, where
+            // the big trees stand, so from afar the jungle is not one green
+            // roof
             const float thicket = valueNoise(cx * 0.04f, cz * 0.04f, 743u);
-            if (thicket > 0.34f && h % 4u != 0)
+            if (thicket > 0.44f && h % 4u != 0)
             {
                 const int height = 8 + static_cast<int>((h >> 8) % 9u);
                 if (bambooCane(g, clear, bx, top + 1, bz, height))
                     caneTops.push_back(Placed{bx, top + height, bz, LEAVES_BAMBOO});
             }
-            else if (h % 61u == 0 && !crowded(g, bx, top + 1, bz, 3))
+            else if (h % 41u == 0 && !crowded(g, bx, top + 1, bz, 4))
             {
                 std::vector<Placed> tree;
                 roundTree(tree, bx, top + 1, bz, OAK_LOG, LEAVES_OAK, 9, true);
@@ -3457,8 +3650,7 @@ void plantTrees(Grid &g, const Clearance &clear, const Extras &extras)
                     // the cherry grove: blossom trees close together
                     if (h % 9u == 0 && !crowded(g, bx, base, bz, 3))
                     {
-                        roundTree(blocks, bx, base, bz, OAK_LOG, LEAVES_CHERRY,
-                                  5 + static_cast<int>((h >> 8) % 2u), true);
+                        cherryTree(blocks, bx, base, bz, h >> 6);
                         commit(g, clear, blocks);
                     }
                     continue;
@@ -3498,10 +3690,12 @@ void plantTrees(Grid &g, const Clearance &clear, const Extras &extras)
                         const unsigned int kind = (h >> 8) % 10u;
                         const int trunk = 4 + static_cast<int>((h >> 12) % 3u);
                         if (blossom && kind < 6u)
-                            roundTree(blocks, bx, base, bz, OAK_LOG, LEAVES_CHERRY, trunk, true);
+                            cherryTree(blocks, bx, base, bz, h >> 6);
                         else if (kind < 4u)
                             roundTree(blocks, bx, base, bz, BIRCH_LOG, LEAVES_BIRCH, trunk + 1,
                                       false);
+                        else if (kind == 9u && wood > 0.56f)
+                            bigOak(blocks, bx, base, bz, h >> 6);
                         else
                             roundTree(blocks, bx, base, bz, OAK_LOG, LEAVES_OAK, trunk, kind == 9u);
                     }
@@ -3513,7 +3707,7 @@ void plantTrees(Grid &g, const Clearance &clear, const Extras &extras)
 
     // one cherry tree on the floating island
     blocks.clear();
-    roundTree(blocks, kFloatX - 1, kFloatTop + 1, kFloatZ + 1, OAK_LOG, LEAVES_CHERRY, 4, false);
+    cherryTree(blocks, kFloatX - 1, kFloatTop + 1, kFloatZ + 1, 2u);
     commit(g, clear, blocks);
 }
 
@@ -3979,6 +4173,26 @@ struct BuildProgress
     }
 };
 
+// Sand under the shallow water at the shore where neither world would
+// draw a sea bed: the sea leaves its blocks whose middle is on the island
+// to the island, but its blocks are twice the size, so at the inner
+// corners of the coast part of such a block is not on the island, and
+// there the water looked down into a deep blue hole. The sand stands a
+// block under the island's lowest layer of land, well under the sea's
+// surface, and goes in last so nothing is set on it.
+void fillShoreGaps(Grid &g)
+{
+    for (int bx = kMinBX; bx < kMaxBX; ++bx)
+        for (int bz = kMinBZ; bz < kMaxBZ; ++bz)
+        {
+            if (onIsland(bx, bz) || !OceanWorld::leftToIsland(centerOf(bx), centerOf(bz)))
+                continue;
+            for (int j = kMinY; j <= kSeaLayer - 2; ++j)
+                if (g.get(bx, j, bz) == AIR && !g.carved[Grid::index(bx, j, bz)])
+                    g.put(bx, j, bz, SAND);
+        }
+}
+
 void buildScenery(Grid &g, Extras &extras, const BuildProgress &progress = BuildProgress())
 {
     const std::vector<float> ride = OceanWorld::rideSamples();
@@ -4050,6 +4264,7 @@ void buildScenery(Grid &g, Extras &extras, const BuildProgress &progress = Build
         return;
     spreadGlow(g);
     placeAnimals(g, clear, extras);
+    fillShoreGaps(g);
     step(150);
 }
 
@@ -4076,7 +4291,7 @@ void buildFlat(Grid &g)
         else if (tree[2] == 1)
             roundTree(blocks, tree[0], 0, tree[1], BIRCH_LOG, LEAVES_BIRCH, 6, false);
         else
-            roundTree(blocks, tree[0], 0, tree[1], OAK_LOG, LEAVES_CHERRY, 5, true);
+            cherryTree(blocks, tree[0], 0, tree[1], 7u);
         commit(g, clear, blocks);
     }
     spreadSky(g);
@@ -4231,12 +4446,106 @@ float waterHeight(const Grid &g, int bx, int j, int bz)
     return static_cast<float>(8 - level) / 9.0f;
 }
 
+// The first extra value of a water vertex (otherwise how much it glows) is
+// negative, which marks it as water for the shaders, and says how the
+// corner moves: -(0.5 + 1 if it bobs with the open surface + 2 if it sways
+// on a fall + how stirred up the surface is there, 0 to 0.4). The shaders
+// ripple the surface and move the corners a little, as the sea's waves do
+// (AdvancedLighting, PostEffects); a corner's movement depends only on
+// where it is, so the faces that share it stay joined.
+float waterMark(bool bob, bool sway, float stirred)
+{
+    return -(0.5f + (bob ? 1.0f : 0.0f) + (sway ? 2.0f : 0.0f) + stirred);
+}
+
+// Can a fall's corner at the grid point (gx, gz) sway? Not where it
+// touches anything but water and air: in the four cells round its upright
+// edge, in the layer it is in, or both layers when it is on the line
+// between them (corners there are shared by the faces above and below).
+bool swayFree(const Grid &g, int gx, int gz, int layer, bool onLine)
+{
+    for (int l = onLine ? layer - 1 : layer; l <= layer; ++l)
+        for (int dx = -1; dx <= 0; ++dx)
+            for (int dz = -1; dz <= 0; ++dz)
+            {
+                const int b = g.get(gx + dx, l, gz + dz);
+                if (b != AIR && b != WATER)
+                    return false;
+            }
+    return true;
+}
+
+// How far the open surface at the grid point (gx, gz) of layer j bends
+// down, in blocks, where the water pours over an edge: a cell whose water
+// falls on below it slopes down to its open side, so the surface curves
+// into the fall instead of meeting it at a right angle; the water just
+// behind it dips a little too. Every face with a corner there bends it the
+// same, so they stay joined.
+float lipDrop(const Grid &g, int gx, int gz, int j)
+{
+    bool pours = false, open = false;
+    for (int dx = -1; dx <= 0; ++dx)
+        for (int dz = -1; dz <= 0; ++dz)
+        {
+            const int cx = gx + dx, cz = gz + dz;
+            if (g.get(cx, j, cz) == WATER && g.get(cx, j - 1, cz) == WATER &&
+                g.level[Grid::index(cx, j - 1, cz)] == WaterFlow::FALLING)
+                pours = true;
+            if (g.get(cx, j, cz) == AIR)
+                open = true;
+        }
+    return pours ? (open ? 0.55f : 0.15f) : 0.0f;
+}
+
+// Which way the water pours over the edge at the grid point (gx, gz) of
+// layer j: towards the open cells round it (x, z); false if none is open.
+bool lipOutward(const Grid &g, int gx, int gz, int j, float out[2])
+{
+    out[0] = out[1] = 0.0f;
+    for (int dx = -1; dx <= 0; ++dx)
+        for (int dz = -1; dz <= 0; ++dz)
+            if (g.get(gx + dx, j, gz + dz) == AIR)
+            {
+                out[0] += static_cast<float>(dx) + 0.5f;
+                out[1] += static_cast<float>(dz) + 0.5f;
+            }
+    const float length = sqrtf(out[0] * out[0] + out[1] * out[1]);
+    if (length < 0.01f)
+        return false;
+    out[0] /= length;
+    out[1] /= length;
+    return true;
+}
+
+// How stirred up the surface is at the grid point (gx, gz) of layer j:
+// most right beside falling water landing there, nothing three and a
+// half blocks away.
+float stirredAt(const Grid &g, int gx, int gz, int j)
+{
+    float nearest = 1.0e9f;
+    for (int cx = gx - 4; cx < gx + 4; ++cx)
+        for (int cz = gz - 4; cz < gz + 4; ++cz)
+            for (int l = j; l <= j + 1; ++l)
+                if (g.get(cx, l, cz) == WATER &&
+                    g.level[Grid::index(cx, l, cz)] == WaterFlow::FALLING)
+                {
+                    const float dx = static_cast<float>(cx) + 0.5f - static_cast<float>(gx);
+                    const float dz = static_cast<float>(cz) + 0.5f - static_cast<float>(gz);
+                    const float d = sqrtf(dx * dx + dz * dz);
+                    nearest = d < nearest ? d : nearest;
+                }
+    // (not "near": windows.h defines it as nothing)
+    const float closeness = 1.0f - nearest / 3.5f;
+    return 0.4f * (closeness < 0.0f ? 0.0f : closeness);
+}
+
 // The faces of a water block: towards the air, and the part of a side that
 // stands above lower water next to it. Lit by the light of the open cell
 // each face looks into.
 void addWaterFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
 {
     const float top = waterHeight(g, bx, j, bz);
+    const bool open = g.get(bx, j + 1, bz) != WATER; // its top is the surface
     // Where it meets the sea it takes the sea's colour; everywhere else,
     // falling or still, it is the same water.
     const int texture = j <= kSeaLayer ? LandTextures::SEA_WATER : LandTextures::WATER;
@@ -4275,7 +4584,6 @@ void addWaterFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
             v.normal[k] = static_cast<float>(f.normal[k]);
             v.color[k] = 1.0f;
         }
-        v.extra[0] = 0.0f;
         v.extra[1] = -glowFactor(static_cast<float>(g.warmAt(lx, ly, lz)));
         v.extra[2] = glowFactor(static_cast<float>(g.coolAt(lx, ly, lz)));
         v.extra[3] = skyFactor(static_cast<float>(g.skyAt(lx, ly, lz)));
@@ -4284,8 +4592,37 @@ void addWaterFaces(const Grid &g, int bx, int j, int bz, Batches &batches)
             const float y = f.normal[1] > 0
                                 ? top
                                 : (f.normal[1] < 0 ? 0.0f : (f.corner[c][1] == 1 ? top : bottom));
+            // The corners at the open surface bob, and so do those of a
+            // side where it meets the open surface of lower water beside
+            // it; the other corners of a side facing the air sway, where
+            // they touch nothing but water and air (waterMark).
+            const int gx = bx + f.corner[c][0], gz = bz + f.corner[c][2];
+            const bool meetsLower =
+                f.normal[1] == 0 && y == bottom && bottom > 0.0f && g.get(ox, oy + 1, oz) != WATER;
+            const bool bob = (open && y == top) || meetsLower;
+            const bool sway = !bob && f.normal[1] == 0 && beside == AIR &&
+                              swayFree(g, gx, gz, j + (y >= 1.0f ? 1 : 0), y == 0.0f || y >= 1.0f);
+            v.extra[0] = waterMark(bob, sway, bob ? stirredAt(g, gx, gz, j) : 0.0f);
+            // the surface bends down where it pours over an edge (lipDrop)
+            const float drop = bob ? lipDrop(g, gx, gz, j) : 0.0f;
+            // Over the edge itself its normal is halfway between up and out,
+            // on the surface and on the face it pours down, so the light and
+            // the ripples go smoothly round the bend.
+            for (int k = 0; k < 3; ++k)
+                v.normal[k] = static_cast<float>(f.normal[k]);
+            float outward[2];
+            if (drop > 0.3f && lipOutward(g, gx, gz, j, outward) &&
+                (f.normal[1] > 0 || static_cast<float>(f.normal[0]) * outward[0] +
+                                            static_cast<float>(f.normal[2]) * outward[1] >
+                                        0.5f))
+            {
+                const float s = 1.0f / sqrtf(2.0f);
+                v.normal[0] = outward[0] * s;
+                v.normal[1] = s;
+                v.normal[2] = outward[1] * s;
+            }
             v.pos[0] = static_cast<float>(bx + f.corner[c][0]) * kBlock;
-            v.pos[1] = (static_cast<float>(j) + y) * kBlock;
+            v.pos[1] = (static_cast<float>(j) + y - drop) * kBlock;
             v.pos[2] = static_cast<float>(bz + f.corner[c][2]) * kBlock;
             v.uv[0] = f.uv[c][0];
             // side faces show as much of the texture as they are tall
@@ -5080,6 +5417,7 @@ struct LandChunk
 {
     unsigned int solid = 0, plant = 0;
     unsigned int water = 0; // see-through, drawn last (drawWater)
+    unsigned int glass = 0; // the same, kept apart so the water can be drawn as the sea is
     float lo[3], hi[3];
 };
 
@@ -5088,7 +5426,7 @@ namespace
 // A chunk the builder has meshed, waiting for its display lists.
 struct MeshedChunk
 {
-    Batches solids, plants, water;
+    Batches solids, plants, water, glass;
     float lo[3], hi[3];
 };
 } // namespace
@@ -5366,6 +5704,7 @@ void LandWorld::buildScene(Scene &s, bool flat)
             chunk.solids.resize(LandTextures::TEXTURE_COUNT);
             chunk.plants.resize(LandTextures::TEXTURE_COUNT);
             chunk.water.resize(LandTextures::TEXTURE_COUNT);
+            chunk.glass.resize(LandTextures::TEXTURE_COUNT);
             int low = kMaxY + 1, high = kMinY - 1;
             for (int bx = cx; bx < cx + kChunk && bx < kMaxBX; ++bx)
                 for (int bz = cz; bz < cz + kChunk && bz < kMaxBZ; ++bz)
@@ -5384,7 +5723,7 @@ void LandWorld::buildScene(Scene &s, bool flat)
                                 addLilyPad(s.grid, bx, j, bz, chunk.plants);
                         }
                         else if (b == WINDOW)
-                            addGlassFaces(s.grid, bx, j, bz, chunk.water);
+                            addGlassFaces(s.grid, bx, j, bz, chunk.glass);
                         else if (b == DOOR)
                             addDoor(s.grid, bx, j, bz, chunk.solids);
                         else if (b != AIR)
@@ -5461,6 +5800,7 @@ bool LandWorld::prepare(bool flat, float seconds)
             chunk.solid = compileList(ready[i].solids, m_textures);
             chunk.plant = compileList(ready[i].plants, m_textures);
             chunk.water = compileList(ready[i].water, m_textures);
+            chunk.glass = compileList(ready[i].glass, m_textures);
             s.chunks.push_back(chunk);
             if (std::chrono::steady_clock::now() > until && i + 1 < ready.size())
             {
@@ -5593,6 +5933,16 @@ void LandWorld::draw(bool flat, bool shadowPass, float time)
 
 void LandWorld::drawWater(bool flat)
 {
+    drawSeeThrough(flat, true);
+}
+
+void LandWorld::drawGlass(bool flat)
+{
+    drawSeeThrough(flat, false);
+}
+
+void LandWorld::drawSeeThrough(bool flat, bool withWater)
+{
     if (!(flat ? m_flat : m_scenery) || !(flat ? m_flat : m_scenery)->built)
         return;
     const Scene &s = flat ? *m_flat : *m_scenery;
@@ -5612,7 +5962,11 @@ void LandWorld::drawWater(bool flat)
     std::vector<unsigned int> lists;
     for (const LandChunk &c : s.chunks)
         if (view.sees(c.lo, c.hi))
-            lists.push_back(c.water);
+        {
+            if (withWater)
+                lists.push_back(c.water);
+            lists.push_back(c.glass);
+        }
     for (unsigned int list : lists)
         glCallList(list);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
@@ -5624,6 +5978,17 @@ void LandWorld::drawWater(bool flat)
         glCallList(list);
     setGlow(0.0f);
     glPopAttrib();
+}
+
+void LandWorld::drawWaterSurface(bool flat)
+{
+    if (!(flat ? m_flat : m_scenery) || !(flat ? m_flat : m_scenery)->built)
+        return;
+    const Scene &s = flat ? *m_flat : *m_scenery;
+    const Frustum view = Frustum::current();
+    for (const LandChunk &c : s.chunks)
+        if (view.sees(c.lo, c.hi))
+            glCallList(c.water);
 }
 
 void LandWorld::drawMoving(const Scene &s, float time)

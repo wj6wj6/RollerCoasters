@@ -32,7 +32,6 @@
 
 #include <windows.h>
 #include <GL/GL.h>
-#include <FL/Fl.H>
 #include <GL/GLU.h>
 
 #include "3DUtils.h"
@@ -233,12 +232,10 @@ void unsetupShadows(void)
 //   plane, so we can be a little more well-balanced
 //   this code mimics page 147 of the OpenGL book
 //===============================================================================
-int getMouseLine(double &x1, double &y1, double &z1, double &x2, double &y2, double &z2)
+int getMouseLine(int x, int iy, double &x1, double &y1, double &z1, double &x2, double &y2,
+                 double &z2)
 //===============================================================================
 {
-    int x = Fl::event_x();
-    int iy = Fl::event_y();
-
     double mat1[16], mat2[16]; // we have to deal with the projection matrices
     int viewport[4];
 

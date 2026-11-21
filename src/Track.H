@@ -51,7 +51,8 @@ class CTrack
     // than 4 points)
     void resetPoints();
 
-    // read and write to files
+    // read and write to files; readPoints() leaves the track unchanged and
+    // shows fl_alert() when the file is short, malformed or cannot be opened
     void readPoints(const char *filename);
     void writePoints(const char *filename);
 

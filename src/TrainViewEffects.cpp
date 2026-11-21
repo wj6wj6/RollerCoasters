@@ -18,15 +18,13 @@
 #endif
 #include <glad/glad.h>
 
-#include <FL/Fl.H>
-#include <FL/gl.h>
-
 #include "LandTextures.h"
 #include "PixelArt.h"
 #include "TrainView.H"
 #include "TrainModel.h"
 #include "TrainWindow.H"
 #include "Utilities/3DUtils.h"
+#include "Utilities/Platform.H"
 #include "TexturePack.h"
 #include "WorldShape.h"
 
@@ -51,7 +49,13 @@ class TrainViewScene : public SceneCallbacks
             setupObjects();
         else
             m_view->drawGround(true); // the mountains cast shadows too
+        m_view->landWaterLater = waterLater;
         m_view->drawStuff(shadowPass);
+        m_view->landWaterLater = false;
+    }
+    void drawSurfaceWater() override
+    {
+        m_view->drawLandWater();
     }
     void drawUnderwater(bool shadowPass) override
     {
@@ -184,6 +188,11 @@ float TrainView::animationTime() const
 void TrainView::drawUnderwater(bool shadowPass)
 {
     m_ocean.draw(shadowPass, secondsSinceStart());
+}
+
+void TrainView::drawLandWater()
+{
+    m_land.drawWaterSurface(!sceneryOn());
 }
 
 //************************************************************************
@@ -346,8 +355,8 @@ bool TrainView::worldReady()
             stage = "Building the sea floor";
     }
     drawLoadingScreen(done, stage);
-    if (!Fl::has_timeout(redrawSoon, this))
-        Fl::add_timeout(1.0 / 30.0, redrawSoon, this);
+    if (!platform::hasTimeout(redrawSoon, this))
+        platform::addTimeout(1.0 / 30.0, redrawSoon, this);
     return false;
 }
 
@@ -402,33 +411,25 @@ void TrainView::drawLoadingScreen(float done, const char *stage)
     glBindTexture(GL_TEXTURE_2D, 0);
     glDisable(GL_TEXTURE_2D);
 
-    // the stage, with a shadow, over a grey bar that fills with green
-    const float middleX = width * 0.5f, middleY = height * 0.5f;
-    gl_font(FL_HELVETICA_BOLD, 20);
-    const float textWidth = static_cast<float>(gl_width(stage));
-    glColor3f(0.25f, 0.25f, 0.25f);
-    gl_draw(stage, middleX - textWidth * 0.5f + 2.0f, middleY + 18.0f);
-    glColor3f(1.0f, 1.0f, 1.0f);
-    gl_draw(stage, middleX - textWidth * 0.5f, middleY + 20.0f);
-
-    const float barWidth = fminf(400.0f, width * 0.6f), barHeight = 6.0f;
-    const float left = middleX - barWidth * 0.5f, top = middleY - 10.0f;
-    const float filled = fmaxf(0.0f, fminf(1.0f, done));
-    glColor3ub(128, 128, 128);
-    glRectf(left, top - barHeight, left + barWidth, top);
-    glColor3ub(128, 255, 128);
-    glRectf(left, top - barHeight, left + barWidth * filled, top);
-
-    char percent[16];
-    snprintf(percent, sizeof(percent), "%d%%", static_cast<int>(filled * 100.0f));
-    gl_font(FL_HELVETICA, 14);
-    const float percentWidth = static_cast<float>(gl_width(percent));
-    glColor3f(0.8f, 0.8f, 0.8f);
-    gl_draw(percent, middleX - percentWidth * 0.5f, top - barHeight - 22.0f);
-
     glPopMatrix();
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();
     glMatrixMode(GL_MODELVIEW);
     glPopAttrib();
+
+    // The stage in the pixel font over a grey bar that fills with green, and
+    // the percentage under it (Ui/Gui.h).
+    const float filled = fmaxf(0.0f, fminf(1.0f, done));
+    m_gui.beginFrame(w(), h());
+    const int middleX = m_gui.width() / 2, middleY = m_gui.height() / 2;
+    m_gui.text(middleX, middleY - 16, stage, ui::kWhite, ui::Align::Center);
+    const int barWidth = m_gui.width() * 3 / 5 < 200 ? m_gui.width() * 3 / 5 : 200;
+    const ui::Rect bar = {middleX - barWidth / 2, middleY, barWidth, 3};
+    m_gui.fill(bar, {128, 128, 128, 255});
+    m_gui.fill({bar.x, bar.y, static_cast<int>(static_cast<float>(barWidth) * filled), bar.h},
+               {128, 255, 128, 255});
+    char percent[16];
+    snprintf(percent, sizeof(percent), "%d%%", static_cast<int>(filled * 100.0f));
+    m_gui.text(middleX, middleY + 9, percent, {204, 204, 204, 255}, ui::Align::Center);
+    m_guiRenderer.draw(m_gui);
 }

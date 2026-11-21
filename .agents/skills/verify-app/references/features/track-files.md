@@ -17,7 +17,7 @@
 
 ## 容易騙過檢查的假象
 
-- `readPoints()` 遇到點數比宣告少的檔案時，不報錯就載入較少的點（可能少於 4 點）。CLI 的 `checkTrackFile()` 會拒絕這種檔案，但 GUI 的 Load 不會，所以兩者的行為不同。
+- GUI 的 `Load`（`readPoints()`）與 CLI 的 `checkTrackFile()` 對點數不合法、行數少於宣告、某行缺 x y z 的檔案都會拒絕；GUI 跳出錯誤對話框並保留原軌道，CLI 回 1。數字以外的文字（例如 `a b c`）兩者都仍讀成 0，不算錯誤。
 - 用唯一的真實軌道測試會有資料遺失的風險；一律先依 `docs/operations.md`「軌道備份與還原」做備份。
 - 從 Visual Studio 執行與直接雙擊 exe 的工作資料夾不同，`TrackFiles\` 的位置要兩種都試。
 
@@ -25,4 +25,5 @@
 
 - 用測試軌道的複本執行 Load／Save，再載入新檔：點數、位置與方向一致。
 - Load 與 Save 開的是 Windows 檔案總管的視窗（不是 FLTK 的灰色檔案選擇器）；Save 輸入沒有副檔名的名稱時存成 `.txt`，選既有檔案時先詢問是否覆蓋；按取消時軌道不變。
+- Load 一個宣告點數比實際行數多的檔案（例如第一行寫 5、下面只有 2 行）：跳出錯誤訊息，按確定後軌道與列車位置維持原狀。
 - 從 Visual Studio 執行與直接雙擊 exe 各試一次：Save 對話框預設的 `TrackFiles\` 能直接存檔，檔案出現在 exe 旁的 `TrackFiles` 資料夾，Load 視窗也開在那裡。

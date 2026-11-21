@@ -29,6 +29,7 @@
 #include <FL/Fl_Box.H>
 
 // for using the real time clock
+#include <cassert>
 #include <memory>
 #include <time.h>
 #include <math.h>
@@ -50,7 +51,11 @@
 
 // The panel's cards are laid out for this height; the window starts at it
 // so the cards are never squeezed (the strip below them takes any change).
-static const int kPanelHeight = 690;
+// Tall enough for every card in the panel (they end at y = 714) plus the
+// strip below them that takes up any extra height; when the cards ran past
+// the bottom, the strip had no height and FLTK stretched the World card in
+// a full-screen window instead.
+static const int kPanelHeight = 720;
 
 namespace
 {
@@ -437,6 +442,7 @@ TrainWindow::TrainWindow(const int x, const int y)
 
         // we need to make a little phantom widget to have things resize correctly:
         // the cards keep their size and only this strip below them stretches
+        assert(pty < kPanelHeight && "the panel's cards must fit above its stretching strip");
         Fl_Box *resizebox = new Fl_Box(panelX, pty, 200, kPanelHeight - pty);
         widgets->resizable(resizebox);
 

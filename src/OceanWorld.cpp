@@ -890,13 +890,26 @@ void buildReefs(Grid &g)
                 isCoral(g.get(bx, top, bz)))
                 continue;
             const unsigned int h = hash(bx, bz, 301u);
-            const float pick =
-                valueNoise(cx * 0.05f, cz * 0.05f, 19u) + static_cast<float>(h % 100u) * 0.004f;
-            const int coral = CORAL_PINK + static_cast<int>(pick * 5.0f) % 5;
+            // One colour to a mound, from a slowly changing field, with a
+            // block of another kind only now and then: a colour picked
+            // afresh for every block made the reef a chequered carpet.
+            const float pick = valueNoise(cx * 0.035f, cz * 0.035f, 19u);
+            int coral = CORAL_PINK + static_cast<int>(pick * 5.0f) % 5;
+            if (h % 11u == 0)
+                coral = CORAL_PINK + (coral - CORAL_PINK + 1 + static_cast<int>((h >> 4) % 4u)) % 5;
 
-            if (valueNoise(cx * 0.08f, cz * 0.08f, 17u) > 0.56f)
+            const float mound = valueNoise(cx * 0.08f, cz * 0.08f, 17u);
+            if (mound > 0.6f)
             {
-                const int height = 1 + static_cast<int>(h % 2u);
+                // Mounds rise steeply towards their middles, so they read as
+                // heads of coral and not as a flat floor of it; round their
+                // feet only every other block or so, the sand showing
+                // between.
+                int height =
+                    1 + static_cast<int>((mound - 0.6f) / 0.05f) + static_cast<int>(h % 3u == 0);
+                height = height > 4 ? 4 : height;
+                if (height == 1 && h % 2u == 0)
+                    continue;
                 for (int k = 1; k <= height; ++k)
                     putCoral(g, bx, top + k, bz, coral);
             }
@@ -937,9 +950,13 @@ void buildShallowReef(Grid &g)
             const float cx = centerOf(bx), cz = centerOf(bz);
             if (!onShelf(cx, cz) || g.get(bx, -3, bz) == AIR || g.get(bx, -2, bz) != AIR)
                 continue;
-            const float patch = valueNoise(cx * 0.09f, cz * 0.09f, 43u);
+            // Patches of coral with plenty of sand between and inside them,
+            // their edges broken up, so from the ride, close to it, the reef
+            // is not one chequered carpet.
+            const float patch = valueNoise(cx * 0.09f, cz * 0.09f, 43u) +
+                                (valueNoise(cx * 0.31f, cz * 0.31f, 45u) - 0.5f) * 0.25f;
             const unsigned int h = hash(bx, bz, 307u);
-            if (patch < 0.3f || h % 9u == 0)
+            if (patch < 0.46f || h % 4u == 0)
                 continue; // sand between the patches
             const float colour = valueNoise(cx * 0.04f, cz * 0.04f, 47u);
             // the warm colours twice as often as violet and yellow
@@ -948,7 +965,7 @@ void buildShallowReef(Grid &g)
                              : colour < 0.68f ? 2
                              : colour < 0.84f ? 3
                                               : 4;
-            g.put(bx, -2, bz, warm[(pick + static_cast<int>(h % 7u == 0)) % 5]);
+            g.put(bx, -2, bz, warm[(pick + static_cast<int>(h % 23u == 0)) % 5]);
             if (g.get(bx, -3, bz) == SAND && h % 4u == 0)
                 g.put(bx, -3, bz, STONE); // rock under the coral here and there
         }
@@ -1198,6 +1215,14 @@ void carveRide(Grid &g, const std::vector<float> &ride)
                     if (cy > y - kCarveBelow && cy <= y + kCarveAbove && g.get(bx, j, bz) != ISLAND)
                         g.put(bx, j, bz, AIR);
                 }
+                // Coral the cut went through goes down to its foot, so beside
+                // the rails there is sand, not a mound sliced off into a
+                // flat floor of coral.
+                int j = jHigh;
+                while (j >= kMinY && g.get(bx, j, bz) == AIR)
+                    --j;
+                for (; j >= kMinY && isCoral(g.get(bx, j, bz)); --j)
+                    g.put(bx, j, bz, AIR);
             }
     }
 }
@@ -2085,6 +2110,12 @@ bool OceanWorld::solidAt(float x, float y, float z) const
     if (m_solid.empty() || !Grid::inside(bx, j, bz))
         return false;
     return m_solid[Grid::index(bx, j, bz)] != 0;
+}
+
+bool OceanWorld::leftToIsland(float x, float z)
+{
+    // as buildTerrain decides it, for the block holding (x, z)
+    return WorldShape::inland(centerOf(blockOf(x)), centerOf(blockOf(z))) > 0.0f;
 }
 
 float OceanWorld::waterLevel()

@@ -83,7 +83,7 @@ void restoreLighting(); // pop last state off the stack
 //   3) call "unsetupShadows": draw your objects normally (with lighting, colors, ...)
 // Beware: to get nice looking shadows, this uses alpha blending and the stencil
 // buffer, which means you must declare them when you create the window:
-//		mode( FL_RGB|FL_ALPHA|FL_DOUBLE | FL_STENCIL );
+//		alpha and stencil buffers (TrainView asks for both)
 // Before drawing the floor, setup the stencil buffer and enable depth testing
 void setupFloor(void);
 
@@ -103,7 +103,9 @@ void unsetupShadows(void);
 // Given the position of the mouse in 2D, we need to figure out where
 // it is in 3D. of course, its not in one place, its a line
 // this function gets that ray for you (well, it gets 2 points on the line)
-int getMouseLine(double &p1x, double &p1y, double &p1z, double &p2x, double &p2y, double &p2z);
+// for the mouse at window pixel (mouseX, mouseY), y going down
+int getMouseLine(int mouseX, int mouseY, double &p1x, double &p1y, double &p1z, double &p2x,
+                 double &p2y, double &p2z);
 
 //************************************************************************
 //

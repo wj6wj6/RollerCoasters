@@ -10,7 +10,6 @@
 - 修改模組責任、事件流程或資料流時，同步更新 `docs/architecture.md` 的 Mermaid 圖；改變重要技術決策時追加 `docs/adr/`。
 - 修改建置、封裝或發布流程時，同步更新 `docs/operations.md`。
 - 改變使用者看得到的行為時，同步更新 `.agents/skills/verify-app/references/features/` 中對應的功能檔；可自動化的情境加進 `scripts/control-app.ps1`。
-- 新增或修改測試的來源檔時，同步更新 `CMakeLists.txt` 與 `tests/linux/CMakeLists.txt`。
 
 ## 必守規則
 
@@ -19,7 +18,7 @@
 - `src/` 與 `tests/` 使用 clang-format；第三方 `include/`、`lib/` 保留原始內容。
 - 更新第三方檔案需說明來源與相容性，並用 `pwsh -File scripts/check.ps1 -Stage vendor-lock` 更新指紋。
 - 編譯器警告視為錯誤。修正原因；新增抑制需在附近註解原因及範圍。
-- 相機測試保留正式 `ArcBallCam`、FLTK event loop 與 timer 呼叫路徑；軌道測試使用正式讀寫函式和隔離的暫存檔。
+- 相機測試保留正式 `ArcBallCam`／`FlyCam`、`platform::` event loop 與 timer 呼叫路徑（`src/Utilities/Platform.H`），事件以 `InputEvent` 送入；軌道測試使用正式讀寫函式和隔離的暫存檔。
 - 軌道格式變更維持舊檔可讀；先備份真實軌道資料，再驗證還原。
 - 執行資料放 `data/`，備份放 `backups/`；金鑰、私密設定及執行產物留在版控之外。
 

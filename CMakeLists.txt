@@ -44,6 +44,8 @@ add_library(Utilities
     src/Utilities/ArcBallCam.H src/Utilities/ArcBallCam.cpp
     src/Utilities/FlyCam.H src/Utilities/FlyCam.cpp
     src/Utilities/HeadLook.H src/Utilities/HeadLook.cpp
+    src/Utilities/Input.H
+    src/Utilities/Platform.H src/Utilities/PlatformFltk.H src/Utilities/PlatformFltk.cpp
     src/Utilities/Pnt3f.H src/Utilities/Pnt3f.cpp
     src/Utilities/TwoFingerGesture.H src/Utilities/TwoFingerGesture.cpp)
 target_link_libraries(Utilities PUBLIC project_options fltk)
@@ -54,6 +56,7 @@ add_executable(RollerCoasters
     src/ChaseRig.h src/ChaseRig.cpp
     src/Frustum.h src/Frustum.cpp
     src/LandTextures.h src/LandTextures.cpp
+    src/LandWaterMotion.h
     src/LandWorld.h src/LandWorld.cpp
     src/MatrixMath.h
     src/Mobs.h src/Mobs.cpp
@@ -81,7 +84,11 @@ add_executable(RollerCoasters
     src/TrackRenderer.H src/TrackRenderer.cpp
     src/TrainView.H src/TrainView.cpp
     src/TrainWindow.H src/TrainWindow.cpp
-    src/UiTheme.h src/UiTheme.cpp)
+    src/UiTheme.h src/UiTheme.cpp
+    src/Ui/Gui.h src/Ui/Gui.cpp
+    src/Ui/GuiGl.h src/Ui/GuiGl.cpp
+    src/Ui/PixelFont.h src/Ui/PixelFont.cpp
+    src/Ui/UiAtlas.h src/Ui/UiAtlas.cpp)
 target_include_directories(RollerCoasters SYSTEM PRIVATE
     "${PROJECT_SOURCE_DIR}/include/glm-0.9.8.5/glm")
 # hid: HidP_* parse the raw precision touchpad reports.
@@ -168,6 +175,13 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     target_link_libraries(TrackInsertCheck PRIVATE Utilities glad)
     add_test(NAME TrackInsertCheck COMMAND TrackInsertCheck)
     set_tests_properties(TrackInsertCheck PROPERTIES TIMEOUT 10 LABELS integration)
+
+    add_executable(GuiCheck tests/GuiCheck.cpp
+        src/Ui/Gui.cpp src/Ui/PixelFont.cpp src/Ui/UiAtlas.cpp)
+    target_include_directories(GuiCheck PRIVATE src)
+    target_link_libraries(GuiCheck PRIVATE project_options)
+    add_test(NAME GuiCheck COMMAND GuiCheck)
+    set_tests_properties(GuiCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
     add_executable(TexturePackCheck tests/TexturePackCheck.cpp
         src/TexturePack.cpp src/ZipArchive.cpp src/LandTextures.cpp src/PixelArt.cpp)
