@@ -52,7 +52,7 @@ Rect part(const ui::Gui &gui, int row, int n, int i)
     const int gap = 2;
     const int each = (r.w - gap * (n - 1)) / n;
     const int x = r.x + i * (each + gap);
-    const int w = i == n - 1 ? r.x + r.w - x : each;
+    const int w = (i == n - 1) ? r.x + r.w - x : each;
     return {x, r.y, w, r.h};
 }
 
@@ -506,7 +506,7 @@ void GameMenu::drawTrack(TrainWindow &tw, ui::Gui &gui)
     static const char *const nudges[6] = {"X-", "X+", "Y-", "Y+", "Z-", "Z+"};
     for (int i = 0; i < 6; ++i)
         if (gui.button(part(gui, 5, 6, i), nudges[i], selected))
-            tw.nudgeSelected(i / 2, i % 2 ? 1.0f : -1.0f);
+            tw.nudgeSelected(i / 2, (i % 2 != 0) ? 1.0f : -1.0f);
     if (gui.button(left(gui, 6), "Reset Track"))
         resetCB(&tw);
     std::string where = "No point selected";
