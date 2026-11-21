@@ -205,6 +205,7 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     set_tests_properties(GuiCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
     add_executable(GlfwInputCheck tests/GlfwInputCheck.cpp)
+    target_include_directories(GlfwInputCheck PRIVATE src)
     target_link_libraries(GlfwInputCheck PRIVATE Utilities)
     add_test(NAME GlfwInputCheck COMMAND GlfwInputCheck)
     set_tests_properties(GlfwInputCheck PROPERTIES TIMEOUT 10 LABELS integration)

@@ -10,6 +10,8 @@
 
 #include "GameMenu.h"
 
+#include <array>
+#include <cstddef>
 #include <cstdio>
 #include <vector>
 
@@ -202,9 +204,9 @@ bool GameMenu::input(TrainWindow &tw, const InputEvent &e)
 //========================================================================
 void GameMenu::useSlot(TrainWindow &tw, int slot, double seconds)
 {
-    static const char *const names[kSlots] = {"World Camera", "Train Camera", "Chase Camera",
-                                              "Top View",     "Fly Camera",   "Edit Points",
-                                              "Add Point",    "Delete Point", "Run / Stop"};
+    static const std::array<const char *, kSlots> names = {
+        "World Camera", "Train Camera", "Chase Camera", "Top View",  "Fly Camera",
+        "Edit Points",  "Add Point",    "Delete Point", "Run / Stop"};
     if (slot < 0 || slot >= kSlots)
         return;
     switch (slot)
@@ -232,7 +234,7 @@ void GameMenu::useSlot(TrainWindow &tw, int slot, double seconds)
     default:
         break;
     }
-    m_slotName = names[slot];
+    m_slotName = names.at(static_cast<size_t>(slot));
     if (slot == 5)
         m_slotName += tw.settings.edit ? ": ON" : ": OFF";
     m_slotNameUntil = seconds + kSlotNameSeconds;
