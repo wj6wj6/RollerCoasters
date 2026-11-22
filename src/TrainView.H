@@ -250,10 +250,14 @@ class TrainView final : public Viewport
     void setMouseCaptured(bool captured);
     void centerCursor();
 
-    // Train camera: look straight ahead again, and mouse drags that turn the
-    // rider's head (returns 1 when the event was used).
+    // Train and Chase cameras: look straight ahead again, and mouse drags
+    // that turn the rider's head or swing the Chase camera round the train
+    // (returns 1 when the event was used).
     void recenterHead();
     int handleTrainLook(const InputEvent &e);
+    // What dragging turns in the current camera: the rider's head (Train),
+    // the Chase camera round the train (Chase), or nothing.
+    HeadLook *turningLook();
 
     // Where the train is now (the track centre without a train).
     Pnt3f trainPosition() const;
@@ -286,6 +290,7 @@ class TrainView final : public Viewport
     ArcBallCam arcball; // keep an ArcBall for the UI
     FlyCam flyCam;      // free-moving observer camera
     HeadLook headLook;  // where the rider looks in the Train camera
+    HeadLook chaseLook; // how far the Chase camera is turned round the train
     bool headDragging;  // is a mouse drag turning the rider's head?
     int headDragX;      // last mouse position of that drag
     int headDragY;
