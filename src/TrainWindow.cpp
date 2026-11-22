@@ -11,6 +11,7 @@
 
 *************************************************************************/
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <memory>
@@ -51,6 +52,35 @@ const wchar_t kPreviousProperty[] = L"RollerCoasters.Previous";
 TrainWindow *windowOf(GLFWwindow *w)
 {
     return static_cast<TrainWindow *>(glfwGetWindowUserPointer(w));
+}
+
+// The monitor holding most of the window (the first one when it is on none).
+GLFWmonitor *monitorUnder(GLFWwindow *window)
+{
+    int x = 0, y = 0, width = 0, height = 0;
+    glfwGetWindowPos(window, &x, &y);
+    glfwGetWindowSize(window, &width, &height);
+    int count = 0;
+    GLFWmonitor **monitors = glfwGetMonitors(&count);
+    GLFWmonitor *best = glfwGetPrimaryMonitor();
+    long long bestArea = 0;
+    for (int i = 0; i < count; ++i)
+    {
+        const GLFWvidmode *mode = glfwGetVideoMode(monitors[i]);
+        if (!mode)
+            continue;
+        int mx = 0, my = 0;
+        glfwGetMonitorPos(monitors[i], &mx, &my);
+        const long long across = std::min(x + width, mx + mode->width) - std::max(x, mx);
+        const long long down = std::min(y + height, my + mode->height) - std::max(y, my);
+        const long long area = across > 0 && down > 0 ? across * down : 0;
+        if (area > bestArea)
+        {
+            bestArea = area;
+            best = monitors[i];
+        }
+    }
+    return best;
 }
 
 void reportGlfwError(int code, const char *description)
@@ -211,10 +241,11 @@ void TrainWindow::run()
             if (step < wait)
                 wait = step > 0.0 ? step : 0.0;
         }
-        if (trainView->needsDraw())
+        if (trainView->needsDraw() || m_fullscreenAsked >= 0)
             wait = 0.0;
         pumpEvents(wait);
         platform::runDueTimeouts();
+        switchFullscreen();
 
         now = glfwGetTime();
         if (settings.run && now - m_lastAdvance >= kStepSeconds)
@@ -240,6 +271,66 @@ void TrainWindow::drawNow()
     trainView->make_current();
     trainView->draw();
     glfwSwapBuffers(window);
+}
+
+//************************************************************************
+//
+// * Fullscreen (F11, or Lighting's Fullscreen)
+//========================================================================
+bool TrainWindow::fullscreen() const
+{
+    if (m_fullscreenAsked >= 0)
+        return m_fullscreenAsked == 1;
+    return window && glfwGetWindowMonitor(window) != nullptr;
+}
+
+void TrainWindow::setFullscreen(bool on)
+{
+    // Not now: the switch resizes the window, and Windows sends the new
+    // size and asks for a frame at once, which must not happen in the
+    // middle of a frame (the menu's button) or of a key's callback.
+    m_fullscreenAsked = on ? 1 : 0;
+    trainView->damage(1);
+}
+
+void TrainWindow::switchFullscreen()
+{
+    const int asked = m_fullscreenAsked;
+    m_fullscreenAsked = -1;
+    if (asked < 0 || !window)
+        return;
+    const bool on = asked == 1;
+    if (on == (glfwGetWindowMonitor(window) != nullptr))
+        return;
+    if (on)
+    {
+        GLFWmonitor *monitor = monitorUnder(window);
+        const GLFWvidmode *mode = glfwGetVideoMode(monitor);
+        if (!mode)
+            return;
+        // A maximized window is put back to its own size first, so that
+        // size is the one to come back to.
+        m_windowedMaximized = glfwGetWindowAttrib(window, GLFW_MAXIMIZED) == GLFW_TRUE;
+        if (m_windowedMaximized)
+            glfwRestoreWindow(window);
+        glfwGetWindowPos(window, &m_windowedX, &m_windowedY);
+        glfwGetWindowSize(window, &m_windowedWidth, &m_windowedHeight);
+        // the monitor's own mode: the screen does not change resolution
+        glfwSetWindowMonitor(window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+    }
+    else
+    {
+        glfwSetWindowMonitor(window, nullptr, m_windowedX, m_windowedY, m_windowedWidth,
+                             m_windowedHeight, 0);
+        if (m_windowedMaximized)
+            glfwMaximizeWindow(window);
+    }
+    glfwSwapInterval(1); // some drivers forget it with the new mode
+    // The framebuffer size callback has resized the view; ask once more
+    // in case the size came back the same.
+    int width = 0, height = 0;
+    glfwGetFramebufferSize(window, &width, &height);
+    resized(width, height);
 }
 
 void TrainWindow::drawInterface()
@@ -275,6 +366,14 @@ void TrainWindow::resized(int width, int height)
 void TrainWindow::keyCallback(GLFWwindow *w, int key, int, int action, int mods)
 {
     TrainWindow *tw = windowOf(w);
+    // F11 switches fullscreen anywhere, also on the title and in the menu,
+    // once a press: holding it down does not flip it back and forth.
+    if (key == GLFW_KEY_F11)
+    {
+        if (action == GLFW_PRESS && !tw->automated)
+            tw->setFullscreen(!tw->fullscreen());
+        return;
+    }
     tw->input(tw->m_input.key(key, action, mods));
 }
 

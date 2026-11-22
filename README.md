@@ -50,8 +50,9 @@ pwsh -File scripts/check.ps1 -Stage all -Compiler clang -Config Release
 | `[`／`]` | 速度減少／增加 0.5（0–10） |
 | `1`–`9` | 快捷欄：`1` World、`2` Train、`3` Chase、`4` Top、`5` Fly 相機，`6` Edit 開關，`7` 新增控制點，`8` 刪除控制點，`9` Run；也可以直接點格子 |
 | F1 | 隱藏／顯示左上角提示與快捷欄 |
+| F11 | 全螢幕開關（任何畫面都可以按，包括標題與選單）；再按一次回到原本的視窗位置與大小 |
 
-選單（Esc）：`Back to Ride`、`Ride`（Run、Arc Length、Speed、前後步進）、`Camera`（相機、FOV、Fly 速度）、`Track`（Spline、Edit、新增／刪除、Undo／Redo、Load／Save、R±X／R±Z、選取控制點的 X／Y／Z 微調、Reset Track）、`Lighting`（Light+、Shadows、Headlight、Bloom、SSAO、Time）、`World`（Water、Rain、Scenery、Grand Tour、材質包、Open Pack Folder）、`Grand Tour`、`Quit to Title`（回標題畫面，從標題畫面的 `Quit` 結束程式）。開關按一下切換，滑桿可拖曳或點；按鈕按下就生效。
+選單（Esc）：`Back to Ride`、`Ride`（Run、Arc Length、Speed、前後步進）、`Camera`（相機、FOV、Fly 速度）、`Track`（Spline、Edit、新增／刪除、Undo／Redo、Load／Save、R±X／R±Z、選取控制點的 X／Y／Z 微調、Reset Track）、`Lighting`（Light+、Shadows、Headlight、Bloom、SSAO、Time、Fullscreen）、`World`（Water、Rain、Scenery、Grand Tour、材質包、Open Pack Folder）、`Grand Tour`、`Quit to Title`（回標題畫面，從標題畫面的 `Quit` 結束程式）。開關按一下切換，滑桿可拖曳或點；按鈕按下就生效。
 
 - `Grand Tour` 是一條 62 個控制點的長路線（每個轉彎的夾角都不小於 90 度，沒有銳角的急彎或髮夾彎），繞行整座方塊風島嶼與東北新大陸後潛入海底再回來：
   從海上飛向村莊（風車、小屋、麥田、路燈）→ 沿雪山岩壁螺旋爬升，跨過從山上一路跌進海裡的溪流瀑布 →

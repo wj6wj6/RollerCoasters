@@ -83,6 +83,14 @@ class TrainWindow
     // TrainView::draw() calls it after the scene: the hotbar, hints and menu.
     void drawInterface();
 
+    // Fullscreen, as a block game's F11 and its Fullscreen option: the
+    // whole monitor the window is mostly on, at the monitor's own mode, and
+    // back to the window where and as big as it was (maximized again if it
+    // was). The switch happens in the loop, outside drawing and callbacks;
+    // fullscreen() already answers with the switch asked for.
+    bool fullscreen() const;
+    void setFullscreen(bool on);
+
   public:
     CTrack m_Track;
     TrackHistory m_history; // undo and redo for the control points
@@ -106,6 +114,7 @@ class TrainWindow
     void input(const InputEvent &e);
     void resized(int width, int height);
     void drawNow();
+    void switchFullscreen(); // does what setFullscreen() asked for
 
     static void keyCallback(GLFWwindow *w, int key, int scancode, int action, int mods);
     static void buttonCallback(GLFWwindow *w, int button, int action, int mods);
@@ -121,4 +130,9 @@ class TrainWindow
     GlfwInput m_input;
     double m_lastAdvance = 0.0; // when the train last moved
     double m_lastAnimate = 0.0; // when the water and plants last moved
+    int m_fullscreenAsked = -1; // 1 or 0 until the loop switches; -1 nothing asked
+    // the window as it was before fullscreen, to go back to
+    int m_windowedX = 0, m_windowedY = 0;
+    int m_windowedWidth = 0, m_windowedHeight = 0;
+    bool m_windowedMaximized = false;
 };

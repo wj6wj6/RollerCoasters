@@ -951,15 +951,20 @@ void GameMenu::drawLighting(TrainWindow &tw, ui::Gui &gui)
         s.timeOfDay = static_cast<float>(static_cast<int>(hours * 4.0f + 0.5f)) / 4.0f;
         changed = true;
     }
-    gui.text(gui.width() / 2, top(gui) + 3 * kRowStep + 6,
+    // as a block game's Video Settings: Fullscreen sits with the picture's settings (F11 too)
+    bool fullscreen = tw.fullscreen();
+    if (gui.toggle(left(gui, 3), "Fullscreen", fullscreen))
+        tw.setFullscreen(fullscreen);
+    gui.text(right(gui, 3).x + 4, right(gui, 3).y + 6, "F11 anywhere", ui::kGrey);
+    gui.text(gui.width() / 2, top(gui) + 4 * kRowStep + 6,
              "Light+ is per-pixel lighting with shadow maps, sky and fog;", ui::kGrey,
              ui::Align::Center);
-    gui.text(gui.width() / 2, top(gui) + 3 * kRowStep + 17,
+    gui.text(gui.width() / 2, top(gui) + 4 * kRowStep + 17,
              "the other effects need it. Off: the original fixed-function lighting.", ui::kGrey,
              ui::Align::Center);
     if (changed)
         tw.damageMe();
-    done(tw, gui, 4);
+    done(tw, gui, 5);
 }
 
 void GameMenu::drawWorld(TrainWindow &tw, ui::Gui &gui)
