@@ -156,8 +156,10 @@ class AdvancedLighting
     void begin(const LightingFrame &frame);
     void end();
 
-    // Lines and other pieces drawn with GL_LIGHTING off can ask to keep their
-    // flat colour. Does nothing when the shader is not active.
+    // For what has no usable normal, or should not be shaded by one (the
+    // clouds): lit as if it faced the sky, by the light from the sky and the
+    // sun's or the moon's colour, so it still follows the time of day, the
+    // rain and the shadows. Does nothing when the shader is not active.
     void setUnlit(bool unlit);
 
     // While see-through surfaces (the island's water and glass) are drawn:
