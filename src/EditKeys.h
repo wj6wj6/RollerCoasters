@@ -4,7 +4,8 @@
      Comment:     Which control point editing command a key press is, for
                   TrainView::editKey(). Kept apart from the view so the
                   key map can be tested without a window
-                  (tests/EditKeysCheck.cpp).
+                  (tests/EditKeysCheck.cpp). The keys come from KeyBinds.h
+                  (Options > Controls); the defaults are below.
 
                   The Fly camera owns W / A / S / D, Space, Shift, Ctrl,
                   E / Q, F, Home and the arrow keys, so in Fly the editing
@@ -31,6 +32,8 @@
 *************************************************************************/
 #pragma once
 
+class KeyBinds;
+
 namespace EditKeys
 {
 enum Action
@@ -50,6 +53,8 @@ enum Action
 };
 
 // key: InputEvent::key (a Key:: code or a lower case letter); state: the Mod::
-// bits (Utilities/Input.H); fly: the Fly camera is on.
-Action forKey(int key, int state, bool fly);
+// bits (Utilities/Input.H); fly: the Fly camera is on. In Fly, adding and
+// removing take the Fly camera's own keys (KeyBinds' FlyAddPoint and
+// FlyRemovePoint).
+Action forKey(const KeyBinds &keys, int key, int state, bool fly);
 } // namespace EditKeys

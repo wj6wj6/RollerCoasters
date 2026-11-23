@@ -16,6 +16,12 @@
                   - Esc opens the game menu, whose screens (Ride, Camera,
                     Track, Lighting, World) hold every control the old side
                     panel had. Esc goes back a screen;
+                  - Controls lists every keyboard command with its key and
+                    a second key, as a block game's Key Binds: click a key,
+                    press the new one (Esc leaves none); clashing keys are
+                    red; Reset and Reset All bring the defaults back
+                    (KeyBinds.h). The riding keys here (hotbar, P, [ ], F1)
+                    and the view's keys go by those binds;
                   - Load Track and Save Track list the tracks in
                     TrackFiles\ (a block game's world list, not the
                     system's file dialogs), and a notice or a yes / no
@@ -59,6 +65,7 @@ class GameMenu
         Track,
         Lighting,
         World,
+        Controls, // the key binds, from Options and the game menu
         LoadTrack,
         SaveTrack,
         Notice, // notify(): a message and OK
@@ -81,6 +88,12 @@ class GameMenu
 
     // An event before the view sees it: true when the interface took it.
     bool input(TrainWindow &tw, const InputEvent &e);
+    // Controls is waiting for the new key of a command: every key goes there,
+    // Fullscreen's too.
+    bool pickingKey() const
+    {
+        return m_pickAction >= 0;
+    }
     // Lay out and draw the interface for this frame, acting on the clicks
     // fed since the last one.
     void draw(TrainWindow &tw, ui::Gui &gui, double seconds);
@@ -113,6 +126,9 @@ class GameMenu
     void drawTrack(TrainWindow &tw, ui::Gui &gui);
     void drawLighting(TrainWindow &tw, ui::Gui &gui);
     void drawWorld(TrainWindow &tw, ui::Gui &gui);
+    void drawControls(TrainWindow &tw, ui::Gui &gui);
+    bool pickKey(TrainWindow &tw, const InputEvent &e); // a key for the command being set
+    void setPickedKey(TrainWindow &tw, int key, int mods);
     void drawLoadTrack(TrainWindow &tw, ui::Gui &gui);
     void drawSaveTrack(TrainWindow &tw, ui::Gui &gui);
     void drawNotice(TrainWindow &tw, ui::Gui &gui);
@@ -134,6 +150,13 @@ class GameMenu
     bool m_guiHasMouse = false; // a press on the hotbar: its drag and release go there too
     double m_now = 0.0;         // the time input() was last given, for useSlot()
     int m_packScroll = 0;
+    // Controls: the first row in view, and the command (and its first or
+    // second key) waiting for a new key, -1 when none; a modifier held
+    // meanwhile, to be the key itself if it is let go alone.
+    int m_keyScroll = 0;
+    int m_pickAction = -1;
+    int m_pickSlot = 0;
+    int m_pickModifier = 0;
     bool m_enter = false; // Enter was pressed: Load or Save, as their button
 
     // Load Track and Save Track: the files in TrackFiles\, the one picked,

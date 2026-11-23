@@ -20,6 +20,7 @@
 
 #include "CallBacks.H"
 #include "Folders.h"
+#include "KeyBinds.h"
 #include "Ui/PixelFont.h"
 #include "Utilities/Platform.H"
 #include "WorldSave.h"
@@ -69,6 +70,25 @@ struct Slot
 };
 
 const char *const kCameraNames[] = {"World", "Train", "Chase", "Top", "Fly"};
+
+// The hotbar's keys for the hints: "1-9", or each slot's key when they were
+// changed ("12C456789"), or just where to see them.
+std::string hotbarKeys(const KeyBinds &keys)
+{
+    std::string text;
+    bool changed = false;
+    for (int i = 0; i < GameMenu::kSlots; ++i)
+    {
+        const auto action =
+            static_cast<KeyBinds::Action>(static_cast<int>(KeyBinds::Action::Slot1) + i);
+        changed |= !keys.isDefault(action);
+        const std::string key = keys.keyText(action);
+        if (key.size() != 1)
+            return "Keys in Controls:";
+        text += key;
+    }
+    return changed ? text : "1-9";
+}
 
 // The text, shortened from the front with "..." when it is wider than `width`
 // units: the end of a path or file name is the part that tells them apart.
@@ -126,6 +146,8 @@ void GameMenu::show(TrainWindow &tw, Screen screen)
     const auto overlay = [](Screen s) { return s == Screen::Notice || s == Screen::Confirm; };
     if (screen != m_screen && !overlay(screen) && !overlay(m_screen))
         m_dropNote.clear();
+    if (screen != m_screen)
+        m_pickAction = -1; // leaving Controls drops a key being set
     m_enter = false;
     m_screen = screen;
     m_guiHasMouse = false;
@@ -272,6 +294,8 @@ bool GameMenu::input(TrainWindow &tw, const InputEvent &e)
     switch (e.type)
     {
     case InputType::KeyDown: {
+        if (pickingKey())
+            return pickKey(tw, e);
         if (e.key == Key::Escape)
         {
             if (open())
@@ -295,8 +319,9 @@ bool GameMenu::input(TrainWindow &tw, const InputEvent &e)
             tw.trainView->damage(1);
             return true;
         }
-        const bool plain = (e.state & (Mod::Ctrl | Mod::Alt)) == 0;
-        if (e.key == Key::F + 1)
+        using Action = KeyBinds::Action;
+        const KeyBinds &keys = tw.keys;
+        if (keys.matches(Action::HideHud, e))
         {
             hudHidden = !hudHidden;
             tw.trainView->damage(1);
@@ -305,28 +330,47 @@ bool GameMenu::input(TrainWindow &tw, const InputEvent &e)
         // a move, tilt or new point in progress keeps the keys until it ends
         if (tw.trainView->editing())
             return false;
-        if (plain && e.key >= '1' && e.key <= '9')
-        {
-            useSlot(tw, e.key - '1', m_now);
-            return true;
-        }
-        if (plain && e.key == 'p')
+        for (int slot = 0; slot < kSlots; ++slot)
+            if (keys.matches(static_cast<Action>(static_cast<int>(Action::Slot1) + slot), e))
+            {
+                useSlot(tw, slot, m_now);
+                return true;
+            }
+        if (keys.matches(Action::Run, e))
         {
             tw.settings.run = !tw.settings.run;
             tw.damageMe();
             return true;
         }
-        if (plain && (e.key == '[' || e.key == ']'))
+        const bool faster = keys.matches(Action::Faster, e);
+        if (faster || keys.matches(Action::Slower, e))
         {
             float &speed = tw.settings.speed;
-            speed += e.key == ']' ? 0.5f : -0.5f;
+            speed += faster ? 0.5f : -0.5f;
             speed = speed < 0.0f ? 0.0f : (speed > 10.0f ? 10.0f : speed);
             tw.damageMe();
             return true;
         }
         return false;
     }
+    case InputType::KeyUp:
+        // a modifier let go on its own, while Controls waits: it is the key
+        if (pickingKey())
+        {
+            if (m_pickModifier != 0 && KeyBinds::normalize(e.key) == m_pickModifier)
+                setPickedKey(tw, m_pickModifier, e.state);
+            return true;
+        }
+        return false;
     case InputType::Push:
+        // a click while Controls waits for a key: keep the key it had
+        if (pickingKey())
+        {
+            m_pickAction = -1;
+            tw.trainView->damage(1);
+            return true;
+        }
+        [[fallthrough]];
     case InputType::Release:
     case InputType::Drag:
     case InputType::Move:
@@ -364,6 +408,8 @@ bool GameMenu::input(TrainWindow &tw, const InputEvent &e)
     case InputType::Text:
         if (!open())
             return false;
+        if (pickingKey())
+            return true;
         gui.feed(e);
         tw.trainView->damage(1);
         return true;
@@ -371,6 +417,7 @@ bool GameMenu::input(TrainWindow &tw, const InputEvent &e)
     case InputType::Hide:
         gui.feed(e);
         m_guiHasMouse = false;
+        m_pickAction = -1; // its keys' releases will not come
         return false;
     case InputType::Focus:
     case InputType::Enter:
@@ -465,6 +512,9 @@ void GameMenu::draw(TrainWindow &tw, ui::Gui &gui, double seconds)
         case Screen::World:
             drawWorld(tw, gui);
             break;
+        case Screen::Controls:
+            drawControls(tw, gui);
+            break;
         case Screen::LoadTrack:
             drawLoadTrack(tw, gui);
             break;
@@ -491,11 +541,15 @@ void GameMenu::drawHud(TrainWindow &tw, ui::Gui &gui, double seconds)
     const SceneSettings &s = tw.settings;
 
     // Key hints, top left, each line on a faint dark strip.
-    char speed[48];
-    std::snprintf(speed, sizeof(speed), "[ ]  Speed %.1f", static_cast<double>(s.speed));
-    const std::vector<std::string> hints = {"Esc  Menu",
-                                            s.run ? "P  Stop the train" : "P  Run the train", speed,
-                                            "1-9  Hotbar", "F1  Hide this"};
+    // the keys as set in Controls
+    using Action = KeyBinds::Action;
+    const KeyBinds &keys = tw.keys;
+    char speed[64];
+    std::snprintf(speed, sizeof(speed), "%s %s  Speed %.1f", keys.keyText(Action::Slower).c_str(),
+                  keys.keyText(Action::Faster).c_str(), static_cast<double>(s.speed));
+    const std::vector<std::string> hints = {
+        "Esc  Menu", keys.keyText(Action::Run) + (s.run ? "  Stop the train" : "  Run the train"),
+        speed, hotbarKeys(keys) + "  Hotbar", keys.keyText(Action::HideHud) + "  Hide this"};
     for (size_t i = 0; i < hints.size(); ++i)
     {
         const int y = 2 + static_cast<int>(i) * 10;
@@ -530,9 +584,11 @@ void GameMenu::drawHud(TrainWindow &tw, ui::Gui &gui, double seconds)
         if (gui.isHovered(r))
             gui.fill({r.x + 2, r.y + 2, 18, 18}, {255, 255, 255, 60});
         gui.icon(r.x + 3, r.y + 3, slots[i].icon);
-        // the slot's key, small in the corner, as an item's count
-        gui.text(r.x + 19, r.y + 12, std::string(1, static_cast<char>('1' + i)), ui::kWhite,
-                 ui::Align::Right);
+        // the slot's key, small in the corner, as an item's count (if it fits)
+        const std::string key =
+            keys.keyText(static_cast<Action>(static_cast<int>(Action::Slot1) + i));
+        if (ui::PixelFont::textWidth(key) <= 16)
+            gui.text(r.x + 19, r.y + 12, key, ui::kWhite, ui::Align::Right);
     }
     gui.skin({x0 + chosen * 20 - 1, y0 - 1, 24, 24}, ui::UiAtlas::SLOT_SELECTED);
 
@@ -769,6 +825,8 @@ void GameMenu::drawOptions(TrainWindow &tw, ui::Gui &gui)
         show(tw, Screen::Lighting);
     if (gui.button(right(gui, 1), "World..."))
         show(tw, Screen::World);
+    if (gui.button(wide(gui, 2), "Controls..."))
+        show(tw, Screen::Controls);
     done(tw, gui, 3);
 }
 
@@ -789,13 +847,15 @@ void GameMenu::drawPause(TrainWindow &tw, ui::Gui &gui)
         show(tw, Screen::Lighting);
     if (gui.button({cx - 102, y + 72, 98, kButtonH}, "World..."))
         show(tw, Screen::World);
-    if (gui.button({cx + 4, y + 72, 98, kButtonH}, "Grand Tour"))
+    if (gui.button({cx + 4, y + 72, 98, kButtonH}, "Controls..."))
+        show(tw, Screen::Controls);
+    if (gui.button({cx - 102, y + 96, 204, kButtonH}, "Grand Tour"))
     {
         grandTourCB(&tw);
         show(tw, Screen::None);
     }
     // as a block game's "Quit to Title": the program ends from the title
-    if (gui.button({cx - 102, y + 108, 204, kButtonH}, "Quit to Title"))
+    if (gui.button({cx - 102, y + 132, 204, kButtonH}, "Quit to Title"))
     {
         m_riding = false;
         show(tw, Screen::Title);
@@ -816,9 +876,12 @@ void GameMenu::drawRide(TrainWindow &tw, ui::Gui &gui)
         backCB(&tw);
     if (gui.button(right(gui, 2), "Step Forward >>"))
         forwCB(&tw);
+    const KeyBinds &keys = tw.keys;
     gui.text(gui.width() / 2, top(gui) + 3 * kRowStep + 6,
-             "While riding: P runs and stops, [ and ] change the speed", ui::kGrey,
-             ui::Align::Center);
+             "While riding: " + keys.keyText(KeyBinds::Action::Run) + " runs and stops, " +
+                 keys.keyText(KeyBinds::Action::Slower) + " and " +
+                 keys.keyText(KeyBinds::Action::Faster) + " change the speed",
+             ui::kGrey, ui::Align::Center);
     done(tw, gui, 4);
 }
 
@@ -840,7 +903,10 @@ void GameMenu::drawCamera(TrainWindow &tw, ui::Gui &gui)
         view.damage(1);
     }
 
-    // How the chosen camera is steered, in place of the old buttons' tooltips.
+    // How the chosen camera is steered, in place of the old buttons' tooltips,
+    // with the keys as set in Controls.
+    using Action = KeyBinds::Action;
+    const auto key = [&tw](Action action) { return tw.keys.keyText(action); };
     std::vector<std::string> help;
     switch (tw.settings.camera)
     {
@@ -851,7 +917,7 @@ void GameMenu::drawCamera(TrainWindow &tw, ui::Gui &gui)
         break;
     case CameraView::Train:
         help = {"Look around: drag the view or two fingers",
-                "Look ahead again: double click, R or Home"};
+                "Look ahead again: double click or " + key(Action::LookAhead)};
         break;
     case CameraView::Chase:
         help = {"Follows behind the train, looking over it"};
@@ -861,9 +927,14 @@ void GameMenu::drawCamera(TrainWindow &tw, ui::Gui &gui)
         break;
     case CameraView::Fly:
         help = {"Click the view to steer with the mouse; Esc frees it",
-                "W A S D move, Space up, Shift down, Ctrl faster",
-                "Wheel or + / - set the speed   F: face the train   Home: World view",
-                "With Edit on: left removes a point, right places one, G carries"};
+                key(Action::FlyForward) + " " + key(Action::FlyLeft) + " " + key(Action::FlyBack) +
+                    " " + key(Action::FlyRight) + " move, " + key(Action::FlyUp) + " up, " +
+                    key(Action::FlyDown) + " down, " + key(Action::FlyFast) + " faster",
+                "Wheel or " + key(Action::FlySpeedUp) + " / " + key(Action::FlySpeedDown) +
+                    " set the speed   " + key(Action::FlyFaceTrain) + ": face the train   " +
+                    key(Action::FlyToWorld) + ": World view",
+                "With Edit on: left removes a point, right places one, " + key(Action::Grab) +
+                    " carries"};
         break;
     }
     for (size_t i = 0; i < help.size(); ++i)
@@ -955,7 +1026,8 @@ void GameMenu::drawLighting(TrainWindow &tw, ui::Gui &gui)
     bool fullscreen = tw.fullscreen();
     if (gui.toggle(left(gui, 3), "Fullscreen", fullscreen))
         tw.setFullscreen(fullscreen);
-    gui.text(right(gui, 3).x + 4, right(gui, 3).y + 6, "F11 anywhere", ui::kGrey);
+    gui.text(right(gui, 3).x + 4, right(gui, 3).y + 6,
+             tw.keys.keyText(KeyBinds::Action::Fullscreen) + " anywhere", ui::kGrey);
     gui.text(gui.width() / 2, top(gui) + 4 * kRowStep + 6,
              "Light+ is per-pixel lighting with shadow maps, sky and fog;", ui::kGrey,
              ui::Align::Center);
@@ -1000,6 +1072,156 @@ void GameMenu::drawWorld(TrainWindow &tw, ui::Gui &gui)
                  gui.width() - 20),
              m_dropNote.empty() ? ui::kGrey : ui::kWhite, ui::Align::Center);
     done(tw, gui, 6);
+}
+
+//************************************************************************
+//
+// * Controls: the key binds, as a block game's Key Binds screen
+//========================================================================
+namespace
+{
+// A row of the list: a group's heading, or a command.
+struct KeyRow
+{
+    bool heading;
+    KeyBinds::Group group;
+    KeyBinds::Action action;
+};
+
+std::vector<KeyRow> keyRows()
+{
+    std::vector<KeyRow> rows;
+    for (int i = 0; i < KeyBinds::kActions; ++i)
+    {
+        const auto action = static_cast<KeyBinds::Action>(i);
+        const KeyBinds::Group group = KeyBinds::group(action);
+        if (rows.empty() || rows.back().group != group)
+            rows.push_back({true, group, action});
+        rows.push_back({false, group, action});
+    }
+    return rows;
+}
+
+constexpr int kKeyRowStep = 20;
+constexpr ui::Color kClash = {255, 85, 85, 255};
+} // namespace
+
+bool GameMenu::pickKey(TrainWindow &tw, const InputEvent &e)
+{
+    const auto action = static_cast<KeyBinds::Action>(m_pickAction);
+    if (e.key == Key::Escape)
+    {
+        setPickedKey(tw, 0, 0); // Esc: no key, as in the game
+        return true;
+    }
+    const int key = KeyBinds::normalize(e.key);
+    // Ctrl, Shift or Alt may start a combination: wait for the next key, or
+    // for it to be let go alone (input()'s KeyUp). The Fly camera's own keys
+    // take no modifiers, so there a modifier is the key at once.
+    if (KeyBinds::modifierBit(key) != 0 && !KeyBinds::held(action))
+    {
+        m_pickModifier = key;
+        tw.trainView->damage(1);
+        return true;
+    }
+    setPickedKey(tw, key, e.state);
+    return true;
+}
+
+void GameMenu::setPickedKey(TrainWindow &tw, int key, int mods)
+{
+    if (m_pickAction < 0)
+        return;
+    tw.keys.set(static_cast<KeyBinds::Action>(m_pickAction), m_pickSlot, {key, mods});
+    tw.keysChanged();
+    m_pickAction = -1;
+    m_pickModifier = 0;
+    tw.trainView->damage(1);
+}
+
+void GameMenu::drawControls(TrainWindow &tw, ui::Gui &gui)
+{
+    KeyBinds &keys = tw.keys;
+    const int cx = gui.width() / 2;
+    gui.text(cx, 6, "Key Binds", ui::kWhite, ui::Align::Center);
+    gui.text(cx, 17,
+             pickingKey() ? "Press the new key (with Ctrl, Shift or Alt if wanted); Esc: no key"
+                          : "Click a key, then press the new one. Red keys clash.",
+             ui::kGrey, ui::Align::Center);
+
+    // The list: name, key, second key, Reset; rows that fit, scrolled by the wheel.
+    const int x0 = cx - 157;
+    const int listTop = 30;
+    const int listBottom = gui.height() - 30;
+    const ui::Rect area = {x0 - 2, listTop - 1, 320, listBottom - listTop + 2};
+    const std::vector<KeyRow> rows = keyRows();
+    const int count = static_cast<int>(rows.size());
+    const int visible =
+        (listBottom - listTop) / kKeyRowStep > 0 ? (listBottom - listTop) / kKeyRowStep : 1;
+    const float wheel = gui.wheel(area);
+    if (wheel != 0.0f)
+        m_keyScroll += wheel > 0.0f ? 1 : -1;
+    const int most = count > visible ? count - visible : 0;
+    m_keyScroll = m_keyScroll < 0 ? 0 : (m_keyScroll > most ? most : m_keyScroll);
+    gui.fill(area, {0, 0, 0, 90});
+
+    for (int i = 0; i < visible && m_keyScroll + i < count; ++i)
+    {
+        const KeyRow &row = rows[static_cast<size_t>(m_keyScroll + i)];
+        const int y = listTop + i * kKeyRowStep;
+        if (row.heading)
+        {
+            gui.text(cx, y + 7, KeyBinds::groupName(row.group), ui::kYellow, ui::Align::Center);
+            continue;
+        }
+        const int index = static_cast<int>(row.action);
+        gui.text(x0, y + 6, fit(KeyBinds::name(row.action), 136), ui::kWhite);
+        for (int slot = 0; slot < KeyBinds::kSlots; ++slot)
+        {
+            const ui::Rect r = {x0 + 140 + slot * 64, y + 1, 62, kKeyRowStep - 2};
+            const bool waiting = m_pickAction == index && m_pickSlot == slot;
+            std::string label = KeyBinds::bindName(keys.get(row.action, slot));
+            const bool none = keys.get(row.action, slot).none();
+            ui::Color color =
+                keys.clashes(row.action, slot) ? kClash : (none ? ui::kGrey : ui::kWhite);
+            if (waiting)
+            {
+                label = m_pickModifier != 0 ? KeyBinds::keyName(m_pickModifier) + "+..." : label;
+                label = "> " + label + " <";
+                color = ui::kYellow;
+            }
+            if (gui.button(r, fit(label, r.w - 4), true, color))
+            {
+                m_pickAction = index;
+                m_pickSlot = slot;
+                m_pickModifier = 0;
+            }
+        }
+        if (gui.button({x0 + 270, y + 1, 42, kKeyRowStep - 2}, "Reset",
+                       !keys.isDefault(row.action)))
+        {
+            keys.reset(row.action);
+            tw.keysChanged();
+        }
+    }
+    if (count > visible)
+    {
+        // a thin bar showing which part of the list is in view
+        const int trackH = listBottom - listTop;
+        const int thumbH = trackH * visible / count > 6 ? trackH * visible / count : 6;
+        const int thumbY = listTop + (trackH - thumbH) * m_keyScroll / most;
+        gui.fill({x0 + 314, listTop, 3, trackH}, {0, 0, 0, 120});
+        gui.fill({x0 + 314, thumbY, 3, thumbH}, {200, 200, 210, 255});
+    }
+
+    const int buttonsY = gui.height() - 25;
+    if (gui.button({cx - 155, buttonsY, 150, kButtonH}, "Reset All", !keys.allDefault()))
+    {
+        keys.resetAll();
+        tw.keysChanged();
+    }
+    if (gui.button({cx + 5, buttonsY, 150, kButtonH}, "Done"))
+        back(tw);
 }
 
 //************************************************************************
