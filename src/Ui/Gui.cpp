@@ -243,10 +243,11 @@ void ui::Gui::text(int x, int y, const std::string &s, Color c, Align align, boo
     }
 }
 
-void ui::Gui::buttonFace(const Rect &r, const std::string &label, bool enabled, bool hot)
+void ui::Gui::buttonFace(const Rect &r, const std::string &label, bool enabled, bool hot,
+                         const Color *labelColor)
 {
     skin(r, !enabled ? UiAtlas::BUTTON_DISABLED : (hot ? UiAtlas::BUTTON_HOVER : UiAtlas::BUTTON));
-    const Color c = !enabled ? kGrey : (hot ? kYellow : kWhite);
+    const Color c = !enabled ? kGrey : (labelColor ? *labelColor : (hot ? kYellow : kWhite));
     text(r.x + r.w / 2, r.y + (r.h - PixelFont::kAscent) / 2, label, c, Align::Center);
 }
 
@@ -257,6 +258,25 @@ bool ui::Gui::button(const Rect &r, const std::string &label, bool enabled)
     const bool used = enabled && takePush(r);
     buttonFace(r, label, enabled, enabled && hovered(r));
     return used;
+}
+
+bool ui::Gui::button(const Rect &r, const std::string &label, bool enabled, Color labelColor)
+{
+    ++m_widget;
+    solid(r);
+    const bool used = enabled && takePush(r);
+    buttonFace(r, label, enabled, enabled && hovered(r), &labelColor);
+    return used;
+}
+
+float ui::Gui::wheel(const Rect &r)
+{
+    solid(r);
+    if (m_wheel == 0.0f || !hovered(r))
+        return 0.0f;
+    const float notches = m_wheel;
+    m_wheel = 0.0f;
+    return notches;
 }
 
 bool ui::Gui::toggle(const Rect &r, const std::string &label, bool &value)

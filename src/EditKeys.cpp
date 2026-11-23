@@ -6,34 +6,31 @@
 *************************************************************************/
 
 #include "EditKeys.h"
-#include "Utilities/Input.H"
+#include "KeyBinds.h"
 
-EditKeys::Action EditKeys::forKey(int key, int state, bool fly)
+EditKeys::Action EditKeys::forKey(const KeyBinds &keys, int key, int state, bool fly)
 {
-    if (key == Key::Keypad + '1')
-        return CAMERA_WORLD;
-    if (key == Key::Keypad + '7')
-        return CAMERA_TOP;
-    if (key == Key::Keypad + '0')
-        return CAMERA_TRAIN;
-    // like the game mode switch of a block game: building on or off; a
-    // function key, so an input method such as Zhuyin cannot swallow it
-    if (key == Key::F + 4)
-        return TOGGLE_EDIT;
-    if (key == 'z' && (state & Mod::Ctrl) != 0)
-        return (state & Mod::Shift) != 0 ? REDO : UNDO;
-    if (key == 'y' && (state & Mod::Ctrl) != 0)
-        return REDO;
-    // what the middle button does, for touchpads without one
-    if (key == 'c' && (state & (Mod::Ctrl | Mod::Alt)) == 0)
-        return PICK_POINT;
-    if (key == 'g')
-        return GRAB;
-    if (key == 'r')
-        return TILT;
-    if (key == 'd' && (state & (fly ? Mod::Alt : Mod::Shift)) != 0)
-        return ADD_POINT;
-    if (key == Key::Delete || (key == 'x' && !fly))
-        return REMOVE;
+    using Bind = KeyBinds::Action;
+    // in this order, so a key bound to two of them does the first
+    const struct
+    {
+        Bind bind;
+        Action action;
+    } table[] = {{Bind::CameraWorld, CAMERA_WORLD},
+                 {Bind::CameraTop, CAMERA_TOP},
+                 {Bind::CameraTrain, CAMERA_TRAIN},
+                 // like the game mode switch of a block game: building on or off
+                 {Bind::ToggleEdit, TOGGLE_EDIT},
+                 {Bind::Undo, UNDO},
+                 {Bind::Redo, REDO},
+                 // what the middle button does, for touchpads without one
+                 {Bind::Pick, PICK_POINT},
+                 {Bind::Grab, GRAB},
+                 {Bind::Tilt, TILT},
+                 {fly ? Bind::FlyAddPoint : Bind::AddPoint, ADD_POINT},
+                 {fly ? Bind::FlyRemovePoint : Bind::RemovePoint, REMOVE}};
+    for (const auto &entry : table)
+        if (keys.matches(entry.bind, key, state))
+            return entry.action;
     return NONE;
 }

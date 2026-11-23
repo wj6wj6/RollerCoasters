@@ -39,6 +39,8 @@
 
 namespace
 {
+// The keys set in Options > Controls, as a block game's options file.
+const char kKeyBindsFile[] = "data/keybinds.txt";
 // The window starts this size: the Grand Tour wants a wide view.
 const int kStartWidth = 1180;
 const int kStartHeight = 720;
@@ -112,6 +114,8 @@ TrainWindow::TrainWindow()
     trainView = new TrainView();
     trainView->tw = this;
     trainView->m_pTrack = &m_Track;
+    keys.loadFile(kKeyBindsFile); // the defaults until a key is changed
+    keys.applyTo(trainView->flyCam);
     listTexturePacks();
     // The program opens on the demo: the Grand Tour seen from the train.
     // P (or the hotbar's last slot) starts the ride.
@@ -363,18 +367,28 @@ void TrainWindow::resized(int width, int height)
     trainView->resize(width, height);
 }
 
+void TrainWindow::keysChanged()
+{
+    keys.applyTo(trainView->flyCam);
+    if (!automated && !keys.saveFile(kKeyBindsFile))
+        std::fprintf(stderr, "Could not save the keys in %s\n", kKeyBindsFile);
+}
+
 void TrainWindow::keyCallback(GLFWwindow *w, int key, int, int action, int mods)
 {
     TrainWindow *tw = windowOf(w);
-    // F11 switches fullscreen anywhere, also on the title and in the menu,
-    // once a press: holding it down does not flip it back and forth.
-    if (key == GLFW_KEY_F11)
+    const InputEvent e = tw->m_input.key(key, action, mods);
+    // Fullscreen (F11) switches anywhere, also on the title and in the menu,
+    // once a press: holding it down does not flip it back and forth. While
+    // Controls waits for a new key, the key goes there instead.
+    if (e.type == InputType::KeyDown && !tw->menu.pickingKey() &&
+        tw->keys.matches(KeyBinds::Action::Fullscreen, e))
     {
         if (action == GLFW_PRESS && !tw->automated)
             tw->setFullscreen(!tw->fullscreen());
         return;
     }
-    tw->input(tw->m_input.key(key, action, mods));
+    tw->input(e);
 }
 
 void TrainWindow::buttonCallback(GLFWwindow *w, int button, int action, int mods)

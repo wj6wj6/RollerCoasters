@@ -44,4 +44,11 @@
 - `Flat Island`：平坦草地、起始軌道、World 相機、Edit 開啟（與 `Reset Track` 相同）；改過軌道後 `Quit to Title` 再選 `Grand Tour Island`，自己的軌道仍在，只換成島的地形；選回 `Flat Island` 也一樣。
 - 標題畫面按 Esc 不會離開；從標題的 `Options...` 進設定畫面，`Done`／Esc 回 `Options`，再回標題；從標題的 `Load Track...` 載入成功後直接進入世界，`Cancel` 回標題。
 - 開著中文輸入法（注音）時，WASD、`P`、數字鍵與 Esc 都照常作用，不會跳出選字視窗。
+- `Controls`（Esc 選單與標題的 `Options...` 都有）：
+  - 清單依 `Interface`、`Hotbar`、`Ride and Cameras`、`Editing Points`、`Fly Camera` 分組，滾輪（含觸控板兩指）捲動，右側捲軸跟著動；預設沒有紅字，`Reset` 與 `Reset All` 是灰的。
+  - 點 `Run / Stop` 的鍵，按鈕變成黃色 `> P <`；按 `K`：變成 `K`，`Reset` 可按，回到遊戲後 `K` 開停列車、`P` 不再有作用，左上角提示變成 `K  Run the train`。
+  - 點 `Undo` 的鍵，先按住 Ctrl（顯示 `> Ctrl+... <`）再按 `U`：變成 `Ctrl+U`，Edit 開著時 Ctrl+U 復原、Ctrl+Z 不再復原。只按 Ctrl 再放開：變成 `Ctrl`。等待按鍵時按 Esc：變成 `None`，不會關掉畫面；點畫面其他地方：取消，保留原本的鍵。
+  - 把 `Slot 1` 設成 `W`：`Slot 1` 與 Fly 的 `Forward` 都變紅字；`Look Ahead Again`（R）與 `Tilt Point`（R）不是紅字。`Reset All` 後全部回到預設。
+  - 把 Fly `Forward` 改成 `I`：Fly 相機下 I 前進、W 不動；按住 Ctrl 時 I 仍會加速前進。把 `Fullscreen` 改成 `F10`：F10 切換全螢幕，F11 不再有作用；設定 `Fullscreen` 的鍵時按 F11 會被設成新鍵，不會切換全螢幕。
+  - 關掉程式再開：改過的鍵仍在（exe 旁 `data\keybinds.txt` 每個指令一行）；刪掉這個檔案再開，全部回到預設。
 - 關閉視窗會結束程序。

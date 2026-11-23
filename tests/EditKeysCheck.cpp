@@ -1,8 +1,9 @@
 // Checks the control point editing keys against the Fly camera's keys: in Fly no flying key is
 // an editing command (so X, Shift + D and the like cannot delete or add a point while
 // flying), every editing command in Fly is a key the real FlyCam leaves alone, and the World
-// and Top keys are unchanged.
+// and Top keys are unchanged. Rebinding a command (KeyBinds) moves it to the new key.
 #include "EditKeys.h"
+#include "KeyBinds.h"
 #include "FlyCam.H"
 #include "Platform.H"
 #include "TestViewport.h"
@@ -32,7 +33,10 @@ bool flyTakes(FlyCam &camera, int key, int state)
 
 int main()
 {
-    using EditKeys::forKey;
+    KeyBinds keys; // the defaults
+    auto forKey = [&keys](int key, int state, bool fly) {
+        return EditKeys::forKey(keys, key, state, fly);
+    };
 
     // World and Top: as before.
     expect(forKey('g', 0, false) == EditKeys::GRAB, "World: G moves");
@@ -116,6 +120,21 @@ int main()
     expect(movingWhileHeld && x0 == x1 && y0 == y1 && z0 == z1,
            "a released W stops the camera on the next tick");
     camera.stop();
+
+    // Rebinding: Tilt on T, Add Point (Fly) on Alt + F, Delete Point without X.
+    keys.set(KeyBinds::Action::Tilt, 0, KeyBinds::Bind{'t', 0});
+    keys.set(KeyBinds::Action::FlyAddPoint, 0, KeyBinds::Bind{'f', Mod::Alt});
+    keys.set(KeyBinds::Action::RemovePoint, 1, KeyBinds::Bind{});
+    expect(forKey('t', 0, false) == EditKeys::TILT && forKey('r', 0, false) == EditKeys::NONE,
+           "rebound: T tilts and R no longer does");
+    expect(forKey('f', Mod::Alt, true) == EditKeys::ADD_POINT &&
+               forKey('d', Mod::Alt, true) == EditKeys::NONE,
+           "rebound: Alt + F adds a point in Fly, Alt + D no longer does");
+    expect(forKey('x', 0, false) == EditKeys::NONE &&
+               forKey(Key::Delete, 0, false) == EditKeys::REMOVE,
+           "rebound: X cleared, Delete still removes");
+    expect(forKey('d', Mod::Shift, false) == EditKeys::ADD_POINT,
+           "rebound: the commands not changed keep their keys");
 
     std::printf("%s\n", failures == 0 ? "EditKeysCheck passed" : "EditKeysCheck FAILED");
     return failures == 0 ? 0 : 1;

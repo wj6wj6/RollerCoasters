@@ -1,7 +1,8 @@
 // Checks the block-game style interface without OpenGL: the pixel font's metrics, the atlas,
 // the GUI scale, and that buttons, toggles, cycle buttons, sliders and lists react to fed mouse
 // input the way the game's do (a button fires on the press, the interface takes events over
-// what it drew and leaves the rest to the 3D view), and that a text field takes typing.
+// what it drew and leaves the rest to the 3D view), that a text field takes typing, and that a
+// list the caller draws gets the wheel.
 #include "Ui/Gui.h"
 #include "Ui/PixelFont.h"
 #include "Ui/UiAtlas.h"
@@ -211,6 +212,28 @@ int main()
     gui.feed(mouse(InputType::Release, px(20), px(165)));
     gui.beginFrame(640, 480, 2);
     expect(gui.area(areaRect, &areaTwice) && !areaTwice, "a single click is not");
+
+    // A coloured button (a key bind) fires once like any button, and the wheel over an area
+    // the caller draws (the key bind list) reaches it, once, only while the mouse is over it.
+    const Rect keyRect = {300, 10, 60, 18}, keyList = {290, 0, 100, 100};
+    gui.beginFrame(640, 480, 2);
+    gui.wheel(keyList);
+    gui.button(keyRect, "W", true, ui::Color{255, 85, 85, 255});
+    gui.feed(mouse(InputType::Push, px(310), px(15)));
+    gui.feed(mouse(InputType::Release, px(310), px(15)));
+    InputEvent keyWheel = mouse(InputType::Wheel, px(310), px(60));
+    keyWheel.dy = 1;
+    expect(gui.feed(keyWheel), "the wheel over the caller's list is taken");
+    gui.beginFrame(640, 480, 2);
+    expect(gui.wheel(keyList) > 0.0f && gui.wheel(keyList) == 0.0f, "the list gets the wheel once");
+    expect(gui.button(keyRect, "W", true, ui::Color{255, 85, 85, 255}), "a coloured button fires");
+    gui.beginFrame(640, 480, 2);
+    expect(!gui.button(keyRect, "W", true, ui::Color{255, 85, 85, 255}), "... once");
+    gui.feed(mouse(InputType::Move, px(500), px(300)));
+    gui.feed(keyWheel);
+    gui.feed(mouse(InputType::Move, px(500), px(300)));
+    gui.beginFrame(640, 480, 2);
+    expect(gui.wheel(keyList) == 0.0f, "no wheel for the list when the mouse is elsewhere");
 
     // Text field: printable characters and Backspace typed since the last frame, up to the limit.
     std::string name = "ab";

@@ -8,10 +8,14 @@
                   Keyboard (hold to move, the view keeps a level horizon):
                     W / A / S / D  fly forward / left / back / right, level
                                    with the ground
-                    Space / Shift  rise / sink (also E / Q, Page Up / Down)
+                    Space / Shift  rise / sink (also E / Q)
                     Ctrl           fly faster
                     arrow keys     turn and look up / down
-                    + / -          change the flying speed
+                    = / -          change the flying speed (also the
+                                   numpad's + / -)
+
+                  These are the defaults; setKeys() changes them (the
+                  program's Controls screen, KeyBinds.h).
 
                   Mouse and touchpad:
                     mouse look     the caller captures the mouse and passes
@@ -61,6 +65,30 @@ class FlyCam
     // If that view used another field of view (degrees), the camera slides along
     // its view direction so the world origin keeps its size on screen.
     void setFromViewMatrix(const float matrix[16], float sourceFieldOfView = 0);
+
+    // What the keys do: the motions (Forward to Fast) while held, SpeedUp
+    // and SpeedDown once a press.
+    enum Command
+    {
+        Forward,
+        Back,
+        Left,
+        Right,
+        Up,
+        Down,
+        TurnLeft,
+        TurnRight,
+        LookUp,
+        LookDown,
+        Fast,
+        KeyCount, // the held motions end here
+        SpeedUp = KeyCount,
+        SpeedDown,
+        CommandCount
+    };
+    // The two keys (Input.H codes, 0 for none) for a command. Modifiers are
+    // not needed: Ctrl + W still flies forward. Releases held keys.
+    void setKeys(int command, int first, int second);
 
     // Returns 1 when the camera used the event.
     int handle(const InputEvent &event);
@@ -152,27 +180,12 @@ class FlyCam
     static constexpr float maxDistance = 1000.0f; // |x| and |z| limit
 
   private:
-    enum Motion
-    {
-        Forward,
-        Back,
-        Left,
-        Right,
-        Up,
-        Down,
-        TurnLeft,
-        TurnRight,
-        LookUp,
-        LookDown,
-        Fast,
-        KeyCount
-    };
-
     static void tick(void *data);
     static void turnTick(void *data);
     void endTurn();
     void keepInBounds();
-    static int keyFor(int key);
+    int keyFor(int key) const; // the held motion, or -1
+    bool isKey(int command, int key) const;
     bool anyMotionHeld() const;
     void step(float seconds);
     void look(float yawDelta, float pitchDelta);
@@ -181,6 +194,7 @@ class FlyCam
     void redraw() const;
 
     bool held[KeyCount];
+    int keys[CommandCount][2]; // setKeys()
     bool timerActive;
     bool dragging;
     int lastX;
