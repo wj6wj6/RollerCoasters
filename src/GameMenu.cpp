@@ -486,8 +486,10 @@ void GameMenu::draw(TrainWindow &tw, ui::Gui &gui, double seconds)
     m_now = seconds;
     if (open())
     {
-        // the world stays visible, darkened, as behind a paused game's menu
-        gui.fill({0, 0, gui.width(), gui.height()}, ui::kDim);
+        // the world stays visible, darkened, as behind a paused game's menu;
+        // with no world the dirt behind is already dark
+        if (inWorld())
+            gui.fill({0, 0, gui.width(), gui.height()}, ui::kDim);
         switch (m_screen)
         {
         case Screen::Title:
