@@ -112,7 +112,7 @@ tests/linux/win32-syntax.sh
 - `GizmoDragCheck`：移動把手（`src/TransformGizmo.*`）找得到滑鼠下的把手，拖曳時點正好落在滑鼠下，且只沿把手允許的軸或平面移動。
 - `TrackInsertCheck`：新增控制點（`src/TrackInsert.*`）後軌道仍經過點擊處、新點插在前後兩點之間並內插傾斜、列車留在原位、螢幕上找得到滑鼠下的軌道位置。
 - `TrackHistoryCheck`：上一步／下一步（`src/TrackHistory.*`）回到當時的軌道與選取、下一步能前進、新修改清掉下一步、點數不變時列車留在原位、只保留最近的步數。
-- `TrackSpacingCheck`：弧長表讓枕木等距，控制點分佈很不平均時，以獨立的細分弧長量測誤差仍在 2% 以內。
+- `TrackSpacingCheck`：弧長表讓枕木等距，控制點分佈很不平均時，以獨立的細分弧長量測誤差仍在 2% 以內；快取的軌道網格（`TrackMesh`）每根枕木六個面、八條鐵軌 strip 長度相同，枕木中心落在軌道上、法線為單位長，軌道不變時不重算，移動控制點、改樣條或加點時重算。
 - `OceanRideClearanceCheck`：三種 spline 下海底的方塊與植物不碰到列車，以正式 `CTrack` 取樣，與挖空景物的程式互相獨立。
 - `TexturePackCheck`：zip 的三種 DEFLATE 區塊解碼與截斷資料、PNG 解碼與取動畫第一格、zip 與資料夾材質包的開啟、替代與染色、不是材質包的資料夾被拒絕、依名稱列出材質包。
 - `TwoFingerGestureCheck`：觸控板兩指濾波，驗證靜止不動、純捏合不轉動、純移動不縮放、兩者明顯時同時作用。

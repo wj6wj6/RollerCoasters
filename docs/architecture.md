@@ -25,7 +25,7 @@ flowchart LR
     View --> Settings
     Callbacks --> Track
     View --> Track
-    View --> Rails[TrackRenderer / 鐵軌、枕木與弧長表]
+    View --> Rails[TrackRenderer / 鐵軌、枕木與弧長表，快取在 vertex buffer]
     Rails --> Track
     View --> Train[TrainModel / 熔爐礦車與礦車、會依軌道反應的玩家乘客]
     Train --> Track
@@ -135,7 +135,7 @@ flowchart LR
 | `src/MatrixMath.h` | 光影程式用的 column-major 4×4 矩陣輔助函式。 |
 | `src/Track.H/.cpp` | 控制點容器、三種樣條的位置與切線、`trainU`、軌道文字檔讀寫。 |
 | `src/ControlPoint.H/.cpp` | 控制點位置、方向向量與標記繪製。 |
-| `src/TrackRenderer.H/.cpp` | 鐵軌與枕木繪製、累積弧長表、`makeTrackFrame()`。 |
+| `src/TrackRenderer.H/.cpp` | 鐵軌與枕木繪製、累積弧長表、`makeTrackFrame()`。`TrackMesh` 把枕木與鐵軌算成世界座標的頂點，只在控制點位置或樣條改變時重算；`TrackRenderer` 放進一個 vertex buffer，每個 pass（shadow map、倒影、主場景）都畫同一份。見 [ADR 0016](adr/0016-track-vertex-buffer.md)。 |
 | `src/TrainModel.h/.cpp` | 列車模型；`Chase` 相機用的列車長度、乘客高度與沿軌道往回取點。 |
 | `src/ChaseRig.h/.cpp` | `Chase` 相機的取景數學（純計算）：依列車長度、乘客高度與視野算出在車後多遠、多高，空間不夠時降低並拉近，平滑跟隨，以及拖曳時繞列車中段轉動（`orbit()`）；由 `ChaseRigCheck` 測試。`TrainView` 用另一個 `HeadLook`（`chaseLook`）記錄轉動角度，轉到方塊後時把鏡頭拉近到方塊前。`TrainView` 把它放到軌道上，並用 `LandWorld::solidAt()`／`OceanWorld::solidAt()` 避開方塊。 |
 | `src/TransformGizmo.h/.cpp` | 控制點移動把手的挑選、拖曳換算（純數學）與繪製。 |

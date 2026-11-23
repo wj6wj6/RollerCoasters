@@ -12,6 +12,12 @@
                   Sleepers are placed at equal arc-length intervals using
                   a cumulative arc-length table, so their spacing stays
                   even no matter how the control points are spread.
+
+                  The sleepers and rails are worked out once into a mesh
+                  (TrackMesh) kept in a vertex buffer, and worked out again
+                  only when a control point moves or the spline type
+                  changes. Every pass of a frame (shadow maps, reflection,
+                  the scene) draws the same buffer.
 *************************************************************************/
 #pragma once
 
@@ -51,14 +57,60 @@ class TrackArcTable
     std::vector<TrackArcSample> m_samples;
 };
 
+// One corner of the track mesh, in world coordinates.
+struct TrackVertex
+{
+    float position[3];
+    float normal[3];
+    float texCoord[2];
+};
+
+// The sleepers and rails of a track as ready-to-draw vertices: first the
+// sleepers (GL_QUADS, wood), then eight quad strips of equal length for the
+// four faces of the two rails (iron).
+class TrackMesh
+{
+  public:
+    // Work the mesh out again if the control points or the spline type have
+    // changed since the last call; true when it did.
+    bool update(const CTrack &track, TrackSplineType splineType);
+
+    const std::vector<TrackVertex> &vertices() const
+    {
+        return m_vertices;
+    }
+    int sleeperVertexCount() const
+    {
+        return m_sleeperVertices;
+    }
+    // Vertices in each of the eight rail strips.
+    int railStripVertexCount() const
+    {
+        return m_railStripVertices;
+    }
+    static const int kRailStrips = 8;
+
+  private:
+    void build(const CTrack &track, TrackSplineType splineType);
+
+    TrackArcTable m_arcTable;
+    std::vector<TrackVertex> m_vertices;
+    int m_sleeperVertices = 0;
+    int m_railStripVertices = 0;
+    // what the mesh was worked out from
+    bool m_built = false;
+    std::vector<Pnt3f> m_points;
+    TrackSplineType m_splineType = TRACK_SPLINE_LINEAR;
+};
+
 class TrackRenderer
 {
   public:
     TrackRenderer();
 
-    // Forget the texture names. Call this when the GL context was recreated,
-    // because the old textures no longer exist in the new context.
-    void releaseTextures();
+    // Forget the texture and buffer names. Call this when the GL context was
+    // recreated, because the old ones no longer exist in the new context.
+    void releaseResources();
 
     // The pictures for the sleepers and the rails: RGBA, square, a power of
     // two on a side (a texture pack's planks and iron), or empty for the
@@ -71,10 +123,13 @@ class TrackRenderer
 
   private:
     void ensureTextures();
-    void drawSleepers(const CTrack &track, TrackSplineType splineType, bool doingShadows);
-    void drawRails(const CTrack &track, TrackSplineType splineType, bool doingShadows);
+    // Bind the vertex arrays to the mesh (in its buffer when the card has
+    // buffers); false when there is nothing to draw.
+    bool bindMesh();
 
-    TrackArcTable m_arcTable;
+    TrackMesh m_mesh;
+    unsigned int m_buffer = 0; // vertex buffer holding m_mesh
+    bool m_bufferStale = true; // m_mesh changed since it was uploaded
     unsigned int m_woodTexture;
     unsigned int m_ironTexture;
     std::vector<unsigned char> m_woodPicture, m_ironPicture; // empty: built in

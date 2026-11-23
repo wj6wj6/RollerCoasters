@@ -205,80 +205,82 @@ unsigned int uploadPixelTexture(std::vector<unsigned char> pixels)
     return texture;
 }
 
-void vertex(const Pnt3f &p)
+// Where a sleeper or rail vertex goes: the frame along the track.
+struct Frame
 {
-    glVertex3f(p.x, p.y, p.z);
+    Pnt3f position;
+    Pnt3f side;
+    Pnt3f up;
+    Pnt3f forward;
+};
+
+TrackVertex makeVertex(const Pnt3f &position, const Pnt3f &normal, float s, float t)
+{
+    TrackVertex v;
+    v.position[0] = position.x;
+    v.position[1] = position.y;
+    v.position[2] = position.z;
+    v.normal[0] = normal.x;
+    v.normal[1] = normal.y;
+    v.normal[2] = normal.z;
+    v.texCoord[0] = s;
+    v.texCoord[1] = t;
+    return v;
 }
 
-// Axis-aligned box in the current local frame (x = side, y = up, z = forward).
-// s0..s1 / t0..t1 pick the part of the wood texture shown on the large faces.
-void drawSleeperBox(float s0, float s1, float t0, float t1, float tHeight)
+// Axis-aligned box in the sleeper's local frame (x = side, y = up, z = forward),
+// put into the world with the frame. s0..s1 / t0..t1 pick the part of the wood
+// texture shown on the large faces. Six quads, in the order they were once
+// drawn one by one.
+void appendSleeperBox(std::vector<TrackVertex> &out, const Frame &f, float s0, float s1, float t0,
+                      float t1, float tHeight)
 {
     const float x0 = -kSleeperHalfLength, x1 = kSleeperHalfLength;
     const float y0 = kSleeperBottom, y1 = kSleeperTop;
     const float z0 = -kSleeperHalfDepth, z1 = kSleeperHalfDepth;
     const float sEnd = (z1 - z0) * kTexelsPerUnit / kTextureSize;
 
-    glBegin(GL_QUADS);
+    Pnt3f normal;
+    auto setNormal = [&](float x, float y, float z) {
+        normal = f.side * x + f.up * y + f.forward * z;
+    };
+    auto add = [&](float s, float t, float x, float y, float z) {
+        out.push_back(makeVertex(f.position + f.side * x + f.up * y + f.forward * z, normal, s, t));
+    };
     // top
-    glNormal3f(0, 1, 0);
-    glTexCoord2f(s0, t0);
-    glVertex3f(x0, y1, z0);
-    glTexCoord2f(s0, t1);
-    glVertex3f(x0, y1, z1);
-    glTexCoord2f(s1, t1);
-    glVertex3f(x1, y1, z1);
-    glTexCoord2f(s1, t0);
-    glVertex3f(x1, y1, z0);
+    setNormal(0, 1, 0);
+    add(s0, t0, x0, y1, z0);
+    add(s0, t1, x0, y1, z1);
+    add(s1, t1, x1, y1, z1);
+    add(s1, t0, x1, y1, z0);
     // bottom
-    glNormal3f(0, -1, 0);
-    glTexCoord2f(s0, t0);
-    glVertex3f(x0, y0, z0);
-    glTexCoord2f(s1, t0);
-    glVertex3f(x1, y0, z0);
-    glTexCoord2f(s1, t1);
-    glVertex3f(x1, y0, z1);
-    glTexCoord2f(s0, t1);
-    glVertex3f(x0, y0, z1);
+    setNormal(0, -1, 0);
+    add(s0, t0, x0, y0, z0);
+    add(s1, t0, x1, y0, z0);
+    add(s1, t1, x1, y0, z1);
+    add(s0, t1, x0, y0, z1);
     // front (+z) and back (-z): the side grain
-    glNormal3f(0, 0, 1);
-    glTexCoord2f(s0, t1);
-    glVertex3f(x0, y0, z1);
-    glTexCoord2f(s1, t1);
-    glVertex3f(x1, y0, z1);
-    glTexCoord2f(s1, t1 - tHeight);
-    glVertex3f(x1, y1, z1);
-    glTexCoord2f(s0, t1 - tHeight);
-    glVertex3f(x0, y1, z1);
-    glNormal3f(0, 0, -1);
-    glTexCoord2f(s1, t0 + tHeight);
-    glVertex3f(x1, y0, z0);
-    glTexCoord2f(s0, t0 + tHeight);
-    glVertex3f(x0, y0, z0);
-    glTexCoord2f(s0, t0);
-    glVertex3f(x0, y1, z0);
-    glTexCoord2f(s1, t0);
-    glVertex3f(x1, y1, z0);
+    setNormal(0, 0, 1);
+    add(s0, t1, x0, y0, z1);
+    add(s1, t1, x1, y0, z1);
+    add(s1, t1 - tHeight, x1, y1, z1);
+    add(s0, t1 - tHeight, x0, y1, z1);
+    setNormal(0, 0, -1);
+    add(s1, t0 + tHeight, x1, y0, z0);
+    add(s0, t0 + tHeight, x0, y0, z0);
+    add(s0, t0, x0, y1, z0);
+    add(s1, t0, x1, y1, z0);
     // ends: dark end grain column
-    glNormal3f(1, 0, 0);
-    glTexCoord2f(0, t0);
-    glVertex3f(x1, y0, z1);
-    glTexCoord2f(sEnd, t0);
-    glVertex3f(x1, y0, z0);
-    glTexCoord2f(sEnd, t0 + tHeight);
-    glVertex3f(x1, y1, z0);
-    glTexCoord2f(0, t0 + tHeight);
-    glVertex3f(x1, y1, z1);
-    glNormal3f(-1, 0, 0);
-    glTexCoord2f(0, t0);
-    glVertex3f(x0, y0, z0);
-    glTexCoord2f(sEnd, t0);
-    glVertex3f(x0, y0, z1);
-    glTexCoord2f(sEnd, t0 + tHeight);
-    glVertex3f(x0, y1, z1);
-    glTexCoord2f(0, t0 + tHeight);
-    glVertex3f(x0, y1, z0);
-    glEnd();
+    setNormal(1, 0, 0);
+    add(0, t0, x1, y0, z1);
+    add(sEnd, t0, x1, y0, z0);
+    add(sEnd, t0 + tHeight, x1, y1, z0);
+    add(0, t0 + tHeight, x1, y1, z1);
+    setNormal(-1, 0, 0);
+    add(0, t0, x0, y0, z0);
+    add(sEnd, t0, x0, y0, z1);
+    add(sEnd, t0 + tHeight, x0, y1, z1);
+    add(0, t0 + tHeight, x0, y1, z0);
 }
 
 struct RailFrame
@@ -381,16 +383,129 @@ float TrackArcTable::parameterAtDistance(float distance) const
 
 //************************************************************************
 //
+// * Mesh
+//========================================================================
+bool TrackMesh::update(const CTrack &track, TrackSplineType splineType)
+{
+    bool same = m_built && splineType == m_splineType && track.points.size() == m_points.size();
+    for (size_t i = 0; same && i < m_points.size(); ++i)
+    {
+        const Pnt3f &a = track.points[i].pos, &b = m_points[i];
+        same = a.x == b.x && a.y == b.y && a.z == b.z;
+    }
+    if (same)
+        return false;
+
+    m_built = true;
+    m_splineType = splineType;
+    m_points.clear();
+    for (const ControlPoint &p : track.points)
+        m_points.push_back(p.pos);
+    build(track, splineType);
+    return true;
+}
+
+void TrackMesh::build(const CTrack &track, TrackSplineType splineType)
+{
+    m_vertices.clear();
+    m_sleeperVertices = 0;
+    m_railStripVertices = 0;
+    if (track.points.size() < 4)
+        return;
+    m_arcTable.build(track, splineType, kArcSamplesPerSegment);
+    const float total = m_arcTable.totalLength();
+    if (total <= 0.0f)
+        return;
+
+    // Sleepers. Round to a whole number of them so the spacing is identical
+    // all the way round, including across the seam where the loop closes.
+    const int count = std::max(1, static_cast<int>(floorf(total / kSleeperSpacing + 0.5f)));
+    const float spacing = total / static_cast<float>(count);
+    const std::vector<TrackArcSample> &samples = m_arcTable.samples();
+    m_vertices.reserve(static_cast<size_t>(count) * 24 + samples.size() * 2 * kRailStrips);
+
+    const float depthTexels = 2.0f * kSleeperHalfDepth * kTexelsPerUnit;
+    const float heightTexels = (kSleeperTop - kSleeperBottom) * kTexelsPerUnit;
+    for (int i = 0; i < count; ++i)
+    {
+        const float u = m_arcTable.parameterAtDistance(spacing * static_cast<float>(i));
+        Frame frame;
+        frame.position = track.evaluatePosition(u, splineType);
+        frame.forward = track.evaluateTangent(u, splineType);
+        makeTrackFrame(frame.forward, frame.side, frame.up);
+
+        // Each sleeper shows a different plank band and may be flipped end to end,
+        // so neighbouring sleepers do not look copy-pasted.
+        const int band = static_cast<int>(hash2(i, 0, 5u) % 4);
+        const bool flip = (hash2(i, 1, 5u) & 1u) != 0;
+        const float t0 = static_cast<float>(band * 4) / kTextureSize;
+        const float t1 = t0 + depthTexels / kTextureSize;
+        appendSleeperBox(m_vertices, frame, flip ? 1.0f : 0.0f, flip ? 0.0f : 1.0f, t0, t1,
+                         heightTexels / kTextureSize);
+    }
+    m_sleeperVertices = static_cast<int>(m_vertices.size());
+
+    // Rails: frames at every sample of the arc-length table.
+    std::vector<RailFrame> frames;
+    frames.reserve(samples.size());
+    for (const TrackArcSample &sample : samples)
+    {
+        RailFrame frame;
+        frame.position = sample.position;
+        makeTrackFrame(track.evaluateTangent(sample.u, splineType), frame.side, frame.up);
+        frame.s = sample.distance * kTexelsPerUnit / kTextureSize;
+        frames.push_back(frame);
+    }
+
+    // Each rail is a square bar swept along the curve: four quad strips, one per face.
+    // corner(a, b): a picks the left (-1) or right (+1) edge, b the bottom (0) or top (1).
+    for (int rail = -1; rail <= 1; rail += 2)
+    {
+        auto corner = [&](const RailFrame &f, float a, int b) {
+            const float x = kRailOffset * static_cast<float>(rail) + kRailHalfWidth * a;
+            const float y = b ? kRailTop : kRailBottom;
+            return f.position + f.side * x + f.up * y;
+        };
+        struct Face
+        {
+            float a0;
+            int b0;
+            float a1;
+            int b1;
+            float normalSide;
+            float normalUp;
+        };
+        const Face faces[4] = {
+            {-1.0f, 1, 1.0f, 1, 0.0f, 1.0f},   // top
+            {1.0f, 1, 1.0f, 0, 1.0f, 0.0f},    // right
+            {-1.0f, 0, -1.0f, 1, -1.0f, 0.0f}, // left
+            {1.0f, 0, -1.0f, 0, 0.0f, -1.0f},  // bottom
+        };
+        for (const Face &face : faces)
+            for (const RailFrame &f : frames)
+            {
+                const Pnt3f normal = f.side * face.normalSide + f.up * face.normalUp;
+                m_vertices.push_back(makeVertex(corner(f, face.a0, face.b0), normal, f.s, 0.0f));
+                m_vertices.push_back(makeVertex(corner(f, face.a1, face.b1), normal, f.s, 1.0f));
+            }
+    }
+    m_railStripVertices = static_cast<int>(frames.size()) * 2;
+}
+
+//************************************************************************
+//
 // * Renderer
 //========================================================================
 TrackRenderer::TrackRenderer() : m_woodTexture(0), m_ironTexture(0)
 {
 }
 
-void TrackRenderer::releaseTextures()
+void TrackRenderer::releaseResources()
 {
     m_woodTexture = 0;
     m_ironTexture = 0;
+    m_buffer = 0;
+    m_bufferStale = true;
 }
 
 void TrackRenderer::setPictures(std::vector<unsigned char> wood, std::vector<unsigned char> iron)
@@ -421,16 +536,58 @@ void TrackRenderer::ensureTextures()
             uploadPixelTexture(m_ironPicture.empty() ? makeIronPixels() : m_ironPicture);
 }
 
+bool TrackRenderer::bindMesh()
+{
+    const std::vector<TrackVertex> &vertices = m_mesh.vertices();
+    if (vertices.empty())
+        return false;
+
+    // Without vertex buffers (OpenGL before 1.5) the arrays are read from memory.
+    const char *base = reinterpret_cast<const char *>(vertices.data());
+    if (GLAD_GL_VERSION_1_5)
+    {
+        if (m_buffer == 0)
+        {
+            GLuint buffer = 0;
+            glGenBuffers(1, &buffer);
+            m_buffer = buffer;
+            m_bufferStale = true;
+        }
+        glBindBuffer(GL_ARRAY_BUFFER, m_buffer);
+        if (m_bufferStale)
+        {
+            glBufferData(GL_ARRAY_BUFFER,
+                         static_cast<GLsizeiptr>(vertices.size() * sizeof(TrackVertex)),
+                         vertices.data(), GL_STATIC_DRAW);
+            m_bufferStale = false;
+        }
+        base = nullptr; // offsets into the buffer
+    }
+
+    const GLsizei stride = static_cast<GLsizei>(sizeof(TrackVertex));
+    glClientActiveTexture(GL_TEXTURE0);
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glEnableClientState(GL_NORMAL_ARRAY);
+    glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+    glVertexPointer(3, GL_FLOAT, stride, base + offsetof(TrackVertex, position));
+    glNormalPointer(GL_FLOAT, stride, base + offsetof(TrackVertex, normal));
+    glTexCoordPointer(2, GL_FLOAT, stride, base + offsetof(TrackVertex, texCoord));
+    return true;
+}
+
 void TrackRenderer::draw(const CTrack &track, TrackSplineType splineType, bool doingShadows)
 {
     if (track.points.size() < 4)
         return;
-
-    m_arcTable.build(track, splineType, kArcSamplesPerSegment);
-    if (m_arcTable.totalLength() <= 0.0f)
+    if (m_mesh.update(track, splineType))
+        m_bufferStale = true;
+    if (m_mesh.vertices().empty())
         return;
 
+    // GL_CURRENT_BIT: the current normal and texture coordinate are left
+    // undefined by drawing from arrays, so they are put back afterwards.
     glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_TEXTURE_BIT | GL_LIGHTING_BIT);
+    glPushClientAttrib(GL_CLIENT_VERTEX_ARRAY_BIT);
     if (!doingShadows)
     {
         ensureTextures();
@@ -441,104 +598,21 @@ void TrackRenderer::draw(const CTrack &track, TrackSplineType splineType, bool d
         glColor3f(1.0f, 1.0f, 1.0f); // the texture provides the colour
     }
 
-    drawSleepers(track, splineType, doingShadows);
-    drawRails(track, splineType, doingShadows);
+    if (bindMesh())
+    {
+        if (!doingShadows)
+            glBindTexture(GL_TEXTURE_2D, m_woodTexture);
+        glDrawArrays(GL_QUADS, 0, m_mesh.sleeperVertexCount());
 
+        if (!doingShadows)
+            glBindTexture(GL_TEXTURE_2D, m_ironTexture);
+        const int strip = m_mesh.railStripVertexCount();
+        for (int i = 0; i < TrackMesh::kRailStrips; ++i)
+            glDrawArrays(GL_QUAD_STRIP, m_mesh.sleeperVertexCount() + i * strip, strip);
+        if (m_buffer != 0)
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+    }
+
+    glPopClientAttrib();
     glPopAttrib();
-}
-
-void TrackRenderer::drawSleepers(const CTrack &track, TrackSplineType splineType, bool doingShadows)
-{
-    // Round to a whole number of sleepers so the spacing is identical all the way round,
-    // including across the seam where the loop closes.
-    const float total = m_arcTable.totalLength();
-    const int count = std::max(1, static_cast<int>(floorf(total / kSleeperSpacing + 0.5f)));
-    const float spacing = total / static_cast<float>(count);
-
-    if (!doingShadows)
-        glBindTexture(GL_TEXTURE_2D, m_woodTexture);
-
-    const float depthTexels = 2.0f * kSleeperHalfDepth * kTexelsPerUnit;
-    const float heightTexels = (kSleeperTop - kSleeperBottom) * kTexelsPerUnit;
-    for (int i = 0; i < count; ++i)
-    {
-        const float u = m_arcTable.parameterAtDistance(spacing * static_cast<float>(i));
-        const Pnt3f position = track.evaluatePosition(u, splineType);
-        const Pnt3f forward = track.evaluateTangent(u, splineType);
-        Pnt3f side, up;
-        makeTrackFrame(forward, side, up);
-
-        const GLfloat frame[16] = {side.x,     side.y,     side.z,     0.0f,      up.x,      up.y,
-                                   up.z,       0.0f,       forward.x,  forward.y, forward.z, 0.0f,
-                                   position.x, position.y, position.z, 1.0f};
-        glPushMatrix();
-        glMultMatrixf(frame);
-
-        // Each sleeper shows a different plank band and may be flipped end to end,
-        // so neighbouring sleepers do not look copy-pasted.
-        const int band = static_cast<int>(hash2(i, 0, 5u) % 4);
-        const bool flip = (hash2(i, 1, 5u) & 1u) != 0;
-        const float t0 = static_cast<float>(band * 4) / kTextureSize;
-        const float t1 = t0 + depthTexels / kTextureSize;
-        drawSleeperBox(flip ? 1.0f : 0.0f, flip ? 0.0f : 1.0f, t0, t1, heightTexels / kTextureSize);
-        glPopMatrix();
-    }
-}
-
-void TrackRenderer::drawRails(const CTrack &track, TrackSplineType splineType, bool doingShadows)
-{
-    const std::vector<TrackArcSample> &samples = m_arcTable.samples();
-    std::vector<RailFrame> frames;
-    frames.reserve(samples.size());
-    for (const TrackArcSample &sample : samples)
-    {
-        RailFrame frame;
-        frame.position = sample.position;
-        makeTrackFrame(track.evaluateTangent(sample.u, splineType), frame.side, frame.up);
-        frame.s = sample.distance * kTexelsPerUnit / kTextureSize;
-        frames.push_back(frame);
-    }
-
-    if (!doingShadows)
-        glBindTexture(GL_TEXTURE_2D, m_ironTexture);
-
-    // Each rail is a square bar swept along the curve: four quad strips, one per face.
-    // corner(a, b): a picks the left (-1) or right (+1) edge, b the bottom (0) or top (1).
-    for (int rail = -1; rail <= 1; rail += 2)
-    {
-        auto corner = [&](const RailFrame &f, float a, int b) {
-            const float x = kRailOffset * static_cast<float>(rail) + kRailHalfWidth * a;
-            const float y = b ? kRailTop : kRailBottom;
-            return f.position + f.side * x + f.up * y;
-        };
-        struct Face
-        {
-            float a0;
-            int b0;
-            float a1;
-            int b1;
-            float normalSide;
-            float normalUp;
-        };
-        const Face faces[4] = {
-            {-1.0f, 1, 1.0f, 1, 0.0f, 1.0f},   // top
-            {1.0f, 1, 1.0f, 0, 1.0f, 0.0f},    // right
-            {-1.0f, 0, -1.0f, 1, -1.0f, 0.0f}, // left
-            {1.0f, 0, -1.0f, 0, 0.0f, -1.0f},  // bottom
-        };
-        for (const Face &face : faces)
-        {
-            glBegin(GL_QUAD_STRIP);
-            for (const RailFrame &f : frames)
-            {
-                const Pnt3f normal = f.side * face.normalSide + f.up * face.normalUp;
-                glNormal3f(normal.x, normal.y, normal.z);
-                glTexCoord2f(f.s, 0.0f);
-                vertex(corner(f, face.a0, face.b0));
-                glTexCoord2f(f.s, 1.0f);
-                vertex(corner(f, face.a1, face.b1));
-            }
-            glEnd();
-        }
-    }
 }

@@ -13,7 +13,8 @@
 
 - 成功：`smoke -Only cameras-chase`；看列車細節可用 `screenshot -Name train-close -AppArgs '--camera','chase','--u','30'`。
 - 夜晚的車燈：`screenshot -Name train-night -AppArgs '--camera','chase','--time','22'`。
-- 枕木間距由 `TrackSpacingCheck` 測試；樣條沒有 CLI 參數，要在選單 `Track` 的 `Spline` 切換。
+- 枕木間距與快取網格由 `TrackSpacingCheck` 測試；樣條沒有 CLI 參數，要在選單 `Track` 的 `Spline` 切換。
+- 軌道網格只在控制點移動或樣條改變時重算：Edit 拖曳控制點、`Spline` 切換、Undo／Redo、載入軌道後，鐵軌與枕木要立刻跟著變，不能停在舊形狀。
 
 ## 容易騙過檢查的假象
 
