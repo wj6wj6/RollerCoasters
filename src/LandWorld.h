@@ -27,7 +27,7 @@
                   rideObstructions(). Where the track is in the air,
                   drawSupports() stands it on wooden trestles.
 
-                  Built once into display lists with the same baked
+                  Built once into vertex buffers (BlockMesh) with the same baked
                   lighting as OceanWorld: sky light that fades in tunnels,
                   the glow of lava, lanterns and crystals, and ambient
                   occlusion in the corners. Everything that moves (windmill,
@@ -59,13 +59,19 @@ class LandWorld
     ~LandWorld();
 
     // Call when the OpenGL context was recreated: the old names are gone.
-    // The blocks are kept; only their display lists are made again.
+    // The blocks are kept; only their vertex buffers are made again.
     void releaseResources();
+
+    // Let go of one island altogether, its blocks and its vertex buffers
+    // (deleted in the current context), as a block game unloads a world it
+    // has left. The next prepare() reads it from its save again.
+    void unload(bool flat);
+    bool loaded(bool flat) const;
 
     // Gets the island ready to draw without holding up the window: the
     // first call starts building it on a thread of its own (the scenery
     // takes a second or two, many more in a Debug build); each call then
-    // turns what is built into display lists for up to the given seconds.
+    // turns what is built into vertex buffers for up to the given seconds.
     // True once it is all ready. draw() builds whatever is left at once.
     bool prepare(bool flat, float seconds);
 

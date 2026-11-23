@@ -142,6 +142,19 @@ class PerfStats
     // times, and the five biggest costs. `about` lines go at the top.
     static std::string report(const Summary &s, const std::vector<std::string> &about);
 
+    // The program's memory, in megabytes, or -1 where it cannot be read.
+    // workingSet: what the Task Manager shows (in RAM now); committed: all
+    // the program has asked for (Windows' private bytes). On Linux both
+    // are the resident size.
+    struct Memory
+    {
+        double workingSet = -1.0;
+        double committed = -1.0;
+    };
+    static Memory memory();
+    // "Mem: 312 MB (committed 340 MB)", or "" when unknown.
+    static std::string memoryLine(const Memory &m);
+
   private:
     struct Mark
     {

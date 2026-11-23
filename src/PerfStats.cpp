@@ -5,11 +5,23 @@
 
 *************************************************************************/
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX // keep std::min / std::max usable
+#endif
+#include <windows.h>
+// after windows.h, which it needs
+#include <psapi.h>
+#pragma comment(lib, "psapi.lib")
+#endif
+
 #include "PerfStats.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 namespace
 {
@@ -329,4 +341,39 @@ std::string PerfStats::report(const Summary &s, const std::vector<std::string> &
         out += line;
     }
     return out;
+}
+
+PerfStats::Memory PerfStats::memory()
+{
+    Memory m;
+#ifdef _WIN32
+    PROCESS_MEMORY_COUNTERS_EX counters = {};
+    counters.cb = sizeof(counters);
+    if (GetProcessMemoryInfo(GetCurrentProcess(),
+                             reinterpret_cast<PROCESS_MEMORY_COUNTERS *>(&counters),
+                             sizeof(counters)))
+    {
+        m.workingSet = static_cast<double>(counters.WorkingSetSize) / (1024.0 * 1024.0);
+        m.committed = static_cast<double>(counters.PrivateUsage) / (1024.0 * 1024.0);
+    }
+#else
+    if (FILE *f = std::fopen("/proc/self/status", "r"))
+    {
+        char line[256];
+        while (std::fgets(line, sizeof line, f))
+            if (std::strncmp(line, "VmRSS:", 6) == 0)
+                m.workingSet = m.committed = std::atof(line + 6) / 1024.0;
+        std::fclose(f);
+    }
+#endif
+    return m;
+}
+
+std::string PerfStats::memoryLine(const Memory &m)
+{
+    if (m.workingSet < 0.0)
+        return "";
+    char buf[96];
+    std::snprintf(buf, sizeof buf, "Mem: %.0f MB (committed %.0f MB)", m.workingSet, m.committed);
+    return buf;
 }

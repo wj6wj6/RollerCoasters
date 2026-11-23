@@ -1,5 +1,7 @@
 // Checks that the arc-length table places rail sleepers at even spacing along the track,
-// even when the control points are spread very unevenly.
+// even when the control points are spread very unevenly, and that the cached track
+// mesh (TrackMesh) is laid out as the renderer draws it and is only worked out again
+// when the track changes.
 #include "Track.H"
 #include "TrackRenderer.H"
 
@@ -56,6 +58,90 @@ static bool checkTrack(const char *name, const CTrack &track, TrackSplineType ty
     return even;
 }
 
+static Pnt3f vertexPosition(const TrackVertex &v)
+{
+    return Pnt3f(v.position[0], v.position[1], v.position[2]);
+}
+
+static bool checkMesh(const char *name, CTrack track, TrackSplineType type)
+{
+    bool ok = true;
+    auto expect = [&](bool condition, const char *what) {
+        if (!condition)
+        {
+            std::printf("%s mesh: %s FAILED\n", name, what);
+            ok = false;
+        }
+    };
+
+    TrackMesh mesh;
+    expect(mesh.update(track, type), "first update builds");
+    expect(!mesh.update(track, type), "same track keeps the mesh");
+
+    const std::vector<TrackVertex> &v = mesh.vertices();
+    const int sleepers = mesh.sleeperVertexCount();
+    const int strip = mesh.railStripVertexCount();
+    expect(sleepers > 0 && sleepers % 24 == 0, "six quads per sleeper");
+    expect(strip > 0 && strip % 2 == 0, "rail strips hold vertex pairs");
+    expect(static_cast<int>(v.size()) == sleepers + TrackMesh::kRailStrips * strip,
+           "sleepers then eight rail strips");
+
+    // Unit normals; every sleeper sits on the track (its box is centred
+    // 0.03 below the centre line, between its bottom and top).
+    for (const TrackVertex &vertex : v)
+    {
+        const float n =
+            std::sqrt(vertex.normal[0] * vertex.normal[0] + vertex.normal[1] * vertex.normal[1] +
+                      vertex.normal[2] * vertex.normal[2]);
+        if (std::fabs(n - 1.0f) > 1e-3f)
+        {
+            expect(false, "unit normals");
+            break;
+        }
+    }
+    TrackArcTable table;
+    table.build(track, type, 48);
+    const int count = sleepers / 24;
+    const float spacing = table.totalLength() / static_cast<float>(count);
+    for (int i = 0; i < count; ++i)
+    {
+        Pnt3f centre(0, 0, 0);
+        for (int k = 0; k < 24; ++k)
+            centre = centre + vertexPosition(v[static_cast<size_t>(i * 24 + k)]) * (1.0f / 24.0f);
+        const float u = table.parameterAtDistance(spacing * static_cast<float>(i));
+        Pnt3f side, up;
+        makeTrackFrame(track.evaluateTangent(u, type), side, up);
+        const Pnt3f expected = track.evaluatePosition(u, type) + up * -0.03f;
+        if (distanceBetween(centre, expected) > 1e-3f)
+        {
+            expect(false, "sleepers on the track");
+            break;
+        }
+    }
+    // The first rail strip starts at the top of the left rail at u = 0.
+    {
+        Pnt3f side, up;
+        makeTrackFrame(track.evaluateTangent(0.0f, type), side, up);
+        const Pnt3f expected = track.evaluatePosition(0.0f, type) + side * -1.22f + up * 0.46f;
+        expect(distanceBetween(vertexPosition(v[static_cast<size_t>(sleepers)]), expected) < 1e-3f,
+               "left rail top corner");
+    }
+
+    // Moving a point or changing the spline works the mesh out again.
+    track.points[1].pos.y += 2.0f;
+    expect(mesh.update(track, type), "moved point rebuilds");
+    expect(!mesh.update(track, type), "then keeps it");
+    const TrackSplineType other =
+        type == TRACK_SPLINE_LINEAR ? TRACK_SPLINE_BSPLINE : TRACK_SPLINE_LINEAR;
+    expect(mesh.update(track, other), "spline change rebuilds");
+    track.points.push_back(ControlPoint(Pnt3f(0, 9, 0)));
+    expect(mesh.update(track, other), "added point rebuilds");
+
+    std::printf("%s mesh: %d sleepers, %d vertices -> %s\n", name, count,
+                static_cast<int>(v.size()), ok ? "ok" : "FAILED");
+    return ok;
+}
+
 int main()
 {
     bool ok = true;
@@ -74,6 +160,9 @@ int main()
     uneven.points.push_back(ControlPoint(Pnt3f(-50, 5, -50)));
     ok &= checkTrack("uneven B-spline", uneven, TRACK_SPLINE_BSPLINE);
     ok &= checkTrack("uneven linear", uneven, TRACK_SPLINE_LINEAR);
+
+    ok &= checkMesh("default B-spline", defaultTrack, TRACK_SPLINE_BSPLINE);
+    ok &= checkMesh("uneven cardinal", uneven, TRACK_SPLINE_CARDINAL);
 
     std::printf(ok ? "TrackSpacingCheck passed\n" : "TrackSpacingCheck FAILED\n");
     return ok ? 0 : 1;

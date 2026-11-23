@@ -1475,8 +1475,8 @@ void TrainView::draw()
     // a request made while drawing (a timer, the interface) asks for another frame
     m_needsDraw = false;
     drawFrame();
-    // the title screen also shows while the world is still being built
-    if (tw && (frameShowsScene || tw->menu.screen() == GameMenu::Screen::Title))
+    // the title and the screens before Play show over the dirt, with no world
+    if (tw && (frameShowsScene || !tw->menu.inWorld()))
         tw->drawInterface();
     finishAutomatedFrame();
 }
@@ -1493,19 +1493,6 @@ void TrainView::drawFrame()
     // Setup's processor time includes loading the OpenGL functions
     const double setupStart = PerfStats::clock();
 
-    //*********************************************************************
-    //
-    // * Set up basic opengl informaiton
-    //
-    //**********************************************************************
-    //initialized glad
-    if (gladLoadGL())
-    {
-        //initiailize VAO, VBO, Shader...
-    }
-    else
-        throw std::runtime_error("Could not initialize GLAD!");
-
     // A new GL context may come with a new window, so (re)attach to the current one.
     // The window proc is wrapped once the window exists (attach()).
     if (m_hwnd)
@@ -1515,8 +1502,12 @@ void TrainView::drawFrame()
     // buffers; let the track and the lighting rebuild them.
     if (!m_contextValid)
     {
+        // The OpenGL functions are looked up once per context: looking them
+        // up again every frame cost about 7 ms on a laptop.
+        if (!gladLoadGL())
+            throw std::runtime_error("Could not initialize GLAD!");
         m_contextValid = true;
-        m_trackRenderer.releaseTextures();
+        m_trackRenderer.releaseResources();
         TrainModel::releaseTextures();
         m_land.releaseResources();
         m_ocean.releaseResources();

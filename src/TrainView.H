@@ -128,10 +128,6 @@ class TrainView final : public Viewport
     // Did the last drawFrame() show the scene, not the loading screen? Only
     // those frames count, so a screenshot is never of the progress bar.
     bool frameShowsScene = false;
-    // How far the world is built and what is being done, while it is (for
-    // the title screen, which shows it in its corner).
-    float loadingDone = 0.0f;
-    const char *loadingStage = "Generating terrain";
     double automationStart = 0; // seconds, when the run started
     double worldSeconds = 0;    // until the first frame of the scene
     int benchmarkSkipped = 0;   // --benchmark: warm-up frames not counted

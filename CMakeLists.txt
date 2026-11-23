@@ -78,6 +78,7 @@ target_include_directories(Utilities SYSTEM PUBLIC "${GLFW_DIR}/include")
 add_executable(RollerCoasters
     src/AdvancedLighting.h src/AdvancedLighting.cpp
     src/AppControl.h src/AppControl.cpp
+    src/BlockMesh.h src/BlockMesh.cpp
     src/ChaseRig.h src/ChaseRig.cpp
     src/Frustum.h src/Frustum.cpp
     src/LandTextures.h src/LandTextures.cpp
@@ -257,8 +258,14 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     add_test(NAME GizmoDragCheck COMMAND GizmoDragCheck)
     set_tests_properties(GizmoDragCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
+    add_executable(BlockMeshCheck tests/BlockMeshCheck.cpp src/BlockMesh.cpp)
+    target_include_directories(BlockMeshCheck PRIVATE src)
+    target_link_libraries(BlockMeshCheck PRIVATE glad)
+    add_test(NAME BlockMeshCheck COMMAND BlockMeshCheck)
+    set_tests_properties(BlockMeshCheck PROPERTIES TIMEOUT 10 LABELS integration)
+
     add_executable(OceanRideClearanceCheck tests/OceanRideClearanceCheck.cpp
-        src/OceanWorld.cpp src/Frustum.cpp src/LandTextures.cpp src/PixelArt.cpp src/WorldShape.cpp
+        src/OceanWorld.cpp src/BlockMesh.cpp src/Frustum.cpp src/LandTextures.cpp src/PixelArt.cpp src/WorldShape.cpp
         src/TexturePack.cpp src/ZipArchive.cpp src/Track.cpp src/ControlPoint.cpp)
     target_include_directories(OceanRideClearanceCheck PRIVATE src)
     target_link_libraries(OceanRideClearanceCheck PRIVATE Utilities glad)
@@ -266,7 +273,7 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     set_tests_properties(OceanRideClearanceCheck PROPERTIES TIMEOUT 30 LABELS integration)
 
     add_executable(LandRideClearanceCheck tests/LandRideClearanceCheck.cpp
-        src/LandWorld.cpp src/Frustum.cpp src/LandTextures.cpp src/Mobs.cpp src/OceanWorld.cpp
+        src/LandWorld.cpp src/BlockMesh.cpp src/Frustum.cpp src/LandTextures.cpp src/Mobs.cpp src/OceanWorld.cpp
         src/PixelArt.cpp src/TexturePack.cpp src/WaterFlow.cpp src/WorldShape.cpp
         src/ZipArchive.cpp src/Track.cpp src/ControlPoint.cpp)
     target_include_directories(LandRideClearanceCheck PRIVATE src)

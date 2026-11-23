@@ -3,7 +3,7 @@
 ## 有什麼
 
 - F3（`Controls` 的 `Performance Screen`，可改鍵）切換效能畫面，像方塊遊戲的 F3 除錯畫面，灰底白字蓋在場景上，取代左上角按鍵提示：
-  - 左上：版本、最近一秒畫了幾幀（`T: vsync, train 30/s` 說明節奏：列車與水面每秒 30 步，畫面只在需要時重畫）、`Frame cost`（CPU 與 GPU 較慢者，不含等螢幕；60 fps 內綠、30 fps 內黃、更慢紅）與可達 fps、CPU／GPU 毫秒、最小／平均／最大、視窗大小、相機、Light+ 與開著的效果、世界與列車狀態、顯示卡與 OpenGL 版本。
+  - 左上：版本、最近一秒畫了幾幀（`T: vsync, train 30/s` 說明節奏：列車與水面每秒 30 步，畫面只在需要時重畫）、`Frame cost`（CPU 與 GPU 較慢者，不含等螢幕；60 fps 內綠、30 fps 內黃、更慢紅）與可達 fps、CPU／GPU 毫秒、最小／平均／最大、視窗大小、記憶體（`Mem:` 工作集，括號內是 committed，Windows 的 private bytes；`--benchmark` 報告也有）、相機、Light+ 與開著的效果、世界與列車狀態、顯示卡與 OpenGL 版本。
   - 右上：每個階段（Update、Setup、Shadow maps、Reflection、Scene、Post effects、Overlay、Interface、Swap / wait）與每種景物（Land、Ocean、Track、Supports、Train、Water & glass，跨所有 pass 加總）的 CPU 與 GPU 毫秒，右邊比例條是佔一幀成本的比例。
   - 左下：最近幀的成本長條圖，白線是 60 與 30 FPS。
 - 開著時至少每 0.25 秒重畫一次，數字才會更新；關閉時不計時（零成本）。
@@ -25,6 +25,7 @@
 - GPU 時間要 OpenGL 3.3 的 timestamp query；沒有時 GPU 欄顯示 `-`，`Frame cost` 只剩 CPU。GPU 時間晚三幀才回來。
 - 景物時間（Land 等）巢狀在階段裡，加總會超過一幀，不要和階段相加。
 - Debug 組態的 CPU 時間比 Release 慢很多倍，量效能用 Release。
+- 有內顯與獨顯的筆電，exe 匯出 `NvOptimusEnablement`、`AmdPowerXpressRequestHighPerformance` 要求用獨顯（`src/main.cpp`）；看 F3 或報告的顯示卡行確認實際用哪張。Windows「圖形設定」對這支 exe 選了省電時仍可能用內顯。內顯（AMD 860M）在 Quit to Title 後不會把刪掉的 buffer 還給系統，量記憶體時要記下是哪張卡。
 
 ## 手動檢查
 
@@ -32,4 +33,5 @@
 - 開 Light+、列車行駛：fps 接近 30 或更高，右上 Shadow maps、Scene、Post effects 有 CPU 與 GPU 數字；關 Light+：Shadow maps、Reflection、Post effects 變 0。
 - 拖曳視角時圖表長條變密；全螢幕（F11）後 `Window` 跟著變，成本變大。
 - 在 `Controls` 把 `Performance Screen` 改成別的鍵，新鍵有效、F3 失效。
-- 記錄顯示卡、驅動、視窗大小，以及 `benchmark` 報告中的前五大成本。
+- 記錄顯示卡、驅動、視窗大小，以及 `benchmark` 報告中的前五大成本與 `Mem`。
+- `Mem` 與工作管理員的「記憶體」欄相近（工作集包含共用的 DLL，略大一些）。
