@@ -70,6 +70,9 @@ Mesh compile(const Batches &batches, const std::vector<unsigned int> &textures);
 // Draw it. Leaves the texture of the last range bound.
 void draw(const Mesh &mesh);
 
+// Delete its vertex buffer (in the current context) and empty it.
+void release(Mesh &mesh);
+
 // Bytes the vertices take.
 size_t bytes(const Mesh &mesh);
 

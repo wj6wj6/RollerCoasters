@@ -2097,6 +2097,20 @@ void OceanWorld::releaseResources()
     m_textures.clear();
 }
 
+void OceanWorld::unload()
+{
+    m_build.reset(); // waits for a build under way
+    for (Chunk &c : m_chunks)
+    {
+        BlockMesh::release(c.solid);
+        BlockMesh::release(c.plant);
+    }
+    BlockMesh::release(m_far);
+    m_chunks.clear();
+    std::vector<unsigned char>().swap(m_solid);
+    m_built = false;
+}
+
 std::vector<float> OceanWorld::demoTrack()
 {
     std::vector<float> xyz;

@@ -62,6 +62,12 @@ class LandWorld
     // The blocks are kept; only their vertex buffers are made again.
     void releaseResources();
 
+    // Let go of one island altogether, its blocks and its vertex buffers
+    // (deleted in the current context), as a block game unloads a world it
+    // has left. The next prepare() reads it from its save again.
+    void unload(bool flat);
+    bool loaded(bool flat) const;
+
     // Gets the island ready to draw without holding up the window: the
     // first call starts building it on a thread of its own (the scenery
     // takes a second or two, many more in a Debug build); each call then

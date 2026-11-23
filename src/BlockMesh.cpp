@@ -134,6 +134,16 @@ void draw(const Mesh &mesh)
     glNormal3fv(v.normal);
 }
 
+void release(Mesh &mesh)
+{
+    if (mesh.buffer != 0)
+    {
+        const GLuint buffer = mesh.buffer;
+        glDeleteBuffers(1, &buffer);
+    }
+    mesh = Mesh();
+}
+
 size_t bytes(const Mesh &mesh)
 {
     size_t count = 0;

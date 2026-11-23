@@ -9,7 +9,7 @@
 最簡單的方式：clone 後在 Visual Studio 選「開啟資料夾」（或在檔案總管對資料夾按右鍵「使用 Visual Studio 開啟」），
 Visual Studio 會讀取 `CMakePresets.json`，選 `Visual Studio (any version) / x64` 與 `Debug`，啟動項目選 `RollerCoasters.exe` 後按 F5。
 VS Code 搭配 CMake Tools 擴充也一樣選這個 preset。
-程式啟動時先進入方塊遊戲風的標題畫面：大字的 `RollerCoasters`、`Play`、`Load Track...`、`Options...`、`Quit`，背後是慢慢轉一圈的世界。`Play` 像方塊遊戲的 Singleplayer 一樣先列出世界：`Grand Tour Island`（島、海與繞行的軌道）或 `Flat Island`（平坦草地，用來蓋自己的軌道），選一個按 `Play Selected World`（或雙擊、Enter）。自己的軌道會跟著帶到任一個世界；只有各世界原本的軌道（Grand Tour 與四點的起始軌道）會換成另一個世界的。世界（約 1000 萬格方塊）在標題畫面時就於背景生成，右下角顯示進度；還沒建好就進入會顯示載入畫面與進度條。Release 約一兩秒（依電腦而定），Debug 沒有最佳化又有執行期檢查，會慢上數倍到十幾倍，只想看效果或展示時改選 `Release`。
+程式啟動時先進入方塊遊戲風的標題畫面：大字的 `RollerCoasters`、`Play`、`Load Track...`、`Options...`、`Quit`，背景是深色泥土。`Play` 像方塊遊戲的 Singleplayer 一樣先列出世界：`Grand Tour Island`（島、海與繞行的軌道）或 `Flat Island`（平坦草地，用來蓋自己的軌道），選一個按 `Play Selected World`（或雙擊、Enter）。自己的軌道會跟著帶到任一個世界；只有各世界原本的軌道（Grand Tour 與四點的起始軌道）會換成另一個世界的。像方塊遊戲一樣，世界（約 1000 萬格方塊）在進入時才載入：有存檔時從存檔讀入，第一次則生成並存檔，期間顯示載入畫面與進度條；`Quit to Title` 會放掉整個世界，切換 `Scenery` 時也只留正在玩的那個島，所以記憶體只有一個世界的份量。Release 約一兩秒（依電腦而定），Debug 沒有最佳化又有執行期檢查，會慢上數倍到十幾倍，只想看效果或展示時改選 `Release`。
 第一次生成後，島與海床會像方塊遊戲的存檔一樣存到 exe 旁的 `data\saves\`（`island.world`、`flat.world`、`ocean.world`，各約 2 MB），之後啟動顯示 `Loading world` 直接讀檔，不再重新生成。重新建置任何會影響世界的原始檔（`LandWorld`、`OceanWorld`、`WorldShape`、`WaterFlow`、`PixelArt`）後存檔自動失效並重新生成；想強制重新生成就刪掉 `data\saves\`。這個 preset 不綁定 Visual Studio 版本，由 IDE 自行載入已安裝的 x64 編譯器。
 
 命令列建置與完整檢查，以下命令均在此 repository 根目錄執行：

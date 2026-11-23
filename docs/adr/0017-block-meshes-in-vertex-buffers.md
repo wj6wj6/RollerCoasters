@@ -1,4 +1,4 @@
-# ADR 0017：方塊世界的分塊 mesh 改用 vertex buffer，建好後放掉建造用的格子
+# ADR 0017：方塊世界的分塊 mesh 改用 vertex buffer，只載入正在玩的世界
 
 日期：2026-11-23
 狀態：採用
@@ -16,9 +16,13 @@
 - 畫完把目前的顏色、法線、材質座標（含 unit 1 的光照資料）設成最後一個頂點的值，和 display list 留下的狀態一樣，之後畫的東西（風車、動物、軌道）看到的狀態不變。
 - 材質仍以名稱綁定；換材質包時圖片放進同一個名稱，mesh 不用重建。
 - 島建好後只留 `block`（`solidAt()`、木棧橋、動物的地面）與 `biome`，放掉 `plant`、`sky`、`warm`、`cool`、`carved`、`level` 六層（約 59 MB）。GL context 重建時從存檔重讀（沒有存檔就重新生成）再重建 mesh。
+- 像方塊遊戲只載入正在玩的世界：標題與 `Play` 之前的畫面（`GameMenu::inWorld()` 為假）不建造任何世界，背景只有泥土；`Quit to Title` 後 `TrainView::worldReady()` 放掉兩個島與海床（`LandWorld::unload()`、`OceanWorld::unload()`，在目前的 context 刪除 vertex buffer），`Scenery` 切換時放掉另一個島。再進入時從存檔讀入。標題背後原本慢慢轉的世界因此拿掉。
 - F3 與 `--benchmark` 報告顯示程式的記憶體（`PerfStats::memory()`：Windows 的工作集與 private bytes，Linux 的 RSS），方便比較。
 
 ## 取捨
+
+- 標題不再有轉動的世界；進入世界要等載入（有存檔時筆電約 4 秒）。之後若要方塊遊戲那種全景背景，可以在離開世界時存一張全景圖，而不是把整個世界留在記憶體。
+- 在筆電上量到 display list 改 vertex buffer 幾乎沒有減少程式記憶體（AMD 驅動原本就不放在程式記憶體），省下的是格子；但 GPU 時間少很多。
 
 - 顏色 0.85–1 存成 byte，畫面最多差一個色階；軸向法線完全一樣，少數斜向法線（植物）差不到 1/254。Linux 離屏比對：大部分差異是一個色階，遠處樹葉偶有單一像素不同。
 - 光照資料有負值與大於 1 的值，維持 float，不壓成半精度。

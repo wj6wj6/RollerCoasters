@@ -140,8 +140,6 @@ void GameMenu::show(TrainWindow &tw, Screen screen)
         m_riding = true;
         tw.trainView->headLook.reset();
     }
-    if (screen != Screen::Title)
-        m_titleSeconds = -1.0; // coming back, the turn goes on from there
     // "Added ..." belongs to the screen the files were dropped on, also
     // after a notice over it about the files that were not
     const auto overlay = [](Screen s) { return s == Screen::Notice || s == Screen::Confirm; };
@@ -493,7 +491,7 @@ void GameMenu::draw(TrainWindow &tw, ui::Gui &gui, double seconds)
         switch (m_screen)
         {
         case Screen::Title:
-            drawTitle(tw, gui, seconds);
+            drawTitle(tw, gui);
             break;
         case Screen::Options:
             drawOptions(tw, gui);
@@ -694,27 +692,12 @@ void blockText(ui::Gui &gui, int centerX, int y, const std::string &text, int si
         }
     }
 }
-
-void turnTitleView(void *window)
-{
-    static_cast<TrainWindow *>(window)->trainView->damage(1);
-}
 } // namespace
 
-void GameMenu::drawTitle(TrainWindow &tw, ui::Gui &gui, double seconds)
+void GameMenu::drawTitle(TrainWindow &tw, ui::Gui &gui)
 {
-    TrainView &view = *tw.trainView;
-    // The world turns slowly behind the title, as a block game's panorama:
-    // the rider in the train looks round, about once a minute and a half.
-    if (view.frameShowsScene && tw.settings.camera == CameraView::Train)
-    {
-        if (m_titleSeconds >= 0.0)
-            view.headLook.turn(static_cast<float>((seconds - m_titleSeconds) * 4.0), 0.0f);
-        m_titleSeconds = seconds;
-        if (!platform::hasTimeout(turnTitleView, &tw))
-            platform::addTimeout(1.0 / 30.0, turnTitleView, &tw);
-    }
-
+    // No world is loaded behind the title (TrainView::worldReady()): it is
+    // drawn over the dirt.
     const int cx = gui.width() / 2;
     const std::string name = "RollerCoasters";
     const int size = (gui.width() - 40) / ui::PixelFont::textWidth(name) < 4
@@ -741,14 +724,6 @@ void GameMenu::drawTitle(TrainWindow &tw, ui::Gui &gui, double seconds)
 
     gui.text(2, gui.height() - 10, std::string("RollerCoasters ") + ROLLERCOASTERS_VERSION,
              ui::kWhite);
-    // while the world is still being built, how far it is
-    if (!view.frameShowsScene)
-    {
-        char status[64];
-        snprintf(status, sizeof(status), "%s %d%%", view.loadingStage,
-                 static_cast<int>(view.loadingDone * 100.0f));
-        gui.text(gui.width() - 2, gui.height() - 10, status, ui::kGrey, ui::Align::Right);
-    }
 }
 
 //************************************************************************

@@ -5519,6 +5519,29 @@ void LandWorld::releaseResources()
     m_supportPath.clear();
 }
 
+void LandWorld::unload(bool flat)
+{
+    std::unique_ptr<Scene> &slot = flat ? m_flat : m_scenery;
+    if (!slot)
+        return;
+    slot->stop();
+    for (LandChunk &c : slot->chunks)
+        for (BlockMesh::Mesh *mesh : {&c.solid, &c.plant, &c.water, &c.glass})
+            BlockMesh::release(*mesh);
+    slot.reset();
+    if (!flat)
+    {
+        // the trestles stood on that island's ground
+        m_trestles.clear();
+        m_supportPath.clear();
+    }
+}
+
+bool LandWorld::loaded(bool flat) const
+{
+    return (flat ? m_flat : m_scenery) != nullptr;
+}
+
 bool LandWorld::solidAt(bool flat, float x, float y, float z) const
 {
     const Scene *s = flat ? m_flat.get() : m_scenery.get();

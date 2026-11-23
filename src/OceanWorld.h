@@ -60,6 +60,14 @@ class OceanWorld
     // Call when the OpenGL context was recreated: the old names are gone.
     void releaseResources();
 
+    // Let go of the sea floor altogether (its vertex buffers are deleted in
+    // the current context); the next prepare() reads it from its save again.
+    void unload();
+    bool loaded() const
+    {
+        return m_built || m_build != nullptr;
+    }
+
     // Gets the sea floor ready to draw without holding up the window: the
     // first call starts building it on a thread of its own (or reading it
     // from its save, WorldSave.h); the call after it is built makes the

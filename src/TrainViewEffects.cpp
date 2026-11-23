@@ -342,11 +342,25 @@ void TrainView::setTexturePack(std::shared_ptr<const TexturePack::Pack> pack)
 //========================================================================
 bool TrainView::worldReady()
 {
+    // As a block game: the title and its screens have no world loaded (one
+    // left with Quit to Title is let go), and only the world being played
+    // stays in memory, the other island is let go when the Scenery switch
+    // changes. Each reads back from its save (WorldSave.h) in a few seconds.
+    if (!tw->menu.inWorld())
+    {
+        m_land.unload(false);
+        m_land.unload(true);
+        m_ocean.unload();
+        drawLoadingScreen(0.0f, nullptr);
+        return false;
+    }
+    const bool flat = !sceneryOn();
+    m_land.unload(!flat);
+
     // The sea floor builds alongside the island, so it is there when Water
     // is turned on; it is waited for only when it is drawn.
     const bool oceanReady = m_ocean.prepare();
     const bool needOcean = tw->settings.water && tw->settings.lighting;
-    const bool flat = !sceneryOn();
     // about two frames' worth of display lists at a time, so the bar moves
     const bool landReady = m_land.prepare(flat, 0.03f);
     if (landReady && (oceanReady || !needOcean))
@@ -364,8 +378,6 @@ bool TrainView::worldReady()
         if (landReady)
             stage = "Building the sea floor";
     }
-    loadingDone = done;
-    loadingStage = stage;
     drawLoadingScreen(done, stage);
     if (!platform::hasTimeout(redrawSoon, this))
         platform::addTimeout(1.0 / 30.0, redrawSoon, this);
@@ -429,8 +441,8 @@ void TrainView::drawLoadingScreen(float done, const char *stage)
     glMatrixMode(GL_MODELVIEW);
     glPopAttrib();
 
-    // The title screen draws itself over the dirt, with the progress in its corner.
-    if (tw->menu.screen() == GameMenu::Screen::Title)
+    // Without a stage only the dirt: the title and its screens draw over it.
+    if (stage == nullptr)
         return;
 
     // The stage in the pixel font over a grey bar that fills with green, and

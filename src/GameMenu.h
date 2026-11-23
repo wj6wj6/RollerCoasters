@@ -84,6 +84,13 @@ class GameMenu
     {
         return m_screen != Screen::None;
     }
+    // In a world: playing it, or its menus. False on the title and the
+    // screens reached from it before Play, where no world is loaded (as in
+    // a block game). A check (--screenshot, --benchmark) starts in one.
+    bool inWorld() const
+    {
+        return m_riding || m_screen == Screen::None;
+    }
     void show(TrainWindow &tw, Screen screen);
     // Esc: a settings screen goes back to the game menu (or to Options before
     // the ride), the game menu to the ride. The title stays.
@@ -121,7 +128,7 @@ class GameMenu
   private:
     void drawHud(TrainWindow &tw, ui::Gui &gui, double seconds);
     void drawPerf(TrainWindow &tw, ui::Gui &gui);
-    void drawTitle(TrainWindow &tw, ui::Gui &gui, double seconds);
+    void drawTitle(TrainWindow &tw, ui::Gui &gui);
     void drawOptions(TrainWindow &tw, ui::Gui &gui);
     void drawSelectWorld(TrainWindow &tw, ui::Gui &gui);
     void playWorld(TrainWindow &tw, int world);
@@ -150,7 +157,6 @@ class GameMenu
 
     Screen m_screen = Screen::None;
     bool m_riding = false;      // left the title: Esc and Back lead to the game menu
-    double m_titleSeconds = -1; // the time the title last turned the view
     int m_worldSelected = 0;    // Select World: 0 the island, 1 the flat grass
     bool m_guiHasMouse = false; // a press on the hotbar: its drag and release go there too
     double m_now = 0.0;         // the time input() was last given, for useSlot()

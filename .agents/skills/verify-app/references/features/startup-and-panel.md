@@ -2,7 +2,7 @@
 
 ## 有什麼
 
-- 啟動時先出現標題畫面：方塊字的 `RollerCoasters`、`Play`、`Load Track...`、`Options...`（Ride、Camera、Lighting、World 設定）、`Quit`，左下角版本。`Play` 打開 `Select World`：`Grand Tour Island` 與 `Flat Island` 兩列（小圖、名稱、說明、是否已有存檔），點選有白框，雙擊、Enter 或 `Play Selected World` 進入，`Cancel`／Esc 回標題。島與海床同時在背景執行緒建造：建好前標題在深色泥土上、右下角顯示階段與百分比；建好後背景是世界，`Train` 相機慢慢轉一圈。自動化模式（`--screenshot`、`--doctor` 等）不顯示標題畫面。
+- 啟動時先出現標題畫面：方塊字的 `RollerCoasters`、`Play`、`Load Track...`、`Options...`（Ride、Camera、Lighting、World 設定）、`Quit`，左下角版本。`Play` 打開 `Select World`：`Grand Tour Island` 與 `Flat Island` 兩列（小圖、名稱、說明、是否已有存檔），點選有白框，雙擊、Enter 或 `Play Selected World` 進入，`Cancel`／Esc 回標題。像方塊遊戲，標題與 `Play` 之前的畫面不載入世界，背景是深色泥土；進入世界時才從存檔讀入（沒有存檔就生成）並顯示載入畫面，`Quit to Title` 後放掉整個世界，`Scenery` 切換時放掉另一個島，記憶體只留正在玩的世界（F3 的 `Mem` 看得到下降）。自動化模式（`--screenshot`、`--doctor` 等）不顯示標題畫面。
 - 世界沒建好就進入會出現載入畫面（深色泥土背景、階段文字、綠色進度條）；生成好的世界存在 exe 旁的 `data\saves\*.world`，下次啟動直接讀檔。
 - 選 `Grand Tour Island` 進入 `Grand Tour` 展示：`Train` 相機、`Run` 沒有開、列車停在上岸處。
 - 全畫面場景，GLFW 視窗；左上角按鍵提示（Esc、`P`、`[ ]`、`1-9`、F1），下方九格快捷欄（`1`–`5` 相機、`6` Edit、`7` 新增點、`8` 刪除點、`9` Run），快捷欄上方是狀態列與剛選的格子名稱。
@@ -41,7 +41,8 @@
 - Esc 打開選單時場景變暗、不再回應 WASD 或拖曳；每個子畫面的按鈕都做一次，確認效果與舊面板相同：`Ride`（Run、Arc Length、Speed、Step Back／Forward）、`Camera`（相機循環、FOV、Fly Speed）、`Track`（Spline 左鍵往後右鍵往前、Edit、Add／Delete、Undo／Redo 依歷史啟用、Load／Save、R±X／R±Z、X／Y／Z 微調、Reset Track）、`Lighting`（五個開關、Time 以 15 分鐘為單位）、`World`（Water、Rain、Scenery、Grand Tour、材質包清單、Open Pack Folder）。
 - F11：在標題、選單、各相機（含 Fly 鎖定滑鼠時）都能切換全螢幕；全螢幕時場景與介面填滿整個螢幕、沒有拉伸，介面依新大小重新排版（GUI 縮放可能變大一級）；按住 F11 只切換一次；再按 F11 回到原本位置與大小。先最大化再切換，回來時仍是最大化，按還原鍵回到最大化前的大小。兩個螢幕時，把視窗拖到第二個螢幕再按 F11，全螢幕出現在第二個螢幕。`Lighting` 的 `Fullscreen` 開關與 F11 狀態一致。全螢幕時 Alt+Tab 會把視窗縮到工作列（與方塊遊戲相同），點回來仍是全螢幕。
 - Fly 相機鎖定滑鼠時按 Esc：滑鼠放開並打開選單；按 `G` 搬點、`R` 傾斜或放置新點時按 Esc 只取消該動作，不打開選單。
-- 選單 `Quit to Title` 回到標題畫面（視角回到正前方再開始轉），標題畫面的 `Quit` 與視窗的關閉鈕都會結束程序。
+- 選單 `Quit to Title` 回到標題畫面（泥土背景，世界被放掉），再 `Play` 會重新載入（有存檔時數秒內），標題畫面的 `Quit` 與視窗的關閉鈕都會結束程序。
+- 記憶體：進入島後 F3 記下 `Mem`；`Quit to Title` 再進同一個島，`Mem` 回到差不多的數字（不會每次多一份）；`World` 的 `Scenery` 關掉再打開，也不會兩個島同時留著。
 - `Flat Island`：平坦草地、起始軌道、World 相機、Edit 開啟（與 `Reset Track` 相同）；改過軌道後 `Quit to Title` 再選 `Grand Tour Island`，自己的軌道仍在，只換成島的地形；選回 `Flat Island` 也一樣。
 - 標題畫面按 Esc 不會離開；從標題的 `Options...` 進設定畫面，`Done`／Esc 回 `Options`，再回標題；從標題的 `Load Track...` 載入成功後直接進入世界，`Cancel` 回標題。
 - 開著中文輸入法（注音）時，WASD、`P`、數字鍵與 Esc 都照常作用，不會跳出選字視窗。
