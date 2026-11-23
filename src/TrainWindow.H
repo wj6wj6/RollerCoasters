@@ -112,6 +112,9 @@ class TrainWindow
     std::string texturePackPath;               // the pack in use, empty when built in
     std::string texturePackNote;               // how much of the island the pack covers
 
+    // The train moves and the water animates this many steps a second.
+    static constexpr double kStepsPerSecond = 30.0;
+
     GLFWwindow *window = nullptr;
     // --doctor and --screenshot: the frames show the scene without the hotbar and hints
     bool automated = false;
@@ -137,6 +140,7 @@ class TrainWindow
     GlfwInput m_input;
     double m_lastAdvance = 0.0; // when the train last moved
     double m_lastAnimate = 0.0; // when the water and plants last moved
+    double m_lastDraw = 0.0;    // when the last frame was drawn (F3 refreshes)
     int m_fullscreenAsked = -1; // 1 or 0 until the loop switches; -1 nothing asked
     // the window as it was before fullscreen, to go back to
     int m_windowedX = 0, m_windowedY = 0;

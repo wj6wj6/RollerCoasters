@@ -16,6 +16,7 @@
 
 #include "PostEffects.h"
 #include "MatrixMath.h"
+#include "PerfStats.h"
 #include "LandWaterMotion.h"
 #include "UnderwaterOptics.h"
 
@@ -1520,6 +1521,7 @@ void PostEffects::useWaterProgram(const AdvancedLighting &lighting, float time, 
 void PostEffects::drawWater(const AdvancedLighting &lighting, float time, bool orthographic,
                             bool underwater, float rain)
 {
+    PerfScope part(PerfStage::Water);
     copyScene();
 
     float invView[16];
@@ -1571,6 +1573,7 @@ void PostEffects::drawWater(const AdvancedLighting &lighting, float time, bool o
 void PostEffects::drawSurfaceWater(const AdvancedLighting &lighting, float time, bool orthographic,
                                    float rain, SceneCallbacks &scene)
 {
+    PerfScope part(PerfStage::Water);
     // after the sea, so the water on land sees the sea through it too
     copyScene();
     useWaterProgram(lighting, time, orthographic, false, rain, 1);
@@ -1883,6 +1886,7 @@ void renderAdvancedFrame(AdvancedLighting &lighting, PostEffects &effects, Light
     lighting.prepare(frame);
     if (frame.shadows)
     {
+        PerfScope phase(PerfStage::Shadows);
         for (int cascade = 0; cascade < lighting.shadowCascades(); ++cascade)
         {
             lighting.beginShadowPass(cascade);
@@ -1896,6 +1900,7 @@ void renderAdvancedFrame(AdvancedLighting &lighting, PostEffects &effects, Light
     const bool post = (toggles.water || toggles.bloom || toggles.ssao) && effects.init();
     if (!post)
     {
+        PerfScope phase(PerfStage::Scene);
         frame.hdr = false;
         frame.waterLevel = -1e9f;
         frame.cameraUnderwater = false;
@@ -1915,6 +1920,7 @@ void renderAdvancedFrame(AdvancedLighting &lighting, PostEffects &effects, Light
 
     if (toggles.water && !underwater)
     {
+        PerfScope phase(PerfStage::Reflection);
         // Mirror the camera in the water plane: y -> 2h - y.
         effects.beginReflection();
         glMatrixMode(GL_MODELVIEW);
@@ -1937,18 +1943,22 @@ void renderAdvancedFrame(AdvancedLighting &lighting, PostEffects &effects, Light
         effects.endReflection();
     }
 
-    effects.beginScene();
-    effects.drawSky(sky, frame.time);
-    lighting.begin(frame);
-    scene.drawGround();
-    if (toggles.water)
-        scene.drawUnderwater(false);
-    scene.waterLater = true; // drawn below, as the sea is
-    scene.drawObjects(false);
-    scene.waterLater = false;
-    lighting.end();
-    glDisable(GL_STENCIL_TEST);
+    {
+        PerfScope phase(PerfStage::Scene);
+        effects.beginScene();
+        effects.drawSky(sky, frame.time);
+        lighting.begin(frame);
+        scene.drawGround();
+        if (toggles.water)
+            scene.drawUnderwater(false);
+        scene.waterLater = true; // drawn below, as the sea is
+        scene.drawObjects(false);
+        scene.waterLater = false;
+        lighting.end();
+        glDisable(GL_STENCIL_TEST);
+    }
 
+    PerfScope phase(PerfStage::Post);
     if (toggles.ssao)
         effects.applySSAO();
     if (frame.wetness > 0.01f && !underwater && !frame.orthographic)

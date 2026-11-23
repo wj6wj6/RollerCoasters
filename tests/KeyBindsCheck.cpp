@@ -60,6 +60,7 @@ int main()
     // The defaults: the keys the program always had.
     expect(keys.matches(A::Fullscreen, Key::F + 11, 0), "F11 is Fullscreen");
     expect(keys.matches(A::HideHud, Key::F + 1, 0), "F1 hides the hotbar and hints");
+    expect(keys.matches(A::PerfScreen, Key::F + 3, 0), "F3 shows the performance screen");
     expect(keys.matches(A::Slot1, '1', 0) && keys.matches(A::Slot9, '9', 0), "1-9 are the hotbar");
     expect(keys.matches(A::Run, 'p', 0), "P runs and stops");
     expect(keys.matches(A::Slower, '[', 0) && keys.matches(A::Faster, ']', 0), "[ ] the speed");

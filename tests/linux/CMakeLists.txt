@@ -77,6 +77,8 @@ check(TrackInsertCheck
     SOURCES src/TrackInsert.cpp src/Track.cpp src/ControlPoint.cpp src/TransformGizmo.cpp
     LIBS Utilities glad)
 check(GuiCheck SOURCES src/Ui/Gui.cpp src/Ui/PixelFont.cpp src/Ui/UiAtlas.cpp)
+check(PerfStatsCheck SOURCES src/PerfStats.cpp src/PerfOverlay.cpp src/Ui/Gui.cpp
+    src/Ui/PixelFont.cpp src/Ui/UiAtlas.cpp)
 check(FoldersCheck SOURCES src/Folders.cpp)
 check(GlfwInputCheck LIBS Utilities)
 check(FrustumCheck SOURCES src/Frustum.cpp LIBS glad)

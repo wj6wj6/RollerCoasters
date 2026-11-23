@@ -20,6 +20,7 @@
 
 #include "CallBacks.H"
 #include "Folders.h"
+#include "PerfOverlay.h"
 #include "KeyBinds.h"
 #include "Ui/PixelFont.h"
 #include "Utilities/Platform.H"
@@ -327,6 +328,12 @@ bool GameMenu::input(TrainWindow &tw, const InputEvent &e)
             tw.trainView->damage(1);
             return true;
         }
+        if (keys.matches(Action::PerfScreen, e))
+        {
+            perfShown = !perfShown;
+            tw.trainView->damage(1);
+            return true;
+        }
         // a move, tilt or new point in progress keeps the keys until it ends
         if (tw.trainView->editing())
             return false;
@@ -536,6 +543,24 @@ void GameMenu::draw(TrainWindow &tw, ui::Gui &gui, double seconds)
         drawHud(tw, gui, seconds);
 }
 
+//************************************************************************
+//
+// * The performance screen (F3)
+//========================================================================
+void GameMenu::drawPerf(TrainWindow &tw, ui::Gui &gui)
+{
+    const TrainView &view = *tw.trainView;
+    PerfInfo info;
+    info.version = std::string("RollerCoasters ") + ROLLERCOASTERS_VERSION;
+    info.renderer = view.glRenderer;
+    info.glVersion = view.glVersionText;
+    info.lines = PerfOverlay::sceneLines(tw.settings);
+    info.vsync = true;
+    info.gpuTimer = view.perfGpuOn;
+    info.trainSteps = TrainWindow::kStepsPerSecond;
+    PerfOverlay::draw(gui, view.perf, info, PerfStats::clock());
+}
+
 void GameMenu::drawHud(TrainWindow &tw, ui::Gui &gui, double seconds)
 {
     const SceneSettings &s = tw.settings;
@@ -550,7 +575,10 @@ void GameMenu::drawHud(TrainWindow &tw, ui::Gui &gui, double seconds)
     const std::vector<std::string> hints = {
         "Esc  Menu", keys.keyText(Action::Run) + (s.run ? "  Stop the train" : "  Run the train"),
         speed, hotbarKeys(keys) + "  Hotbar", keys.keyText(Action::HideHud) + "  Hide this"};
-    for (size_t i = 0; i < hints.size(); ++i)
+    // the performance screen takes the corner, as a block game's debug screen
+    if (perfShown)
+        drawPerf(tw, gui);
+    for (size_t i = 0; i < hints.size() && !perfShown; ++i)
     {
         const int y = 2 + static_cast<int>(i) * 10;
         gui.fill({1, y, ui::PixelFont::textWidth(hints[i]) + 3, 10}, {0, 0, 0, 90});

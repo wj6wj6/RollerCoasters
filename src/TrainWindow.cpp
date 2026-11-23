@@ -45,7 +45,9 @@ const char kKeyBindsFile[] = "data/keybinds.txt";
 const int kStartWidth = 1180;
 const int kStartHeight = 720;
 // The train moves, and the water and plants sway, this often.
-const double kStepSeconds = 1.0 / 30.0;
+const double kStepSeconds = 1.0 / TrainWindow::kStepsPerSecond;
+// The performance screen (F3) is drawn again at least this often.
+const double kPerfRefreshSeconds = 0.25;
 // The property on the window that leads its procedure back to the TrainWindow.
 const wchar_t kWindowProperty[] = L"RollerCoasters.TrainWindow";
 // ... and the one that keeps GLFW's own procedure, which the hook passes on to.
@@ -245,19 +247,33 @@ void TrainWindow::run()
             if (step < wait)
                 wait = step > 0.0 ? step : 0.0;
         }
+        // the performance screen's numbers change even when nothing moves
+        const bool perfShown = menu.perfShown && !automated;
+        if (perfShown)
+        {
+            const double refresh = m_lastDraw + kPerfRefreshSeconds - now;
+            if (refresh < wait)
+                wait = refresh > 0.0 ? refresh : 0.0;
+        }
         if (trainView->needsDraw() || m_fullscreenAsked >= 0)
             wait = 0.0;
         pumpEvents(wait);
-        platform::runDueTimeouts();
+        {
+            PerfScope update(PerfStage::Update);
+            platform::runDueTimeouts();
+        }
         switchFullscreen();
 
         now = glfwGetTime();
         if (settings.run && now - m_lastAdvance >= kStepSeconds)
         {
+            PerfScope update(PerfStage::Update);
             m_lastAdvance = now;
             advanceTrain();
             damageMe();
         }
+        if (perfShown && now - m_lastDraw >= kPerfRefreshSeconds)
+            trainView->damage(1);
         // keep the water, clouds and plants moving even when the train is stopped
         if (settings.lighting && !settings.run && now - m_lastAnimate >= kStepSeconds)
         {
@@ -273,8 +289,21 @@ void TrainWindow::run()
 void TrainWindow::drawNow()
 {
     trainView->make_current();
+    // Time the frame for the performance screen (F3) or --benchmark only:
+    // switched off, the stages cost nothing.
+    PerfStats &perf = trainView->perf;
+    const bool benchmark =
+        trainView->automation && trainView->automation->mode == AppControl::Mode::Benchmark;
+    perf.setEnabled(benchmark || (menu.perfShown && !automated));
+    perf.beginFrame(PerfStats::clock());
     trainView->draw();
-    glfwSwapBuffers(window);
+    {
+        // the driver may wait here for the screen's next refresh (vsync)
+        PerfScope swap(PerfStage::Swap);
+        glfwSwapBuffers(window);
+    }
+    perf.endFrame(PerfStats::clock());
+    m_lastDraw = glfwGetTime();
 }
 
 //************************************************************************
@@ -340,6 +369,7 @@ void TrainWindow::switchFullscreen()
 void TrainWindow::drawInterface()
 {
     ui::Gui &gui = trainView->m_gui;
+    PerfScope phase(PerfStage::Interface);
     gui.beginFrame(trainView->w(), trainView->h());
     if (!automated)
         menu.draw(*this, gui, glfwGetTime());
@@ -619,6 +649,14 @@ bool TrainWindow::applyOptions(const AppControl::Options &options, std::string &
             wrapTrackParameter(options.trainU, static_cast<float>(m_Track.points.size()));
     if (options.width > 0 && window)
         glfwSetWindowSize(window, options.width, options.height);
+    // --benchmark: the train rides and frames come as fast as they can,
+    // not held to the screen's refresh
+    if (options.mode == AppControl::Mode::Benchmark)
+    {
+        settings.run = true;
+        if (window)
+            glfwSwapInterval(0);
+    }
 
     bool cameraSet = true;
     switch (options.camera)

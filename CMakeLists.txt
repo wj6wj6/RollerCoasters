@@ -86,6 +86,9 @@ add_executable(RollerCoasters
     src/MatrixMath.h
     src/Mobs.h src/Mobs.cpp
     src/OceanWorld.h src/OceanWorld.cpp
+    src/PerfGpu.h src/PerfGpu.cpp
+    src/PerfOverlay.h src/PerfOverlay.cpp
+    src/PerfStats.h src/PerfStats.cpp
     src/PixelArt.h src/PixelArt.cpp
     src/PostEffects.h src/PostEffects.cpp
     src/TexturePack.h src/TexturePack.cpp
@@ -215,6 +218,13 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     target_link_libraries(GuiCheck PRIVATE project_options)
     add_test(NAME GuiCheck COMMAND GuiCheck)
     set_tests_properties(GuiCheck PROPERTIES TIMEOUT 10 LABELS integration)
+
+    add_executable(PerfStatsCheck tests/PerfStatsCheck.cpp src/PerfStats.cpp
+        src/PerfOverlay.cpp src/Ui/Gui.cpp src/Ui/PixelFont.cpp src/Ui/UiAtlas.cpp)
+    target_include_directories(PerfStatsCheck PRIVATE src)
+    target_link_libraries(PerfStatsCheck PRIVATE project_options)
+    add_test(NAME PerfStatsCheck COMMAND PerfStatsCheck)
+    set_tests_properties(PerfStatsCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
     add_executable(FoldersCheck tests/FoldersCheck.cpp src/Folders.cpp)
     target_include_directories(FoldersCheck PRIVATE src)

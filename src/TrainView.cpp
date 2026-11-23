@@ -158,6 +158,13 @@ static void touchpadMoves(void *data, float dx, float dy, float scale)
 
 // The field of view the World, Train, Chase and Fly cameras start with, in
 // degrees; the FOV slider changes all of them (TrainView::setFieldOfView).
+// An OpenGL string, empty when there is none.
+static std::string glText(GLenum name)
+{
+    const GLubyte *text = glGetString(name);
+    return text ? reinterpret_cast<const char *>(text) : "";
+}
+
 static const float startFieldOfView = 70.0f;
 // The World camera's start: this far away with a 40 degree view frames the
 // editor's island; a wider view starts as much closer. The scenery island is
@@ -188,6 +195,7 @@ TrainView::TrainView()
     resetArcball();
     flyCam.setup(this, m_fieldOfView);
     flyCam.setGround(flyLowest - FlyCam::minHeight); // the eye stays minHeight above it
+    PerfStats::setActive(&perf);
 }
 
 TrainView::~TrainView()
@@ -196,6 +204,8 @@ TrainView::~TrainView()
         ClipCursor(nullptr);
     touchpad.detach();
     platform::removeTimeout(redrawSoon, this);
+    if (PerfStats::active() == &perf)
+        PerfStats::setActive(nullptr);
 }
 
 void TrainView::attach(GLFWwindow *window)
@@ -1480,6 +1490,8 @@ void TrainView::drawFrame()
     // a point carried in Fly follows the camera, which may have flown since
     if (m_carrying)
         updateCarry();
+    // Setup's processor time includes loading the OpenGL functions
+    const double setupStart = PerfStats::clock();
 
     //*********************************************************************
     //
@@ -1512,13 +1524,31 @@ void TrainView::drawFrame()
         effects.invalidate();
         m_loadingTexture = 0;
         m_guiRenderer.forget();
+        perfGpu.forget();
+        glRenderer = glText(GL_RENDERER);
+        glVersionText = glText(GL_VERSION);
     }
+
+    // The graphics card's timestamps go into this frame's set of queries
+    // (PerfGpu.h); the frame was begun by TrainWindow::drawNow().
+    perfGpuOn = perf.enabled() && PerfGpu::available();
+    if (perfGpuOn)
+    {
+        perfGpu.attach(&perf);
+        perfGpu.beginFrame(perf, perf.currentId());
+    }
+    else
+        perf.setGpuStamp(nullptr, nullptr);
+    perf.begin(PerfStage::Setup, setupStart);
 
     // The first frames show how far the world is built, instead of a white
     // window that does not answer until it is done.
     frameShowsScene = false;
     if (!worldReady())
+    {
+        perf.end(PerfStage::Setup, PerfStats::clock());
         return;
+    }
     frameShowsScene = true;
     const bool advanced = advancedLightingOn();
 
@@ -1600,40 +1630,47 @@ void TrainView::drawFrame()
     //*********************************************************************
     // set to opengl fixed pipeline(use opengl 1.x draw function)
     glUseProgram(0);
+    perf.end(PerfStage::Setup, PerfStats::clock());
 
     // Shadow maps, per-pixel lighting, water and post effects
     if (advanced)
     {
         drawAdvanced();
+        PerfScope overlay(PerfStage::Overlay);
         drawEditOverlay();
         if (tw->settings.camera == CameraView::Fly)
             drawFlyOverlay();
         return;
     }
 
-    if (tw->settings.camera == CameraView::Fly)
-        drawFlyHorizon();
+    {
+        PerfScope scene(PerfStage::Scene);
+        if (tw->settings.camera == CameraView::Fly)
+            drawFlyHorizon();
 
-    // the island is lit like everything else: its cliffs need the shading
-    setupFloor();
-    drawGround();
+        // the island is lit like everything else: its cliffs need the shading
+        setupFloor();
+        drawGround();
 
-    //*********************************************************************
-    // now draw the object and we need to do it twice
-    // once for real, and then once for shadows
-    //*********************************************************************
-    setupObjects();
+        //*********************************************************************
+        // now draw the object and we need to do it twice
+        // once for real, and then once for shadows
+        //*********************************************************************
+        setupObjects();
 
-    drawStuff();
+        drawStuff();
+    }
 
     // this time drawing is for shadows (except for top view). They are
     // flattened onto y = 0, which is only right on the level editor island.
     if (tw->settings.shadows && tw->settings.camera != CameraView::Top && !sceneryOn())
     {
+        PerfScope shadows(PerfStage::Shadows);
         setupShadows();
         drawStuff(true);
         unsetupShadows();
     }
+    PerfScope overlay(PerfStage::Overlay);
     drawEditOverlay();
 
     if (tw->settings.camera == CameraView::Fly)
@@ -1988,6 +2025,7 @@ void TrainView::drawStuff(bool doingShadows)
     if (m_pTrack->points.size() >= 4)
     {
         const TrackSplineType splineType = static_cast<TrackSplineType>(tw->settings.spline);
+        PerfScope part(PerfStage::Track);
         m_trackRenderer.draw(*m_pTrack, splineType, doingShadows);
     }
 
@@ -1997,12 +2035,16 @@ void TrainView::drawStuff(bool doingShadows)
 
     // wooden trestles where the track is high above the scenery
     if (sceneryOn() && m_pTrack->points.size() >= 4)
+    {
+        PerfScope part(PerfStage::Supports);
         drawSupports(doingShadows);
+    }
 
     // draw the train: a locomotive and five carts with riders (TrainModel)
     if (tw->settings.camera != CameraView::Train && m_pTrack->points.size() >= 4)
     {
         const TrackSplineType splineType = static_cast<TrackSplineType>(tw->settings.spline);
+        PerfScope part(PerfStage::Train);
         TrainModel::draw(*m_pTrack, splineType, doingShadows, animationTime());
     }
 
@@ -2011,6 +2053,7 @@ void TrainView::drawStuff(bool doingShadows)
     // the scene: landWaterLater)
     if (!doingShadows)
     {
+        PerfScope part(PerfStage::Water);
         lighting.setTranslucent(true);
         if (landWaterLater)
             m_land.drawGlass(!sceneryOn());

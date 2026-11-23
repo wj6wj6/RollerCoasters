@@ -50,6 +50,8 @@ class CTrack;
 #include "Ui/GuiGl.h"
 #include "TrackRenderer.H"
 #include "TouchpadGestures.H"
+#include "PerfGpu.h"
+#include "PerfStats.h"
 
 struct GLFWwindow;
 
@@ -118,6 +120,7 @@ class TrainView final : public Viewport
     // starts them; automationResult is the exit code once they finish.
     void startAutomation(const AppControl::Options *options);
     void finishAutomatedFrame();
+    void benchmarkFrame(); // --benchmark: count this frame, or report
     void finishAutomation(int result);
     const AppControl::Options *automation = nullptr;
     int automationFrames = 0;
@@ -131,6 +134,17 @@ class TrainView final : public Viewport
     const char *loadingStage = "Generating terrain";
     double automationStart = 0; // seconds, when the run started
     double worldSeconds = 0;    // until the first frame of the scene
+    int benchmarkSkipped = 0;   // --benchmark: warm-up frames not counted
+    double benchmarkFrom = 0;   // PerfStats::clock() when the measured frames began
+
+    // Where each frame's time goes (F3, --benchmark): the phases and parts
+    // are timed while perf is switched on (TrainWindow::drawNow()), on the
+    // graphics card too when it has timestamp queries (perfGpuOn).
+    PerfStats perf;
+    PerfGpu perfGpu;
+    bool perfGpuOn = false;
+    std::string glRenderer; // GL_RENDERER, read with each new context
+    std::string glVersionText;
 
     // all of the actual drawing happens in this routine
     // it has to be encapsulated, since we draw differently if

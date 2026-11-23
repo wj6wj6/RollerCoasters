@@ -104,6 +104,15 @@ int main()
               options.frames == 8 && options.width == 800 && options.height == 600 &&
               options.track == "t.txt" && options.texturePack == "p.zip",
           "--screenshot with every scene option");
+    check(parses({"--benchmark", "perf.txt", "--camera", "train"}, options, error) &&
+              options.mode == Mode::Benchmark && options.output == "perf.txt" &&
+              options.frames == AppControl::kBenchmarkFrames && options.camera == Camera::Train,
+          "--benchmark measures 300 frames unless told");
+    check(parses({"--frames", "50", "--benchmark", "perf.txt"}, options, error) &&
+              options.mode == Mode::Benchmark && options.frames == 50,
+          "--benchmark takes --frames");
+    check(parses({"--screenshot", "a.png"}, options, error) && options.frames == 5,
+          "--screenshot still draws 5 frames");
     check(parses({"--track", "t.txt"}, options, error) && options.mode == Mode::Gui &&
               options.track == "t.txt",
           "scene options also work when the window stays open");
@@ -117,6 +126,8 @@ int main()
     check(refused({"--frames", "0"}) && refused({"--frames", "2.5"}), "frames are 1 to 600");
     check(refused({"--size", "800"}) && refused({"--size", "10x10"}), "the size is WxH, not tiny");
     check(refused({"--doctor", "--screenshot", "a.png"}), "one mode at a time");
+    check(refused({"--screenshot", "a.png", "--benchmark", "b.txt"}), "screenshot or benchmark");
+    check(refused({"--benchmark"}), "--benchmark needs a file");
     check(refused({"--version", "--track", "t.txt"}), "--version takes nothing else");
     check(std::string(AppControl::usage()).find("--doctor") != std::string::npos,
           "the usage lists --doctor");
