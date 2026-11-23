@@ -13,6 +13,9 @@
                     and Delete point, Run / Stop; keys 1 to 9 or a click;
                   - key hints in the top left corner, and the view's
                     status line above the hotbar; F1 hides all of it;
+                  - F3 switches the performance screen on and off
+                    (PerfOverlay.h), in place of the key hints, as a block
+                    game's debug screen;
                   - Esc opens the game menu, whose screens (Ride, Camera,
                     Track, Lighting, World) hold every control the old side
                     panel had. Esc goes back a screen;
@@ -113,9 +116,11 @@ class GameMenu
     void dropped(TrainWindow &tw, const std::vector<std::string> &paths);
 
     bool hudHidden = false; // F1
+    bool perfShown = false; // F3: the performance screen (PerfOverlay.h)
 
   private:
     void drawHud(TrainWindow &tw, ui::Gui &gui, double seconds);
+    void drawPerf(TrainWindow &tw, ui::Gui &gui);
     void drawTitle(TrainWindow &tw, ui::Gui &gui, double seconds);
     void drawOptions(TrainWindow &tw, ui::Gui &gui);
     void drawSelectWorld(TrainWindow &tw, ui::Gui &gui);

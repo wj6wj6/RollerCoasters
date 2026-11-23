@@ -67,6 +67,13 @@ const Command kCommands[KeyBinds::kActions] = {
      kAnywhere,
      false,
      {key(Key::F + 1), none()}},
+    {Action::PerfScreen,
+     "ui.performance",
+     "Performance Screen",
+     Group::Interface,
+     kAnywhere,
+     false,
+     {key(Key::F + 3), none()}},
 
     {Action::Slot1,
      "hotbar.1",

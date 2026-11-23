@@ -76,6 +76,13 @@ flowchart LR
     Frame --> Lighting[AdvancedLighting / 兩層 shadow map、逐像素光照、頭燈]
     Frame --> Post[PostEffects / 天空、水面、雨、SSAO、Bloom、色調映射]
     Frame -->|drawGround / drawUnderwater / drawObjects / drawSurfaceWater| View
+    Window -->|drawNow：beginFrame、Swap、endFrame| Perf[PerfStats / 每幀各階段與各景物的 CPU、GPU 毫秒]
+    Frame -->|PerfScope：Shadow maps、Reflection、Scene、Post effects| Perf
+    View -->|PerfScope：Setup、Overlay、Land、Track、Train…| Perf
+    Perf -->|GL timestamp query，三幀後讀回| PerfGpu[PerfGpu]
+    Menu -->|F3| PerfOverlay[PerfOverlay / 效能畫面與時間圖]
+    PerfOverlay --> Perf
+    ViewControl -->|--benchmark：報告| Perf
     View -->|drawGround：方塊雲 drawClouds 時 setUnlit，依太陽／月亮與天空光照亮| Lighting
     View -->|worldReady：未建好前畫載入畫面| Loading[載入畫面 / 泥土背景、階段文字、進度條]
     Land -->|背景執行緒：生成網格、切塊 mesh| LandWorker[LandWorld::buildScene]
@@ -109,7 +116,10 @@ flowchart LR
 |---|---|
 | `src/main.cpp` | 解析命令列，切到 exe 所在資料夾，建立 `TrainWindow`、開啟視窗並執行 `run()`；自動模式結束後回傳結果。 |
 | `src/AppControl.h/.cpp` | 命令列（`--doctor`、`--screenshot` 與場景參數）的解析、軌道檔格式檢查、資料夾檢查、畫面判讀與 PNG 寫入；不需要視窗，由 `AppControlCheck` 測試。 |
-| `src/TrainViewControl.cpp` | 自動模式下每幀結束時：`--doctor` 回報 OpenGL 與 shader 路徑，`--screenshot` 從 back buffer 讀回畫面、存檔並判斷是否真的畫出東西，然後關閉視窗。 |
+| `src/TrainViewControl.cpp` | 自動模式下每幀結束時：`--doctor` 回報 OpenGL 與 shader 路徑，`--screenshot` 從 back buffer 讀回畫面、存檔並判斷是否真的畫出東西，`--benchmark` 連續畫幀（列車行駛、不等 vsync），最後寫出 `PerfStats::report()`，然後關閉視窗。 |
+| `src/PerfStats.h/.cpp` | 每幀時間分配：依序的階段（Setup、Shadow maps、Reflection、Scene、Post effects、Overlay、Interface、Swap）與跨階段累加的景物（Land、Ocean、Track、Supports、Train、Water & glass），CPU 用 steady clock，GPU 用 `PerfGpu` 傳回的 timestamp 依打點順序配對；最近 600 幀的歷史、摘要（fps、平均／最小／最大／95%）與 `--benchmark` 報告。只有 F3 開著或 `--benchmark` 時啟用，關閉時 `PerfScope` 什麼都不做。不需 OpenGL，由 `PerfStatsCheck` 測試。見 [ADR 0015](adr/0015-performance-screen.md)。 |
+| `src/PerfGpu.h/.cpp` | `PerfStats` 的 GPU 端：每個打點一個 `glQueryCounter(GL_TIMESTAMP)`，四組輪流使用，三幀後結果已好才讀，不讓 CPU 等 GPU；context 重建時 `forget()`。 |
+| `src/PerfOverlay.h/.cpp` | F3 效能畫面：左上角 fps、幀成本與可達 fps、CPU／GPU、視窗、相機與開關；右上角各階段與景物的 CPU／GPU 毫秒與比例條；左下角幀成本長條圖（60／30 FPS 線）。 |
 | `src/TrainWindow.H/.cpp` | GLFW 視窗（OpenGL 相容 context、IME 關閉、滾輪訊息先經自己的視窗程序）與主迴圈 `run()`；持有唯一的 `CTrack`、`SceneSettings`、`GameMenu`、上一步歷史與 `advanceTrain()`。GLFW callback 經 `GlfwInput` 轉成 `InputEvent`，先給 `GameMenu`，沒用到才給 `TrainView`。見 [ADR 0010](adr/0010-glfw-window-and-game-menu.md)。 |
 | `src/GameMenu.h/.cpp` | 用 `Ui/Gui` 畫出的介面：左上角按鍵提示、九格快捷欄、狀態列，啟動時的標題畫面（`Title`，背後的世界在背景建造或慢慢轉動；`SelectWorld` 選島或平地，由 `CallBacks` 的 `playIsland()`／`playFlat()` 切換；`Options` 進設定畫面），以及 Esc 打開的選單（`Pause`、`Ride`、`Camera`、`Track`、`Lighting`、`World`、`Controls`、`Load Track`、`Save Track`），和取代系統訊息視窗的 `notify()`（訊息與 OK）、`confirm()`（Yes／No）；全部只讀寫 `SceneSettings` 與呼叫 `CallBacks`。 |
 | `src/SceneSettings.h` | 控制項目前的值：Run、速度、ArcLength、相機（`CameraView`）、曲線種類、Edit、光影開關、時間、水、雨、景物。介面（`GameMenu`）、`TrainView` 與 callback 都只讀寫這裡。 |

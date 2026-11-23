@@ -1,11 +1,13 @@
 /************************************************************************
      File:        TrainViewControl.cpp
 
-     Comment:     The TrainView side of --doctor and --screenshot
-                  (AppControl.h): after each drawn frame, reports what the
-                  OpenGL driver and the shader path did, or reads the frame
-                  back, saves it and checks that it looks drawn, then
-                  closes the window so TrainWindow::run() returns.
+     Comment:     The TrainView side of --doctor, --screenshot and
+                  --benchmark (AppControl.h): after each drawn frame,
+                  reports what the OpenGL driver and the shader path did,
+                  or reads the frame back, saves it and checks that it
+                  looks drawn, or counts the frame towards the benchmark
+                  and at the end writes PerfStats' report; then closes the
+                  window so TrainWindow::run() returns.
 
                   The frame is read from the back buffer before the window
                   swaps it, so it is exactly what the user would see,
@@ -27,6 +29,9 @@
 #include <glad/glad.h>
 
 #include "AppControl.h"
+#include "PerfOverlay.h"
+#include "PerfStats.h"
+#include "Utilities/Utf8File.H"
 #include "TrainView.H"
 #include "TrainWindow.H"
 
@@ -140,6 +145,11 @@ void TrainView::finishAutomatedFrame()
     // the loading screen redraws itself until the world is built
     if (!frameShowsScene)
         return;
+    if (automation->mode == AppControl::Mode::Benchmark)
+    {
+        benchmarkFrame();
+        return;
+    }
     if (++automationFrames == 1)
         worldSeconds = secondsNow() - automationStart;
     if (automationFrames < automation->frames)
@@ -177,5 +187,58 @@ void TrainView::finishAutomatedFrame()
     checks.push_back(
         {"shader lighting", !tw->settings.lighting || lighting.init(),
          tw->settings.lighting ? (lighting.init() ? "on" : "Light+ is on but fell back") : "off"});
+    finishAutomation(AppControl::report(checks, stdout));
+}
+
+//************************************************************************
+//
+// * --benchmark: frames back to back, then where their time went
+//========================================================================
+void TrainView::benchmarkFrame()
+{
+    if (benchmarkSkipped == 0)
+        worldSeconds = secondsNow() - automationStart;
+    // the first frames compile shaders and fill textures: not counted
+    if (benchmarkSkipped < AppControl::kBenchmarkWarmUp)
+    {
+        if (++benchmarkSkipped == AppControl::kBenchmarkWarmUp)
+            benchmarkFrom = PerfStats::clock();
+        platform::addTimeout(0.0, redrawCB, this);
+        return;
+    }
+    if (++automationFrames < automation->frames)
+    {
+        platform::addTimeout(0.0, redrawCB, this);
+        return;
+    }
+
+    // this frame is still being drawn: the ones before it are measured
+    const double now = PerfStats::clock();
+    const PerfStats::Summary summary = perf.summary(now, now - benchmarkFrom);
+    std::vector<std::string> about;
+    about.push_back(std::string("RollerCoasters ") + ROLLERCOASTERS_VERSION + " --benchmark");
+    about.push_back("graphics card: " + glRenderer + " / OpenGL " + glVersionText +
+                    (perfGpuOn ? "" : " (no timestamp queries: processor times only)"));
+    char size[96];
+    std::snprintf(size, sizeof size, "window %dx%d, vsync off, the world built in %.1f s", w(), h(),
+                  worldSeconds);
+    about.push_back(size);
+    for (const std::string &line : PerfOverlay::sceneLines(tw->settings))
+        about.push_back(line);
+    about.push_back("");
+    const std::string text = PerfStats::report(summary, about);
+    std::fputs(text.c_str(), stdout);
+
+    std::vector<AppControl::Check> checks;
+    FILE *out = openUtf8(automation->output.c_str(), "w");
+    const bool saved = out && std::fputs(text.c_str(), out) >= 0;
+    if (out)
+        std::fclose(out);
+    checks.push_back(
+        {"benchmark", saved, saved ? automation->output : "cannot write " + automation->output});
+    char measured[96];
+    std::snprintf(measured, sizeof measured, "%d frames, %.2f ms a frame on average",
+                  summary.frames, summary.avgCost);
+    checks.push_back({"frames", summary.frames > 0, measured});
     finishAutomation(AppControl::report(checks, stdout));
 }

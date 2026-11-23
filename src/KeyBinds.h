@@ -51,6 +51,7 @@ class KeyBinds
         // Interface
         Fullscreen,
         HideHud,
+        PerfScreen,
         // Hotbar
         Slot1,
         Slot2,

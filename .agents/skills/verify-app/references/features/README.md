@@ -14,6 +14,7 @@
 | `WorldSave.h`、`worldReady()`／載入畫面、`Ui/*`（自繪介面元件：載入畫面、Esc 選單、快捷欄） | [startup-and-panel.md](startup-and-panel.md) |
 | `OceanWorld.*` | [underwater.md](underwater.md) |
 | `TexturePack.*`、`ZipArchive.*` | [texture-packs.md](texture-packs.md) |
+| `PerfStats.*`、`PerfGpu.*`、`PerfOverlay.*`、`--benchmark` | [performance.md](performance.md) |
 | `AppControl.*`、`TrainViewControl.cpp`、`scripts/control-app.ps1` | 本頁「驗證工具本身」 |
 
 ## 全站回歸順序
@@ -33,7 +34,7 @@
 
 ## 驗證工具本身
 
-- 有什麼：`--doctor`、`--screenshot` 與場景參數（`RollerCoasters.exe --help`）；`scripts/control-app.ps1`。
+- 有什麼：`--doctor`、`--screenshot`、`--benchmark` 與場景參數（`RollerCoasters.exe --help`）；`scripts/control-app.ps1`。
 - 怎麼驅動：`AppControlCheck`（Linux 與 Windows 的 CTest）測試解析、軌道檔檢查、PNG 與畫面判讀；改到 `TrainViewControl.cpp` 時在 Windows 上跑 `smoke`。
 - 假象：
   - 程式在畫出第一幀前就失敗時，不能留下舊的截圖；`control-app.ps1` 每次先刪除同名 PNG，預期失敗的情境也會檢查沒有留下圖。

@@ -130,6 +130,7 @@ bool TrainView::sceneryOn() const
 
 void TrainView::drawGround(bool shadowPass)
 {
+    PerfScope part(PerfStage::Land);
     m_land.draw(!sceneryOn(), shadowPass, secondsSinceStart());
     if (shadowPass)
         return;
@@ -194,11 +195,13 @@ float TrainView::animationTime() const
 
 void TrainView::drawUnderwater(bool shadowPass)
 {
+    PerfScope part(PerfStage::Ocean);
     m_ocean.draw(shadowPass, secondsSinceStart());
 }
 
 void TrainView::drawLandWater()
 {
+    PerfScope part(PerfStage::Water);
     m_land.drawWaterSurface(!sceneryOn());
 }
 

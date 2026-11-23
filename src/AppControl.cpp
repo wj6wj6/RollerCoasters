@@ -133,7 +133,8 @@ void putChunk(std::vector<unsigned char> &out, const char type[4],
 
 const char *usage()
 {
-    return "Usage: RollerCoasters [--version | --help | --doctor | --screenshot <file.png>]\n"
+    return "Usage: RollerCoasters [--version | --help | --doctor | --screenshot <file.png>\n"
+           "                       | --benchmark <report.txt>]\n"
            "                      [--track <file>] [--pack <zip or folder>]\n"
            "                      [--camera world|train|chase|top|fly]\n"
            "                      [--scenery on|off] [--light on|off] [--water on|off]\n"
@@ -147,6 +148,7 @@ bool parse(int argc, const char *const *argv, Options &options, std::string &err
 {
     options = Options();
     bool sceneOptions = false;
+    bool framesGiven = false;
     for (int i = 1; i < argc; ++i)
     {
         const std::string arg = argv[i];
@@ -159,7 +161,7 @@ bool parse(int argc, const char *const *argv, Options &options, std::string &err
         auto setMode = [&](Mode mode) {
             if (options.mode != Mode::Gui)
             {
-                error = "only one of --version, --help, --doctor and --screenshot";
+                error = "only one of --version, --help, --doctor, --screenshot and --benchmark";
                 return false;
             }
             options.mode = mode;
@@ -185,8 +187,9 @@ bool parse(int argc, const char *const *argv, Options &options, std::string &err
             continue;
         }
         static const char *const kValueOptions[] = {
-            "--screenshot", "--track",   "--pack", "--camera", "--scenery", "--light", "--water",
-            "--rain",       "--shadows", "--time", "--u",      "--frames",  "--size"};
+            "--screenshot", "--benchmark", "--track",  "--pack", "--camera",
+            "--scenery",    "--light",     "--water",  "--rain", "--shadows",
+            "--time",       "--u",         "--frames", "--size"};
         bool known = false;
         for (const char *name : kValueOptions)
             known = known || arg == name;
@@ -202,6 +205,13 @@ bool parse(int argc, const char *const *argv, Options &options, std::string &err
         if (arg == "--screenshot")
         {
             if (!setMode(Mode::Screenshot))
+                return false;
+            options.output = value;
+            ok = !options.output.empty();
+        }
+        else if (arg == "--benchmark")
+        {
+            if (!setMode(Mode::Benchmark))
                 return false;
             options.output = value;
             ok = !options.output.empty();
@@ -232,6 +242,7 @@ bool parse(int argc, const char *const *argv, Options &options, std::string &err
             ok = readNumber(value, 1.0f, 600.0f, frames) &&
                  frames == static_cast<float>(static_cast<int>(frames));
             options.frames = static_cast<int>(frames);
+            framesGiven = true;
         }
         else if (arg == "--size")
             ok = readSize(value, options.width, options.height);
@@ -240,9 +251,11 @@ bool parse(int argc, const char *const *argv, Options &options, std::string &err
             error = "bad value for " + arg + ": " + value;
             return false;
         }
-        if (arg != "--screenshot")
+        if (arg != "--screenshot" && arg != "--benchmark")
             sceneOptions = true;
     }
+    if (options.mode == Mode::Benchmark && !framesGiven)
+        options.frames = kBenchmarkFrames;
     if (sceneOptions && (options.mode == Mode::Version || options.mode == Mode::Help))
     {
         error = "--version and --help take no other options";

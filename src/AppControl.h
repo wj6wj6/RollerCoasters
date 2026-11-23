@@ -9,6 +9,10 @@
                                          OpenGL and the shader path
                     --screenshot <png>   draw a few frames, save the last
                                          one and say whether it looks drawn
+                    --benchmark <txt>    draw frames back to back with the
+                                         train running and no vsync, and
+                                         write where their time went
+                                         (PerfStats::report)
 
                   plus options that set up the scene first (--track,
                   --camera, --scenery, --time, ...; see usage()).
@@ -37,7 +41,8 @@ enum class Mode
     Version,
     Help,
     Doctor,
-    Screenshot
+    Screenshot,
+    Benchmark
 };
 
 enum class Camera
@@ -61,7 +66,7 @@ enum class Switch
 struct Options
 {
     Mode mode = Mode::Gui;
-    std::string output;      // --screenshot: the PNG to write
+    std::string output;      // --screenshot: the PNG to write; --benchmark: the report
     std::string track;       // --track: a track file to load instead of the Grand Tour
     std::string texturePack; // --pack: a texture pack (.zip or folder)
     Camera camera = Camera::Keep;
@@ -72,10 +77,15 @@ struct Options
     Switch shadows = Switch::Keep;
     float time = -1.0f;   // --time: hour of the day, 0..24; negative keeps it
     float trainU = -1.0f; // --u: where the train is; negative keeps it
-    int frames = 5;       // frames drawn before the screenshot is taken
-    int width = 0;        // --size: the window, 0 keeps it
+    int frames = 5; // frames drawn before the screenshot is taken; --benchmark: measured (300)
+    int width = 0;  // --size: the window, 0 keeps it
     int height = 0;
 };
+
+// --benchmark: frames drawn first and not measured (shaders compiling,
+// textures arriving), and the frames measured unless --frames says.
+const int kBenchmarkWarmUp = 30;
+const int kBenchmarkFrames = 300;
 
 // Exit codes.
 const int kPass = 0;
