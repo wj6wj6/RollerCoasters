@@ -27,7 +27,9 @@
 *************************************************************************/
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
+#include <utility>
 #include <vector>
 
 namespace BlockMesh
@@ -77,6 +79,34 @@ Mesh pack(const Batches &batches, const std::vector<unsigned int> &textures);
 // Bytes the vertices take.
 size_t bytes(const Mesh &mesh);
 
+// How far in front of the eye the middle of a box is, along the view
+// direction of the given modelview matrix (column-major, as OpenGL gives
+// it): the camera's, or the light's in the shadow pass. For drawing the
+// nearest chunks first, so the depth test throws away more of what is
+// behind them before it is shaded.
+float viewDepth(const float modelview[16], const float lo[3], const float hi[3]);
+
+// EXPERIMENT, to be removed: a whole number from the environment, for
+// trying draw orders on the laptop without rebuilding.
+int knob(const char *name, int fallback);
+int drawWindow();    // RC_ARENA_WINDOW, meshes per window of Arena::draw()
+bool nearestFirst(); // RC_ARENA_NEAR, sort the chunks nearest first
+
+// The chunks (anything with lo[3] and hi[3]) that sees(lo, hi) keeps, as
+// indices into chunks, nearest first for the given modelview matrix.
+template <class Chunk, class Sees>
+void visibleNearestFirst(const std::vector<Chunk> &chunks, Sees sees, const float modelview[16],
+                         std::vector<std::pair<float, int>> &order)
+{
+    order.clear();
+    for (size_t i = 0; i < chunks.size(); ++i)
+        if (sees(chunks[i].lo, chunks[i].hi))
+            order.emplace_back(viewDepth(modelview, chunks[i].lo, chunks[i].hi),
+                               static_cast<int>(i));
+    if (nearestFirst())
+        std::sort(order.begin(), order.end());
+}
+
 class Arena
 {
   public:
@@ -104,12 +134,17 @@ class Arena
     // last page's spare room is given back. The meshes stay valid.
     void compact();
 
-    // Draws the meshes (of this arena; empty ones are skipped) in one go:
-    // for each buffer, the vertex arrays set once and one glMultiDrawArrays
-    // per texture, the textures in the order of their names and each
-    // texture's ranges in the order of the meshes. Leaves the last texture
-    // bound and the current values as the last non-empty mesh's last vertex.
-    void draw(const std::vector<const Mesh *> &meshes) const;
+    // Draws the meshes (of this arena; empty ones are skipped) in one go.
+    // They are taken window meshes at a time (0: all at once), in the order
+    // given; within a window, for each buffer the vertex arrays are set once
+    // and each texture is bound once and drawn with one glMultiDrawArrays,
+    // the textures in the order of their names and each texture's ranges in
+    // the order of the meshes. Callers hand the meshes nearest first and a
+    // small window: sorting the whole world by texture scatters the draws
+    // across the screen, which costs a GPU with little bandwidth (Radeon
+    // 860M) more than the calls it saves. Leaves the last texture bound and
+    // the current values as the last non-empty mesh's last vertex.
+    void draw(const std::vector<const Mesh *> &meshes, int window = 0) const;
 
     // Deletes the vertex buffers (in the current context) and empties it.
     // Meshes added before are no longer valid.
@@ -131,7 +166,7 @@ class Arena
         unsigned int texture;
         std::vector<int> first, count;
     };
-    std::vector<Call> plan(const std::vector<const Mesh *> &meshes) const;
+    std::vector<Call> plan(const std::vector<const Mesh *> &meshes, int window = 0) const;
 
   private:
     struct Page
@@ -148,6 +183,7 @@ class Arena
 
     struct Item
     {
+        int window; // which window of meshes
         int group;
         int page; // one of the group's pages (they share the buffer)
         unsigned int texture;
@@ -157,7 +193,7 @@ class Arena
     mutable std::vector<Item> m_items;
     mutable std::vector<int> m_first;
     mutable std::vector<int> m_count;
-    const Mesh *gather(const std::vector<const Mesh *> &meshes) const;
+    const Mesh *gather(const std::vector<const Mesh *> &meshes, int window) const;
 };
 
 } // namespace BlockMesh

@@ -5962,22 +5962,22 @@ void LandWorld::draw(bool flat, bool shadowPass, float time)
         glEnable(GL_ALPHA_TEST);
         glAlphaFunc(GL_GREATER, 0.5f);
     }
+    const auto sees = [&view](const float *lo, const float *hi) { return view.sees(lo, hi); };
+    float modelview[16];
+    glGetFloatv(GL_MODELVIEW_MATRIX, modelview);
+    BlockMesh::visibleNearestFirst(s.chunks, sees, modelview, m_order);
+    m_chunksDrawn = static_cast<int>(m_order.size());
     m_visible.clear();
-    for (const LandChunk &c : s.chunks)
-        if (view.sees(c.lo, c.hi))
-        {
-            m_visible.push_back(&c.solid);
-            ++m_chunksDrawn;
-        }
-    s.arena.draw(m_visible);
+    for (const std::pair<float, int> &o : m_order)
+        m_visible.push_back(&s.chunks[static_cast<size_t>(o.second)].solid);
+    s.arena.draw(m_visible, BlockMesh::drawWindow());
     if (!shadowPass)
     {
         // the plants after all the blocks, as before
         m_visible.clear();
-        for (const LandChunk &c : s.chunks)
-            if (view.sees(c.lo, c.hi))
-                m_visible.push_back(&c.plant);
-        s.arena.draw(m_visible);
+        for (const std::pair<float, int> &o : m_order)
+            m_visible.push_back(&s.chunks[static_cast<size_t>(o.second)].plant);
+        s.arena.draw(m_visible, BlockMesh::drawWindow());
         if (!flat)
             drawMoving(s, time);
     }
@@ -6014,21 +6014,25 @@ void LandWorld::drawSeeThrough(bool flat, bool withWater)
     glDepthMask(GL_TRUE);
     glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
     const Frustum view = Frustum::current();
+    const auto sees = [&view](const float *lo, const float *hi) { return view.sees(lo, hi); };
+    float modelview[16];
+    glGetFloatv(GL_MODELVIEW_MATRIX, modelview);
+    BlockMesh::visibleNearestFirst(s.chunks, sees, modelview, m_order);
     m_visible.clear();
-    for (const LandChunk &c : s.chunks)
-        if (view.sees(c.lo, c.hi))
-        {
-            if (withWater)
-                m_visible.push_back(&c.water);
-            m_visible.push_back(&c.glass);
-        }
-    s.arena.draw(m_visible);
+    for (const std::pair<float, int> &o : m_order)
+    {
+        const LandChunk &c = s.chunks[static_cast<size_t>(o.second)];
+        if (withWater)
+            m_visible.push_back(&c.water);
+        m_visible.push_back(&c.glass);
+    }
+    s.arena.draw(m_visible, BlockMesh::drawWindow());
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glDepthMask(GL_FALSE);
     glDepthFunc(GL_LEQUAL);
     glEnable(GL_BLEND);
     glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE);
-    s.arena.draw(m_visible);
+    s.arena.draw(m_visible, BlockMesh::drawWindow());
     setGlow(0.0f);
     glPopAttrib();
 }
@@ -6039,11 +6043,14 @@ void LandWorld::drawWaterSurface(bool flat)
         return;
     const Scene &s = flat ? *m_flat : *m_scenery;
     const Frustum view = Frustum::current();
+    const auto sees = [&view](const float *lo, const float *hi) { return view.sees(lo, hi); };
+    float modelview[16];
+    glGetFloatv(GL_MODELVIEW_MATRIX, modelview);
+    BlockMesh::visibleNearestFirst(s.chunks, sees, modelview, m_order);
     m_visible.clear();
-    for (const LandChunk &c : s.chunks)
-        if (view.sees(c.lo, c.hi))
-            m_visible.push_back(&c.water);
-    s.arena.draw(m_visible);
+    for (const std::pair<float, int> &o : m_order)
+        m_visible.push_back(&s.chunks[static_cast<size_t>(o.second)].water);
+    s.arena.draw(m_visible, BlockMesh::drawWindow());
 }
 
 void LandWorld::drawMoving(const Scene &s, float time)

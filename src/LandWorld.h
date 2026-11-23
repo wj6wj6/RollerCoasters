@@ -42,6 +42,7 @@
 #pragma once
 
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "Mobs.h"
@@ -185,4 +186,6 @@ class LandWorld
     int m_chunksDrawn = 0;
     // the chunk meshes a pass draws, handed to the island's Arena at once
     std::vector<const BlockMesh::Mesh *> m_visible;
+    // the chunks in view, nearest first: (depth, index)
+    std::vector<std::pair<float, int>> m_order;
 };
