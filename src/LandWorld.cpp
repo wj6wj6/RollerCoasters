@@ -5355,6 +5355,50 @@ void colour(int r, int g, int b)
     glColor3ub(static_cast<GLubyte>(r), static_cast<GLubyte>(g), static_cast<GLubyte>(b));
 }
 
+// A cloud's box: white, each face as bright as the block game makes that
+// face of its clouds (top 1, the sides 0.9 and 0.8, the underside 0.7).
+void cloudBox(float x0, float y0, float z0, float x1, float y1, float z1)
+{
+    const float kWhite[3] = {250.0f / 255.0f, 252.0f / 255.0f, 1.0f};
+    auto shade = [&](float k) { glColor3f(kWhite[0] * k, kWhite[1] * k, kWhite[2] * k); };
+    glBegin(GL_QUADS);
+    shade(0.8f);
+    glNormal3f(0, 0, 1);
+    glVertex3f(x0, y0, z1);
+    glVertex3f(x1, y0, z1);
+    glVertex3f(x1, y1, z1);
+    glVertex3f(x0, y1, z1);
+    glNormal3f(0, 0, -1);
+    glVertex3f(x1, y0, z0);
+    glVertex3f(x0, y0, z0);
+    glVertex3f(x0, y1, z0);
+    glVertex3f(x1, y1, z0);
+    shade(1.0f);
+    glNormal3f(0, 1, 0);
+    glVertex3f(x0, y1, z1);
+    glVertex3f(x1, y1, z1);
+    glVertex3f(x1, y1, z0);
+    glVertex3f(x0, y1, z0);
+    shade(0.7f);
+    glNormal3f(0, -1, 0);
+    glVertex3f(x0, y0, z0);
+    glVertex3f(x1, y0, z0);
+    glVertex3f(x1, y0, z1);
+    glVertex3f(x0, y0, z1);
+    shade(0.9f);
+    glNormal3f(1, 0, 0);
+    glVertex3f(x1, y0, z1);
+    glVertex3f(x1, y0, z0);
+    glVertex3f(x1, y1, z0);
+    glVertex3f(x1, y1, z1);
+    glNormal3f(-1, 0, 0);
+    glVertex3f(x0, y0, z0);
+    glVertex3f(x0, y0, z1);
+    glVertex3f(x0, y1, z1);
+    glVertex3f(x0, y1, z0);
+    glEnd();
+}
+
 // A sheep's wool, as often as the block game's sheep grow each colour:
 // mostly white, now and then light grey, grey, black or brown. Chosen by
 // the animal's phase, so a sheep keeps its colour.
@@ -6050,28 +6094,6 @@ void LandWorld::drawMoving(const Scene &s, float time)
     glBindTexture(GL_TEXTURE_2D, 0);
     glDisable(GL_TEXTURE_2D);
 
-    // blocky clouds drifting east, high above the peaks
-    setGlow(0.12f);
-    colour(250, 252, 255);
-    for (int i = 0; i < 40; ++i)
-    {
-        const float span = 2600.0f;
-        float x = static_cast<float>(hash(i, 0, 441u) % 2600u) +
-                  time * (3.0f + static_cast<float>(i % 3));
-        x = x - floorf(x / span) * span - span * 0.5f;
-        const float z = static_cast<float>(hash(i, 1, 441u) % 2200u) - 1100.0f;
-        const float y = 235.0f + static_cast<float>(hash(i, 2, 441u) % 60u);
-        for (int part = 0; part < 4; ++part)
-        {
-            const float px = x + static_cast<float>(hash(i, part, 443u) % 40u) - 20.0f;
-            const float pz = z + static_cast<float>(hash(i, part, 445u) % 30u) - 15.0f;
-            const float w = 14.0f + static_cast<float>(hash(i, part, 447u) % 5u) * 6.0f;
-            const float d = 10.0f + static_cast<float>(hash(i, part, 449u) % 4u) * 6.0f;
-            box(px - w, y, pz - d, px + w, y + 6.0f + static_cast<float>(part % 2) * 4.0f, pz + d);
-        }
-    }
-    setGlow(0.0f);
-
     // hot-air balloons, bobbing where the ride gets a good look at them
     const float spots[3][3] = {
         {-25.0f, 156.0f, 210.0f}, {375.0f, 93.0f, 240.0f}, {75.0f, 87.0f, -375.0f}};
@@ -6144,6 +6166,40 @@ float LandWorld::postGround(float x, float z, float from) const
 // two posts finds its own ground, so on a slope neither hangs in the air,
 // and a post that would pass through the room of another stretch of track
 // below is left out (the other one still stands); so are the cross beams.
+// The blocky clouds drifting east, high above the peaks. No glow: they
+// are lit as the sky lights them (the caller sets that up, see the header),
+// so they are white by day, warm at sunrise and sunset and only grey-blue
+// in the moonlight. Each face is shaded as the block game shades its
+// clouds, the top brightest and the underside darkest, so the boxes keep
+// their shape though the light no longer depends on which way they face.
+void LandWorld::drawClouds(bool flat, float time)
+{
+    if (flat)
+        return;
+    glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT);
+    glDisable(GL_TEXTURE_2D);
+    setGlow(0.0f);
+    for (int i = 0; i < 40; ++i)
+    {
+        const float span = 2600.0f;
+        float x = static_cast<float>(hash(i, 0, 441u) % 2600u) +
+                  time * (3.0f + static_cast<float>(i % 3));
+        x = x - floorf(x / span) * span - span * 0.5f;
+        const float z = static_cast<float>(hash(i, 1, 441u) % 2200u) - 1100.0f;
+        const float y = 235.0f + static_cast<float>(hash(i, 2, 441u) % 60u);
+        for (int part = 0; part < 4; ++part)
+        {
+            const float px = x + static_cast<float>(hash(i, part, 443u) % 40u) - 20.0f;
+            const float pz = z + static_cast<float>(hash(i, part, 445u) % 30u) - 15.0f;
+            const float w = 14.0f + static_cast<float>(hash(i, part, 447u) % 5u) * 6.0f;
+            const float d = 10.0f + static_cast<float>(hash(i, part, 449u) % 4u) * 6.0f;
+            cloudBox(px - w, y, pz - d, px + w, y + 6.0f + static_cast<float>(part % 2) * 4.0f,
+                     pz + d);
+        }
+    }
+    glPopAttrib();
+}
+
 void LandWorld::planSupports(const std::vector<float> &path)
 {
     m_trestles.clear();
