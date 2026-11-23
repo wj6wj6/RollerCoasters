@@ -1499,16 +1499,8 @@ void buildWorld(Grid &g)
 // ---------------------------------------------------------------------
 // Meshing
 // ---------------------------------------------------------------------
-struct Vertex
-{
-    float pos[3];
-    float normal[3];
-    float uv[2];
-    float color[3];
-    float extra[4]; // glow, sway, crystal light, sky light
-};
-
-typedef std::vector<std::vector<Vertex>> Batches; // one batch per texture
+typedef BlockMesh::Vertex Vertex;   // glow, sway, crystal light, sky light in extra
+typedef BlockMesh::Batches Batches; // one batch per texture
 
 // Six faces: normal axis, sign, and the corners as unit cube offsets.
 struct Face
@@ -1778,33 +1770,6 @@ void addFarFloor(Batches &batches)
     }
 }
 
-void emit(const Vertex &v)
-{
-    glColor3fv(v.color);
-    glMultiTexCoord4fv(GL_TEXTURE1, v.extra);
-    glTexCoord2fv(v.uv);
-    glNormal3fv(v.normal);
-    glVertex3fv(v.pos);
-}
-
-unsigned int compileList(const Batches &batches, const std::vector<unsigned int> &textures)
-{
-    const GLuint list = glGenLists(1);
-    glNewList(list, GL_COMPILE);
-    for (size_t t = 0; t < batches.size(); ++t)
-    {
-        if (batches[t].empty())
-            continue;
-        glBindTexture(GL_TEXTURE_2D, textures[t]);
-        glBegin(GL_QUADS);
-        for (const Vertex &v : batches[t])
-            emit(v);
-        glEnd();
-    }
-    glEndList();
-    return list;
-}
-
 // ---------------------------------------------------------------------
 // Boxes
 // ---------------------------------------------------------------------
@@ -2067,7 +2032,7 @@ void drawJellyfish(float time, float seed, const unsigned char colour[3])
 } // namespace
 
 // The blocks and their meshes, made on a thread of their own so the window
-// keeps drawing meanwhile; prepare() turns them into display lists.
+// keeps drawing meanwhile; prepare() turns them into vertex buffers.
 struct OceanWorld::Build
 {
     std::thread worker;
@@ -2086,7 +2051,7 @@ struct OceanWorld::Build
     void run();
 };
 
-OceanWorld::OceanWorld() : m_built(false), m_farList(0)
+OceanWorld::OceanWorld() : m_built(false)
 {
 }
 
@@ -2128,7 +2093,7 @@ void OceanWorld::releaseResources()
     m_build.reset(); // the meshes are made again with the lists
     m_built = false;
     m_chunks.clear();
-    m_farList = 0;
+    m_far = BlockMesh::Mesh();
     m_textures.clear();
 }
 
@@ -2589,10 +2554,10 @@ bool OceanWorld::prepare()
     m_chunks = m_build->chunks;
     for (size_t i = 0; i < m_chunks.size(); ++i)
     {
-        m_chunks[i].solid = compileList(m_build->solids[i], m_textures);
-        m_chunks[i].plant = compileList(m_build->plants[i], m_textures);
+        m_chunks[i].solid = BlockMesh::compile(m_build->solids[i], m_textures);
+        m_chunks[i].plant = BlockMesh::compile(m_build->plants[i], m_textures);
     }
-    m_farList = compileList(m_build->beyond, m_textures);
+    m_far = BlockMesh::compile(m_build->beyond, m_textures);
     if (!m_build->solid.empty())
         m_solid = std::move(m_build->solid);
     m_build.reset(); // the meshes are in the lists now
@@ -2617,15 +2582,15 @@ void OceanWorld::draw(bool shadowPass, float time)
     glEnable(GL_TEXTURE_2D);
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
     const Frustum view = Frustum::current();
-    glCallList(m_farList);
+    BlockMesh::draw(m_far);
     for (const Chunk &c : m_chunks)
         if (view.sees(c.lo, c.hi))
-            glCallList(c.solid);
+            BlockMesh::draw(c.solid);
     if (!shadowPass)
     {
         for (const Chunk &c : m_chunks)
             if (view.sees(c.lo, c.hi))
-                glCallList(c.plant);
+                BlockMesh::draw(c.plant);
         glBindTexture(GL_TEXTURE_2D, 0);
         glDisable(GL_TEXTURE_2D);
         drawSeaLife(time);

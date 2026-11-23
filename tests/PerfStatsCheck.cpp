@@ -214,6 +214,21 @@ int main()
                left[2].find("Frame cost") == 0,
            "the left column starts with the frame rate and the frame cost");
 
+    // the program's memory: read on this system, and shown on the F3 screen
+    const PerfStats::Memory memory = PerfStats::memory();
+    expect(memory.workingSet > 1.0 && memory.committed > 1.0, "the program's memory is read");
+    PerfStats::Memory known;
+    known.workingSet = 312.4;
+    known.committed = 340.0;
+    expect(PerfStats::memoryLine(known) == "Mem: 312 MB (committed 340 MB)", "the memory line");
+    expect(PerfStats::memoryLine(PerfStats::Memory()).empty(), "no line when unknown");
+    info.memory = PerfStats::memoryLine(known);
+    bool shown = false;
+    for (const std::string &l :
+         PerfOverlay::leftLines(perf.summary(300 / 60.0, 1.0), info, 640, 480))
+        shown = shown || l == info.memory;
+    expect(shown, "F3 shows the memory");
+
     std::printf("%s\n", failures == 0 ? "PerfStatsCheck passed" : "PerfStatsCheck FAILED");
     return failures == 0 ? 0 : 1;
 }

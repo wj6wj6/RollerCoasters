@@ -558,6 +558,7 @@ void GameMenu::drawPerf(TrainWindow &tw, ui::Gui &gui)
     info.vsync = true;
     info.gpuTimer = view.perfGpuOn;
     info.trainSteps = TrainWindow::kStepsPerSecond;
+    info.memory = PerfStats::memoryLine(PerfStats::memory());
     PerfOverlay::draw(gui, view.perf, info, PerfStats::clock());
 }
 

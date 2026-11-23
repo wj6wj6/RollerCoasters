@@ -223,6 +223,9 @@ void TrainView::benchmarkFrame()
     std::snprintf(size, sizeof size, "window %dx%d, vsync off, the world built in %.1f s", w(), h(),
                   worldSeconds);
     about.push_back(size);
+    const std::string memory = PerfStats::memoryLine(PerfStats::memory());
+    if (!memory.empty())
+        about.push_back(memory);
     for (const std::string &line : PerfOverlay::sceneLines(tw->settings))
         about.push_back(line);
     about.push_back("");

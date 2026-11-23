@@ -226,6 +226,8 @@ std::vector<std::string> PerfOverlay::leftLines(const PerfStats::Summary &s, con
     out.push_back("");
     std::snprintf(buf, sizeof buf, "Window %dx%d", pixelW, pixelH);
     out.push_back(buf);
+    if (!info.memory.empty())
+        out.push_back(info.memory);
     for (const std::string &l : info.lines)
         out.push_back(l);
     out.push_back("");

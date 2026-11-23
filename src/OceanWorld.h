@@ -19,7 +19,7 @@
                     whale and glowing jellyfish.
 
                   The world is a grid of 5 x 5 x 5 blocks. It is built once
-                  into display lists, with Minecraft-like smooth lighting
+                  into vertex buffers (BlockMesh), with Minecraft-like smooth lighting
                   baked into the vertices: sky light fades inside the
                   tunnel and under overhangs, crystals light their
                   surroundings, and corners get ambient occlusion. All
@@ -44,6 +44,8 @@
 #include <memory>
 #include <vector>
 
+#include "BlockMesh.h"
+
 namespace TexturePack
 {
 class Pack;
@@ -61,7 +63,7 @@ class OceanWorld
     // Gets the sea floor ready to draw without holding up the window: the
     // first call starts building it on a thread of its own (or reading it
     // from its save, WorldSave.h); the call after it is built makes the
-    // display lists. True once it is all ready. draw() waits for whatever
+    // vertex buffers. True once it is all ready. draw() waits for whatever
     // is left.
     bool prepare();
 
@@ -126,11 +128,11 @@ class OceanWorld
     bool m_built;
     struct Chunk
     {
-        unsigned int solid = 0, plant = 0;
+        BlockMesh::Mesh solid, plant;
         float lo[3], hi[3];
     };
     std::vector<Chunk> m_chunks; // drawn only when in view
-    unsigned int m_farList;      // the sea bed beyond the grid, always drawn
+    BlockMesh::Mesh m_far;       // the sea bed beyond the grid, always drawn
     std::vector<unsigned int> m_textures;
     std::shared_ptr<const TexturePack::Pack> m_pack;
     bool m_texturesStale = false;

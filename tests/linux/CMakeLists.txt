@@ -91,13 +91,14 @@ check(AppControlCheck
     SOURCES src/AppControl.cpp src/Track.cpp src/ControlPoint.cpp src/TexturePack.cpp
         src/ZipArchive.cpp src/LandTextures.cpp src/PixelArt.cpp
     LIBS Utilities glad)
+check(BlockMeshCheck SOURCES src/BlockMesh.cpp LIBS glad)
 check(OceanRideClearanceCheck TIMEOUT 120
-    SOURCES src/OceanWorld.cpp src/Frustum.cpp src/LandTextures.cpp src/PixelArt.cpp
+    SOURCES src/OceanWorld.cpp src/BlockMesh.cpp src/Frustum.cpp src/LandTextures.cpp src/PixelArt.cpp
         src/WorldShape.cpp src/TexturePack.cpp src/ZipArchive.cpp src/Track.cpp
         src/ControlPoint.cpp
     LIBS Utilities glad)
 check(LandRideClearanceCheck TIMEOUT 120
-    SOURCES src/LandWorld.cpp src/Frustum.cpp src/LandTextures.cpp src/Mobs.cpp
+    SOURCES src/LandWorld.cpp src/BlockMesh.cpp src/Frustum.cpp src/LandTextures.cpp src/Mobs.cpp
         src/OceanWorld.cpp src/PixelArt.cpp src/TexturePack.cpp src/WaterFlow.cpp src/WorldShape.cpp
         src/ZipArchive.cpp src/Track.cpp src/ControlPoint.cpp
     LIBS Utilities glad)
