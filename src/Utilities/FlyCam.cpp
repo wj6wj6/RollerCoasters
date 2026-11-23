@@ -31,6 +31,57 @@ FlyCam::FlyCam()
 {
     for (bool &key : held)
         key = false;
+    const int defaults[CommandCount][2] = {{'w', 0},
+                                           {'s', 0},
+                                           {'a', 0},
+                                           {'d', 0},
+                                           {' ', 'e'},
+                                           {Key::ShiftL, 'q'},
+                                           {Key::Left, 0},
+                                           {Key::Right, 0},
+                                           {Key::Up, 0},
+                                           {Key::Down, 0},
+                                           {Key::ControlL, 0},
+                                           {'=', Key::Keypad + '+'},
+                                           {'-', Key::Keypad + '-'}};
+    for (int command = 0; command < CommandCount; ++command)
+        setKeys(command, defaults[command][0], defaults[command][1]);
+}
+
+namespace
+{
+// The right Shift, Ctrl and Alt are the left ones.
+int sameSide(int key)
+{
+    switch (key)
+    {
+    case Key::ShiftR:
+        return Key::ShiftL;
+    case Key::ControlR:
+        return Key::ControlL;
+    case Key::AltR:
+        return Key::AltL;
+    default:
+        return key;
+    }
+}
+} // namespace
+
+void FlyCam::setKeys(int command, int first, int second)
+{
+    if (command < 0 || command >= CommandCount)
+        return;
+    // a held key would never see its release under its new meaning
+    for (bool &key : held)
+        key = false;
+    keys[command][0] = sameSide(first);
+    keys[command][1] = sameSide(second);
+}
+
+bool FlyCam::isKey(int command, int key) const
+{
+    const int k = sameSide(key);
+    return k != 0 && (keys[command][0] == k || keys[command][1] == k);
 }
 
 FlyCam::~FlyCam()
@@ -226,39 +277,11 @@ void FlyCam::redraw() const
         wind->requestRedraw();
 }
 
-int FlyCam::keyFor(int key)
+int FlyCam::keyFor(int key) const
 {
-    switch (key)
-    {
-    case 'w':
-        return Forward;
-    case 's':
-        return Back;
-    case 'a':
-        return Left;
-    case 'd':
-        return Right;
-    case ' ':
-    case 'e':
-    case Key::PageUp:
-        return Up;
-    case Key::ShiftL:
-    case Key::ShiftR:
-    case 'q':
-    case Key::PageDown:
-        return Down;
-    case Key::Left:
-        return TurnLeft;
-    case Key::Right:
-        return TurnRight;
-    case Key::Up:
-        return LookUp;
-    case Key::Down:
-        return LookDown;
-    case Key::ControlL:
-    case Key::ControlR:
-        return Fast;
-    }
+    for (int command = 0; command < KeyCount; ++command)
+        if (isKey(command, key))
+            return command;
     return -1;
 }
 
@@ -390,12 +413,12 @@ int FlyCam::handle(const InputEvent &event)
 
     case InputType::KeyDown: {
         const int key = event.key;
-        if (key == '=' || key == '+' || key == Key::Keypad + '+')
+        if (isKey(SpeedUp, key))
         {
             setSpeed(moveSpeed * 1.25f);
             return 1;
         }
-        if (key == '-' || key == Key::Keypad + '-')
+        if (isKey(SpeedDown, key))
         {
             setSpeed(moveSpeed / 1.25f);
             return 1;

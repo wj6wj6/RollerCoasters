@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "GameMenu.h"
+#include "KeyBinds.h"
 #include "SceneSettings.h"
 #include "Track.H"
 #include "TrackHistory.h"
@@ -80,6 +81,10 @@ class TrainWindow
     // found on disk and one opened from elsewhere (`select`, if not found).
     void listTexturePacks(const std::string &select = std::string());
 
+    // After Options > Controls changed a key: the Fly camera takes the new
+    // keys and they are kept in data/keybinds.txt for the next run.
+    void keysChanged();
+
     // TrainView::draw() calls it after the scene: the hotbar, hints and menu.
     void drawInterface();
 
@@ -96,6 +101,8 @@ class TrainWindow
     TrackHistory m_history; // undo and redo for the control points
     // What the controls are set to; the view and the menu read and change it.
     SceneSettings settings;
+    // Which key does what (Options > Controls); read from data/keybinds.txt.
+    KeyBinds keys;
 
     TrainView *trainView;
     GameMenu menu;

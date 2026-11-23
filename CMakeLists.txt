@@ -101,6 +101,7 @@ add_executable(RollerCoasters
     src/Folders.h src/Folders.cpp
     src/GameMenu.h src/GameMenu.cpp
     src/EditKeys.h src/EditKeys.cpp
+    src/KeyBinds.h src/KeyBinds.cpp
     src/ControlPoint.H src/ControlPoint.cpp
     src/main.cpp
     src/Track.H src/Track.cpp
@@ -148,11 +149,17 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     add_test(NAME WaterFlowCheck COMMAND WaterFlowCheck)
     set_tests_properties(WaterFlowCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
-    add_executable(EditKeysCheck tests/EditKeysCheck.cpp src/EditKeys.cpp)
+    add_executable(EditKeysCheck tests/EditKeysCheck.cpp src/EditKeys.cpp src/KeyBinds.cpp)
     target_include_directories(EditKeysCheck PRIVATE src src/Utilities)
     target_link_libraries(EditKeysCheck PRIVATE Utilities)
     add_test(NAME EditKeysCheck COMMAND EditKeysCheck)
     set_tests_properties(EditKeysCheck PROPERTIES TIMEOUT 10 LABELS integration)
+
+    add_executable(KeyBindsCheck tests/KeyBindsCheck.cpp src/KeyBinds.cpp)
+    target_include_directories(KeyBindsCheck PRIVATE src src/Utilities)
+    target_link_libraries(KeyBindsCheck PRIVATE Utilities)
+    add_test(NAME KeyBindsCheck COMMAND KeyBindsCheck)
+    set_tests_properties(KeyBindsCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
     add_executable(HeadLookCheck tests/HeadLookCheck.cpp)
     target_include_directories(HeadLookCheck PRIVATE src/Utilities)

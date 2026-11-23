@@ -36,6 +36,10 @@ flowchart LR
     View --> History
     History --> Track
     View --> Keys[EditKeys / 按鍵對應的編輯指令]
+    Keys --> Binds[KeyBinds / 可自訂的按鍵、data/keybinds.txt]
+    Menu -->|Controls 畫面改鍵、快捷欄與 P、[ ]、F1| Binds
+    View -->|Look Ahead、Fly 的 F／Home| Binds
+    Binds -->|applyTo：飛行與調速鍵| Fly
     Input[InputEvent / 自己的滑鼠鍵盤事件 Input.H] -->|先給 GameMenu，沒用到再 handleInput| View
     View --> Camera[ArcBallCam / World 相機與手勢平滑]
     View --> Fly[FlyCam / 觀察者自由相機]
@@ -107,7 +111,7 @@ flowchart LR
 | `src/AppControl.h/.cpp` | 命令列（`--doctor`、`--screenshot` 與場景參數）的解析、軌道檔格式檢查、資料夾檢查、畫面判讀與 PNG 寫入；不需要視窗，由 `AppControlCheck` 測試。 |
 | `src/TrainViewControl.cpp` | 自動模式下每幀結束時：`--doctor` 回報 OpenGL 與 shader 路徑，`--screenshot` 從 back buffer 讀回畫面、存檔並判斷是否真的畫出東西，然後關閉視窗。 |
 | `src/TrainWindow.H/.cpp` | GLFW 視窗（OpenGL 相容 context、IME 關閉、滾輪訊息先經自己的視窗程序）與主迴圈 `run()`；持有唯一的 `CTrack`、`SceneSettings`、`GameMenu`、上一步歷史與 `advanceTrain()`。GLFW callback 經 `GlfwInput` 轉成 `InputEvent`，先給 `GameMenu`，沒用到才給 `TrainView`。見 [ADR 0010](adr/0010-glfw-window-and-game-menu.md)。 |
-| `src/GameMenu.h/.cpp` | 用 `Ui/Gui` 畫出的介面：左上角按鍵提示、九格快捷欄、狀態列，啟動時的標題畫面（`Title`，背後的世界在背景建造或慢慢轉動；`SelectWorld` 選島或平地，由 `CallBacks` 的 `playIsland()`／`playFlat()` 切換；`Options` 進設定畫面），以及 Esc 打開的選單（`Pause`、`Ride`、`Camera`、`Track`、`Lighting`、`World`、`Load Track`、`Save Track`），和取代系統訊息視窗的 `notify()`（訊息與 OK）、`confirm()`（Yes／No）；全部只讀寫 `SceneSettings` 與呼叫 `CallBacks`。 |
+| `src/GameMenu.h/.cpp` | 用 `Ui/Gui` 畫出的介面：左上角按鍵提示、九格快捷欄、狀態列，啟動時的標題畫面（`Title`，背後的世界在背景建造或慢慢轉動；`SelectWorld` 選島或平地，由 `CallBacks` 的 `playIsland()`／`playFlat()` 切換；`Options` 進設定畫面），以及 Esc 打開的選單（`Pause`、`Ride`、`Camera`、`Track`、`Lighting`、`World`、`Controls`、`Load Track`、`Save Track`），和取代系統訊息視窗的 `notify()`（訊息與 OK）、`confirm()`（Yes／No）；全部只讀寫 `SceneSettings` 與呼叫 `CallBacks`。 |
 | `src/SceneSettings.h` | 控制項目前的值：Run、速度、ArcLength、相機（`CameraView`）、曲線種類、Edit、光影開關、時間、水、雨、景物。介面（`GameMenu`）、`TrainView` 與 callback 都只讀寫這裡。 |
 | `src/CallBacks.H/.cpp` | 選單按鈕與快捷欄的動作：新增刪除控制點、步進、軌道載入儲存、Reset、Grand Tour、材質包。 |
 | `src/Ui/Gui.h/.cpp` | 方塊遊戲風的即時模式介面：每幀呼叫 `button()`、`toggle()`、`cycle()`、`slider()`、`list()` 同時畫出元件並回報是否被使用；滑鼠以 `feed()` 在幀之間送入（按下即觸發），`feed()` 回報介面是否吃掉事件；GUI 縮放照方塊遊戲的 Auto（至少留 320 x 240 單位）。不需 OpenGL，由 `GuiCheck` 測試。見 [ADR 0009](adr/0009-own-block-game-style-ui.md)。 |
@@ -128,7 +132,8 @@ flowchart LR
 | `src/TransformGizmo.h/.cpp` | 控制點移動把手的挑選、拖曳換算（純數學）與繪製。 |
 | `src/TrackInsert.h/.cpp` | 找出點擊處的軌道參數，在該處插入控制點（軌道仍經過點擊處）、刪除控制點並重新對應 `trainU`；純數學，由 `TrackInsertCheck` 測試。 |
 | `src/TrackHistory.h/.cpp` | 控制點的上一步／下一步：每次修改前存一份整條軌道（點、`trainU`、選取）的快照；由 `TrackHistoryCheck` 測試。 |
-| `src/EditKeys.h/.cpp` | 編輯指令的鍵位表；Fly 相機下避開飛行鍵。 |
+| `src/EditKeys.h/.cpp` | 把按鍵轉成編輯指令（鍵位來自 `KeyBinds`）；Fly 相機下新增、刪除用 Fly 自己的鍵，預設避開飛行鍵。 |
+| `src/KeyBinds.h/.cpp` | 每個鍵盤指令的名稱、分組與兩個按鍵（含 Ctrl／Shift／Alt），比對按鍵、判斷同一相機下的衝突、讀寫 `data/keybinds.txt`，並把飛行鍵交給 `FlyCam::setKeys()`。`TrainWindow` 持有一份，`GameMenu` 的 `Controls` 畫面修改它。見 [ADR 0014](adr/0014-key-binds.md)。 |
 | `src/LandWorld.h/.cpp` | 方塊島嶼：地形與生態、建築、水、沿 `Grand Tour` 挖出淨空、光照烘焙、會動的景物、木棧橋；在背景執行緒建造。方塊雲由 `drawClouds()` 另外畫（沒有自發光），`TrainView::drawGround()` 在它前後開關 `AdvancedLighting::setUnlit()`。 |
 | `src/WorldSave.h` | 島與海床網格的存檔（`data/saves/*.world`，run-length 編碼），key 是生成程式的建置時間與網格尺寸。 |
 | `src/CellQueue.h` | 光照 flood fill 用的單一 vector 佇列（取代 MSVC Debug 下很慢的 `std::deque`）。 |

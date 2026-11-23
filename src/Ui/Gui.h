@@ -119,6 +119,9 @@ class Gui
 
     // Widgets: true when used this frame.
     bool button(const Rect &r, const std::string &label, bool enabled = true);
+    // A button whose label keeps one colour, hovered or not (a key bind
+    // that clashes is red, one waiting for a key yellow).
+    bool button(const Rect &r, const std::string &label, bool enabled, Color labelColor);
     // "label: ON" / "label: OFF"; a click flips value.
     bool toggle(const Rect &r, const std::string &label, bool &value);
     // "label: option"; left click picks the next option, right click the one before.
@@ -142,6 +145,9 @@ class Gui
     // caller (the hotbar's slots, the world list): true when pressed this
     // frame; *doubleClicked (if given) says the press was a double click.
     bool area(const Rect &r, bool *doubleClicked = nullptr);
+    // Wheel notches over r since the last frame (+ towards the user), for a
+    // list drawn by the caller; r takes the wheel and the mouse from the view.
+    float wheel(const Rect &r);
     // Is the mouse over r (in units)?
     bool isHovered(const Rect &r) const
     {
@@ -170,7 +176,8 @@ class Gui
     bool hovered(const Rect &r) const;
     bool takePush(const Rect &r);
     bool takeRightPush(const Rect &r);
-    void buttonFace(const Rect &r, const std::string &label, bool enabled, bool hot);
+    void buttonFace(const Rect &r, const std::string &label, bool enabled, bool hot,
+                    const Color *labelColor = nullptr);
     float unitX(int pixelX) const;
     float unitY(int pixelY) const;
 

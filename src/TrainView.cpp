@@ -431,8 +431,8 @@ int TrainView::handleTrainLook(const InputEvent &e)
         headDragging = false;
         return 1;
     case InputType::KeyDown:
-        // R (or Home) looks ahead again
-        if (e.key == 'r' || e.key == Key::Home)
+        // R (or Home) looks ahead again, or the keys set in Controls
+        if (tw->keys.matches(KeyBinds::Action::LookAhead, e))
         {
             recenterHead();
             return 1;
@@ -532,13 +532,13 @@ int TrainView::handleInput(const InputEvent &e)
             return 1;
         // Home puts the observer back at the world camera's viewpoint (R
         // tilts the selected control point).
-        if (e.type == InputType::KeyDown && e.key == Key::Home)
+        if (e.type == InputType::KeyDown && tw->keys.matches(KeyBinds::Action::FlyToWorld, e))
         {
             placeFlyCamAtWorldView();
             return 1;
         }
         // F turns to face the train, so it is easy to find again.
-        if (e.type == InputType::KeyDown && e.key == 'f')
+        if (e.type == InputType::KeyDown && tw->keys.matches(KeyBinds::Action::FlyFaceTrain, e))
         {
             const Pnt3f target = trainPosition();
             flyCam.lookAt(target.x, target.y, target.z);
@@ -1191,7 +1191,7 @@ bool TrainView::editEvent(const InputEvent &e)
 bool TrainView::editKey(const InputEvent &e)
 {
     const EditKeys::Action action =
-        EditKeys::forKey(e.key, e.state, tw->settings.camera == CameraView::Fly);
+        EditKeys::forKey(tw->keys, e.key, e.state, tw->settings.camera == CameraView::Fly);
     if (action == EditKeys::CAMERA_WORLD || action == EditKeys::CAMERA_TOP ||
         action == EditKeys::CAMERA_TRAIN)
     {
@@ -1390,7 +1390,7 @@ void TrainView::drawEditOverlay()
     }
 
     // one line about what the view is doing
-    char text[160] = "";
+    char text[200] = "";
     const char *camera =
         (tw->settings.camera == CameraView::Top)
             ? "Top Orthographic"
@@ -1400,21 +1400,25 @@ void TrainView::drawEditOverlay()
                           ? "Chase Camera"
                           : ((tw->settings.camera == CameraView::Fly) ? "Fly Camera"
                                                                       : "User Perspective")));
+    // the keys as set in Options > Controls
+    const auto keyOf = [this](KeyBinds::Action action) { return tw->keys.keyText(action); };
+    const std::string grabKey = keyOf(KeyBinds::Action::Grab);
     if (m_carrying && hasSelection())
     {
         const float away =
             sqrtf(m_carryOffset[0] * m_carryOffset[0] + m_carryOffset[1] * m_carryOffset[1] +
                   m_carryOffset[2] * m_carryOffset[2]);
         snprintf(text, sizeof(text),
-                 "Carry point %d: %.1f away   [Wheel] nearer / farther   [G] or [Left] put down   "
+                 "Carry point %d: %.1f away   [Wheel] nearer / farther   [%s] or [Left] put down   "
                  "[Esc] put back",
-                 selectedCube, static_cast<double>(away));
+                 selectedCube, static_cast<double>(away), grabKey.c_str());
     }
     else if (building && aimed >= 0)
         snprintf(text, sizeof(text),
-                 "Point %d   [Left] remove   [Middle / C] select   [G] carry   "
+                 "Point %d   [Left] remove   [Middle / %s] select   [%s] carry   "
                  "[Right] place a point %.1f ahead",
-                 aimed, static_cast<double>(m_placeDepth));
+                 aimed, keyOf(KeyBinds::Action::Pick).c_str(), grabKey.c_str(),
+                 static_cast<double>(m_placeDepth));
     else if (building)
         snprintf(text, sizeof(text),
                  "%s  |  [Right] place a point %.1f ahead   [Wheel] nearer / farther", camera,
@@ -1441,9 +1445,11 @@ void TrainView::drawEditOverlay()
                      axes[m_editHandle], static_cast<double>(point.orient.x),
                      static_cast<double>(point.orient.y), static_cast<double>(point.orient.z));
         else
-            snprintf(text, sizeof(text), "%s  |  Point %d   %.1f  %.1f  %.1f   [G] move  [R] tilt",
-                     camera, selectedCube, static_cast<double>(point.pos.x),
-                     static_cast<double>(point.pos.y), static_cast<double>(point.pos.z));
+            snprintf(text, sizeof(text),
+                     "%s  |  Point %d   %.1f  %.1f  %.1f   [%s] move  [%s] tilt", camera,
+                     selectedCube, static_cast<double>(point.pos.x),
+                     static_cast<double>(point.pos.y), static_cast<double>(point.pos.z),
+                     grabKey.c_str(), keyOf(KeyBinds::Action::Tilt).c_str());
     }
     // the interface shows it above the hotbar (GameMenu.cpp)
     m_statusText = text;
