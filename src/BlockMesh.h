@@ -27,9 +27,7 @@
 *************************************************************************/
 #pragma once
 
-#include <algorithm>
 #include <cstddef>
-#include <utility>
 #include <vector>
 
 namespace BlockMesh
@@ -79,33 +77,17 @@ Mesh pack(const Batches &batches, const std::vector<unsigned int> &textures);
 // Bytes the vertices take.
 size_t bytes(const Mesh &mesh);
 
-// How far in front of the eye the middle of a box is, along the view
-// direction of the given modelview matrix (column-major, as OpenGL gives
-// it): the camera's, or the light's in the shadow pass. For drawing the
-// nearest chunks first, so the depth test throws away more of what is
-// behind them before it is shaded.
-float viewDepth(const float modelview[16], const float lo[3], const float hi[3]);
-
-// EXPERIMENT, to be removed: a whole number from the environment, for
-// trying draw orders on the laptop without rebuilding.
-int knob(const char *name, int fallback);
-int drawWindow();    // RC_ARENA_WINDOW, meshes per window of Arena::draw()
-bool nearestFirst(); // RC_ARENA_NEAR, sort the chunks nearest first
-
-// The chunks (anything with lo[3] and hi[3]) that sees(lo, hi) keeps, as
-// indices into chunks, nearest first for the given modelview matrix.
-template <class Chunk, class Sees>
-void visibleNearestFirst(const std::vector<Chunk> &chunks, Sees sees, const float modelview[16],
-                         std::vector<std::pair<float, int>> &order)
-{
-    order.clear();
-    for (size_t i = 0; i < chunks.size(); ++i)
-        if (sees(chunks[i].lo, chunks[i].hi))
-            order.emplace_back(viewDepth(modelview, chunks[i].lo, chunks[i].hi),
-                               static_cast<int>(i));
-    if (nearestFirst())
-        std::sort(order.begin(), order.end());
-}
+// How many chunks Arena::draw() takes together, for this graphics card
+// (the current context's GL_VENDOR; looked up once). Measured on a laptop
+// with both (ADR 0018): an NVIDIA card is held back by the CPU, so the whole
+// world in one window (0), fewest calls, is fastest (RTX 5060: 116 -> 194
+// fps); a Radeon 860M is held back by its GPU, and grouping even four
+// chunks' faces by texture costs it about 1 ms in the shadow maps and the
+// land, so one chunk at a time (1), the order it drew before, which still
+// saves its CPU time. Other cards are treated like the Radeon.
+int drawWindow();
+// The rule itself, for tests.
+int windowFor(const char *vendor);
 
 class Arena
 {
@@ -136,14 +118,12 @@ class Arena
 
     // Draws the meshes (of this arena; empty ones are skipped) in one go.
     // They are taken window meshes at a time (0: all at once), in the order
-    // given; within a window, for each buffer the vertex arrays are set once
-    // and each texture is bound once and drawn with one glMultiDrawArrays,
-    // the textures in the order of their names and each texture's ranges in
-    // the order of the meshes. Callers hand the meshes nearest first and a
-    // small window: sorting the whole world by texture scatters the draws
-    // across the screen, which costs a GPU with little bandwidth (Radeon
-    // 860M) more than the calls it saves. Leaves the last texture bound and
-    // the current values as the last non-empty mesh's last vertex.
+    // given; within a window their ranges are put in order of buffer, then
+    // texture name, then mesh. The vertex arrays are set only when the buffer
+    // changes, and ranges that follow each other with the same texture are
+    // bound once and drawn with one glMultiDrawArrays. See drawWindow() for
+    // how many to take. Leaves the last texture bound and the current values
+    // as the last non-empty mesh's last vertex.
     void draw(const std::vector<const Mesh *> &meshes, int window = 0) const;
 
     // Deletes the vertex buffers (in the current context) and empties it.

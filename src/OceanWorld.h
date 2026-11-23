@@ -143,7 +143,6 @@ class OceanWorld
     BlockMesh::Mesh m_far;                          // the sea bed beyond the grid, always drawn
     BlockMesh::Arena m_arena;                       // their vertices, in one buffer once built
     std::vector<const BlockMesh::Mesh *> m_visible; // what a pass draws
-    std::vector<std::pair<float, int>> m_order;     // chunks in view, nearest first
     std::vector<unsigned int> m_textures;
     std::shared_ptr<const TexturePack::Pack> m_pack;
     bool m_texturesStale = false;

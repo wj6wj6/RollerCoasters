@@ -10,7 +10,7 @@
 #include <glad/glad.h>
 
 #include <math.h>
-#include <stdlib.h>
+#include <string.h>
 #include <algorithm>
 #include <cstddef>
 
@@ -84,41 +84,17 @@ size_t bytes(const Mesh &mesh)
     return count * sizeof(PackedVertex);
 }
 
-float viewDepth(const float modelview[16], const float lo[3], const float hi[3])
+int windowFor(const char *vendor)
 {
-    const float x = 0.5f * (lo[0] + hi[0]);
-    const float y = 0.5f * (lo[1] + hi[1]);
-    const float z = 0.5f * (lo[2] + hi[2]);
-    // the eye looks down -z
-    return -(modelview[2] * x + modelview[6] * y + modelview[10] * z + modelview[14]);
-}
-
-int knob(const char *name, int fallback)
-{
-#ifdef _MSC_VER
-    char *value = nullptr;
-    size_t length = 0;
-    if (_dupenv_s(&value, &length, name) != 0 || !value)
-        return fallback;
-    const int result = atoi(value);
-    free(value);
-    return result;
-#else
-    const char *value = getenv(name);
-    return value ? atoi(value) : fallback;
-#endif
+    return vendor && strstr(vendor, "NVIDIA") ? 0 : 1;
 }
 
 int drawWindow()
 {
-    static const int window = knob("RC_ARENA_WINDOW", 8);
+    static int window = -1;
+    if (window < 0)
+        window = windowFor(reinterpret_cast<const char *>(glGetString(GL_VENDOR)));
     return window;
-}
-
-bool nearestFirst()
-{
-    static const bool sort = knob("RC_ARENA_NEAR", 1) != 0;
-    return sort;
 }
 
 Arena::Arena(int pageVertices) : m_pageVertices(pageVertices > 0 ? pageVertices : 1)
@@ -257,18 +233,16 @@ std::vector<Arena::Call> Arena::plan(const std::vector<const Mesh *> &meshes, in
 {
     gather(meshes, window);
     std::vector<Call> calls;
-    int lastWindow = -1;
     for (const Item &item : m_items)
     {
         if (calls.empty() || calls.back().buffer != item.group ||
-            calls.back().texture != item.texture || item.window != lastWindow)
+            calls.back().texture != item.texture)
         {
             Call call;
             call.buffer = item.group;
             call.texture = item.texture;
             calls.push_back(call);
         }
-        lastWindow = item.window;
         calls.back().first.push_back(item.first);
         calls.back().count.push_back(item.count);
     }
@@ -297,7 +271,6 @@ void Arena::draw(const std::vector<const Mesh *> &meshes, int window) const
     {
         // one buffer (or memory page): point the arrays at it once
         const int group = m_items[i].group;
-        const int part = m_items[i].window;
         const Page &page = m_pages[static_cast<size_t>(m_items[i].page)];
         const char *base =
             page.buffer != 0 ? nullptr : reinterpret_cast<const char *>(page.memory.data());
@@ -311,9 +284,9 @@ void Arena::draw(const std::vector<const Mesh *> &meshes, int window) const
         glClientActiveTexture(GL_TEXTURE0);
         glTexCoordPointer(2, GL_FLOAT, stride, base + offsetof(PackedVertex, uv));
 
-        while (i < m_items.size() && m_items[i].group == group && m_items[i].window == part)
+        while (i < m_items.size() && m_items[i].group == group)
         {
-            // every range with this texture, in one call
+            // the ranges that come next with this texture, in one call
             const unsigned int texture = m_items[i].texture;
             m_first.clear();
             m_count.clear();

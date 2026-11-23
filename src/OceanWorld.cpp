@@ -2594,20 +2594,18 @@ void OceanWorld::draw(bool shadowPass, float time)
     glEnable(GL_TEXTURE_2D);
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
     const Frustum view = Frustum::current();
-    const auto sees = [&view](const float *lo, const float *hi) { return view.sees(lo, hi); };
-    float modelview[16];
-    glGetFloatv(GL_MODELVIEW_MATRIX, modelview);
-    BlockMesh::visibleNearestFirst(m_chunks, sees, modelview, m_order);
     m_visible.clear();
-    for (const std::pair<float, int> &o : m_order)
-        m_visible.push_back(&m_chunks[static_cast<size_t>(o.second)].solid);
-    m_visible.push_back(&m_far); // the sea bed beyond the grid, behind the rest
+    m_visible.push_back(&m_far);
+    for (const Chunk &c : m_chunks)
+        if (view.sees(c.lo, c.hi))
+            m_visible.push_back(&c.solid);
     m_arena.draw(m_visible, BlockMesh::drawWindow());
     if (!shadowPass)
     {
         m_visible.clear();
-        for (const std::pair<float, int> &o : m_order)
-            m_visible.push_back(&m_chunks[static_cast<size_t>(o.second)].plant);
+        for (const Chunk &c : m_chunks)
+            if (view.sees(c.lo, c.hi))
+                m_visible.push_back(&c.plant);
         m_arena.draw(m_visible, BlockMesh::drawWindow());
         glBindTexture(GL_TEXTURE_2D, 0);
         glDisable(GL_TEXTURE_2D);

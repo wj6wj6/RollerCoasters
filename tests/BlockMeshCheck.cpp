@@ -155,13 +155,11 @@ int main()
     // a window of two takes both together again
     expect(arena.plan({&b, &a}, 2).size() == 2, "window 2: one call per texture");
 
-    // nearest first: the eye at the origin looking down -z
-    const float look[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
-    const float nearLo[3] = {-1, -1, -3}, nearHi[3] = {1, 1, -1};
-    const float farLo[3] = {-1, -1, -30}, farHi[3] = {1, 1, -10};
-    expect(std::fabs(BlockMesh::viewDepth(look, nearLo, nearHi) - 2.0f) < 1e-6f &&
-               std::fabs(BlockMesh::viewDepth(look, farLo, farHi) - 20.0f) < 1e-6f,
-           "viewDepth(): distance along the view of the box's middle");
+    // which window for which card (ADR 0018)
+    expect(BlockMesh::windowFor("NVIDIA Corporation") == 0 &&
+               BlockMesh::windowFor("ATI Technologies Inc.") == 1 &&
+               BlockMesh::windowFor("Intel") == 1 && BlockMesh::windowFor(nullptr) == 1,
+           "windowFor(): NVIDIA all at once, others one chunk at a time");
     arena.forget();
     expect(arena.bytes() == 0 && arena.buffers() == 0, "forget() empties it");
 
