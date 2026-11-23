@@ -10,6 +10,7 @@
 #include <glad/glad.h>
 
 #include <math.h>
+#include <algorithm>
 #include <cstddef>
 
 #include "BlockMesh.h"
@@ -74,82 +75,277 @@ Mesh pack(const Batches &batches, const std::vector<unsigned int> &textures)
     return mesh;
 }
 
-Mesh compile(const Batches &batches, const std::vector<unsigned int> &textures)
-{
-    Mesh mesh = pack(batches, textures);
-    if (mesh.memory.empty() || !GLAD_GL_VERSION_1_5)
-        return mesh;
-    GLuint buffer = 0;
-    glGenBuffers(1, &buffer);
-    glBindBuffer(GL_ARRAY_BUFFER, buffer);
-    glBufferData(GL_ARRAY_BUFFER,
-                 static_cast<GLsizeiptr>(mesh.memory.size() * sizeof(PackedVertex)),
-                 mesh.memory.data(), GL_STATIC_DRAW);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    mesh.buffer = buffer;
-    std::vector<PackedVertex>().swap(mesh.memory); // on the card now
-    return mesh;
-}
-
-void draw(const Mesh &mesh)
-{
-    if (mesh.ranges.empty())
-        return;
-    const char *base =
-        mesh.buffer != 0 ? nullptr : reinterpret_cast<const char *>(mesh.memory.data());
-    const GLsizei stride = static_cast<GLsizei>(sizeof(PackedVertex));
-
-    glPushClientAttrib(GL_CLIENT_VERTEX_ARRAY_BIT);
-    if (mesh.buffer != 0)
-        glBindBuffer(GL_ARRAY_BUFFER, mesh.buffer);
-    glEnableClientState(GL_VERTEX_ARRAY);
-    glVertexPointer(3, GL_FLOAT, stride, base + offsetof(PackedVertex, pos));
-    glEnableClientState(GL_NORMAL_ARRAY);
-    glNormalPointer(GL_BYTE, stride, base + offsetof(PackedVertex, normal));
-    glEnableClientState(GL_COLOR_ARRAY);
-    glColorPointer(4, GL_UNSIGNED_BYTE, stride, base + offsetof(PackedVertex, color));
-    glClientActiveTexture(GL_TEXTURE1);
-    glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-    glTexCoordPointer(4, GL_FLOAT, stride, base + offsetof(PackedVertex, extra));
-    glClientActiveTexture(GL_TEXTURE0);
-    glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-    glTexCoordPointer(2, GL_FLOAT, stride, base + offsetof(PackedVertex, uv));
-
-    for (const Range &range : mesh.ranges)
-    {
-        glBindTexture(GL_TEXTURE_2D, range.texture);
-        glDrawArrays(GL_QUADS, range.first, range.count);
-    }
-
-    if (mesh.buffer != 0)
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glPopClientAttrib();
-
-    // Drawing from arrays leaves these undefined; a display list left the
-    // last vertex's, and what is drawn next may rely on that.
-    const Vertex &v = mesh.last;
-    glColor3fv(v.color);
-    glMultiTexCoord4fv(GL_TEXTURE1, v.extra);
-    glTexCoord2fv(v.uv);
-    glNormal3fv(v.normal);
-}
-
-void release(Mesh &mesh)
-{
-    if (mesh.buffer != 0)
-    {
-        const GLuint buffer = mesh.buffer;
-        glDeleteBuffers(1, &buffer);
-    }
-    mesh = Mesh();
-}
-
 size_t bytes(const Mesh &mesh)
 {
     size_t count = 0;
     for (const Range &range : mesh.ranges)
         count += static_cast<size_t>(range.count);
     return count * sizeof(PackedVertex);
+}
+
+Arena::Arena(int pageVertices) : m_pageVertices(pageVertices > 0 ? pageVertices : 1)
+{
+}
+
+Mesh Arena::add(Mesh packed)
+{
+    Mesh mesh;
+    mesh.last = packed.last;
+    const int count = static_cast<int>(packed.memory.size());
+    if (count == 0)
+        return mesh;
+    if (m_pages.empty() || m_pages.back().capacity - m_pages.back().used < count)
+    {
+        // a new page (also after compact(), which leaves no room)
+        Page page;
+        page.capacity = count > m_pageVertices ? count : m_pageVertices;
+        page.group = static_cast<int>(m_pages.size());
+        if (GLAD_GL_VERSION_1_5)
+        {
+            GLuint buffer = 0;
+            glGenBuffers(1, &buffer);
+            glBindBuffer(GL_ARRAY_BUFFER, buffer);
+            glBufferData(GL_ARRAY_BUFFER,
+                         static_cast<GLsizeiptr>(page.capacity) *
+                             static_cast<GLsizeiptr>(sizeof(PackedVertex)),
+                         nullptr, GL_STATIC_DRAW);
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+            page.buffer = buffer;
+        }
+        else
+        {
+            page.memory.reserve(static_cast<size_t>(page.capacity));
+        }
+        m_pages.push_back(std::move(page));
+    }
+    Page &page = m_pages.back();
+    if (page.buffer != 0)
+    {
+        glBindBuffer(GL_ARRAY_BUFFER, page.buffer);
+        glBufferSubData(
+            GL_ARRAY_BUFFER,
+            static_cast<GLintptr>(page.used) * static_cast<GLintptr>(sizeof(PackedVertex)),
+            static_cast<GLsizeiptr>(count) * static_cast<GLsizeiptr>(sizeof(PackedVertex)),
+            packed.memory.data());
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+    }
+    else
+    {
+        page.memory.insert(page.memory.end(), packed.memory.begin(), packed.memory.end());
+    }
+    mesh.page = static_cast<int>(m_pages.size()) - 1;
+    mesh.ranges = std::move(packed.ranges);
+    for (Range &range : mesh.ranges)
+        range.first += page.used;
+    page.used += count;
+    return mesh;
+}
+
+void Arena::compact()
+{
+    if (m_pages.empty() || !GLAD_GL_VERSION_3_1)
+        return;
+    int total = 0;
+    bool single = true;
+    for (const Page &page : m_pages)
+    {
+        if (page.buffer == 0)
+            return; // in memory: nothing to give back
+        total += page.used;
+        single = single && page.buffer == m_pages[0].buffer;
+    }
+    if (single && capacity() == bytes())
+        return; // already one buffer with no spare room
+    const GLsizeiptr stride = static_cast<GLsizeiptr>(sizeof(PackedVertex));
+    GLuint buffer = 0;
+    glGenBuffers(1, &buffer);
+    glBindBuffer(GL_COPY_WRITE_BUFFER, buffer);
+    glBufferData(GL_COPY_WRITE_BUFFER, static_cast<GLsizeiptr>(total) * stride, nullptr,
+                 GL_STATIC_DRAW);
+    std::vector<GLuint> old;
+    int base = 0;
+    for (Page &page : m_pages)
+    {
+        glBindBuffer(GL_COPY_READ_BUFFER, page.buffer);
+        glCopyBufferSubData(
+            GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, static_cast<GLintptr>(page.base) * stride,
+            static_cast<GLintptr>(base) * stride, static_cast<GLsizeiptr>(page.used) * stride);
+        if (std::find(old.begin(), old.end(), page.buffer) == old.end())
+            old.push_back(page.buffer);
+        page.buffer = buffer;
+        page.base = base;
+        page.capacity = page.used;
+        page.group = 0;
+        base += page.used;
+    }
+    glBindBuffer(GL_COPY_READ_BUFFER, 0);
+    glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
+    glDeleteBuffers(static_cast<GLsizei>(old.size()), old.data());
+}
+
+const Mesh *Arena::gather(const std::vector<const Mesh *> &meshes) const
+{
+    m_items.clear();
+    const Mesh *last = nullptr;
+    for (const Mesh *mesh : meshes)
+    {
+        if (!mesh || mesh->page < 0 || mesh->page >= static_cast<int>(m_pages.size()) ||
+            mesh->ranges.empty())
+            continue;
+        const Page &page = m_pages[static_cast<size_t>(mesh->page)];
+        for (const Range &range : mesh->ranges)
+        {
+            Item item;
+            item.group = page.group;
+            item.texture = range.texture;
+            item.first = page.base + range.first;
+            item.count = range.count;
+            m_items.push_back(item);
+        }
+        last = mesh;
+    }
+    std::stable_sort(m_items.begin(), m_items.end(), [](const Item &a, const Item &b) {
+        return a.group != b.group ? a.group < b.group : a.texture < b.texture;
+    });
+    return last;
+}
+
+std::vector<Arena::Call> Arena::plan(const std::vector<const Mesh *> &meshes) const
+{
+    gather(meshes);
+    std::vector<Call> calls;
+    for (const Item &item : m_items)
+    {
+        if (calls.empty() || calls.back().buffer != item.group ||
+            calls.back().texture != item.texture)
+        {
+            Call call;
+            call.buffer = item.group;
+            call.texture = item.texture;
+            calls.push_back(call);
+        }
+        calls.back().first.push_back(item.first);
+        calls.back().count.push_back(item.count);
+    }
+    return calls;
+}
+
+void Arena::draw(const std::vector<const Mesh *> &meshes) const
+{
+    const Mesh *last = gather(meshes);
+    if (!last)
+        return;
+    const GLsizei stride = static_cast<GLsizei>(sizeof(PackedVertex));
+
+    glPushClientAttrib(GL_CLIENT_VERTEX_ARRAY_BIT);
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glEnableClientState(GL_NORMAL_ARRAY);
+    glEnableClientState(GL_COLOR_ARRAY);
+    glClientActiveTexture(GL_TEXTURE1);
+    glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+    glClientActiveTexture(GL_TEXTURE0);
+    glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+
+    bool bound = false;
+    size_t i = 0;
+    while (i < m_items.size())
+    {
+        // one buffer (or memory page): point the arrays at it once
+        const int group = m_items[i].group;
+        const Page *page = nullptr;
+        for (const Page &p : m_pages)
+            if (p.group == group)
+            {
+                page = &p;
+                break;
+            }
+        const char *base =
+            page->buffer != 0 ? nullptr : reinterpret_cast<const char *>(page->memory.data());
+        glBindBuffer(GL_ARRAY_BUFFER, page->buffer);
+        bound = bound || page->buffer != 0;
+        glVertexPointer(3, GL_FLOAT, stride, base + offsetof(PackedVertex, pos));
+        glNormalPointer(GL_BYTE, stride, base + offsetof(PackedVertex, normal));
+        glColorPointer(4, GL_UNSIGNED_BYTE, stride, base + offsetof(PackedVertex, color));
+        glClientActiveTexture(GL_TEXTURE1);
+        glTexCoordPointer(4, GL_FLOAT, stride, base + offsetof(PackedVertex, extra));
+        glClientActiveTexture(GL_TEXTURE0);
+        glTexCoordPointer(2, GL_FLOAT, stride, base + offsetof(PackedVertex, uv));
+
+        while (i < m_items.size() && m_items[i].group == group)
+        {
+            // every range with this texture, in one call
+            const unsigned int texture = m_items[i].texture;
+            m_first.clear();
+            m_count.clear();
+            for (; i < m_items.size() && m_items[i].group == group && m_items[i].texture == texture;
+                 ++i)
+            {
+                m_first.push_back(m_items[i].first);
+                m_count.push_back(m_items[i].count);
+            }
+            glBindTexture(GL_TEXTURE_2D, texture);
+            if (m_first.size() == 1 || !GLAD_GL_VERSION_1_4)
+                for (size_t k = 0; k < m_first.size(); ++k)
+                    glDrawArrays(GL_QUADS, m_first[k], m_count[k]);
+            else
+                glMultiDrawArrays(GL_QUADS, m_first.data(), m_count.data(),
+                                  static_cast<GLsizei>(m_first.size()));
+        }
+    }
+
+    if (bound)
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glPopClientAttrib();
+
+    // Drawing from arrays leaves these undefined; a display list left the
+    // last vertex's, and what is drawn next may rely on that.
+    const Vertex &v = last->last;
+    glColor3fv(v.color);
+    glMultiTexCoord4fv(GL_TEXTURE1, v.extra);
+    glTexCoord2fv(v.uv);
+    glNormal3fv(v.normal);
+}
+
+void Arena::release()
+{
+    std::vector<GLuint> names;
+    for (const Page &page : m_pages)
+        if (page.buffer != 0 && std::find(names.begin(), names.end(), page.buffer) == names.end())
+            names.push_back(page.buffer); // merged pages share one
+    if (!names.empty())
+        glDeleteBuffers(static_cast<GLsizei>(names.size()), names.data());
+    forget();
+}
+
+void Arena::forget()
+{
+    m_pages.clear();
+    m_items.clear();
+}
+
+size_t Arena::bytes() const
+{
+    size_t count = 0;
+    for (const Page &page : m_pages)
+        count += static_cast<size_t>(page.used);
+    return count * sizeof(PackedVertex);
+}
+
+size_t Arena::capacity() const
+{
+    size_t count = 0;
+    for (const Page &page : m_pages)
+        count += static_cast<size_t>(page.capacity);
+    return count * sizeof(PackedVertex);
+}
+
+int Arena::buffers() const
+{
+    int count = 0;
+    for (size_t i = 0; i < m_pages.size(); ++i)
+        if (i == 0 || m_pages[i].group != m_pages[i - 1].group)
+            ++count;
+    return count;
 }
 
 } // namespace BlockMesh

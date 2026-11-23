@@ -152,7 +152,7 @@ flowchart LR
 | `src/LandTextures.h/.cpp` | 島嶼方塊與植物的程序貼圖。 |
 | `src/Mobs.h/.cpp` | 島上的羊、豬、牛：照方塊遊戲模型以像素為單位的方塊與其貼圖配置（box UV）、內建皮膚、上傳與繪製；由 `MobsCheck` 測試模型每一面都落在皮膚上。 |
 | `src/OceanWorld.h/.cpp` | 海床、海底景物、海洋生物，以及 `Grand Tour` 的控制點與取樣。 |
-| `src/BlockMesh.h/.cpp` | `LandWorld` 與 `OceanWorld` 的分塊 mesh：頂點壓成 44 bytes（法線與顏色用 byte）放進 vertex buffer，每種材質一段，以 `GL_QUADS` 畫，畫完把目前的顏色、法線與材質座標設成最後一個頂點的值（同 display list）。`pack()` 不需 OpenGL，由 `BlockMeshCheck` 測試。見 [ADR 0017](adr/0017-block-meshes-in-vertex-buffers.md)。 |
+| `src/BlockMesh.h/.cpp` | `LandWorld` 與 `OceanWorld` 的分塊 mesh：頂點壓成 44 bytes（法線與顏色用 byte），每種材質一段，以 `GL_QUADS` 畫，畫完把目前的顏色、法線與材質座標設成最後一個頂點的值（同 display list）。一個世界的所有 mesh 放在同一個 `Arena`（建好後合併成一個 vertex buffer），每個 pass 依材質用 `glMultiDrawArrays` 一次畫完看得到的分塊。`pack()` 與 `Arena::plan()` 不需 OpenGL，由 `BlockMeshCheck` 測試。見 [ADR 0017](adr/0017-block-meshes-in-vertex-buffers.md)、[ADR 0018](adr/0018-one-buffer-per-world.md)。 |
 | `src/WorldShape.h/.cpp` | 世界尺寸、放大倍率與海岸線（陸地與海底共用）。 |
 | `src/WaterFlow.h/.cpp` | 方塊遊戲式的水流擴散規則。 |
 | `src/Frustum.h/.cpp` | 從目前矩陣取出視錐平面，做分塊剔除。 |

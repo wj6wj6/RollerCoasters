@@ -47,6 +47,11 @@
 #include "Mobs.h"
 #include "PixelArt.h"
 
+namespace BlockMesh
+{
+struct Mesh;
+}
+
 namespace TexturePack
 {
 class Pack;
@@ -178,4 +183,6 @@ class LandWorld
     bool m_mobsStale = true;
     void uploadMobSkins();
     int m_chunksDrawn = 0;
+    // the chunk meshes a pass draws, handed to the island's Arena at once
+    std::vector<const BlockMesh::Mesh *> m_visible;
 };

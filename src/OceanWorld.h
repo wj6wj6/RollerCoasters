@@ -139,8 +139,10 @@ class OceanWorld
         BlockMesh::Mesh solid, plant;
         float lo[3], hi[3];
     };
-    std::vector<Chunk> m_chunks; // drawn only when in view
-    BlockMesh::Mesh m_far;       // the sea bed beyond the grid, always drawn
+    std::vector<Chunk> m_chunks;                    // drawn only when in view
+    BlockMesh::Mesh m_far;                          // the sea bed beyond the grid, always drawn
+    BlockMesh::Arena m_arena;                       // their vertices, in one buffer once built
+    std::vector<const BlockMesh::Mesh *> m_visible; // what a pass draws
     std::vector<unsigned int> m_textures;
     std::shared_ptr<const TexturePack::Pack> m_pack;
     bool m_texturesStale = false;
