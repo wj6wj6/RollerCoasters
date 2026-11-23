@@ -47,6 +47,9 @@ $Scenarios = @(
     @{ Name = 'light-off'; Args = @('--light', 'off', '--camera', 'world'); Expect = 0; Shot = $true }
     @{ Name = 'light-night'; Args = @('--time', '22', '--camera', 'world'); Expect = 0; Shot = $true }
     @{ Name = 'light-rain'; Args = @('--rain', 'on', '--frames', '20'); Expect = 0; Shot = $true }
+    @{ Name = 'light-clouds-dusk'; Args = @('--time', '18.5', '--camera', 'world'); Expect = 0; Shot = $true }
+    @{ Name = 'light-clouds-night'; Args = @('--time', '21', '--camera', 'world'); Expect = 0; Shot = $true }
+    @{ Name = 'light-clouds-rain-night'; Args = @('--time', '21', '--rain', 'on', '--frames', '20', '--camera', 'world'); Expect = 0; Shot = $true }
     @{ Name = 'world-flat'; Args = @('--scenery', 'off', '--camera', 'world'); Expect = 0; Shot = $true }
     @{ Name = 'world-underwater'; Args = @('--u', '10', '--camera', 'train'); Expect = 0; Shot = $true }
     @{ Name = 'track-sample'; Args = @('--track', '{sample-track}', '--scenery', 'off', '--camera', 'world'); Expect = 0; Shot = $true }

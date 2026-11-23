@@ -131,6 +131,13 @@ bool TrainView::sceneryOn() const
 void TrainView::drawGround(bool shadowPass)
 {
     m_land.draw(!sceneryOn(), shadowPass, secondsSinceStart());
+    if (shadowPass)
+        return;
+    // The clouds are lit by the sun or moon and the sky whichever way their
+    // faces turn (does nothing without the lighting shader)
+    lighting.setUnlit(true);
+    m_land.drawClouds(!sceneryOn(), secondsSinceStart());
+    lighting.setUnlit(false);
 }
 
 //************************************************************************
