@@ -149,6 +149,7 @@ class Arena
     struct Item
     {
         int group;
+        int page; // one of the group's pages (they share the buffer)
         unsigned int texture;
         int first, count;
     };

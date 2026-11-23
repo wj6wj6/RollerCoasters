@@ -197,6 +197,7 @@ const Mesh *Arena::gather(const std::vector<const Mesh *> &meshes) const
         {
             Item item;
             item.group = page.group;
+            item.page = mesh->page;
             item.texture = range.texture;
             item.first = page.base + range.first;
             item.count = range.count;
@@ -252,17 +253,11 @@ void Arena::draw(const std::vector<const Mesh *> &meshes) const
     {
         // one buffer (or memory page): point the arrays at it once
         const int group = m_items[i].group;
-        const Page *page = nullptr;
-        for (const Page &p : m_pages)
-            if (p.group == group)
-            {
-                page = &p;
-                break;
-            }
+        const Page &page = m_pages[static_cast<size_t>(m_items[i].page)];
         const char *base =
-            page->buffer != 0 ? nullptr : reinterpret_cast<const char *>(page->memory.data());
-        glBindBuffer(GL_ARRAY_BUFFER, page->buffer);
-        bound = bound || page->buffer != 0;
+            page.buffer != 0 ? nullptr : reinterpret_cast<const char *>(page.memory.data());
+        glBindBuffer(GL_ARRAY_BUFFER, page.buffer);
+        bound = bound || page.buffer != 0;
         glVertexPointer(3, GL_FLOAT, stride, base + offsetof(PackedVertex, pos));
         glNormalPointer(GL_BYTE, stride, base + offsetof(PackedVertex, normal));
         glColorPointer(4, GL_UNSIGNED_BYTE, stride, base + offsetof(PackedVertex, color));
