@@ -32,6 +32,15 @@
 #include <windows.h>
 #include <shellapi.h> // CommandLineToArgvW
 
+// On a laptop with two graphics cards, ask for the faster one, as games do:
+// the NVIDIA and AMD drivers look for these exported names in the exe.
+// Measured on an AMD 860M + RTX 5060 laptop: about twice the frame rate.
+extern "C"
+{
+    __declspec(dllexport) unsigned long NvOptimusEnablement = 1;
+    __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
+}
+
 // Load and Save default to TrackFiles\ beside the exe, however it was started
 // (Visual Studio, a double click, a terminal elsewhere). The build creates the
 // folder; it is made again here in case it was deleted.

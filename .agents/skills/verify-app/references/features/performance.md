@@ -25,6 +25,7 @@
 - GPU 時間要 OpenGL 3.3 的 timestamp query；沒有時 GPU 欄顯示 `-`，`Frame cost` 只剩 CPU。GPU 時間晚三幀才回來。
 - 景物時間（Land 等）巢狀在階段裡，加總會超過一幀，不要和階段相加。
 - Debug 組態的 CPU 時間比 Release 慢很多倍，量效能用 Release。
+- 有內顯與獨顯的筆電，exe 匯出 `NvOptimusEnablement`、`AmdPowerXpressRequestHighPerformance` 要求用獨顯（`src/main.cpp`）；看 F3 或報告的顯示卡行確認實際用哪張。Windows「圖形設定」對這支 exe 選了省電時仍可能用內顯。內顯（AMD 860M）在 Quit to Title 後不會把刪掉的 buffer 還給系統，量記憶體時要記下是哪張卡。
 
 ## 手動檢查
 
