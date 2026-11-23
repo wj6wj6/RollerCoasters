@@ -12,6 +12,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -47,7 +48,9 @@ double ms(double milliseconds)
 int main()
 {
     using S = PerfStage;
-    PerfStats perf;
+    // 600 frames of history: too big for the stack (/analyze C6262)
+    const auto owned = std::make_unique<PerfStats>();
+    PerfStats &perf = *owned;
 
     // Off: nothing at all.
     expect(perf.beginFrame(1.0) == 0, "switched off, no frame begins");
