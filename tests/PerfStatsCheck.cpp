@@ -216,7 +216,10 @@ int main()
 
     // the program's memory: read on this system, and shown on the F3 screen
     const PerfStats::Memory memory = PerfStats::memory();
-    expect(memory.workingSet > 1.0 && memory.committed > 1.0, "the program's memory is read");
+    // (a small test program may have committed less than a megabyte)
+    std::printf("memory: working set %.2f MB, committed %.2f MB\n", memory.workingSet,
+                memory.committed);
+    expect(memory.workingSet > 0.0 && memory.committed > 0.0, "the program's memory is read");
     PerfStats::Memory known;
     known.workingSet = 312.4;
     known.committed = 340.0;
