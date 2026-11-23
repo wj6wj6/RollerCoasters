@@ -11,7 +11,8 @@
                   the track, fit() brings the camera lower and nearer while
                   keeping the rider low in the picture as far as it can.
                   TrainView places it on the track and keeps it out of the
-                  blocks; ChaseRigCheck tests the numbers.
+                  blocks; dragging turns it round the train (orbit()).
+                  ChaseRigCheck tests the numbers.
 
 *************************************************************************/
 #pragma once
@@ -64,5 +65,24 @@ Placement fit(const Placement &open, float maxHeight, float minBehind, const Tra
 // `target` by the share of the way that `rate` (per second) covers in `dt`
 // seconds, never past it.
 float approach(float current, float target, float dt, float rate);
+
+// A point or a direction in the world (+y up).
+struct Point
+{
+    float x, y, z;
+};
+
+// The view never tilts closer than this to straight up or down, so the
+// picture does not turn over (gluLookAt with +y up).
+const float kMaxTilt = 80.0f;
+
+// Turning the Chase camera round the train, as a block game's third person
+// view turns round the player: the camera and the point it looks at swing
+// together round `pivot`, first `yawDegrees` about the vertical (positive:
+// the view turns right, so the camera goes round to the train's left), then
+// `pitchDegrees` about the view's level side axis (positive: the view looks
+// up and the camera goes down). The pitch is cut short where the view would
+// tilt past kMaxTilt. With both 0, nothing moves.
+void orbit(const Point &pivot, Point &eye, Point &look, float yawDegrees, float pitchDegrees);
 
 } // namespace ChaseRig

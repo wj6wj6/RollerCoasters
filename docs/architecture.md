@@ -123,7 +123,7 @@ flowchart LR
 | `src/ControlPoint.H/.cpp` | 控制點位置、方向向量與標記繪製。 |
 | `src/TrackRenderer.H/.cpp` | 鐵軌與枕木繪製、累積弧長表、`makeTrackFrame()`。 |
 | `src/TrainModel.h/.cpp` | 列車模型；`Chase` 相機用的列車長度、乘客高度與沿軌道往回取點。 |
-| `src/ChaseRig.h/.cpp` | `Chase` 相機的取景數學（純計算）：依列車長度、乘客高度與視野算出在車後多遠、多高，空間不夠時降低並拉近，以及平滑跟隨；由 `ChaseRigCheck` 測試。`TrainView` 把它放到軌道上，並用 `LandWorld::solidAt()`／`OceanWorld::solidAt()` 避開方塊。 |
+| `src/ChaseRig.h/.cpp` | `Chase` 相機的取景數學（純計算）：依列車長度、乘客高度與視野算出在車後多遠、多高，空間不夠時降低並拉近，平滑跟隨，以及拖曳時繞列車中段轉動（`orbit()`）；由 `ChaseRigCheck` 測試。`TrainView` 用另一個 `HeadLook`（`chaseLook`）記錄轉動角度，轉到方塊後時把鏡頭拉近到方塊前。`TrainView` 把它放到軌道上，並用 `LandWorld::solidAt()`／`OceanWorld::solidAt()` 避開方塊。 |
 | `src/TransformGizmo.h/.cpp` | 控制點移動把手的挑選、拖曳換算（純數學）與繪製。 |
 | `src/TrackInsert.h/.cpp` | 找出點擊處的軌道參數，在該處插入控制點（軌道仍經過點擊處）、刪除控制點並重新對應 `trainU`；純數學，由 `TrackInsertCheck` 測試。 |
 | `src/TrackHistory.h/.cpp` | 控制點的上一步／下一步：每次修改前存一份整條軌道（點、`trainU`、選取）的快照；由 `TrackHistoryCheck` 測試。 |

@@ -64,7 +64,8 @@ bool TrainView::systemWheel(unsigned message, unsigned long long wParam, long lo
     if (!tw || !m_hwnd)
         return false;
     const bool fly = tw->settings.camera == CameraView::Fly;
-    const bool train = tw->settings.camera == CameraView::Train;
+    HeadLook *const look = turningLook();
+    const bool train = look != nullptr; // riding, or chasing the train
     if (tw->settings.camera != CameraView::World && !fly && !train)
         return false;
     HWND canvas = static_cast<HWND>(m_hwnd);
@@ -91,7 +92,8 @@ bool TrainView::systemWheel(unsigned message, unsigned long long wParam, long lo
         state |= Mod::Alt;
     const float steps = (float)delta / WHEEL_DELTA;
     const bool precise = isPreciseWheel(delta);
-    // Riding the train, touchpad scrolling turns the head; wheel notches do nothing.
+    // Riding the train, touchpad scrolling turns the head (in Chase, the
+    // camera round the train); wheel notches do nothing.
     if (train && (!precise || (state & Mod::Ctrl)))
         return true;
     // Match InputEvent's signs: wheel up is -dy, tilting right is +dx.
@@ -99,7 +101,7 @@ bool TrainView::systemWheel(unsigned message, unsigned long long wParam, long lo
     const float dy = message == WM_MOUSEWHEEL ? -steps : 0.0f;
     if (train)
     {
-        view->headLook.scroll(dx, dy);
+        look->scroll(dx, dy);
         view->damage(1);
     }
     else if (fly && view->wheelSetsDepth())
@@ -120,7 +122,8 @@ static bool touchpadAccepts(void *data)
     TrainView *view = static_cast<TrainView *>(data);
     return view->tw && ((view->tw->settings.camera == CameraView::World) ||
                         (view->tw->settings.camera == CameraView::Fly) ||
-                        (view->tw->settings.camera == CameraView::Train));
+                        (view->tw->settings.camera == CameraView::Train) ||
+                        (view->tw->settings.camera == CameraView::Chase));
 }
 
 // Direct Manipulation reports finger movement and pinch together, so the
@@ -132,12 +135,13 @@ static void touchpadMoves(void *data, float dx, float dy, float scale)
     const bool alt = GetKeyState(VK_MENU) < 0;
     const bool pan = alt || GetKeyState(VK_SHIFT) < 0;
     TrainView *view = static_cast<TrainView *>(data);
-    // Riding the train, two fingers turn the head; spreading does nothing.
-    if (view->tw->settings.camera == CameraView::Train)
+    // Riding the train, two fingers turn the head (in Chase, the camera
+    // round the train); spreading does nothing.
+    if (HeadLook *look = view->turningLook())
     {
         if (!view->headDragging && (dx != 0 || dy != 0))
         {
-            view->headLook.touchpadGesture(dx, dy);
+            look->touchpadGesture(dx, dy);
             view->damage(1);
         }
     }
@@ -345,11 +349,13 @@ void TrainView::cameraChanged()
 //========================================================================
 {
     // A first-person view that keeps spinning after a flick is disorienting.
-    touchpad.inertia =
-        tw->settings.camera != CameraView::Fly && tw->settings.camera != CameraView::Train;
-    // Each ride starts looking ahead.
+    touchpad.inertia = tw->settings.camera != CameraView::Fly &&
+                       tw->settings.camera != CameraView::Train &&
+                       tw->settings.camera != CameraView::Chase;
+    // Each ride starts looking ahead, and the Chase camera from behind.
     headDragging = false;
     headLook.reset();
+    chaseLook.reset();
     if (tw->settings.camera != CameraView::Fly)
     {
         setMouseCaptured(false);
@@ -364,14 +370,31 @@ void TrainView::recenterHead()
 //========================================================================
 {
     headLook.reset();
+    chaseLook.reset();
     damage(1);
+}
+
+//========================================================================
+HeadLook *TrainView::turningLook()
+//========================================================================
+{
+    if (!tw)
+        return nullptr;
+    if (tw->settings.camera == CameraView::Train)
+        return &headLook;
+    if (tw->settings.camera == CameraView::Chase)
+        return &chaseLook;
+    return nullptr;
 }
 
 //************************************************************************
 //
-// * Mouse input for the Train camera: any drag turns the rider's head, a
-//   double click looks ahead again. Control points are hidden while riding,
-//   so clicks never pick them. Returns 1 when the event was used.
+// * Mouse input for the Train and Chase cameras: any drag turns the
+//   rider's head, or swings the Chase camera round the train as a block
+//   game's third person view (F5) turns round the player; a double click,
+//   R or Home looks ahead from behind again. Control points are hidden
+//   while riding, so clicks never pick them. Returns 1 when the event was
+//   used.
 //========================================================================
 int TrainView::handleTrainLook(const InputEvent &e)
 //========================================================================
@@ -396,7 +419,8 @@ int TrainView::handleTrainLook(const InputEvent &e)
     case InputType::Drag:
         if (!headDragging)
             break;
-        headLook.drag((float)(e.x - headDragX), (float)(e.y - headDragY));
+        if (HeadLook *look = turningLook())
+            look->drag((float)(e.x - headDragX), (float)(e.y - headDragY));
         headDragX = e.x;
         headDragY = e.y;
         damage(1);
@@ -443,8 +467,9 @@ int TrainView::handleInput(const InputEvent &e)
         if (arcball.handle(e))
             return 1;
 
-    // Riding the train, drags turn the rider's head.
-    if (tw->settings.camera == CameraView::Train && handleTrainLook(e))
+    // Riding the train, drags turn the rider's head; chasing it, they swing
+    // the camera round it.
+    if (turningLook() && handleTrainLook(e))
         return 1;
 
     // The observer camera takes held keys, right drags and the wheel.
@@ -1833,8 +1858,43 @@ void TrainView::setProjection()
                 eye = base + baseUp * height;
                 Pnt3f ahead = forward;
                 ahead.normalize();
-                const Pnt3f look =
+                Pnt3f look =
                     position + ahead * (open.lookAhead - train.length) + up * open.lookHeight;
+                // Dragged round: the view swings round the middle of the
+                // train, and where blocks stand between the train and the
+                // camera it comes in front of them, as a block game's third
+                // person camera does.
+                if (!chaseLook.centered())
+                {
+                    const float uMid = TrainModel::parameterBehind(*m_pTrack, m_pTrack->trainU,
+                                                                   0.5f * train.length, splineType);
+                    Pnt3f midForward = m_pTrack->evaluateTangent(uMid, splineType);
+                    Pnt3f midSide, midUp;
+                    makeTrackFrame(midForward, midSide, midUp);
+                    const Pnt3f pivot = m_pTrack->evaluatePosition(uMid, splineType) +
+                                        midUp * (0.6f * train.riderTop);
+                    ChaseRig::Point e = {eye.x, eye.y, eye.z};
+                    ChaseRig::Point l = {look.x, look.y, look.z};
+                    ChaseRig::orbit({pivot.x, pivot.y, pivot.z}, e, l, chaseLook.yaw(),
+                                    chaseLook.pitch());
+                    eye = Pnt3f(e.x, e.y, e.z);
+                    look = Pnt3f(l.x, l.y, l.z);
+                    Pnt3f out = eye + pivot * -1.0f;
+                    const float reach = sqrtf(out.x * out.x + out.y * out.y + out.z * out.z);
+                    if (reach > 1e-3f)
+                    {
+                        out = out * (1.0f / reach);
+                        const float margin = 1.0f;
+                        for (float d = 0.5f; d <= reach + margin; d += 0.5f)
+                            if (chaseBlocked(pivot + out * d))
+                            {
+                                const float nearer = std::max(0.5f, d - margin);
+                                if (nearer < reach)
+                                    eye = pivot + out * nearer;
+                                break;
+                            }
+                    }
+                }
                 glMatrixMode(GL_PROJECTION);
                 glLoadIdentity();
                 gluPerspective(m_fieldOfView, aspect, 0.5, 3000.0);

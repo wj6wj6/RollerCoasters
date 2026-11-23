@@ -4,7 +4,8 @@
 // train is in the picture; the camera stands further back for a longer train and higher for
 // taller riders; under a low roof it stays at or under the roof and comes no nearer than allowed,
 // the head still below the middle where the roof leaves room for that; following moves towards
-// the target without passing it.
+// the target without passing it; turning round the train keeps the camera as far from the middle
+// of the train, turns the view the way it is dragged and never tips it over.
 #include "ChaseRig.h"
 
 #include <cmath>
@@ -86,6 +87,50 @@ int main()
     expect(ChaseRig::approach(4.0f, 10.0f, 0.0f, 3.0f) == 4.0f, "no time, no move");
     expect(ChaseRig::approach(4.0f, 10.0f, 100.0f, 3.0f) <= 10.0f,
            "a long step never passes the target");
+
+    // turning round the train: it runs along -z, so its right is +x; the camera is behind and
+    // above the middle and looks at a point beyond the front
+    const ChaseRig::Point pivot = {0.0f, 2.0f, 0.0f};
+    const ChaseRig::Point eye0 = {0.0f, 8.0f, 12.0f}, look0 = {0.0f, 1.0f, -30.0f};
+    auto reach = [&](const ChaseRig::Point &e) {
+        return std::sqrt((e.x - pivot.x) * (e.x - pivot.x) + (e.y - pivot.y) * (e.y - pivot.y) +
+                         (e.z - pivot.z) * (e.z - pivot.z));
+    };
+    auto tilt = [](const ChaseRig::Point &e, const ChaseRig::Point &l) {
+        const float dx = l.x - e.x, dy = l.y - e.y, dz = l.z - e.z;
+        return std::atan2(dy, std::sqrt(dx * dx + dz * dz)) * 57.2957795f;
+    };
+    ChaseRig::Point eye = eye0, look = look0;
+    ChaseRig::orbit(pivot, eye, look, 0.0f, 0.0f);
+    expect(eye.x == eye0.x && eye.y == eye0.y && eye.z == eye0.z && look.z == look0.z,
+           "not turned, the camera stays where it was");
+    eye = eye0, look = look0;
+    ChaseRig::orbit(pivot, eye, look, 30.0f, 0.0f);
+    expect(look.x - eye.x > 0.0f && eye.x < 0.0f,
+           "turned right: the view looks right, the camera goes round to the train's left");
+    expect(std::fabs(eye.y - eye0.y) < 1e-3f, "turning sideways keeps the height");
+    eye = eye0, look = look0;
+    ChaseRig::orbit(pivot, eye, look, 180.0f, 0.0f);
+    expect(eye.z < pivot.z && look.z > eye.z,
+           "half way round: in front of the train, looking back");
+    eye = eye0, look = look0;
+    ChaseRig::orbit(pivot, eye, look, 0.0f, 20.0f);
+    expect(std::fabs(tilt(eye, look) - (tilt(eye0, look0) + 20.0f)) < 0.01f && eye.y < eye0.y,
+           "dragged up: the view tilts up and the camera goes down");
+    bool sameReach = true, bounded = true;
+    const float reach0 = reach(eye0);
+    for (float yaw = -180.0f; yaw <= 180.0f; yaw += 45.0f)
+        for (float pitch = -200.0f; pitch <= 200.0f; pitch += 50.0f)
+        {
+            eye = eye0, look = look0;
+            ChaseRig::orbit(pivot, eye, look, yaw, pitch);
+            sameReach = sameReach && std::fabs(reach(eye) - reach0) < 1e-3f;
+            const float t = tilt(eye, look);
+            bounded =
+                bounded && t <= ChaseRig::kMaxTilt + 0.01f && t >= -ChaseRig::kMaxTilt - 0.01f;
+        }
+    expect(sameReach, "turning keeps the camera as far from the middle of the train");
+    expect(bounded, "the view never tilts past the limit, so the picture never turns over");
 
     std::printf("%s\n", failures == 0 ? "ChaseRigCheck passed" : "ChaseRigCheck FAILED");
     return failures == 0 ? 0 : 1;

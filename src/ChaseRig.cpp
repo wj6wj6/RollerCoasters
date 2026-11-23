@@ -104,4 +104,62 @@ float approach(float current, float target, float dt, float rate)
     return current + (target - current) * share;
 }
 
+namespace
+{
+Point sub(const Point &a, const Point &b)
+{
+    return {a.x - b.x, a.y - b.y, a.z - b.z};
+}
+Point add(const Point &a, const Point &b)
+{
+    return {a.x + b.x, a.y + b.y, a.z + b.z};
+}
+Point cross(const Point &a, const Point &b)
+{
+    return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
+}
+float dot(const Point &a, const Point &b)
+{
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+// v turned by `radians` round the unit axis k (right-handed)
+Point rotate(const Point &v, const Point &k, float radians)
+{
+    const float c = cosf(radians), s = sinf(radians);
+    const Point kv = cross(k, v);
+    const float along = dot(k, v) * (1.0f - c);
+    return {v.x * c + kv.x * s + k.x * along, v.y * c + kv.y * s + k.y * along,
+            v.z * c + kv.z * s + k.z * along};
+}
+} // namespace
+
+void orbit(const Point &pivot, Point &eye, Point &look, float yawDegrees, float pitchDegrees)
+{
+    Point fromPivot = sub(eye, pivot);
+    Point toLook = sub(look, pivot);
+    // round the vertical: turning about +y by a positive angle turns the
+    // view to the left, so the other way
+    const Point vertical = {0.0f, 1.0f, 0.0f};
+    fromPivot = rotate(fromPivot, vertical, -yawDegrees / kDegrees);
+    toLook = rotate(toLook, vertical, -yawDegrees / kDegrees);
+    // then about the view's level side axis, keeping the tilt within bounds
+    const Point sight = sub(toLook, fromPivot);
+    const float level = sqrtf(sight.x * sight.x + sight.z * sight.z);
+    if (level > 1e-4f && pitchDegrees != 0.0f)
+    {
+        const float tilt = atan2f(sight.y, level) * kDegrees;
+        float pitch = pitchDegrees;
+        if (tilt + pitch > kMaxTilt)
+            pitch = kMaxTilt - tilt;
+        if (tilt + pitch < -kMaxTilt)
+            pitch = -kMaxTilt - tilt;
+        // sight x up points to the right; turning about it lifts the sight
+        const Point right = {-sight.z / level, 0.0f, sight.x / level};
+        fromPivot = rotate(fromPivot, right, pitch / kDegrees);
+        toLook = rotate(toLook, right, pitch / kDegrees);
+    }
+    eye = add(pivot, fromPivot);
+    look = add(pivot, toLook);
+}
+
 } // namespace ChaseRig
