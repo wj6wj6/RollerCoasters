@@ -22,6 +22,9 @@ const Color kGreen = {90, 220, 90, 255};
 const Color kAmber = {240, 200, 60, 255};
 const Color kRed = {235, 80, 70, 255};
 const int kLine = 9; // units from one line to the next
+// The table's columns: name, processor ms, graphics card ms, share bar.
+const int kNameW = 74, kNumW = 28, kBarW = 28;
+const int kTableW = kNameW + kNumW * 2 + kBarW + 6;
 
 // Each stage's colour in the table's bars, as a profiler's pie.
 const Color kStageColor[PerfStats::kStages] = {
@@ -84,8 +87,8 @@ std::string fit(std::string text, int width)
 void drawTable(ui::Gui &gui, const PerfStats::Summary &s, bool gpuTimer)
 {
     const int right = gui.width() - 2;
-    const int nameW = 62, numW = 26, barW = 24;
-    const int width = nameW + numW * 2 + barW + 6;
+    const int nameW = kNameW, numW = kNumW, barW = kBarW;
+    const int width = kTableW;
     const int x = right - width;
     int y = 2;
     const double frame = std::max(0.001, s.avgCost);
@@ -94,7 +97,7 @@ void drawTable(ui::Gui &gui, const PerfStats::Summary &s, bool gpuTimer)
     gui.text(x + 1, y, "Stage", ui::kWhite);
     gui.text(x + nameW + numW, y, "CPU", ui::kGrey, ui::Align::Right);
     gui.text(x + nameW + numW * 2, y, "GPU", ui::kGrey, ui::Align::Right);
-    gui.text(right, y, "ms", ui::kGrey, ui::Align::Right);
+    gui.text(right, y, "share", ui::kGrey, ui::Align::Right);
     y += kLine;
     for (int i = 0; i < PerfStats::kStages; ++i)
     {
@@ -129,28 +132,39 @@ void drawGraph(ui::Gui &gui, const PerfStats &stats)
     // as wide as fits left of the hotbar (182 units in the middle)
     const int room = (gui.width() - 182) / 2 - 6;
     const int width = std::min(PerfStats::kHistory, room);
-    const int height = 50; // units for 50 ms
+    const int height = 50;
     if (width < 40 || gui.height() < height + 80)
         return;
     const int x = 2;
     const int bottom = gui.height() - 2;
-    gui.fill({x, bottom - height, width, height}, {0, 0, 0, 100});
     const int count = std::min(width, static_cast<int>(frames.size()));
+    // the top of the graph: 50 ms, or 100, 200, 400 when frames take longer
+    double slowest = 0.0;
+    for (int n = 0; n < count; ++n)
+        slowest = std::max(slowest, frames[frames.size() - static_cast<size_t>(n + 1)]->cost());
+    double top = 50.0;
+    while (top < slowest && top < 400.0)
+        top *= 2.0;
+    auto heightOf = [&](double cost) {
+        return std::max(1, std::min(height, static_cast<int>(cost * height / top + 0.5)));
+    };
+    gui.fill({x, bottom - height, width, height}, {0, 0, 0, 100});
     for (int n = 0; n < count; ++n)
     {
         const PerfStats::Frame *f = frames[frames.size() - static_cast<size_t>(count - n)];
         const double cost = f->cost();
-        const int h = std::max(1, std::min(height, static_cast<int>(cost + 0.5)));
+        const int h = heightOf(cost);
         gui.fill({x + width - count + n, bottom - h, 1, h}, costColor(cost));
     }
     // 60 and 30 frames a second
-    const int at60 = bottom - static_cast<int>(1000.0 / 60.0 + 0.5);
-    const int at30 = bottom - static_cast<int>(1000.0 / 30.0 + 0.5);
+    const int at60 = bottom - heightOf(1000.0 / 60.0);
+    const int at30 = bottom - heightOf(1000.0 / 30.0);
     gui.fill({x, at60, width, 1}, {255, 255, 255, 110});
     gui.fill({x, at30, width, 1}, {255, 255, 255, 110});
-    gui.text(x + 1, at60 - 8, "60 FPS", ui::kWhite);
+    if (at60 - at30 >= 9)
+        gui.text(x + 1, at60 - 8, "60 FPS", ui::kWhite);
     gui.text(x + 1, at30 - 8, "30 FPS", ui::kWhite);
-    gui.text(x + 1, bottom - height - 9, "Frame cost (ms)", ui::kWhite);
+    gui.text(x + 1, bottom - height - 9, format("Frame cost (ms), top %.0f", top), ui::kWhite);
 }
 } // namespace
 
@@ -230,8 +244,7 @@ void PerfOverlay::draw(ui::Gui &gui, const PerfStats &stats, const PerfInfo &inf
         s = stats.summary(now);
     s.fps = stats.summary(now, 1.0).fps;
 
-    const int tableW = 62 + 26 * 2 + 24 + 6 + 4;
-    const int leftW = std::max(80, gui.width() - tableW - 8);
+    const int leftW = std::max(80, gui.width() - kTableW - 12);
     const std::vector<std::string> lines = leftLines(s, info, gui.pixelWidth(), gui.pixelHeight());
     int y = 2;
     for (size_t i = 0; i < lines.size(); ++i, y += kLine)

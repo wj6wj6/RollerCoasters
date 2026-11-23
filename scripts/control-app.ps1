@@ -8,6 +8,7 @@ out/verify/, which is not committed.
   pwsh -File scripts/control-app.ps1 screenshot -Name night -AppArgs '--time','22'
   pwsh -File scripts/control-app.ps1 smoke                 # every scenario below
   pwsh -File scripts/control-app.ps1 smoke -Only cameras   # the scenarios named cameras-*
+  pwsh -File scripts/control-app.ps1 benchmark -Name lit -AppArgs '--camera','world'
   pwsh -File scripts/control-app.ps1 start -AppArgs '--camera','fly'
   pwsh -File scripts/control-app.ps1 stop
   pwsh -File scripts/control-app.ps1 clean
@@ -18,7 +19,7 @@ paths are checked as well as the happy ones.
 #>
 param(
     [Parameter(Position = 0, Mandatory)]
-    [ValidateSet('doctor', 'screenshot', 'smoke', 'start', 'stop', 'clean', 'list')]
+    [ValidateSet('doctor', 'screenshot', 'benchmark', 'smoke', 'start', 'stop', 'clean', 'list')]
     [string] $Command,
     [string] $Name = 'shot',
     [string[]] $AppArgs = @(),
@@ -152,6 +153,14 @@ switch ($Command) {
         $png = Join-Path $VerifyDir "$Name.png"
         $code = Invoke-Program (Find-Program) (@('--screenshot', $png) + $AppArgs) $Name
         if ($code -eq 0) { Write-Host "Evidence: $([IO.Path]::GetRelativePath($ProjectRoot, $png))" }
+        exit $code
+    }
+    'benchmark' {
+        # where each frame's time goes, with the train running and no vsync
+        $report = Join-Path $VerifyDir "$Name.txt"
+        Remove-Item -LiteralPath $report -ErrorAction SilentlyContinue
+        $code = Invoke-Program (Find-Program) (@('--benchmark', $report) + $AppArgs) $Name
+        if ($code -eq 0) { Write-Host "Report: $([IO.Path]::GetRelativePath($ProjectRoot, $report))" }
         exit $code
     }
     'smoke' {

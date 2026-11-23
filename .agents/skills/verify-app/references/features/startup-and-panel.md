@@ -6,6 +6,7 @@
 - 世界沒建好就進入會出現載入畫面（深色泥土背景、階段文字、綠色進度條）；生成好的世界存在 exe 旁的 `data\saves\*.world`，下次啟動直接讀檔。
 - 選 `Grand Tour Island` 進入 `Grand Tour` 展示：`Train` 相機、`Run` 沒有開、列車停在上岸處。
 - 全畫面場景，GLFW 視窗；左上角按鍵提示（Esc、`P`、`[ ]`、`1-9`、F1），下方九格快捷欄（`1`–`5` 相機、`6` Edit、`7` 新增點、`8` 刪除點、`9` Run），快捷欄上方是狀態列與剛選的格子名稱。
+- F3 切換效能畫面（見 [performance.md](performance.md)），開著時取代左上角按鍵提示；F1 連它一起隱藏。
 - F11 切換全螢幕（視窗所在的螢幕、原生解析度），再按一次回到原本的視窗位置與大小（原本最大化的話仍最大化）；`Lighting` 有同一個 `Fullscreen` 開關。
 - Esc 選單：`Back to Ride`、`Ride`、`Camera`、`Track`、`Lighting`、`World`、`Grand Tour`、`Quit to Title`；子畫面各有 `Done`，Esc 回上一層。
 - `Reset Track`（選單 `Track`）切到平坦草地島、顯示控制點、World 相機；`Grand Tour` 回到展示。
