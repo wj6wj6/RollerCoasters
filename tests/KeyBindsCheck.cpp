@@ -180,6 +180,19 @@ int main()
             if (read.get(static_cast<A>(i), slot) != keys.get(static_cast<A>(i), slot))
                 same = false;
     expect(same, "save() then load() gives the same keys");
+    expect(KeyBinds().lockWindowsKey && read.lockWindowsKey, "Lock Windows Key is on by default");
+    keys.lockWindowsKey = false;
+    KeyBinds unlocked;
+    unlocked.load(keys.save());
+    expect(!unlocked.lockWindowsKey, "Lock Windows Key off is saved and read back");
+    unlocked.resetAll();
+    expect(!unlocked.lockWindowsKey, "Reset All leaves Lock Windows Key as it is");
+    unlocked.load("lockWindowsKey=maybe\n");
+    expect(!unlocked.lockWindowsKey, "a value it cannot read keeps the switch");
+    KeyBinds older;
+    older.load("fly.back=K\n");
+    expect(older.lockWindowsKey, "a file from before the switch locks the key");
+    keys.lockWindowsKey = true;
     KeyBinds partial;
     partial.load("# a comment\nfly.back=K\nfly.left=NoSuchKey\nno.such.command=J\n"
                  "garbage line\r\nfly.right.alt=L\r\n");

@@ -158,6 +158,10 @@ class KeyBinds
     // Is this slot's key also another command's, where both can be used?
     bool clashes(Action action, int slot) const;
 
+    // Lock Windows Key (Controls): while playing, the Windows key does
+    // nothing (WindowsKey.h). Kept in the same file; Reset All leaves it.
+    bool lockWindowsKey = true;
+
     // Gives the Fly camera its keys (it reads held keys itself).
     void applyTo(FlyCam &camera) const;
 

@@ -40,7 +40,7 @@
 - `1`–`5` 與點格子切換五種相機，選中的格子有白框，上方短暫顯示名稱；`6` 切換 Edit（格子變綠）；`7` 進入新增點；`8` 刪除選取的點；`9` 與 `P` 相同。
 - Esc 打開選單時場景變暗、不再回應 WASD 或拖曳；每個子畫面的按鈕都做一次，確認效果與舊面板相同：`Ride`（Run、Arc Length、Speed、Step Back／Forward）、`Camera`（相機循環、FOV、Fly Speed）、`Track`（Spline 左鍵往後右鍵往前、Edit、Add／Delete、Undo／Redo 依歷史啟用、Load／Save、R±X／R±Z、X／Y／Z 微調、Reset Track）、`Lighting`（五個開關、Time 以 15 分鐘為單位）、`World`（Water、Rain、Scenery、Grand Tour、材質包清單、Open Pack Folder）。
 - F11：在標題、選單、各相機（含 Fly 鎖定滑鼠時）都能切換全螢幕；全螢幕時場景與介面填滿整個螢幕、沒有拉伸，介面依新大小重新排版（GUI 縮放可能變大一級）；按住 F11 只切換一次；再按 F11 回到原本位置與大小。先最大化再切換，回來時仍是最大化，按還原鍵回到最大化前的大小。兩個螢幕時，把視窗拖到第二個螢幕再按 F11，全螢幕出現在第二個螢幕。`Lighting` 的 `Fullscreen` 開關與 F11 狀態一致。全螢幕時 Alt+Tab 切到別的視窗，遊戲不縮到工作列、留在後面，別的視窗正常顯示在它前面；點回來（或 Alt+Tab 回來）仍是全螢幕並蓋住工作列。兩個螢幕時點另一個螢幕，遊戲的螢幕照樣顯示。
-- Windows 鍵：遊戲中（在世界裡、沒開選單）按左或右 Windows 鍵，開始功能表不出現、視窗不換到後面（視窗與全螢幕都是），Win+D、Win+Tab 也沒有作用；按 Esc 打開選單、在標題畫面或載入畫面時按 Windows 鍵照常打開開始功能表（全螢幕時遊戲留在後面，不縮小）。遊戲中按住 Windows 鍵再按 Esc 打開選單後放開，開始功能表不會跳出來；選單中按住 Windows 鍵、關掉選單後放開，系統不會以為 Windows 鍵一直按著。Alt+Tab 與 Ctrl+Alt+Del 永遠有效；切到別的程式後 Windows 鍵在那裡照常可用。
+- Windows 鍵（`Lock Windows Key` 開著時）：遊戲中（在世界裡、沒開選單）按左或右 Windows 鍵，開始功能表不出現、視窗不換到後面（視窗與全螢幕都是），Win+D、Win+Tab 也沒有作用；按 Esc 打開選單、在標題畫面或載入畫面時按 Windows 鍵照常打開開始功能表（全螢幕時遊戲留在後面，不縮小）。遊戲中按住 Windows 鍵再按 Esc 打開選單後放開，開始功能表不會跳出來；選單中按住 Windows 鍵、關掉選單後放開，系統不會以為 Windows 鍵一直按著。Alt+Tab 與 Ctrl+Alt+Del 永遠有效；切到別的程式後 Windows 鍵在那裡照常可用。
 - Fly 相機鎖定滑鼠時按 Esc：滑鼠放開並打開選單；按 `G` 搬點、`R` 傾斜或放置新點時按 Esc 只取消該動作，不打開選單。
 - 選單 `Quit to Title` 回到標題畫面（泥土背景，世界被放掉），再 `Play` 會重新載入（有存檔時數秒內），標題畫面的 `Quit` 與視窗的關閉鈕都會結束程序。
 - 記憶體：進入島後 F3 記下 `Mem`；`Quit to Title` 再進同一個島，`Mem` 回到差不多的數字（不會每次多一份）；`World` 的 `Scenery` 關掉再打開，也不會兩個島同時留著。
@@ -53,5 +53,6 @@
   - 點 `Undo` 的鍵，先按住 Ctrl（顯示 `> Ctrl+... <`）再按 `U`：變成 `Ctrl+U`，Edit 開著時 Ctrl+U 復原、Ctrl+Z 不再復原。只按 Ctrl 再放開：變成 `Ctrl`。等待按鍵時按 Esc：變成 `None`，不會關掉畫面；點畫面其他地方：取消，保留原本的鍵。
   - 把 `Slot 1` 設成 `W`：`Slot 1` 與 Fly 的 `Forward` 都變紅字；`Look Ahead Again`（R）與 `Tilt Point`（R）不是紅字。`Reset All` 後全部回到預設。
   - 把 Fly `Forward` 改成 `I`：Fly 相機下 I 前進、W 不動；按住 Ctrl 時 I 仍會加速前進。把 `Fullscreen` 改成 `F10`：F10 切換全螢幕，F11 不再有作用；設定 `Fullscreen` 的鍵時按 F11 會被設成新鍵，不會切換全螢幕。
+  - 清單下方 `Lock Windows Key: ON`（預設）：點一下變 `OFF`，回到遊戲按 Windows 鍵會打開開始功能表；再點回 `ON` 又鎖住。`Reset All` 不改變它；關掉程式再開保持上次的設定（`data\keybinds.txt` 的 `lockWindowsKey=` 行）。
   - 關掉程式再開：改過的鍵仍在（exe 旁 `data\keybinds.txt` 每個指令一行）；刪掉這個檔案再開，全部回到預設。
 - 關閉視窗會結束程序。

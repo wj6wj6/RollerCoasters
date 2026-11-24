@@ -128,9 +128,9 @@ class TrainWindow
     void resized(int width, int height);
     void drawNow();
     void switchFullscreen(); // does what setFullscreen() asked for
-    // In front with the world shown and no menu open: the Windows key
-    // does nothing then (WindowsKey.h).
-    bool playing() const;
+    // Lock Windows Key is on and the world is played (in front, the scene
+    // shown, no menu open): the Windows key does nothing then (WindowsKey.h).
+    bool locksWindowsKey() const;
 
     static void keyCallback(GLFWwindow *w, int key, int scancode, int action, int mods);
     static void buttonCallback(GLFWwindow *w, int button, int action, int mods);

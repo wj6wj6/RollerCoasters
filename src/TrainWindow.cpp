@@ -271,7 +271,7 @@ void TrainWindow::run()
             platform::runDueTimeouts();
         }
         switchFullscreen();
-        WindowsKeyHook::update(playing());
+        WindowsKeyHook::update(locksWindowsKey());
 
         now = glfwGetTime();
         if (settings.run)
@@ -385,12 +385,13 @@ void TrainWindow::switchFullscreen()
     resized(width, height);
 }
 
-bool TrainWindow::playing() const
+bool TrainWindow::locksWindowsKey() const
 {
     // not on the loading screen either: the loop may be busy there, and
     // the hook would slow every key press in the system meanwhile
-    return !automated && window && glfwGetWindowAttrib(window, GLFW_FOCUSED) == GLFW_TRUE &&
-           trainView->frameShowsScene && !menu.open();
+    return keys.lockWindowsKey && !automated && window &&
+           glfwGetWindowAttrib(window, GLFW_FOCUSED) == GLFW_TRUE && trainView->frameShowsScene &&
+           !menu.open();
 }
 
 void TrainWindow::drawInterface()
