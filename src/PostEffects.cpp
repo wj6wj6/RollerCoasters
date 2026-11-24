@@ -753,7 +753,9 @@ float beamsAt(vec2 s, float depth)
     vec3 m = texture2D(uCausticMap, uv, depth * 0.04).rgb;
     vec2 inside = smoothstep(vec2(0.0), vec2(0.05), uv) * (1.0 - smoothstep(vec2(0.95), vec2(1.0), uv));
     float sharp = exp(-depth * 0.025);
-    float swell = m.b;
+    // Squared: the light gathers in few, bright pillars with darker water
+    // between them, so a ray that passes one stands out from its neighbours.
+    float swell = m.b * m.b / 4.1;
     float fine = mix(1.0, m.r, 0.5 * sharp);
     float contrast = (0.8 + 0.2 * sharp) * clamp(0.6 + 0.8 * m.g, 0.0, 1.0) * inside.x * inside.y;
     return mix(1.0, swell * fine, contrast);
