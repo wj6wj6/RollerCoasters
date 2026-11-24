@@ -2094,19 +2094,16 @@ void OceanWorld::releaseResources()
     m_built = false;
     m_chunks.clear();
     m_far = BlockMesh::Mesh();
+    m_arena.forget();
     m_textures.clear();
 }
 
 void OceanWorld::unload()
 {
     m_build.reset(); // waits for a build under way
-    for (Chunk &c : m_chunks)
-    {
-        BlockMesh::release(c.solid);
-        BlockMesh::release(c.plant);
-    }
-    BlockMesh::release(m_far);
+    m_arena.release();
     m_chunks.clear();
+    m_far = BlockMesh::Mesh();
     std::vector<unsigned char>().swap(m_solid);
     m_built = false;
 }
@@ -2568,10 +2565,11 @@ bool OceanWorld::prepare()
     m_chunks = m_build->chunks;
     for (size_t i = 0; i < m_chunks.size(); ++i)
     {
-        m_chunks[i].solid = BlockMesh::compile(m_build->solids[i], m_textures);
-        m_chunks[i].plant = BlockMesh::compile(m_build->plants[i], m_textures);
+        m_chunks[i].solid = m_arena.compile(m_build->solids[i], m_textures);
+        m_chunks[i].plant = m_arena.compile(m_build->plants[i], m_textures);
     }
-    m_far = BlockMesh::compile(m_build->beyond, m_textures);
+    m_far = m_arena.compile(m_build->beyond, m_textures);
+    m_arena.compact(); // one buffer: one bind a pass
     if (!m_build->solid.empty())
         m_solid = std::move(m_build->solid);
     m_build.reset(); // the meshes are in the lists now
@@ -2596,15 +2594,19 @@ void OceanWorld::draw(bool shadowPass, float time)
     glEnable(GL_TEXTURE_2D);
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
     const Frustum view = Frustum::current();
-    BlockMesh::draw(m_far);
+    m_visible.clear();
+    m_visible.push_back(&m_far);
     for (const Chunk &c : m_chunks)
         if (view.sees(c.lo, c.hi))
-            BlockMesh::draw(c.solid);
+            m_visible.push_back(&c.solid);
+    m_arena.draw(m_visible, BlockMesh::drawWindow());
     if (!shadowPass)
     {
+        m_visible.clear();
         for (const Chunk &c : m_chunks)
             if (view.sees(c.lo, c.hi))
-                BlockMesh::draw(c.plant);
+                m_visible.push_back(&c.plant);
+        m_arena.draw(m_visible, BlockMesh::drawWindow());
         glBindTexture(GL_TEXTURE_2D, 0);
         glDisable(GL_TEXTURE_2D);
         drawSeaLife(time);

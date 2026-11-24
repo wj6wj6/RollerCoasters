@@ -56,6 +56,7 @@ class TrainWindow
     // this moves the train forward on the track - its up to you to do this
     // correctly. it gets called from the idle callback loop
     // it should handle forward and backwards
+    // Moves the train dir steps along the track (fractions too).
     void advanceTrain(float dir = 1);
 
     // Switches the camera and lets the view take over (Fly starts where
@@ -112,7 +113,9 @@ class TrainWindow
     std::string texturePackPath;               // the pack in use, empty when built in
     std::string texturePackNote;               // how much of the island the pack covers
 
-    // The train moves and the water animates this many steps a second.
+    // The train's speed setting is how far it goes in one step of this many
+    // a second. It moves every frame, by the time since the last one, so the
+    // pace is the same at any frame rate.
     static constexpr double kStepsPerSecond = 30.0;
 
     GLFWwindow *window = nullptr;
@@ -139,7 +142,7 @@ class TrainWindow
 
     GlfwInput m_input;
     double m_lastAdvance = 0.0; // when the train last moved
-    double m_lastAnimate = 0.0; // when the water and plants last moved
+    bool m_running = false;     // the train was running at the last frame
     double m_lastDraw = 0.0;    // when the last frame was drawn (F3 refreshes)
     int m_fullscreenAsked = -1; // 1 or 0 until the loop switches; -1 nothing asked
     // the window as it was before fullscreen, to go back to

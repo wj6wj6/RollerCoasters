@@ -5418,9 +5418,9 @@ void drawBalloon(int woolA, int woolB, const std::vector<unsigned int> &textures
 // LandWorld
 // ---------------------------------------------------------------------
 // The mesh is cut into chunks of kChunk x kChunk columns, each with its
-// own vertex buffers and the box round its blocks, so only the chunks in
-// view are drawn (the camera's view, the light's in the shadow pass, the
-// mirrored one for the water's reflection).
+// own meshes (in the island's Arena) and the box round its blocks, so only
+// the chunks in view are drawn (the camera's view, the light's in the
+// shadow pass, the mirrored one for the water's reflection).
 const int kChunk = 16;
 
 struct LandChunk
@@ -5456,6 +5456,7 @@ struct LandWorld::Scene
     // if the meshes have to be.
     bool trimmed = false;
     std::vector<LandChunk> chunks;
+    BlockMesh::Arena arena; // the chunks' vertices, in a few large buffers
 
     std::thread worker;
     std::atomic<bool> gridReady{false}; // the grid is complete; the worker no longer writes it
@@ -5503,6 +5504,7 @@ void LandWorld::releaseResources()
         {
             s->stop();
             s->chunks.clear();
+            s->arena.forget();
             s->built = false;
             s->chunksMeshed = 0;
             if (s->trimmed)
@@ -5525,9 +5527,7 @@ void LandWorld::unload(bool flat)
     if (!slot)
         return;
     slot->stop();
-    for (LandChunk &c : slot->chunks)
-        for (BlockMesh::Mesh *mesh : {&c.solid, &c.plant, &c.water, &c.glass})
-            BlockMesh::release(*mesh);
+    slot->arena.release();
     slot.reset();
     if (!flat)
     {
@@ -5842,10 +5842,10 @@ bool LandWorld::prepare(bool flat, float seconds)
                 chunk.lo[k] = ready[i].lo[k];
                 chunk.hi[k] = ready[i].hi[k];
             }
-            chunk.solid = BlockMesh::compile(ready[i].solids, m_textures);
-            chunk.plant = BlockMesh::compile(ready[i].plants, m_textures);
-            chunk.water = BlockMesh::compile(ready[i].water, m_textures);
-            chunk.glass = BlockMesh::compile(ready[i].glass, m_textures);
+            chunk.solid = s.arena.compile(ready[i].solids, m_textures);
+            chunk.plant = s.arena.compile(ready[i].plants, m_textures);
+            chunk.water = s.arena.compile(ready[i].water, m_textures);
+            chunk.glass = s.arena.compile(ready[i].glass, m_textures);
             s.chunks.push_back(std::move(chunk));
             if (std::chrono::steady_clock::now() > until && i + 1 < ready.size())
             {
@@ -5861,6 +5861,7 @@ bool LandWorld::prepare(bool flat, float seconds)
         if (finished && ready.empty())
         {
             s.worker.join();
+            s.arena.compact(); // one buffer: one bind a pass
             s.built = true;
             for (std::vector<unsigned char> *layer : {&s.grid.plant, &s.grid.sky, &s.grid.warm,
                                                       &s.grid.cool, &s.grid.carved, &s.grid.level})
@@ -5961,17 +5962,22 @@ void LandWorld::draw(bool flat, bool shadowPass, float time)
         glEnable(GL_ALPHA_TEST);
         glAlphaFunc(GL_GREATER, 0.5f);
     }
+    m_visible.clear();
     for (const LandChunk &c : s.chunks)
         if (view.sees(c.lo, c.hi))
         {
-            BlockMesh::draw(c.solid);
+            m_visible.push_back(&c.solid);
             ++m_chunksDrawn;
         }
+    s.arena.draw(m_visible, BlockMesh::drawWindow());
     if (!shadowPass)
     {
+        // the plants after all the blocks, as before
+        m_visible.clear();
         for (const LandChunk &c : s.chunks)
             if (view.sees(c.lo, c.hi))
-                BlockMesh::draw(c.plant);
+                m_visible.push_back(&c.plant);
+        s.arena.draw(m_visible, BlockMesh::drawWindow());
         if (!flat)
             drawMoving(s, time);
     }
@@ -6008,23 +6014,21 @@ void LandWorld::drawSeeThrough(bool flat, bool withWater)
     glDepthMask(GL_TRUE);
     glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
     const Frustum view = Frustum::current();
-    std::vector<const BlockMesh::Mesh *> meshes;
+    m_visible.clear();
     for (const LandChunk &c : s.chunks)
         if (view.sees(c.lo, c.hi))
         {
             if (withWater)
-                meshes.push_back(&c.water);
-            meshes.push_back(&c.glass);
+                m_visible.push_back(&c.water);
+            m_visible.push_back(&c.glass);
         }
-    for (const BlockMesh::Mesh *mesh : meshes)
-        BlockMesh::draw(*mesh);
+    s.arena.draw(m_visible, BlockMesh::drawWindow());
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glDepthMask(GL_FALSE);
     glDepthFunc(GL_LEQUAL);
     glEnable(GL_BLEND);
     glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE);
-    for (const BlockMesh::Mesh *mesh : meshes)
-        BlockMesh::draw(*mesh);
+    s.arena.draw(m_visible, BlockMesh::drawWindow());
     setGlow(0.0f);
     glPopAttrib();
 }
@@ -6035,9 +6039,11 @@ void LandWorld::drawWaterSurface(bool flat)
         return;
     const Scene &s = flat ? *m_flat : *m_scenery;
     const Frustum view = Frustum::current();
+    m_visible.clear();
     for (const LandChunk &c : s.chunks)
         if (view.sees(c.lo, c.hi))
-            BlockMesh::draw(c.water);
+            m_visible.push_back(&c.water);
+    s.arena.draw(m_visible, BlockMesh::drawWindow());
 }
 
 void LandWorld::drawMoving(const Scene &s, float time)

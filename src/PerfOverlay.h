@@ -37,9 +37,8 @@ struct PerfInfo
     std::string glVersion;
     std::vector<std::string> lines; // more lines for the left column (sceneLines())
     bool vsync = true;
-    bool gpuTimer = false;    // the graphics card's times are measured
-    double trainSteps = 30.0; // the train's steps a second (the loop's pace)
-    std::string memory;       // PerfStats::memoryLine(), or ""
+    bool gpuTimer = false; // the graphics card's times are measured
+    std::string memory;    // PerfStats::memoryLine(), or ""
 };
 
 namespace PerfOverlay

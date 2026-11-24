@@ -44,8 +44,11 @@ const char kKeyBindsFile[] = "data/keybinds.txt";
 // The window starts this size: the Grand Tour wants a wide view.
 const int kStartWidth = 1180;
 const int kStartHeight = 720;
-// The train moves, and the water and plants sway, this often.
+// One step of the train's speed setting.
 const double kStepSeconds = 1.0 / TrainWindow::kStepsPerSecond;
+// After a longer stall (a dragged window, a breakpoint) the train goes on
+// from where it was rather than jumping ahead.
+const double kLongestStep = 0.25;
 // The performance screen (F3) is drawn again at least this often.
 const double kPerfRefreshSeconds = 0.25;
 // The property on the window that leads its procedure back to the TrainWindow.
@@ -233,20 +236,17 @@ void TrainWindow::run()
     while (!glfwWindowShouldClose(window))
     {
         double now = glfwGetTime();
-        // sleep until something is due: a timer, the train's next step, the
-        // water's next frame, or a frame already asked for
+        // sleep until something is due: a timer, a frame already asked for;
+        // while the train runs or the water, clouds and plants move (Light+),
+        // a frame every time the screen can show one (vsync sets the pace)
         double wait = 0.25;
         const double timer = platform::secondsToNextTimeout();
         if (timer >= 0.0 && timer < wait)
             wait = timer;
-        const bool animate = settings.run || settings.lighting;
-        if (animate)
-        {
-            const double last = settings.run ? m_lastAdvance : m_lastAnimate;
-            const double step = last + kStepSeconds - now;
-            if (step < wait)
-                wait = step > 0.0 ? step : 0.0;
-        }
+        // (not while minimised: nothing shows, and the swap may not wait)
+        const bool shown = glfwGetWindowAttrib(window, GLFW_ICONIFIED) == 0;
+        if ((settings.run || settings.lighting) && shown)
+            wait = 0.0;
         // the performance screen's numbers change even when nothing moves
         const bool perfShown = menu.perfShown && !automated;
         if (perfShown)
@@ -265,21 +265,24 @@ void TrainWindow::run()
         switchFullscreen();
 
         now = glfwGetTime();
-        if (settings.run && now - m_lastAdvance >= kStepSeconds)
+        if (settings.run)
         {
             PerfScope update(PerfStage::Update);
+            // as far as the time since the last frame takes it
+            if (!m_running)
+                m_lastAdvance = now;
+            const double seconds = std::min(now - m_lastAdvance, kLongestStep);
             m_lastAdvance = now;
-            advanceTrain();
+            if (seconds > 0.0)
+                advanceTrain(static_cast<float>(seconds / kStepSeconds));
             damageMe();
         }
+        m_running = settings.run;
         if (perfShown && now - m_lastDraw >= kPerfRefreshSeconds)
             trainView->damage(1);
         // keep the water, clouds and plants moving even when the train is stopped
-        if (settings.lighting && !settings.run && now - m_lastAnimate >= kStepSeconds)
-        {
-            m_lastAnimate = now;
+        if (settings.lighting && shown)
             trainView->damage(1);
-        }
         if (trainView->needsDraw())
             drawNow();
     }
