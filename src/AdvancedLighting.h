@@ -48,6 +48,11 @@ struct LightingFrame
     // Below this height things are under water: caustics, blue light.
     float waterLevel = -1e9f;
     bool cameraUnderwater = false; // fog is then drawn by PostEffects
+    // Under water, PostEffects' caustic map (0 for none) and the square it
+    // covers (centre x, centre z, width): the sea bed takes the big swells'
+    // bright spots from it.
+    unsigned int causticMap = 0;
+    float causticMapArea[3] = {0.0f, 0.0f, 1.0f};
 
     float rain = 0.0f;    // 0 dry sky, 1 pouring: clouds close in, the sun dims
     float wetness = 0.0f; // 0 dry, 1 soaked: surfaces darken and turn glossy
@@ -208,6 +213,9 @@ class AdvancedLighting
     int m_locDepthBias;
     int m_locLightDir;
     int m_locWaterLightDir;
+    int m_locCausticMap;
+    int m_locCausticMapArea;
+    int m_locCausticMapOn;
     int m_locLightColor;
     int m_locSkyAmbient;
     int m_locGroundAmbient;

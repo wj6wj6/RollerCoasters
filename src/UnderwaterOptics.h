@@ -124,7 +124,8 @@ float causticPatch(vec2 s, float t)
 // The big swells under the ripples: a coarse web whose crossings are the
 // spots where they gather the light most (cells of about 20 units). These
 // are what the light shafts follow, and they brighten the caustics on the
-// sea bed under each shaft. About 1 on average.
+// sea bed under each shaft. About 1 on average. Costly: drawn once a frame
+// into PostEffects' caustic map and read from there.
 float causticSwell(vec2 s, float t)
 {
     float a = exp(-causticEdge(s * 0.04, t * 0.6) / 0.11);
@@ -138,8 +139,10 @@ float causticSwell(vec2 s, float t)
 // Just under the waves the lines are sharp and bright; deeper down the
 // light that the waves focused spreads out again, so they widen and fade.
 // Far from the camera (eyeDist) they widen too, as the water blurs them,
-// which also keeps them from flickering.
-vec3 caustics(vec3 p, vec3 lightDir, float waterLevel, float t, float eyeDist)
+// which also keeps them from flickering. swell is causticSwell() where the
+// sun ray crossed the surface (1 where it is not known): the sea bed is
+// brighter under each light shaft.
+vec3 caustics(vec3 p, vec3 lightDir, float waterLevel, float t, float eyeDist, float swell)
 {
     float down = max(waterLevel - p.y, 0.0);
     vec2 s = p.xz + lightDir.xz / max(lightDir.y, 0.2) * down;
@@ -147,7 +150,7 @@ vec3 caustics(vec3 p, vec3 lightDir, float waterLevel, float t, float eyeDist)
     float contrast = (0.6 + 0.4 * exp(-down / 80.0)) * exp(-eyeDist * 0.004) *
                      (0.35 + 0.9 * causticPatch(s, t));
     vec3 web = mix(vec3(0.92), causticWeb(s, w, t), clamp(contrast, 0.0, 1.0));
-    return web * mix(1.0, causticSwell(s, t), 0.3 * exp(-eyeDist * 0.004));
+    return web * mix(1.0, swell, 0.3 * exp(-eyeDist * 0.004));
 }
 
 // Fraction of sunlight that reaches a point at this depth.

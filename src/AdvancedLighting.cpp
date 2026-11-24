@@ -114,6 +114,9 @@ uniform int uUnlit;
 uniform int uHdr;              // 1: linear HDR out for the post effects
 uniform float uClipY;          // reflections: nothing below the water
 uniform sampler2D uTexture;    // unit 0; plain white when nothing is bound
+uniform sampler2D uCausticMap; // unit 3; see LightingFrame::causticMap
+uniform vec3 uCausticMapArea;
+uniform int uCausticMapOn;
 uniform float uTime;
 uniform float uWaterLevel;     // very low when there is no water
 uniform vec3 uBlockLightColor; // glow cast by crystals
@@ -240,6 +243,16 @@ void main()
         shadow = shadowAt(vWorldPos, n);
 
     vec3 l = normalize(vWorldPos.y < uWaterLevel ? uWaterLightDir : uLightDir);
+    // The big swells' bright spots from the caustic map, where the sun ray
+    // through this point crossed the surface. Looked up outside the branch
+    // below so the mip level is chosen right.
+    float swell = 1.0;
+    if (uCausticMapOn != 0) {
+        vec2 s = vWorldPos.xz + l.xz / max(l.y, 0.2) * max(uWaterLevel - vWorldPos.y, 0.0);
+        vec2 uv = (s - uCausticMapArea.xy) / uCausticMapArea.z + 0.5;
+        vec2 inside = smoothstep(vec2(0.0), vec2(0.05), uv) * (1.0 - smoothstep(vec2(0.95), vec2(1.0), uv));
+        swell = mix(1.0, texture2D(uCausticMap, uv).b, inside.x * inside.y);
+    }
     vec3 sun = uLightColor * shadow;
     vec3 skyAmbient = uSkyAmbient * vExtra.w;
     vec3 groundAmbient = uGroundAmbient * vExtra.w;
@@ -253,7 +266,7 @@ void main()
         // weaker by the ratio of the two slopes.
         sun *= 0.97 * max(normalize(uLightDir).y, 0.0) / max(l.y, 0.05);
         sun *= sunThroughWater(depth, l) *
-               caustics(vWorldPos, l, uWaterLevel, uTime, length(cameraPos - vWorldPos));
+               caustics(vWorldPos, l, uWaterLevel, uTime, length(cameraPos - vWorldPos), swell);
         vec3 tint = exp(-kWaterAbsorb * depth * 0.8) * vec3(0.55, 0.95, 1.2);
         skyAmbient *= tint;
         groundAmbient = skyAmbient * 0.75; // light bounced off the pale sand
@@ -574,6 +587,9 @@ bool AdvancedLighting::init()
     m_locDepthBias = glGetUniformLocation(m_program, "uDepthBias");
     m_locLightDir = glGetUniformLocation(m_program, "uLightDir");
     m_locWaterLightDir = glGetUniformLocation(m_program, "uWaterLightDir");
+    m_locCausticMap = glGetUniformLocation(m_program, "uCausticMap");
+    m_locCausticMapArea = glGetUniformLocation(m_program, "uCausticMapArea");
+    m_locCausticMapOn = glGetUniformLocation(m_program, "uCausticMapOn");
     m_locLightColor = glGetUniformLocation(m_program, "uLightColor");
     m_locSkyAmbient = glGetUniformLocation(m_program, "uSkyAmbient");
     m_locGroundAmbient = glGetUniformLocation(m_program, "uGroundAmbient");
@@ -939,6 +955,9 @@ void AdvancedLighting::begin(const LightingFrame &frame)
     glUniform1f(m_locClipY, frame.clipBelowY);
     glUniform1f(m_locTime, frame.time);
     glUniform1i(m_locTexture, 0);
+    glUniform1i(m_locCausticMap, 3);
+    glUniform3fv(m_locCausticMapArea, 1, frame.causticMapArea);
+    glUniform1i(m_locCausticMapOn, frame.causticMap != 0 ? 1 : 0);
     glUniform3fv(m_locSkyAmbient, 1, m_skyAmbient);
     glUniform3fv(m_locGroundAmbient, 1, m_groundAmbient);
     glUniform3fv(m_locFogColor, 1, m_fogColor);
@@ -980,6 +999,8 @@ void AdvancedLighting::begin(const LightingFrame &frame)
         glUniform3fv(m_locHeadColor, 1, lampColor);
     }
 
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, frame.causticMap);
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D, m_farTexture);
     glActiveTexture(GL_TEXTURE1);
@@ -993,6 +1014,8 @@ void AdvancedLighting::end()
 {
     if (!m_active)
         return;
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, 0);
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D, 0);
     glActiveTexture(GL_TEXTURE1);

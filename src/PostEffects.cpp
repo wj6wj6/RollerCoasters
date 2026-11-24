@@ -755,7 +755,7 @@ float beamsAt(vec2 s, float depth)
     float sharp = exp(-depth * 0.025);
     float swell = m.b;
     float fine = mix(1.0, m.r, 0.5 * sharp);
-    float contrast = (0.7 + 0.3 * sharp) * clamp(0.5 + 0.8 * m.g, 0.0, 1.0) * inside.x * inside.y;
+    float contrast = (0.8 + 0.2 * sharp) * clamp(0.6 + 0.8 * m.g, 0.0, 1.0) * inside.x * inside.y;
     return mix(1.0, swell * fine, contrast);
 }
 
@@ -799,7 +799,7 @@ void main()
     float cosA = dot(V, L);
     float hg = 0.064 / pow(1.36 - 1.2 * cosA, 1.5);
     float phase = 0.22 + 0.78 * hg;
-    shafts *= uLightColor * kScatterTint * phase * 0.0066;
+    shafts *= uLightColor * kScatterTint * phase * 0.0085;
     shafts += lamp * vec3(0.55, 0.52, 0.42) * 0.011;
     gl_FragColor = vec4(shafts, 1.0);
 }
@@ -1196,6 +1196,9 @@ float smooth01(float e0, float e1, float x)
 const int kWaterGridCells = 160;
 const float kWaterGridCell = 3.0f;
 
+// The caustic map covers a square this wide round the camera.
+const float kCausticMapSize = 400.0f;
+
 } // namespace
 
 PostEffects::PostEffects() : waterLevel(-1.0f)
@@ -1225,6 +1228,7 @@ void PostEffects::invalidate()
     m_causticMap = Target();
     m_waterList = 0;
     m_cameraUnderwater = false;
+    m_causticMapCenter[0] = m_causticMapCenter[1] = 0.0f;
     for (int i = 0; i < 3; ++i)
         m_camera[i] = m_deepColor[i] = m_shallowColor[i] = 0.0f;
     identity(m_view);
@@ -1825,6 +1829,53 @@ void PostEffects::drawParticles(const SkyState &sky, float time)
     glUseProgram(0);
 }
 
+unsigned int PostEffects::causticMapTexture() const
+{
+    return m_causticMap.color;
+}
+
+void PostEffects::causticMapArea(float area[3]) const
+{
+    area[0] = m_causticMapCenter[0];
+    area[1] = m_causticMapCenter[1];
+    area[2] = kCausticMapSize;
+}
+
+void PostEffects::drawCausticMap(const SkyState &sky, float time)
+{
+    // Over a square round where the sun rays near the camera crossed the
+    // surface, its centre moved in whole texels so the web does not crawl
+    // as the camera moves.
+    const int texels = 1024;
+    if (m_causticMap.fbo == 0)
+    {
+        createTarget(m_causticMap, texels, texels, false, false);
+        glBindTexture(GL_TEXTURE_2D, m_causticMap.color);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+    float lightInWater[3];
+    lightDirInWater(sky.lightDir, lightInWater);
+    const float slantX = lightInWater[0] / fmaxf(lightInWater[1], 0.2f);
+    const float slantZ = lightInWater[2] / fmaxf(lightInWater[1], 0.2f);
+    const float depth = fmaxf(waterLevel - m_camera[1], 0.0f);
+    const float texel = kCausticMapSize / static_cast<float>(texels);
+    m_causticMapCenter[0] = floorf((m_camera[0] + slantX * depth) / texel) * texel;
+    m_causticMapCenter[1] = floorf((m_camera[2] + slantZ * depth) / texel) * texel;
+
+    bindTarget(m_causticMap);
+    const GLuint p = m_causticMapProgram;
+    glUseProgram(p);
+    glUniform2fv(loc(p, "uMapCenter"), 1, m_causticMapCenter);
+    glUniform1f(loc(p, "uMapSize"), kCausticMapSize);
+    glUniform1f(loc(p, "uTime"), time);
+    fullscreenQuad();
+    glUseProgram(0);
+    glBindTexture(GL_TEXTURE_2D, m_causticMap.color);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
 void PostEffects::applyUnderwater(const AdvancedLighting &lighting, float time)
 {
     glBindFramebuffer(GL_READ_FRAMEBUFFER, m_scene.fbo);
@@ -1842,42 +1893,10 @@ void PostEffects::applyUnderwater(const AdvancedLighting &lighting, float time)
     float lightInWater[3];
     lightDirInWater(sky.lightDir, lightInWater);
 
-    // The caustic map, over a square round where the sun rays the shafts
-    // look at crossed the surface, its centre moved in whole texels so the
-    // web does not crawl as the camera moves.
-    const int mapTexels = 1024;
-    const float mapSize = 400.0f;
-    if (m_causticMap.fbo == 0)
-    {
-        createTarget(m_causticMap, mapTexels, mapTexels, false, false);
-        glBindTexture(GL_TEXTURE_2D, m_causticMap.color);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glBindTexture(GL_TEXTURE_2D, 0);
-    }
-    float mapCenter[2];
-    {
-        const float slantX = lightInWater[0] / fmaxf(lightInWater[1], 0.2f);
-        const float slantZ = lightInWater[2] / fmaxf(lightInWater[1], 0.2f);
-        const float halfDepth = 0.5f * fmaxf(waterLevel - m_camera[1], 0.0f);
-        const float texel = mapSize / static_cast<float>(mapTexels);
-        mapCenter[0] = floorf((m_camera[0] + slantX * halfDepth) / texel) * texel;
-        mapCenter[1] = floorf((m_camera[2] + slantZ * halfDepth) / texel) * texel;
-    }
-    bindTarget(m_causticMap);
-    GLuint p = m_causticMapProgram;
-    glUseProgram(p);
-    glUniform2fv(loc(p, "uMapCenter"), 1, mapCenter);
-    glUniform1f(loc(p, "uMapSize"), mapSize);
-    glUniform1f(loc(p, "uTime"), time);
-    fullscreenQuad();
-    glBindTexture(GL_TEXTURE_2D, m_causticMap.color);
-    glGenerateMipmap(GL_TEXTURE_2D);
-    glBindTexture(GL_TEXTURE_2D, 0);
-
     // Light shafts at half size (the expensive part), blurred a little to
     // hide the dither.
     bindTarget(m_rays);
-    p = m_shaftsProgram;
+    GLuint p = m_shaftsProgram;
     glUseProgram(p);
     bindTexture(0, m_copy.depth);
     bindTexture(1, lighting.shadowTexture());
@@ -1885,8 +1904,8 @@ void PostEffects::applyUnderwater(const AdvancedLighting &lighting, float time)
     glUniform1i(loc(p, "uDepth"), 0);
     glUniform1i(loc(p, "uShadowMap"), 1);
     glUniform1i(loc(p, "uCausticMap"), 2);
-    glUniform2fv(loc(p, "uMapCenter"), 1, mapCenter);
-    glUniform1f(loc(p, "uMapSize"), mapSize);
+    glUniform2fv(loc(p, "uMapCenter"), 1, m_causticMapCenter);
+    glUniform1f(loc(p, "uMapSize"), kCausticMapSize);
     glUniformMatrix4fv(loc(p, "uLightMatrix"), 1, GL_FALSE, lighting.lightMatrix());
     glUniform1i(loc(p, "uShadowsOn"), lighting.shadowMapValid() ? 1 : 0);
     glUniformMatrix4fv(loc(p, "uInvViewProj"), 1, GL_FALSE, invViewProj);
@@ -2064,7 +2083,15 @@ void renderAdvancedFrame(AdvancedLighting &lighting, PostEffects &effects, Light
     effects.beginFrame(width, height);
     const SkyState &sky = lighting.sky();
     if (underwater)
+    {
         effects.setUnderwaterCamera(camera, sky);
+        // Before the scene: the lighting shader takes the big swells'
+        // bright spots on the sea bed from it.
+        PerfScope phase(PerfStage::Post);
+        effects.drawCausticMap(sky, frame.time);
+        frame.causticMap = effects.causticMapTexture();
+        effects.causticMapArea(frame.causticMapArea);
+    }
 
     if (toggles.water && !underwater)
     {

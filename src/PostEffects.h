@@ -89,6 +89,13 @@ class PostEffects
     void beginScene();
     void drawSky(const SkyState &sky, float time);
     void setUnderwaterCamera(const float cameraPos[3], const SkyState &sky);
+    // Under water, before the scene: the caustic web round the camera (r the
+    // fine web, g how strongly the waves focus, b the big swells' bright
+    // spots), for the lighting shader and the light shafts.
+    void drawCausticMap(const SkyState &sky, float time);
+    unsigned int causticMapTexture() const;
+    // centre x, centre z and width of the square the map covers
+    void causticMapArea(float area[3]) const;
     void applySSAO();
     void drawParticles(const SkyState &sky, float time);
     // Reflections on rain-soaked ground and walls (wetness 0..1), only where
@@ -143,7 +150,8 @@ class PostEffects
     Target m_halfA;      // AO, then bloom
     Target m_halfB;      // blur temporary
     Target m_rays;       // god rays, or the light shafts under water
-    Target m_causticMap; // the caustic web round the camera, for the shafts
+    Target m_causticMap; // the caustic web round the camera
+    float m_causticMapCenter[2];
 
     unsigned int m_skyProgram;
     unsigned int m_waterProgram;
