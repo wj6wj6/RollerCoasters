@@ -172,11 +172,11 @@ flowchart LR
 
 ## 事件與更新
 
-- 主迴圈 `TrainWindow::run()`：算出到下一個 timer 與下一次列車更新的時間，以 `glfwWaitEventsTimeout()` 等待事件，執行到期的 `platform::` timer，需要時才重畫（`TrainView::needsDraw()`）並交換緩衝區。視窗被拖曳或縮放時 Windows 停在自己的迴圈裡，由 refresh callback 重畫。
+- 主迴圈 `TrainWindow::run()`：算出到下一個 timer 的時間，以 `glfwWaitEventsTimeout()` 等待事件（`Run` 或 `Light+` 開著、視窗沒有縮小時不等待，每次螢幕能顯示就畫一幀，由 vsync 控制節奏），執行到期的 `platform::` timer，需要時才重畫（`TrainView::needsDraw()`）並交換緩衝區。視窗被拖曳或縮放時 Windows 停在自己的迴圈裡，由 refresh callback 重畫。
 - 介面是即時模式：`TrainView::draw()` 畫完場景後呼叫 `TrainWindow::drawInterface()`，`GameMenu::draw()` 在同一幀畫出並處理按鈕；滑鼠事件在幀之間以 `Gui::feed()` 送入，按下的動作在下一幀生效。選單或 callback 直接修改 `TrainWindow::settings` 與 `m_Track`，再呼叫 `damageMe()` 要求重畫。
-- `Run` 開啟時，主迴圈最多每秒 30 次呼叫 `advanceTrain()`；`Step Back`／`Step Forward` 以正負方向呼叫同一函式。
+- `Run` 開啟時，主迴圈每幀以「距上一幀的秒數 × 30」步呼叫 `advanceTrain()`（速度設定是每 1/30 秒一步的距離，所以任何 fps 下速度相同；一幀最多算 0.25 秒）；`Step Back`／`Step Forward` 以正負方向呼叫同一函式。
 - `ArcLength` 開啟時，`advanceByArcLength()` 沿參數小步前進、累加歐氏距離，每次呼叫即時計算；關閉時直接改變 `trainU`，所以世界空間速度會隨區段長度變化。
-- 光影動畫（雨、時間）由主迴圈每秒 30 次推進。
+- 光影動畫（水、雲、植物、雨）依時間計算，`Light+` 開著時每幀重畫。
 - 世界在背景執行緒建造：`TrainView::draw()` 先呼叫 `worldReady()`，它對目前要畫的島與（`Water` 與 `Light+` 都開時）海床呼叫 `prepare()`。第一次呼叫時各開一條 `std::thread` 生成網格並逐塊產生頂點；display list 只能在主執行緒建立，所以 `prepare()` 每幀最多花約 30 ms 編譯已完成的塊，其餘時間畫載入畫面，並以 timeout 約每 1/30 秒重畫，直到全部完成。
 - 新增控制點（快捷欄 `7`、`Shift` + `D`）先進入放置模式，`TrackInsert::pick()` 找滑鼠附近的軌道參數，點下時 `insertAt()` 插點並進入拖曳。Fly 相機在滑鼠鎖定且 `Edit` 開啟時是建造狀態（`flyBuilding()`）：左鍵刪準心對到的點、中鍵或 `C` 選取、右鍵在準心前方放點；`G` 以 `beginCarry()`／`updateCarry()` 讓點跟著視角移動。
 - 修改控制點的每條路徑（新增、刪除、`Load`、`Reset`、`Grand Tour`、R±X／Z、X／Y／Z 微調、拖曳與 `G`／`R`）都先存 `TrackHistory` 快照；拖曳只在點真的改變時才存入。

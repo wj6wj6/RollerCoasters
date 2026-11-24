@@ -203,8 +203,7 @@ std::vector<std::string> PerfOverlay::leftLines(const PerfStats::Summary &s, con
     std::vector<std::string> out;
     out.push_back(info.version);
     char buf[160];
-    std::snprintf(buf, sizeof buf, "%.0f fps (T: %s, train %.0f/s)", s.fps,
-                  info.vsync ? "vsync" : "no vsync", info.trainSteps);
+    std::snprintf(buf, sizeof buf, "%.0f fps (T: %s)", s.fps, info.vsync ? "vsync" : "no vsync");
     out.push_back(buf);
     if (s.frames > 0)
     {

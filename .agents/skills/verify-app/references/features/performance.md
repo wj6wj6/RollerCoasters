@@ -3,7 +3,7 @@
 ## 有什麼
 
 - F3（`Controls` 的 `Performance Screen`，可改鍵）切換效能畫面，像方塊遊戲的 F3 除錯畫面，灰底白字蓋在場景上，取代左上角按鍵提示：
-  - 左上：版本、最近一秒畫了幾幀（`T: vsync, train 30/s` 說明節奏：列車與水面每秒 30 步，畫面只在需要時重畫）、`Frame cost`（CPU 與 GPU 較慢者，不含等螢幕；60 fps 內綠、30 fps 內黃、更慢紅）與可達 fps、CPU／GPU 毫秒、最小／平均／最大、視窗大小、記憶體（`Mem:` 工作集，括號內是 committed，Windows 的 private bytes；`--benchmark` 報告也有）、相機、Light+ 與開著的效果、世界與列車狀態、顯示卡與 OpenGL 版本。
+  - 左上：版本、最近一秒畫了幾幀（`T: vsync`：`Run` 或 `Light+` 開著時每次螢幕更新都畫一幀，其他時候只在需要時重畫，所以完全靜止時這個數字很低；顯示卡能跑多快看 `Frame cost` 的可達 fps）、`Frame cost`（CPU 與 GPU 較慢者，不含等螢幕；60 fps 內綠、30 fps 內黃、更慢紅）與可達 fps、CPU／GPU 毫秒、最小／平均／最大、視窗大小、記憶體（`Mem:` 工作集，括號內是 committed，Windows 的 private bytes；`--benchmark` 報告也有）、相機、Light+ 與開著的效果、世界與列車狀態、顯示卡與 OpenGL 版本。
   - 右上：每個階段（Update、Setup、Shadow maps、Reflection、Scene、Post effects、Overlay、Interface、Swap / wait）與每種景物（Land、Ocean、Track、Supports、Train、Water & glass，跨所有 pass 加總）的 CPU 與 GPU 毫秒，右邊比例條是佔一幀成本的比例。
   - 左下：最近幀的成本長條圖，白線是 60 與 30 FPS。
 - 開著時至少每 0.25 秒重畫一次，數字才會更新；關閉時不計時（零成本）。
