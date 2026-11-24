@@ -157,7 +157,12 @@ class PostEffects
     unsigned int m_particleProgram;
     unsigned int m_wetProgram;
     unsigned int m_waterList; // display list of the surface mesh
+    // the tiling pattern the light shafts under water are cut from, and
+    // the average of its two channels
+    unsigned int m_shaftPattern;
+    float m_shaftPatternMean[2];
 
+    bool m_cameraUnderwater; // set by setUnderwaterCamera() for this frame
     float m_camera[3];       // camera position, set by setUnderwaterCamera()
     float m_deepColor[3];    // colour of the water looking down ...
     float m_shallowColor[3]; // ... and looking up towards the surface

@@ -14,6 +14,8 @@
 #include <math.h>
 #include <stdio.h>
 
+#include <vector>
+
 #include "PostEffects.h"
 #include "MatrixMath.h"
 #include "PerfStats.h"
@@ -643,12 +645,20 @@ void main()
 )GLSL";
 
 // Under water, part 1 (half size): light shafts. Each view ray is marched,
-// asking the shadow map whether the sun reaches each step and modulating it by
-// the caustic pattern at the surface above, so the shafts stream down in
-// moving bands.
+// asking the shadow map whether the sun reaches each step. Where the sun ray
+// through a step crossed the surface, two copies of a soft tiling pattern
+// (uBeams, see makeShaftPattern()) drift across each other, as two trains of
+// waves do; where their bright lines cross, the waves focus the light into a
+// beam. Near the surface the beams are sharp and distinct; deeper down they
+// spread and blur into an even glow, so they fade out towards the sea bed
+// instead of standing on it like poles. The light is scattered mostly
+// forwards: the beams are plain looking towards the sun and faint looking
+// away from it. Texture lookups, not the caustic noise, keep each step cheap.
 const char *kShaftsFragment = R"GLSL(
 varying vec2 vUv;
 uniform sampler2D uDepth;
+uniform sampler2D uBeams;
+uniform vec2 uBeamScale; // turns the product of two lookups into a mean of 1
 uniform sampler2DShadow uShadowMap;
 uniform mat4 uLightMatrix;
 uniform int uShadowsOn;
@@ -662,6 +672,9 @@ uniform int uHeadOn;       // the train headlight throws a beam too
 uniform vec3 uHeadPos;
 uniform vec3 uHeadDir;
 
+// The water scatters green and blue more than red.
+const vec3 kScatterTint = vec3(0.55, 0.88, 1.0);
+
 float sunAt(vec3 p)
 {
     if (uShadowsOn == 0)
@@ -671,6 +684,18 @@ float sunAt(vec3 p)
     if (c.z >= 1.0)
         return 1.0;
     return shadow2D(uShadowMap, vec3(c.xy, c.z - 0.002)).r;
+}
+
+// How much light the waves above focus into the water at this depth, about
+// 1 on average.
+float beamsAt(vec2 s, float depth)
+{
+    vec2 a = texture2D(uBeams, s * 0.019 + vec2(0.011, 0.004) * uTime).rg;
+    vec2 b = texture2D(uBeams, mat2(0.8, -0.6, 0.6, 0.8) * s * 0.016 - vec2(0.003, 0.009) * uTime).rg;
+    vec2 m = a * b * uBeamScale;
+    float sharp = exp(-depth * 0.028);
+    float pattern = mix(m.g, m.r, 0.9 * sharp);
+    return mix(1.0, pattern, 0.55 + 0.45 * sharp);
 }
 
 void main()
@@ -685,24 +710,21 @@ void main()
         wdist = min(dist, (uWaterLevel - uCamPos.y) / V.y);
 
     vec3 L = normalize(uLightDir);
-    const int steps = 36;
-    float dt = min(wdist, 170.0) / float(steps);
+    vec2 slant = L.xz / max(L.y, 0.2);
+    const int steps = 28;
+    float dt = min(wdist, 160.0) / float(steps);
     // Interleaved gradient noise: a fixed, even dither that hides banding.
     float jitter = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
     vec3 shafts = vec3(0.0);
     vec3 lamp = vec3(0.0);
+    // No early exit: every pixel runs every step, so the pattern's mip
+    // level is chosen right.
     for (int i = 0; i < steps; ++i) {
         float t = (float(i) + jitter) * dt;
         vec3 p = uCamPos + V * t;
-        float depth = uWaterLevel - p.y;
-        if (depth < 0.0)
-            break;
-        // Fine caustic streaks inside broad beams: the pattern is looked up
-        // where the sun ray through p crossed the surface.
-        float c = caustics(p, L, uWaterLevel, uTime);
-        vec2 s = p.xz + L.xz / max(L.y, 0.2) * depth;
-        float beam = 0.25 + 1.5 * causticLayer(s * 0.034, uTime * 0.5);
-        shafts += sunAt(p) * c * c * beam * sunThroughWater(depth, L) * exp(-kFogExtinction * t) * dt;
+        float depth = max(uWaterLevel - p.y, 0.0);
+        float beam = beamsAt(p.xz + slant * depth, depth);
+        shafts += sunAt(p) * beam * sunThroughWater(depth, L) * exp(-kFogExtinction * t) * dt;
         if (uHeadOn != 0) {
             // The headlight cone lighting up the water it passes through.
             vec3 toP = p - uHeadPos;
@@ -711,9 +733,12 @@ void main()
             lamp += cone * (1.0 - smoothstep(50.0, 95.0, hd)) / (1.0 + hd * hd * 0.004) * exp(-kFogExtinction * t) * dt;
         }
     }
-    // Scattering is strongest looking towards the sun.
-    float phase = 0.3 + 0.7 * pow(max(dot(V, L), 0.0), 3.0);
-    shafts *= uLightColor * phase * 0.0042;
+    // Forward scattering (Henyey-Greenstein, g = 0.6, scaled to 1 straight
+    // at the sun) on top of an even part.
+    float cosA = dot(V, L);
+    float hg = 0.064 / pow(1.36 - 1.2 * cosA, 1.5);
+    float phase = 0.22 + 0.78 * hg;
+    shafts *= uLightColor * kScatterTint * phase * 0.0066;
     shafts += lamp * vec3(0.55, 0.52, 0.42) * 0.011;
     gl_FragColor = vec4(shafts, 1.0);
 }
@@ -1106,6 +1131,87 @@ float smooth01(float e0, float e1, float x)
     return t * t * (3.0f - 2.0f * t);
 }
 
+// Sunlight that enters the water is bent towards straight down (Snell's law,
+// water 1.33): the direction towards the sun as seen under water. The light
+// shafts run along it and the glow in the water sits on it, where the sun is
+// seen through the waves, rather than on the sun's true direction.
+void lightDirInWater(const float light[3], float out[3])
+{
+    if (light[1] <= 0.0f)
+    {
+        // below the horizon: no light gets in, leave it where it is
+        for (int k = 0; k < 3; ++k)
+            out[k] = light[k];
+        return;
+    }
+    const float length = sqrtf(light[0] * light[0] + light[1] * light[1] + light[2] * light[2]);
+    const float inv = length > 0.0f ? 1.0f / length : 0.0f;
+    out[0] = light[0] * inv / 1.33f;
+    out[2] = light[2] * inv / 1.33f;
+    out[1] = sqrtf(fmaxf(1.0f - out[0] * out[0] - out[2] * out[2], 0.0f));
+}
+
+// The tiling pattern the light shafts are cut from (kShaftsFragment): the
+// edges between drifting cells, like the caustic web on the sand, once sharp
+// (red) and once wide and soft (green). It wraps at its edges, so it repeats
+// without a seam. mean receives each channel's average.
+std::vector<unsigned char> makeShaftPattern(int size, float mean[2])
+{
+    const int cells = 6;
+    float points[cells][cells][2];
+    unsigned int seed = 0x9e3779b9u;
+    for (int y = 0; y < cells; ++y)
+        for (int x = 0; x < cells; ++x)
+            for (int k = 0; k < 2; ++k)
+            {
+                seed = seed * 1664525u + 1013904223u;
+                const float r = static_cast<float>(seed >> 8) / 16777216.0f;
+                points[y][x][k] = 0.5f + 0.84f * (r - 0.5f);
+            }
+
+    std::vector<unsigned char> texels(static_cast<size_t>(size) * size * 2);
+    double sum[2] = {0.0, 0.0};
+    for (int py = 0; py < size; ++py)
+        for (int px = 0; px < size; ++px)
+        {
+            const float fx = (static_cast<float>(px) + 0.5f) / static_cast<float>(size) * cells;
+            const float fy = (static_cast<float>(py) + 0.5f) / static_cast<float>(size) * cells;
+            const int cx = static_cast<int>(fx);
+            const int cy = static_cast<int>(fy);
+            float d1 = 8.0f;
+            float d2 = 8.0f;
+            for (int oy = -1; oy <= 1; ++oy)
+                for (int ox = -1; ox <= 1; ++ox)
+                {
+                    const int gx = cx + ox;
+                    const int gy = cy + oy;
+                    const float *q = points[(gy + cells) % cells][(gx + cells) % cells];
+                    const float dx = static_cast<float>(gx) + q[0] - fx;
+                    const float dy = static_cast<float>(gy) + q[1] - fy;
+                    const float d = sqrtf(dx * dx + dy * dy);
+                    if (d < d1)
+                    {
+                        d2 = d1;
+                        d1 = d;
+                    }
+                    else if (d < d2)
+                        d2 = d;
+                }
+            const float edge = d2 - d1; // 0 on the line between two cells
+            const float channel[2] = {expf(-edge / 0.07f), expf(-edge / 0.28f)};
+            for (int k = 0; k < 2; ++k)
+            {
+                const int v = static_cast<int>(channel[k] * 255.0f + 0.5f);
+                texels[(static_cast<size_t>(py) * size + px) * 2 + k] =
+                    static_cast<unsigned char>(v);
+                sum[k] += v / 255.0;
+            }
+        }
+    for (int k = 0; k < 2; ++k)
+        mean[k] = static_cast<float>(sum[k] / (static_cast<double>(size) * size));
+    return texels;
+}
+
 // The fine part of the water surface: this many cells of this size.
 const int kWaterGridCells = 160;
 const float kWaterGridCell = 3.0f;
@@ -1136,6 +1242,9 @@ void PostEffects::invalidate()
     m_brightProgram = m_blurProgram = m_raysProgram = m_compositeProgram = 0;
     m_underwaterProgram = m_shaftsProgram = m_particleProgram = m_wetProgram = 0;
     m_waterList = 0;
+    m_shaftPattern = 0;
+    m_cameraUnderwater = false;
+    m_shaftPatternMean[0] = m_shaftPatternMean[1] = 1.0f;
     for (int i = 0; i < 3; ++i)
         m_camera[i] = m_deepColor[i] = m_shallowColor[i] = 0.0f;
     identity(m_view);
@@ -1168,7 +1277,23 @@ bool PostEffects::init()
     m_blurProgram = makeProgram(kBlurFragment, "blur");
     m_raysProgram = makeProgram(kRaysFragment, "god rays");
     m_compositeProgram = makeProgram(kCompositeFragment, "composite");
-    m_shaftsProgram = makeProgram(kShaftsFragment, "light shafts", kNoise, kUnderwaterOpticsGlsl);
+    m_shaftsProgram = makeProgram(kShaftsFragment, "light shafts", kUnderwaterOpticsGlsl);
+    {
+        const int size = 128;
+        const std::vector<unsigned char> texels = makeShaftPattern(size, m_shaftPatternMean);
+        glGenTextures(1, &m_shaftPattern);
+        glBindTexture(GL_TEXTURE_2D, m_shaftPattern);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RG8, size, size, 0, GL_RG, GL_UNSIGNED_BYTE,
+                     texels.data());
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+        glGenerateMipmap(GL_TEXTURE_2D);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
     m_underwaterProgram = makeProgram(kUnderwaterFragment, "underwater", kUnderwaterOpticsGlsl);
     {
         const char *vertex[1] = {kParticleVertex};
@@ -1282,6 +1407,7 @@ void PostEffects::fullscreenQuad()
 
 void PostEffects::beginFrame(int width, int height)
 {
+    m_cameraUnderwater = false;
     if (width < 2)
         width = 2;
     if (height < 2)
@@ -1346,10 +1472,26 @@ void PostEffects::drawSky(const SkyState &sky, float time)
         for (int i = 0; i < 3; ++i)
             sunColor[i] = sky.lightColor[i];
 
+    // Under water the sky is seen through the surface, which bends the sun
+    // and the moon towards straight up: there they are where the waves
+    // glitter and where the light shafts meet.
+    float sunDir[3];
+    float moonDir[3];
+    for (int k = 0; k < 3; ++k)
+    {
+        sunDir[k] = sky.sunDir[k];
+        moonDir[k] = sky.moonDir[k];
+    }
+    if (m_cameraUnderwater)
+    {
+        lightDirInWater(sky.sunDir, sunDir);
+        lightDirInWater(sky.moonDir, moonDir);
+    }
+
     glUseProgram(m_skyProgram);
     glUniformMatrix4fv(loc(m_skyProgram, "uInvViewProj"), 1, GL_FALSE, invViewProj);
-    glUniform3fv(loc(m_skyProgram, "uSunDir"), 1, sky.sunDir);
-    glUniform3fv(loc(m_skyProgram, "uMoonDir"), 1, sky.moonDir);
+    glUniform3fv(loc(m_skyProgram, "uSunDir"), 1, sunDir);
+    glUniform3fv(loc(m_skyProgram, "uMoonDir"), 1, moonDir);
     glUniform3fv(loc(m_skyProgram, "uSunColor"), 1, sunColor);
     glUniform3fv(loc(m_skyProgram, "uZenith"), 1, sky.zenith);
     glUniform3fv(loc(m_skyProgram, "uHorizon"), 1, sky.horizon);
@@ -1601,6 +1743,7 @@ void PostEffects::setUnderwaterCamera(const float cameraPos[3], const SkyState &
     // The water around the camera: turquoise towards the surface and deep
     // blue below by day, a little darker the deeper the camera is, nearly
     // black at night.
+    m_cameraUnderwater = true;
     const float depth = fmaxf(waterLevel - cameraPos[1], 0.0f);
     const float shallow[3] = {0.020f, 0.170f, 0.330f};
     const float deep[3] = {0.003f, 0.040f, 0.150f};
@@ -1729,6 +1872,8 @@ void PostEffects::applyUnderwater(const AdvancedLighting &lighting, float time)
     if (!invert(viewProj, invViewProj))
         identity(invViewProj);
     const SkyState &sky = lighting.sky();
+    float lightInWater[3];
+    lightDirInWater(sky.lightDir, lightInWater);
 
     // Light shafts at half size (the expensive part), blurred a little to
     // hide the dither.
@@ -1737,13 +1882,17 @@ void PostEffects::applyUnderwater(const AdvancedLighting &lighting, float time)
     glUseProgram(p);
     bindTexture(0, m_copy.depth);
     bindTexture(1, lighting.shadowTexture());
+    bindTexture(2, m_shaftPattern);
     glUniform1i(loc(p, "uDepth"), 0);
     glUniform1i(loc(p, "uShadowMap"), 1);
+    glUniform1i(loc(p, "uBeams"), 2);
+    glUniform2f(loc(p, "uBeamScale"), 1.0f / (m_shaftPatternMean[0] * m_shaftPatternMean[0]),
+                1.0f / (m_shaftPatternMean[1] * m_shaftPatternMean[1]));
     glUniformMatrix4fv(loc(p, "uLightMatrix"), 1, GL_FALSE, lighting.lightMatrix());
     glUniform1i(loc(p, "uShadowsOn"), lighting.shadowMapValid() ? 1 : 0);
     glUniformMatrix4fv(loc(p, "uInvViewProj"), 1, GL_FALSE, invViewProj);
     glUniform3fv(loc(p, "uCamPos"), 1, m_camera);
-    glUniform3fv(loc(p, "uLightDir"), 1, sky.lightDir);
+    glUniform3fv(loc(p, "uLightDir"), 1, lightInWater);
     glUniform3fv(loc(p, "uLightColor"), 1, sky.lightColor);
     glUniform1f(loc(p, "uWaterLevel"), waterLevel);
     glUniform1f(loc(p, "uTime"), time);
@@ -1751,7 +1900,7 @@ void PostEffects::applyUnderwater(const AdvancedLighting &lighting, float time)
     glUniform3fv(loc(p, "uHeadPos"), 1, lighting.headlightPosition());
     glUniform3fv(loc(p, "uHeadDir"), 1, lighting.headlightDirection());
     fullscreenQuad();
-    unbindTextures(2);
+    unbindTextures(3);
     blur(m_rays, m_halfB, 1.0f);
 
     // Fog the scene and add the shafts.
@@ -1768,7 +1917,7 @@ void PostEffects::applyUnderwater(const AdvancedLighting &lighting, float time)
     glUniform3fv(loc(p, "uCamPos"), 1, m_camera);
     glUniform3fv(loc(p, "uShallowColor"), 1, m_shallowColor);
     glUniform3fv(loc(p, "uDeepColor"), 1, m_deepColor);
-    glUniform3fv(loc(p, "uLightDir"), 1, sky.lightDir);
+    glUniform3fv(loc(p, "uLightDir"), 1, lightInWater);
     glUniform3fv(loc(p, "uLightColor"), 1, sky.lightColor);
     glUniform1f(loc(p, "uWaterLevel"), waterLevel);
     fullscreenQuad();
