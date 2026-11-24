@@ -51,7 +51,8 @@ pwsh -File scripts/check.ps1 -Stage all -Compiler clang -Config Release
 | `1`–`9` | 快捷欄：`1` World、`2` Train、`3` Chase、`4` Top、`5` Fly 相機，`6` Edit 開關，`7` 新增控制點，`8` 刪除控制點，`9` Run；也可以直接點格子 |
 | F1 | 隱藏／顯示左上角提示與快捷欄 |
 | F3 | 效能畫面開關（像方塊遊戲的 F3 除錯畫面）：每秒畫幾幀、一幀花多少毫秒、CPU 與 GPU 各花多少，右上角列出每個階段（Shadow maps、Reflection、Scene、Post effects…）與每種景物（Land、Ocean、Track…）的時間，左下角是最近幾百幀的時間圖 |
-| F11 | 全螢幕開關（任何畫面都可以按，包括標題與選單）；再按一次回到原本的視窗位置與大小 |
+| F11 | 全螢幕開關（任何畫面都可以按，包括標題與選單）；再按一次回到原本的視窗位置與大小。全螢幕時 Alt+Tab 或點另一個螢幕，遊戲留在原處不會縮到工作列 |
+| Windows 鍵 | `Controls` 的 `Lock Windows Key` 開著時（預設），遊戲中（視窗在前面、沒有開選單）沒有作用，不會跳出開始功能表把遊戲換到後面；按 Esc 打開選單後照常可用，Alt+Tab 隨時可用 |
 
 上表與下面各相機、編輯的按鍵都是預設值，可以在 Esc →`Controls...`（或標題的 `Options...`→`Controls...`）改，照方塊遊戲的 `Controls`→`Key Binds`：每個指令一列，有主要按鍵與第二個按鍵；點按鍵後按新的鍵（可以加 Ctrl／Shift／Alt，例如 `Ctrl+Z`；只按 Ctrl 等修飾鍵再放開就是那個鍵本身），按 Esc 清成 `None`，點別處取消。同一個相機下兩個指令用到同一個鍵時顯示成紅字（例如 Train 相機的 `Look Ahead Again` 和編輯的 `Tilt Point` 都是 R，但不會同時能用，所以不算衝突）。每列的 `Reset` 回到預設，`Reset All` 全部回到預設。設定存在 exe 旁的 `data/keybinds.txt`，下次開啟沿用；左上角提示、快捷欄格子角落與 `Camera` 畫面的說明會顯示改過的鍵。Esc 本身不能改。Fly 相機的移動鍵按住時不管修飾鍵（按 Ctrl 加速時 W 照樣前進）；Fly 上升／下降原本還有 Page Up／Page Down，現在每個指令最多兩個鍵，預設保留 Space／E 與 Shift／Q。
 

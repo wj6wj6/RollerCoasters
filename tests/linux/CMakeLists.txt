@@ -81,6 +81,7 @@ check(PerfStatsCheck SOURCES src/PerfStats.cpp src/PerfOverlay.cpp src/Ui/Gui.cp
     src/Ui/PixelFont.cpp src/Ui/UiAtlas.cpp)
 check(FoldersCheck SOURCES src/Folders.cpp)
 check(GlfwInputCheck LIBS Utilities)
+check(WindowsKeyCheck)
 check(FrustumCheck SOURCES src/Frustum.cpp LIBS glad)
 check(ChaseRigCheck SOURCES src/ChaseRig.cpp)
 check(MobsCheck SOURCES src/Mobs.cpp src/PixelArt.cpp LIBS glad)
@@ -104,10 +105,10 @@ check(LandRideClearanceCheck TIMEOUT 120
     LIBS Utilities glad)
 
 # Compile the rest of the app as well (not linked), so an error in code that no
-# check uses still shows up here. These four need the real Win32 API; the
+# check uses still shows up here. These five need the real Win32 API; the
 # MinGW pass in win32-syntax.sh covers them.
 file(GLOB app_sources CONFIGURE_DEPENDS "${ROOT}/src/*.cpp" "${ROOT}/src/Ui/*.cpp")
-list(FILTER app_sources EXCLUDE REGEX "/(main|TrainView|TrainWindow|TouchpadGestures)\\.cpp$")
+list(FILTER app_sources EXCLUDE REGEX "/(main|TrainView|TrainWindow|TouchpadGestures|WindowsKey)\\.cpp$")
 add_library(AppObjects OBJECT ${app_sources})
 target_include_directories(AppObjects PRIVATE "${ROOT}/src")
 target_include_directories(AppObjects SYSTEM PRIVATE "${ROOT}/include/glm-0.9.8.5/glm")

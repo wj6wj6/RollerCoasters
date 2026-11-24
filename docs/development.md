@@ -91,7 +91,7 @@ xvfb-run -a ctest --test-dir out/build/linux --output-on-failure
 tests/linux/win32-syntax.sh
 ```
 
-`tests/linux/` 只用系統的 OpenGL／GLU 與 `stubs/` 裡的 `<windows.h>` 替身，編譯 `main.cpp`、`TrainView.cpp`、`TrainWindow.cpp`、`TouchpadGestures.cpp` 以外的原始碼與全部檢查程式（GLFW 只用到標頭）；這四個檔案只做 MinGW 語法檢查。新增測試時，在 `CMakeLists.txt` 與 `tests/linux/CMakeLists.txt` 都加上同樣的來源檔。
+`tests/linux/` 只用系統的 OpenGL／GLU 與 `stubs/` 裡的 `<windows.h>` 替身，編譯 `main.cpp`、`TrainView.cpp`、`TrainWindow.cpp`、`TouchpadGestures.cpp`、`WindowsKey.cpp` 以外的原始碼與全部檢查程式（GLFW 只用到標頭）；這五個檔案只做 MinGW 語法檢查。新增測試時，在 `CMakeLists.txt` 與 `tests/linux/CMakeLists.txt` 都加上同樣的來源檔。
 撤銷本機設定可執行 `git config --unset core.hooksPath`。
 
 ## 測試範圍
@@ -108,7 +108,8 @@ tests/linux/win32-syntax.sh
 - `GlfwInputCheck`：GLFW 事件轉 `InputEvent`（`src/Utilities/GlfwInput.*`）：字母、數字、符號、F 鍵與數字鍵盤的鍵碼，修飾鍵與按住的滑鼠鍵，拖曳、雙擊的時間與距離、`forgetClick()` 之後不算雙擊，滾輪方向，失去焦點時清掉按住的狀態，打的字轉成 `Text` 事件（Unicode 碼位）。
 - `EditKeysCheck`：控制點編輯鍵位對照正式 `FlyCam`：Fly 下沒有飛行鍵是編輯指令、Fly 的編輯鍵都是 `FlyCam` 不用的鍵、World／Top 的鍵位不變；在 `KeyBinds` 改鍵後指令跟著換到新鍵、舊鍵失效，沒改的指令不受影響。
 - `PerfStatsCheck`：效能統計（`src/PerfStats.*`、`src/PerfOverlay.*`）不需 OpenGL：關閉時不記錄、幀外的 Update 算進下一幀、階段巢狀自己只算一次、景物跨階段累加、CPU 工作不含 Swap、GPU timestamp 依打點順序配對且數量不符時忽略、幀成本取 CPU 與 GPU 較慢者、摘要的 fps／平均／最小／最大／95%、`PerfScope` 回報給目前的 `PerfStats`、`--benchmark` 報告列出最大的成本，以及 F3 畫面在最小 GUI（320×240）時不超出視窗；程式的記憶體讀得到，`Mem:` 一行的格式，F3 左欄顯示它。
-- `KeyBindsCheck`：可自訂按鍵（`src/KeyBinds.*`）：預設值就是原本的鍵、指令要修飾鍵完全相符（`Ctrl+Z` 不是 `Ctrl+Shift+Z`）而 Fly 自己的鍵不管修飾鍵、左右 Shift／Ctrl 視為同一鍵、預設沒有衝突而同一相機下共用的鍵算衝突（Train 的 R 與編輯的 R 不算）、`Reset`、單按修飾鍵當按鍵、所有鍵名讀回同一個鍵、`data/keybinds.txt` 存回讀回一致且跳過讀不懂的行，以及正式 `FlyCam` 用給它的鍵飛行。
+- `KeyBindsCheck`：可自訂按鍵（`src/KeyBinds.*`）：預設值就是原本的鍵、指令要修飾鍵完全相符（`Ctrl+Z` 不是 `Ctrl+Shift+Z`）而 Fly 自己的鍵不管修飾鍵、左右 Shift／Ctrl 視為同一鍵、預設沒有衝突而同一相機下共用的鍵算衝突（Train 的 R 與編輯的 R 不算）、`Reset`、單按修飾鍵當按鍵、所有鍵名讀回同一個鍵、`data/keybinds.txt` 存回讀回一致且跳過讀不懂的行、`Lock Windows Key` 預設開、關掉會存回讀回且 `Reset All` 不動它（舊檔沒有這行時是開），以及正式 `FlyCam` 用給它的鍵飛行。
+- `WindowsKeyCheck`：遊戲中的 Windows 鍵（`src/WindowsKey.h` 的 `WindowsKeyGate`）：遊戲中按下、重複與放開都吃掉，選單中按下的放開也照樣傳給系統（就算中途回到遊戲），遊戲中按下的放開也照樣吃掉（就算中途開了選單），左右鍵各自成對，沒有按下的放開不吃。hook 本身（`WindowsKeyHook`）需要真的 Windows，不在測試裡。
 - `GizmoDragCheck`：移動把手（`src/TransformGizmo.*`）找得到滑鼠下的把手，拖曳時點正好落在滑鼠下，且只沿把手允許的軸或平面移動。
 - `TrackInsertCheck`：新增控制點（`src/TrackInsert.*`）後軌道仍經過點擊處、新點插在前後兩點之間並內插傾斜、列車留在原位、螢幕上找得到滑鼠下的軌道位置。
 - `TrackHistoryCheck`：上一步／下一步（`src/TrackHistory.*`）回到當時的軌道與選取、下一步能前進、新修改清掉下一步、點數不變時列車留在原位、只保留最近的步數。

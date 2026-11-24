@@ -21,6 +21,7 @@
 #include "AppControl.h"
 #include "CallBacks.H"
 #include "TexturePack.h"
+#include "WindowsKey.h"
 #include "Utilities/Platform.H"
 
 #ifndef NOMINMAX
@@ -59,35 +60,6 @@ const wchar_t kPreviousProperty[] = L"RollerCoasters.Previous";
 TrainWindow *windowOf(GLFWwindow *w)
 {
     return static_cast<TrainWindow *>(glfwGetWindowUserPointer(w));
-}
-
-// The monitor holding most of the window (the first one when it is on none).
-GLFWmonitor *monitorUnder(GLFWwindow *window)
-{
-    int x = 0, y = 0, width = 0, height = 0;
-    glfwGetWindowPos(window, &x, &y);
-    glfwGetWindowSize(window, &width, &height);
-    int count = 0;
-    GLFWmonitor **monitors = glfwGetMonitors(&count);
-    GLFWmonitor *best = glfwGetPrimaryMonitor();
-    long long bestArea = 0;
-    for (int i = 0; i < count; ++i)
-    {
-        const GLFWvidmode *mode = glfwGetVideoMode(monitors[i]);
-        if (!mode)
-            continue;
-        int mx = 0, my = 0;
-        glfwGetMonitorPos(monitors[i], &mx, &my);
-        const long long across = std::min(x + width, mx + mode->width) - std::max(x, mx);
-        const long long down = std::min(y + height, my + mode->height) - std::max(y, my);
-        const long long area = across > 0 && down > 0 ? across * down : 0;
-        if (area > bestArea)
-        {
-            bestArea = area;
-            best = monitors[i];
-        }
-    }
-    return best;
 }
 
 void reportGlfwError(int code, const char *description)
@@ -131,6 +103,7 @@ TrainWindow::~TrainWindow()
 {
     if (window)
     {
+        WindowsKeyHook::stop();
         trainView->make_current();
         delete trainView; // also takes the touchpad's hook off the window
         // GLFW's procedure back in place, so it sees the window go
@@ -202,6 +175,8 @@ bool TrainWindow::open(std::string &error)
              reinterpret_cast<HANDLE>(GetWindowLongPtrW(hwnd, GWLP_WNDPROC)));
     SetPropW(hwnd, kWindowProperty, this);
     SetWindowLongPtrW(hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(wheelProc));
+    // The Windows key does nothing while the world is played (WindowsKey.h).
+    WindowsKeyHook::setWindow(hwnd);
 
     int width = 0, height = 0;
     glfwGetFramebufferSize(window, &width, &height);
@@ -263,6 +238,7 @@ void TrainWindow::run()
             platform::runDueTimeouts();
         }
         switchFullscreen();
+        WindowsKeyHook::update(locksWindowsKey());
 
         now = glfwGetTime();
         if (settings.run)
@@ -317,7 +293,7 @@ bool TrainWindow::fullscreen() const
 {
     if (m_fullscreenAsked >= 0)
         return m_fullscreenAsked == 1;
-    return window && glfwGetWindowMonitor(window) != nullptr;
+    return m_fullscreen;
 }
 
 void TrainWindow::setFullscreen(bool on)
@@ -336,13 +312,15 @@ void TrainWindow::switchFullscreen()
     if (asked < 0 || !window)
         return;
     const bool on = asked == 1;
-    if (on == (glfwGetWindowMonitor(window) != nullptr))
+    if (on == m_fullscreen)
         return;
+    HWND hwnd = glfwGetWin32Window(window);
     if (on)
     {
-        GLFWmonitor *monitor = monitorUnder(window);
-        const GLFWvidmode *mode = glfwGetVideoMode(monitor);
-        if (!mode)
+        // the monitor holding most of the window
+        MONITORINFO monitor = {};
+        monitor.cbSize = sizeof(monitor);
+        if (!GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &monitor))
             return;
         // A maximized window is put back to its own size first, so that
         // size is the one to come back to.
@@ -351,13 +329,25 @@ void TrainWindow::switchFullscreen()
             glfwRestoreWindow(window);
         glfwGetWindowPos(window, &m_windowedX, &m_windowedY);
         glfwGetWindowSize(window, &m_windowedWidth, &m_windowedHeight);
-        // the monitor's own mode: the screen does not change resolution
-        glfwSetWindowMonitor(window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+        // Borderless, over the whole screen at its own resolution, as an
+        // ordinary window (not glfwSetWindowMonitor): Start, Alt+Tab and
+        // the other screen just cover it, without minimizing it or the
+        // screen going black while the driver leaves the game's own output.
+        // One pixel taller than the screen, or the driver takes a window
+        // filling it exactly for an exclusive one all the same. In front it
+        // still covers the taskbar, which Windows lowers for such a window.
+        glfwSetWindowAttrib(window, GLFW_DECORATED, GLFW_FALSE);
+        const RECT &r = monitor.rcMonitor;
+        SetWindowPos(hwnd, HWND_TOP, r.left, r.top, r.right - r.left, r.bottom - r.top + 1,
+                     SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+        m_fullscreen = true;
     }
     else
     {
-        glfwSetWindowMonitor(window, nullptr, m_windowedX, m_windowedY, m_windowedWidth,
-                             m_windowedHeight, 0);
+        glfwSetWindowAttrib(window, GLFW_DECORATED, GLFW_TRUE);
+        glfwSetWindowSize(window, m_windowedWidth, m_windowedHeight);
+        glfwSetWindowPos(window, m_windowedX, m_windowedY);
+        m_fullscreen = false;
         if (m_windowedMaximized)
             glfwMaximizeWindow(window);
     }
@@ -367,6 +357,14 @@ void TrainWindow::switchFullscreen()
     int width = 0, height = 0;
     glfwGetFramebufferSize(window, &width, &height);
     resized(width, height);
+}
+
+bool TrainWindow::locksWindowsKey() const
+{
+    // not on the loading screen either, as the menus: there is no game yet
+    return keys.lockWindowsKey && !automated && window &&
+           glfwGetWindowAttrib(window, GLFW_FOCUSED) == GLFW_TRUE && trainView->frameShowsScene &&
+           !menu.open();
 }
 
 void TrainWindow::drawInterface()

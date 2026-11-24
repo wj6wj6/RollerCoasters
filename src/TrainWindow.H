@@ -128,6 +128,9 @@ class TrainWindow
     void resized(int width, int height);
     void drawNow();
     void switchFullscreen(); // does what setFullscreen() asked for
+    // Lock Windows Key is on and the world is played (in front, the scene
+    // shown, no menu open): the Windows key does nothing then (WindowsKey.h).
+    bool locksWindowsKey() const;
 
     static void keyCallback(GLFWwindow *w, int key, int scancode, int action, int mods);
     static void buttonCallback(GLFWwindow *w, int button, int action, int mods);
@@ -145,6 +148,7 @@ class TrainWindow
     bool m_running = false;     // the train was running at the last frame
     double m_lastDraw = 0.0;    // when the last frame was drawn (F3 refreshes)
     int m_fullscreenAsked = -1; // 1 or 0 until the loop switches; -1 nothing asked
+    bool m_fullscreen = false;  // the borderless window covers the screen
     // the window as it was before fullscreen, to go back to
     int m_windowedX = 0, m_windowedY = 0;
     int m_windowedWidth = 0, m_windowedHeight = 0;

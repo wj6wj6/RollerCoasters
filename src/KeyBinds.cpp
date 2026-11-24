@@ -21,6 +21,9 @@ using Action = KeyBinds::Action;
 using Bind = KeyBinds::Bind;
 using Group = KeyBinds::Group;
 
+// The Lock Windows Key switch's line in data/keybinds.txt.
+const char kLockWindowsKey[] = "lockWindowsKey";
+
 // Where a command can be used, for clashes: two commands on the same key
 // clash only if they can be used in the same camera.
 constexpr int kWorldTop = 1; // World and Top cameras
@@ -540,6 +543,7 @@ std::string KeyBinds::save() const
         text += std::string(id(action)) + "=" + bindName(get(action, 0)) + "\n";
         text += std::string(id(action)) + ".alt=" + bindName(get(action, 1)) + "\n";
     }
+    text += std::string(kLockWindowsKey) + "=" + (lockWindowsKey ? "true" : "false") + "\n";
     return text;
 }
 
@@ -557,6 +561,13 @@ void KeyBinds::load(const std::string &text)
         if (line.empty() || line[0] == '#' || equals == std::string::npos)
             continue;
         std::string name = trim(line.substr(0, equals));
+        if (name == kLockWindowsKey)
+        {
+            const std::string value = trim(line.substr(equals + 1));
+            if (value == "true" || value == "false")
+                lockWindowsKey = value == "true";
+            continue;
+        }
         int slot = 0;
         if (name.size() > 4 && name.compare(name.size() - 4, 4, ".alt") == 0)
         {

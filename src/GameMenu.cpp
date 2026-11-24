@@ -1157,7 +1157,7 @@ void GameMenu::drawControls(TrainWindow &tw, ui::Gui &gui)
     // The list: name, key, second key, Reset; rows that fit, scrolled by the wheel.
     const int x0 = cx - 157;
     const int listTop = 30;
-    const int listBottom = gui.height() - 30;
+    const int listBottom = gui.height() - 52;
     const ui::Rect area = {x0 - 2, listTop - 1, 320, listBottom - listTop + 2};
     const std::vector<KeyRow> rows = keyRows();
     const int count = static_cast<int>(rows.size());
@@ -1219,6 +1219,11 @@ void GameMenu::drawControls(TrainWindow &tw, ui::Gui &gui)
         gui.fill({x0 + 314, thumbY, 3, thumbH}, {200, 200, 210, 255});
     }
 
+    // Not a key, but where a block game's players look for keyboard
+    // settings: the Windows key does nothing while playing (WindowsKey.h).
+    if (gui.toggle({cx - 155, gui.height() - 47, 310, kButtonH}, "Lock Windows Key",
+                   keys.lockWindowsKey))
+        tw.keysChanged();
     const int buttonsY = gui.height() - 25;
     if (gui.button({cx - 155, buttonsY, 150, kButtonH}, "Reset All", !keys.allDefault()))
     {

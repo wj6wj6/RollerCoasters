@@ -115,6 +115,7 @@ add_executable(RollerCoasters
     src/TrackRenderer.H src/TrackRenderer.cpp
     src/TrainView.H src/TrainView.cpp
     src/TrainWindow.H src/TrainWindow.cpp
+    src/WindowsKey.h src/WindowsKey.cpp
     src/SceneSettings.h
     src/Ui/Gui.h src/Ui/Gui.cpp
     src/Ui/GuiGl.h src/Ui/GuiGl.cpp
@@ -232,6 +233,12 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     target_link_libraries(FoldersCheck PRIVATE project_options shell32)
     add_test(NAME FoldersCheck COMMAND FoldersCheck)
     set_tests_properties(FoldersCheck PROPERTIES TIMEOUT 10 LABELS integration)
+
+    add_executable(WindowsKeyCheck tests/WindowsKeyCheck.cpp)
+    target_include_directories(WindowsKeyCheck PRIVATE src)
+    target_link_libraries(WindowsKeyCheck PRIVATE project_options)
+    add_test(NAME WindowsKeyCheck COMMAND WindowsKeyCheck)
+    set_tests_properties(WindowsKeyCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
     add_executable(GlfwInputCheck tests/GlfwInputCheck.cpp)
     target_include_directories(GlfwInputCheck PRIVATE src)
