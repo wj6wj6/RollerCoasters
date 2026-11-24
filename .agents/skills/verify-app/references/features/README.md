@@ -4,7 +4,7 @@
 
 | 改到的程式 | 功能檔 |
 | --- | --- |
-| `main.cpp`、`TrainWindow.*`、`GameMenu.*`、`KeyBinds.*`（`Controls` 畫面）、`SceneSettings.h`、`CallBacks.cpp`（Run、Reset、Grand Tour）、`Platform.H`／`PlatformLoop.cpp`、`GlfwInput.*` | [startup-and-panel.md](startup-and-panel.md) |
+| `main.cpp`、`TrainWindow.*`、`GameMenu.*`、`KeyBinds.*`（`Controls` 畫面）、`WindowsKey.*`（遊戲中的 Windows 鍵）、`SceneSettings.h`、`CallBacks.cpp`（Run、Reset、Grand Tour）、`Platform.H`／`PlatformLoop.cpp`、`GlfwInput.*` | [startup-and-panel.md](startup-and-panel.md) |
 | `ArcBallCam.*`、`FlyCam.*`、`HeadLook.*`、`ChaseRig.*`、`TouchpadGestures.*`、`TwoFingerGesture.*`、`TrainView.cpp` 的輸入處理 | [cameras-and-input.md](cameras-and-input.md) |
 | `TransformGizmo.*`、`EditKeys.*`、`TrackInsert.*`、`TrackHistory.*`、`ControlPoint.*`、`TrainView.cpp` 的編輯 | [editing.md](editing.md) |
 | `Track.*`、`Folders.*`、`GameMenu.cpp` 的 Load Track／Save Track、`CallBacks.cpp` 的 `loadTrack`／`saveTrack` | [track-files.md](track-files.md) |
