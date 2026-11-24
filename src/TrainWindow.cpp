@@ -387,8 +387,7 @@ void TrainWindow::switchFullscreen()
 
 bool TrainWindow::locksWindowsKey() const
 {
-    // not on the loading screen either: the loop may be busy there, and
-    // the hook would slow every key press in the system meanwhile
+    // not on the loading screen either, as the menus: there is no game yet
     return keys.lockWindowsKey && !automated && window &&
            glfwGetWindowAttrib(window, GLFW_FOCUSED) == GLFW_TRUE && trainView->frameShowsScene &&
            !menu.open();

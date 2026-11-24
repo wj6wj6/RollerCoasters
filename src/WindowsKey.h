@@ -63,10 +63,10 @@ class WindowsKeyGate
 struct HWND__;
 
 // The low-level keyboard hook around the gate. update() is called by the
-// loop with whether the game is being played; the hook is in the system
-// only while that is so (or a kept press waits for its release), because
-// it sees every key pressed anywhere and a busy loop would slow typing in
-// other programs.
+// loop with whether the game is being played (with the key locked). The
+// hook goes in the first time that is so, on a thread of its own: a hook
+// whose thread is slow to answer (the loop in a long frame) lets keys
+// through and is soon taken out by Windows for good.
 namespace WindowsKeyHook
 {
 // The game window: a press counts as playing only while it is in front.

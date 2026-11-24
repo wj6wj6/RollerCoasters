@@ -10,11 +10,11 @@
 ## 決策
 
 - 遊戲中吃掉 Windows 鍵，像許多遊戲一樣：`TrainWindow::locksWindowsKey()` 為真（`Lock Windows Key` 開著、視窗有焦點、畫面是場景而不是載入畫面、選單沒開、不是 `--screenshot` 等自動化執行）時，`WindowsKeyHook` 掛上 `WH_KEYBOARD_LL`，吃掉左右 Windows 鍵的按下、重複與放開；其他鍵與 Alt+Tab 不受影響，Ctrl+Alt+Del、Win+L 系統本來就攔不到。
-- hook 只在需要時存在：它看得到整個系統的每個按鍵，迴圈忙的時候（載入、長的一幀）會拖慢其他程式的打字，所以不是遊戲中就拿掉。迴圈每一輪才決定一次，選單、標題與載入畫面下 Windows 鍵照常可用，想離開遊戲就按 Esc 再按 Windows 鍵。
+- hook 在自己的執行緒：low-level hook 由掛上它的執行緒在等訊息時呼叫，主迴圈忙的時候（長的一幀、建世界）回得慢，Windows 會先把按鍵放過去，逾時幾次後還會默默拿掉 hook、不再呼叫。所以第一次遊戲中（開關開著）時開一條只等訊息的執行緒掛 hook，之後一直留著；是不是遊戲中由迴圈每一輪寫進 atomic，hook 讀它並看前景視窗。開關從沒打開過時不掛。選單、標題與載入畫面下 Windows 鍵照常可用，想離開遊戲就按 Esc 再按 Windows 鍵。
 - 放開跟按下走同一邊（`WindowsKeyGate`，`tests/WindowsKeyCheck.cpp`）：吃掉的按下，它的放開也吃掉（就算中途開了選單），讓系統看到的永遠是成對的按下與放開，不會跳出開始功能表，也不會以為 Windows 鍵一直按著；吃掉的鍵還沒放開時 hook 先不拿掉。
 - 全螢幕失焦不縮小：建立視窗時 `GLFW_AUTO_ICONIFY` 設成 false；`glfwSetWindowMonitor()` 之後把視窗從最上層拿下（`HWND_NOTOPMOST`），否則不縮小的全螢幕視窗會蓋住 Alt+Tab 切過去的視窗。在前面時 Windows 會對填滿螢幕的視窗自動把工作列放到後面，所以全螢幕照樣蓋住工作列。解析度本來就是螢幕原生的，失焦時不必換回。
 
-- 開關：`Controls` 畫面清單下方的 `Lock Windows Key`（預設 ON）。方塊遊戲沒有這個選項，但它的玩家找鍵盤設定會到 `Controls`；存在同一個 `data/keybinds.txt`（`lockWindowsKey=true`），`Reset All` 只重設按鍵、不動它。關掉時 hook 不掛，Windows 鍵照常。
+- 開關：`Controls` 畫面清單下方的 `Lock Windows Key`（預設 ON）。方塊遊戲沒有這個選項，但它的玩家找鍵盤設定會到 `Controls`；存在同一個 `data/keybinds.txt`（`lockWindowsKey=true`），`Reset All` 只重設按鍵、不動它。關掉時 Windows 鍵照常（hook 若已掛上就只是全部放行）。
 
 ## 取捨
 
