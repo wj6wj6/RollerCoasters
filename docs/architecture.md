@@ -132,7 +132,7 @@ flowchart LR
 | `src/TrainView.H/.cpp` | OpenGL 畫面：相機投影、場景繪製、控制點選取與編輯、滑鼠鎖定、觸控板與滾輪訊息；狀態文字交給 `GameMenu` 畫在快捷欄上方。 |
 | `src/TrainViewEffects.cpp` | 把 `SceneSettings` 的光影設定轉成 `LightingFrame`，並呼叫 `renderAdvancedFrame()`。 |
 | `src/AdvancedLighting.h/.cpp` | 跟著鏡頭的兩層 shadow map（鏡頭附近 150 單位的細圖、外圍 600 單位的粗圖，交界處混合）、GLSL 逐像素光照、日夜與頭燈。`setUnlit(true)` 讓不該依法線明暗的東西（方塊雲）一律用天空光加太陽或月亮的光色照亮，跟著時間與下雨變化。 |
-| `src/PostEffects.h/.cpp` | 浮點 frame buffer 與後製：天空、水面與 SSR、雨與濕地反射、SSAO、Bloom、god rays、ACES。水下的光柱從一張預先算好的圖樣取樣，沿折射後的光線方向；從水下看的水面是真實的 Snell 窗加全內反射的鏡面，見 [ADR 0019](adr/0019-underwater-light-shafts.md)。 |
+| `src/PostEffects.h/.cpp` | 浮點 frame buffer 與後製：天空、水面與 SSR、雨與濕地反射、SSAO、Bloom、god rays、ACES。水下的光柱查每幀畫的焦散圖（和海底焦散同一套），沿折射後的光線方向；從水下看的水面是真實的 Snell 窗加全內反射的鏡面，見 [ADR 0019](adr/0019-underwater-light-shafts.md)。 |
 | `src/UnderwaterOptics.h` | 水下吸收、caustics 與水色常數，三個 shader 共用；`lightDirInWater()` 算折射後的陽光方向（攝影機在水下時 shadow map 也沿它畫）。 |
 | `src/LandWaterMotion.h` | 島上的水怎麼動（水面輕微起伏、落水處攪動、瀑布朝空氣的面輕微擺動），光照 shader 與水面 shader 共用，依 `LandWorld` 寫在頂點上的標記。 |
 | `src/MatrixMath.h` | 光影程式用的 column-major 4×4 矩陣輔助函式。 |

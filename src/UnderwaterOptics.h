@@ -102,6 +102,36 @@ vec3 causticLines(float e, float w)
     return exp(-e / width) * (1.0 + 1.6 * width) / (2.45 * width);
 }
 
+// The caustic web where a sun ray crossed the surface at s, with line width
+// w: two webs of different size whose lines add faintly and multiply
+// brightly where they cross, so the light gathers in knots and bright runs
+// instead of an even net. About 0.9 on average. The cells move in place, so
+// the web shifts and reforms rather than sliding along.
+vec3 causticWeb(vec2 s, float w, float t)
+{
+    vec3 a = causticLines(causticEdge(s * 0.11, t), w);
+    vec3 b = causticLines(causticEdge(mat2(0.8, -0.6, 0.6, 0.8) * s * 0.17 + 3.7, t * 1.3), w * 1.6);
+    return (a * 0.3 + b * 0.15 + a * b * 0.55) * 0.92;
+}
+
+// Groups of bigger waves come and go: patches (0..1) where the waves above
+// focus the light strongly and patches where they hardly do.
+float causticPatch(vec2 s, float t)
+{
+    return opticsNoise(s * 0.025 + vec2(t * 0.03, -t * 0.02));
+}
+
+// The big swells under the ripples: a coarse web whose crossings are the
+// spots where they gather the light most (cells of about 20 units). These
+// are what the light shafts follow, and they brighten the caustics on the
+// sea bed under each shaft. About 1 on average.
+float causticSwell(vec2 s, float t)
+{
+    float a = exp(-causticEdge(s * 0.04, t * 0.6) / 0.11);
+    float b = exp(-causticEdge(mat2(0.8, -0.6, 0.6, 0.8) * s * 0.055 + 1.3, t * 0.75) / 0.143);
+    return a * b * 13.7;
+}
+
 // Caustic light for a point below the surface, as a factor on the sunlight
 // there: about 1 on average. The pattern is looked up where the (bent) sun
 // ray through the point crossed the surface, so it slides with the sun.
@@ -114,17 +144,10 @@ vec3 caustics(vec3 p, vec3 lightDir, float waterLevel, float t, float eyeDist)
     float down = max(waterLevel - p.y, 0.0);
     vec2 s = p.xz + lightDir.xz / max(lightDir.y, 0.2) * down;
     float w = 0.03 + down * 0.0012 + eyeDist * 0.0012;
-    // Two webs of different size: their lines add faintly and multiply
-    // brightly where they cross, so the light gathers in knots and bright
-    // runs instead of an even net.
-    vec3 a = causticLines(causticEdge(s * 0.11, t), w);
-    vec3 b = causticLines(causticEdge(mat2(0.8, -0.6, 0.6, 0.8) * s * 0.17 + 3.7, t * 1.3), w * 1.6);
-    vec3 c = a * 0.3 + b * 0.15 + a * b * 0.55;
-    // Groups of bigger waves come and go: patches where the web is strong
-    // and patches where it is faint.
-    float patch = opticsNoise(s * 0.025 + vec2(t * 0.03, -t * 0.02));
-    float contrast = (0.6 + 0.4 * exp(-down / 80.0)) * exp(-eyeDist * 0.004) * (0.35 + 0.9 * patch);
-    return mix(vec3(0.92), c * 0.92, clamp(contrast, 0.0, 1.0));
+    float contrast = (0.6 + 0.4 * exp(-down / 80.0)) * exp(-eyeDist * 0.004) *
+                     (0.35 + 0.9 * causticPatch(s, t));
+    vec3 web = mix(vec3(0.92), causticWeb(s, w, t), clamp(contrast, 0.0, 1.0));
+    return web * mix(1.0, causticSwell(s, t), 0.3 * exp(-eyeDist * 0.004));
 }
 
 // Fraction of sunlight that reaches a point at this depth.

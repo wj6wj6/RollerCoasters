@@ -143,6 +143,7 @@ class PostEffects
     Target m_halfA;      // AO, then bloom
     Target m_halfB;      // blur temporary
     Target m_rays;       // god rays, or the light shafts under water
+    Target m_causticMap; // the caustic web round the camera, for the shafts
 
     unsigned int m_skyProgram;
     unsigned int m_waterProgram;
@@ -154,13 +155,10 @@ class PostEffects
     unsigned int m_compositeProgram;
     unsigned int m_underwaterProgram;
     unsigned int m_shaftsProgram;
+    unsigned int m_causticMapProgram;
     unsigned int m_particleProgram;
     unsigned int m_wetProgram;
     unsigned int m_waterList; // display list of the surface mesh
-    // the tiling pattern the light shafts under water are cut from, and
-    // the average of its two channels
-    unsigned int m_shaftPattern;
-    float m_shaftPatternMean[2];
 
     bool m_cameraUnderwater; // set by setUnderwaterCamera() for this frame
     float m_camera[3];       // camera position, set by setUnderwaterCamera()

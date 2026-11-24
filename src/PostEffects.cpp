@@ -682,21 +682,40 @@ void main()
 }
 )GLSL";
 
+// Under water, part 0: the caustic map. The caustic web (the same one the
+// lighting shader puts on the sea bed) where the sun's rays cross the surface,
+// over a square round the camera, drawn once a frame with mipmaps. The light
+// shafts are the light the waves focus into these lines and knots, seen in
+// the water on its way down: each shaft ends on a bright line on the sand.
+// r: the fine web, about 1 on average; g: how strongly the waves focus
+// there; b: the big swells' bright spots, about 1 on average.
+const char *kCausticMapFragment = R"GLSL(
+varying vec2 vUv;
+uniform vec2 uMapCenter;
+uniform float uMapSize;
+uniform float uTime;
+void main()
+{
+    vec2 s = uMapCenter + (vUv - 0.5) * uMapSize;
+    gl_FragColor = vec4(causticWeb(s, 0.07, uTime).g, causticPatch(s, uTime),
+                        causticSwell(s, uTime), 1.0);
+}
+)GLSL";
+
 // Under water, part 1 (half size): light shafts. Each view ray is marched,
-// asking the shadow map whether the sun reaches each step. Where the sun ray
-// through a step crossed the surface, two copies of a soft tiling pattern
-// (uBeams, see makeShaftPattern()) drift across each other, as two trains of
-// waves do; where their bright lines cross, the waves focus the light into a
-// beam. Near the surface the beams are sharp and distinct; deeper down they
-// spread and blur into an even glow, so they fade out towards the sea bed
-// instead of standing on it like poles. The light is scattered mostly
-// forwards: the beams are plain looking towards the sun and faint looking
-// away from it. Texture lookups, not the caustic noise, keep each step cheap.
+// asking the shadow map whether the sun reaches each step and the caustic map
+// how much light the waves focused into the sun ray through it. Near the
+// surface the shafts are sheets and pillars under the caustic lines and
+// knots; deeper down (a blurrier mip level) the focused light spreads out
+// into an even glow, so they fade out towards the sea bed. The light is
+// scattered mostly forwards: the shafts are plain looking towards the sun
+// and faint looking away from it.
 const char *kShaftsFragment = R"GLSL(
 varying vec2 vUv;
 uniform sampler2D uDepth;
-uniform sampler2D uBeams;
-uniform vec2 uBeamScale; // turns the product of two lookups into a mean of 1
+uniform sampler2D uCausticMap;
+uniform vec2 uMapCenter;
+uniform float uMapSize;
 uniform sampler2DShadow uShadowMap;
 uniform mat4 uLightMatrix;
 uniform int uShadowsOn;
@@ -724,16 +743,20 @@ float sunAt(vec3 p)
     return shadow2D(uShadowMap, vec3(c.xy, c.z - 0.002)).r;
 }
 
-// How much light the waves above focus into the water at this depth, about
-// 1 on average.
+// How much light the waves above focus into the sun ray that crossed the
+// surface at s and is now this deep, about 1 on average: mostly the big
+// swells' bright spots (pillars of light), with the fine web as streaks in
+// them near the surface.
 float beamsAt(vec2 s, float depth)
 {
-    vec2 a = texture2D(uBeams, s * 0.019 + vec2(0.011, 0.004) * uTime).rg;
-    vec2 b = texture2D(uBeams, mat2(0.8, -0.6, 0.6, 0.8) * s * 0.016 - vec2(0.003, 0.009) * uTime).rg;
-    vec2 m = a * b * uBeamScale;
-    float sharp = exp(-depth * 0.028);
-    float pattern = mix(m.g, m.r, 0.9 * sharp);
-    return mix(1.0, pattern, 0.55 + 0.45 * sharp);
+    vec2 uv = (s - uMapCenter) / uMapSize + 0.5;
+    vec3 m = texture2D(uCausticMap, uv, depth * 0.04).rgb;
+    vec2 inside = smoothstep(vec2(0.0), vec2(0.05), uv) * (1.0 - smoothstep(vec2(0.95), vec2(1.0), uv));
+    float sharp = exp(-depth * 0.025);
+    float swell = m.b;
+    float fine = mix(1.0, m.r, 0.5 * sharp);
+    float contrast = (0.7 + 0.3 * sharp) * clamp(0.5 + 0.8 * m.g, 0.0, 1.0) * inside.x * inside.y;
+    return mix(1.0, swell * fine, contrast);
 }
 
 void main()
@@ -1169,67 +1192,6 @@ float smooth01(float e0, float e1, float x)
     return t * t * (3.0f - 2.0f * t);
 }
 
-// The tiling pattern the light shafts are cut from (kShaftsFragment): the
-// edges between drifting cells, like the caustic web on the sand, once sharp
-// (red) and once wide and soft (green). It wraps at its edges, so it repeats
-// without a seam. mean receives each channel's average.
-std::vector<unsigned char> makeShaftPattern(int size, float mean[2])
-{
-    const int cells = 6;
-    float points[cells][cells][2];
-    unsigned int seed = 0x9e3779b9u;
-    for (int y = 0; y < cells; ++y)
-        for (int x = 0; x < cells; ++x)
-            for (int k = 0; k < 2; ++k)
-            {
-                seed = seed * 1664525u + 1013904223u;
-                const float r = static_cast<float>(seed >> 8) / 16777216.0f;
-                points[y][x][k] = 0.5f + 0.84f * (r - 0.5f);
-            }
-
-    std::vector<unsigned char> texels(static_cast<size_t>(size) * size * 2);
-    double sum[2] = {0.0, 0.0};
-    for (int py = 0; py < size; ++py)
-        for (int px = 0; px < size; ++px)
-        {
-            const float fx = (static_cast<float>(px) + 0.5f) / static_cast<float>(size) * cells;
-            const float fy = (static_cast<float>(py) + 0.5f) / static_cast<float>(size) * cells;
-            const int cx = static_cast<int>(fx);
-            const int cy = static_cast<int>(fy);
-            float d1 = 8.0f;
-            float d2 = 8.0f;
-            for (int oy = -1; oy <= 1; ++oy)
-                for (int ox = -1; ox <= 1; ++ox)
-                {
-                    const int gx = cx + ox;
-                    const int gy = cy + oy;
-                    const float *q = points[(gy + cells) % cells][(gx + cells) % cells];
-                    const float dx = static_cast<float>(gx) + q[0] - fx;
-                    const float dy = static_cast<float>(gy) + q[1] - fy;
-                    const float d = sqrtf(dx * dx + dy * dy);
-                    if (d < d1)
-                    {
-                        d2 = d1;
-                        d1 = d;
-                    }
-                    else if (d < d2)
-                        d2 = d;
-                }
-            const float edge = d2 - d1; // 0 on the line between two cells
-            const float channel[2] = {expf(-edge / 0.07f), expf(-edge / 0.28f)};
-            for (int k = 0; k < 2; ++k)
-            {
-                const int v = static_cast<int>(channel[k] * 255.0f + 0.5f);
-                texels[(static_cast<size_t>(py) * size + px) * 2 + k] =
-                    static_cast<unsigned char>(v);
-                sum[k] += v / 255.0;
-            }
-        }
-    for (int k = 0; k < 2; ++k)
-        mean[k] = static_cast<float>(sum[k] / (static_cast<double>(size) * size));
-    return texels;
-}
-
 // The fine part of the water surface: this many cells of this size.
 const int kWaterGridCells = 160;
 const float kWaterGridCell = 3.0f;
@@ -1259,10 +1221,10 @@ void PostEffects::invalidate()
     m_skyProgram = m_waterProgram = m_ssaoProgram = m_aoApplyProgram = 0;
     m_brightProgram = m_blurProgram = m_raysProgram = m_compositeProgram = 0;
     m_underwaterProgram = m_shaftsProgram = m_particleProgram = m_wetProgram = 0;
+    m_causticMapProgram = 0;
+    m_causticMap = Target();
     m_waterList = 0;
-    m_shaftPattern = 0;
     m_cameraUnderwater = false;
-    m_shaftPatternMean[0] = m_shaftPatternMean[1] = 1.0f;
     for (int i = 0; i < 3; ++i)
         m_camera[i] = m_deepColor[i] = m_shallowColor[i] = 0.0f;
     identity(m_view);
@@ -1296,22 +1258,7 @@ bool PostEffects::init()
     m_raysProgram = makeProgram(kRaysFragment, "god rays");
     m_compositeProgram = makeProgram(kCompositeFragment, "composite");
     m_shaftsProgram = makeProgram(kShaftsFragment, "light shafts", kUnderwaterOpticsGlsl);
-    {
-        const int size = 128;
-        const std::vector<unsigned char> texels = makeShaftPattern(size, m_shaftPatternMean);
-        glGenTextures(1, &m_shaftPattern);
-        glBindTexture(GL_TEXTURE_2D, m_shaftPattern);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RG8, size, size, 0, GL_RG, GL_UNSIGNED_BYTE,
-                     texels.data());
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-        glGenerateMipmap(GL_TEXTURE_2D);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glBindTexture(GL_TEXTURE_2D, 0);
-    }
+    m_causticMapProgram = makeProgram(kCausticMapFragment, "caustic map", kUnderwaterOpticsGlsl);
     m_underwaterProgram = makeProgram(kUnderwaterFragment, "underwater", kUnderwaterOpticsGlsl);
     {
         const char *vertex[1] = {kParticleVertex};
@@ -1321,7 +1268,7 @@ bool PostEffects::init()
 
     m_ok = m_skyProgram && m_waterProgram && m_ssaoProgram && m_aoApplyProgram && m_brightProgram &&
            m_blurProgram && m_raysProgram && m_compositeProgram && m_underwaterProgram &&
-           m_shaftsProgram && m_particleProgram && m_wetProgram;
+           m_shaftsProgram && m_causticMapProgram && m_particleProgram && m_wetProgram;
     return m_ok;
 }
 
@@ -1400,6 +1347,7 @@ void PostEffects::releaseTargets()
     releaseTarget(m_halfA);
     releaseTarget(m_halfB);
     releaseTarget(m_rays);
+    releaseTarget(m_causticMap);
 }
 
 void PostEffects::bindTarget(const Target &t)
@@ -1894,19 +1842,51 @@ void PostEffects::applyUnderwater(const AdvancedLighting &lighting, float time)
     float lightInWater[3];
     lightDirInWater(sky.lightDir, lightInWater);
 
+    // The caustic map, over a square round where the sun rays the shafts
+    // look at crossed the surface, its centre moved in whole texels so the
+    // web does not crawl as the camera moves.
+    const int mapTexels = 1024;
+    const float mapSize = 400.0f;
+    if (m_causticMap.fbo == 0)
+    {
+        createTarget(m_causticMap, mapTexels, mapTexels, false, false);
+        glBindTexture(GL_TEXTURE_2D, m_causticMap.color);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+    float mapCenter[2];
+    {
+        const float slantX = lightInWater[0] / fmaxf(lightInWater[1], 0.2f);
+        const float slantZ = lightInWater[2] / fmaxf(lightInWater[1], 0.2f);
+        const float halfDepth = 0.5f * fmaxf(waterLevel - m_camera[1], 0.0f);
+        const float texel = mapSize / static_cast<float>(mapTexels);
+        mapCenter[0] = floorf((m_camera[0] + slantX * halfDepth) / texel) * texel;
+        mapCenter[1] = floorf((m_camera[2] + slantZ * halfDepth) / texel) * texel;
+    }
+    bindTarget(m_causticMap);
+    GLuint p = m_causticMapProgram;
+    glUseProgram(p);
+    glUniform2fv(loc(p, "uMapCenter"), 1, mapCenter);
+    glUniform1f(loc(p, "uMapSize"), mapSize);
+    glUniform1f(loc(p, "uTime"), time);
+    fullscreenQuad();
+    glBindTexture(GL_TEXTURE_2D, m_causticMap.color);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
     // Light shafts at half size (the expensive part), blurred a little to
     // hide the dither.
     bindTarget(m_rays);
-    GLuint p = m_shaftsProgram;
+    p = m_shaftsProgram;
     glUseProgram(p);
     bindTexture(0, m_copy.depth);
     bindTexture(1, lighting.shadowTexture());
-    bindTexture(2, m_shaftPattern);
+    bindTexture(2, m_causticMap.color);
     glUniform1i(loc(p, "uDepth"), 0);
     glUniform1i(loc(p, "uShadowMap"), 1);
-    glUniform1i(loc(p, "uBeams"), 2);
-    glUniform2f(loc(p, "uBeamScale"), 1.0f / (m_shaftPatternMean[0] * m_shaftPatternMean[0]),
-                1.0f / (m_shaftPatternMean[1] * m_shaftPatternMean[1]));
+    glUniform1i(loc(p, "uCausticMap"), 2);
+    glUniform2fv(loc(p, "uMapCenter"), 1, mapCenter);
+    glUniform1f(loc(p, "uMapSize"), mapSize);
     glUniformMatrix4fv(loc(p, "uLightMatrix"), 1, GL_FALSE, lighting.lightMatrix());
     glUniform1i(loc(p, "uShadowsOn"), lighting.shadowMapValid() ? 1 : 0);
     glUniformMatrix4fv(loc(p, "uInvViewProj"), 1, GL_FALSE, invViewProj);
