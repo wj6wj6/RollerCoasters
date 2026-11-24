@@ -142,7 +142,9 @@ class PostEffects
     Target m_reflection; // mirrored view, half size
     Target m_halfA;      // AO, then bloom
     Target m_halfB;      // blur temporary
-    Target m_rays;       // god rays, or the light shafts under water
+    Target m_rays;       // god rays above the water, half size
+    Target m_shafts;     // the light shafts under water, quarter size
+    Target m_shaftsTmp;  // their blur temporary
 
     unsigned int m_skyProgram;
     unsigned int m_waterProgram;

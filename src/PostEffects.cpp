@@ -1132,6 +1132,8 @@ void PostEffects::invalidate()
     m_halfA = Target();
     m_halfB = Target();
     m_rays = Target();
+    m_shafts = Target();
+    m_shaftsTmp = Target();
     m_skyProgram = m_waterProgram = m_ssaoProgram = m_aoApplyProgram = 0;
     m_brightProgram = m_blurProgram = m_raysProgram = m_compositeProgram = 0;
     m_underwaterProgram = m_shaftsProgram = m_particleProgram = m_wetProgram = 0;
@@ -1257,6 +1259,8 @@ void PostEffects::releaseTargets()
     releaseTarget(m_halfA);
     releaseTarget(m_halfB);
     releaseTarget(m_rays);
+    releaseTarget(m_shafts);
+    releaseTarget(m_shaftsTmp);
 }
 
 void PostEffects::bindTarget(const Target &t)
@@ -1300,6 +1304,14 @@ void PostEffects::beginFrame(int width, int height)
         createTarget(m_halfA, width / 2, height / 2, false, false);
         createTarget(m_halfB, width / 2, height / 2, false, false);
         createTarget(m_rays, width / 2, height / 2, false, false);
+        // The shafts march 36 steps through the shadow map for every pixel:
+        // at half size that alone took 7.8 ms a frame at 2560x1600 on an RTX
+        // 5060 (60 fps under water); at quarter size, blurred, they look
+        // the same but for slightly softer edges.
+        const int quarterW = width / 4 > 0 ? width / 4 : 1;
+        const int quarterH = height / 4 > 0 ? height / 4 : 1;
+        createTarget(m_shafts, quarterW, quarterH, false, false);
+        createTarget(m_shaftsTmp, quarterW, quarterH, false, false);
         glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(m_outputFbo));
     }
 }
@@ -1730,9 +1742,9 @@ void PostEffects::applyUnderwater(const AdvancedLighting &lighting, float time)
         identity(invViewProj);
     const SkyState &sky = lighting.sky();
 
-    // Light shafts at half size (the expensive part), blurred a little to
-    // hide the dither.
-    bindTarget(m_rays);
+    // Light shafts at quarter size (the expensive part), blurred a little
+    // to hide the dither.
+    bindTarget(m_shafts);
     GLuint p = m_shaftsProgram;
     glUseProgram(p);
     bindTexture(0, m_copy.depth);
@@ -1752,7 +1764,7 @@ void PostEffects::applyUnderwater(const AdvancedLighting &lighting, float time)
     glUniform3fv(loc(p, "uHeadDir"), 1, lighting.headlightDirection());
     fullscreenQuad();
     unbindTextures(2);
-    blur(m_rays, m_halfB, 1.0f);
+    blur(m_shafts, m_shaftsTmp, 1.0f);
 
     // Fog the scene and add the shafts.
     bindTarget(m_scene);
@@ -1760,7 +1772,7 @@ void PostEffects::applyUnderwater(const AdvancedLighting &lighting, float time)
     glUseProgram(p);
     bindTexture(0, m_copy.color);
     bindTexture(1, m_copy.depth);
-    bindTexture(2, m_rays.color);
+    bindTexture(2, m_shafts.color);
     glUniform1i(loc(p, "uScene"), 0);
     glUniform1i(loc(p, "uDepth"), 1);
     glUniform1i(loc(p, "uShafts"), 2);
