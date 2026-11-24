@@ -58,6 +58,16 @@ vec2 opticsHash(vec2 p)
     return fract(sin(p) * 43758.5453);
 }
 
+// Smooth value noise in 0..1.
+float opticsNoise(vec2 p)
+{
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(opticsHash(i).x, opticsHash(i + vec2(1.0, 0.0)).x, f.x),
+               mix(opticsHash(i + vec2(0.0, 1.0)).x, opticsHash(i + vec2(1.0, 1.0)).x, f.x), f.y);
+}
+
 // One layer of the caustic web: how far p is from the line where two moving
 // cells meet (0 on it).
 float causticEdge(vec2 p, float t)
@@ -104,10 +114,17 @@ vec3 caustics(vec3 p, vec3 lightDir, float waterLevel, float t, float eyeDist)
     float down = max(waterLevel - p.y, 0.0);
     vec2 s = p.xz + lightDir.xz / max(lightDir.y, 0.2) * down;
     float w = 0.03 + down * 0.0012 + eyeDist * 0.0012;
-    vec3 c = causticLines(causticEdge(s * 0.11, t), w) * 0.65 +
-             causticLines(causticEdge(s * 0.19 + 3.7, t * 1.3), w * 1.2) * 0.35;
-    float contrast = (0.6 + 0.4 * exp(-down / 80.0)) * exp(-eyeDist * 0.004);
-    return mix(vec3(1.0), c, contrast);
+    // Two webs of different size: their lines add faintly and multiply
+    // brightly where they cross, so the light gathers in knots and bright
+    // runs instead of an even net.
+    vec3 a = causticLines(causticEdge(s * 0.11, t), w);
+    vec3 b = causticLines(causticEdge(mat2(0.8, -0.6, 0.6, 0.8) * s * 0.17 + 3.7, t * 1.3), w * 1.6);
+    vec3 c = a * 0.3 + b * 0.15 + a * b * 0.55;
+    // Groups of bigger waves come and go: patches where the web is strong
+    // and patches where it is faint.
+    float patch = opticsNoise(s * 0.025 + vec2(t * 0.03, -t * 0.02));
+    float contrast = (0.6 + 0.4 * exp(-down / 80.0)) * exp(-eyeDist * 0.004) * (0.35 + 0.9 * patch);
+    return mix(vec3(0.92), c * 0.92, clamp(contrast, 0.0, 1.0));
 }
 
 // Fraction of sunlight that reaches a point at this depth.

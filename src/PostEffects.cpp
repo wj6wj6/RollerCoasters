@@ -463,14 +463,23 @@ void main()
         // into the colour of the water looking down where it finds nothing.
         // (The scene on screen is not fogged yet; the long way down and back
         // up is, roughly, by mixing in the water.)
-        vec3 mirror = uDeepColor * 1.3;
+        // The water itself, as the mirror shows it: brighter where a facet
+        // reflects a line of sight that runs along under the surface (lit
+        // water), darker where it looks down into the deep, so the waves
+        // still show where nothing is found.
+        vec3 R = reflect(I, -N);
+        vec3 mirror = uDeepColor * mix(0.9, 1.9, smoothstep(-0.9, -0.1, R.y));
         if (uSsrOn != 0) {
             mat3 rot = mat3(uView);
             vec3 Pv = (uView * vec4(P, 1.0)).xyz;
             // (off a calmer surface: the full waves scatter it into specks)
             vec3 calm = normalize(mix(N, vec3(0.0, 1.0, 0.0), 0.8));
-            vec4 hit = traceReflection(Pv, rot * reflect(I, -calm), rot * vec3(0.0, -1.0, 0.0));
-            mirror = mix(mirror, hit.rgb * 0.35 + mirror * 0.65, hit.a);
+            vec3 Rc = reflect(I, -calm);
+            vec4 hit = traceReflection(Pv, rot * Rc, rot * vec3(0.0, -1.0, 0.0));
+            // A ray skimming along under the surface finds things far off and
+            // smears them into streaks: only rays heading down are kept.
+            float keep = hit.a * smoothstep(0.12, 0.4, -Rc.y);
+            mirror = mix(mirror, hit.rgb * 0.35 + mirror * 0.65, keep);
         }
         vec3 col = mix(mirror, above, through);
         gl_FragColor = vec4(col, 1.0);
