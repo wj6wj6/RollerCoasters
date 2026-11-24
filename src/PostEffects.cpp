@@ -345,6 +345,7 @@ uniform vec3 uZenith;
 uniform vec3 uHorizon;
 uniform float uFogDensity;
 uniform int uUnder;        // the camera is below the surface
+uniform float uWaterLevel; // height of the sea, for looking up through it
 uniform vec3 uDeepColor;   // colour of the water around the camera
 uniform int uSsrOn;        // screen space reflections (not in the top view)
 uniform float uRain;
@@ -426,24 +427,52 @@ void main()
 
     vec2 suv = gl_FragCoord.xy / uScreen;
     if (uUnder != 0) {
-        // Seen from below, light from above comes through Snell's window,
-        // a cone round straight up; outside it the surface mirrors the water
-        // below. The window is drawn wider and softer than the real 48
-        // degrees, with a little of the sky still showing in the mirror,
-        // and the waves bend the view only a little: a narrow window with
-        // the rest of the surface a solid blue looked like a lid.
-        float cosView = abs(dot(V, N));
-        float window = smoothstep(0.22, 0.55, cosView);
-        vec3 above = texture2D(uRefraction, suv + N.xz * 0.025).rgb;
-        // The sun through the waves: each facet that happens to bend the
-        // line of sight towards the sun flashes.
-        vec3 out1 = refract(-V, -N, 1.33);
-        float sunHit = max(dot(out1, normalize(uLightDir)), 0.0);
-        vec3 glitter = uLightColor * (pow(sunHit, 180.0) * 14.0 + pow(sunHit, 14.0) * 0.5);
-        vec3 mirror = uDeepColor * 1.6 + above * 0.2;
-        vec3 col = mix(mirror, above + glitter, window);
-        float rim = smoothstep(0.16, 0.26, cosView) - smoothstep(0.26, 0.4, cosView);
-        col += (uDeepColor * 2.0 + uLightColor * 0.06) * rim;
+        // Seen from below. Light from the air reaches the eye only through
+        // Snell's window, the cone within about 48.6 degrees of straight up,
+        // and the whole sky down to the horizon is squeezed into it, bent by
+        // every wave. Past it the surface is a mirror (total internal
+        // reflection) showing the water and the sea bed below. Near the
+        // edge of the window the Fresnel term turns one into the other.
+        vec3 I = -V;                        // from the eye up to the surface
+        vec3 air = refract(I, -N, 1.33);    // on into the air; zero past the edge
+        float cosAir = abs(dot(air, N));
+        float through = dot(air, air) > 0.0 ? 1.0 - (0.02 + 0.98 * pow(1.0 - cosAir, 5.0)) : 0.0;
+
+        // The sky (and the island and clouds) in the bent direction: what
+        // the screen shows that way if it is above the water, otherwise the
+        // sky's colour.
+        vec3 above = mix(uHorizon, uZenith, pow(clamp(air.y, 0.0, 1.0), 0.5));
+        if (through > 0.0) {
+            vec4 c = uProj * vec4(mat3(uView) * air * 1000.0, 1.0);
+            if (c.w > 0.0) {
+                vec2 uv = c.xy / c.w * 0.5 + 0.5;
+                vec2 e = smoothstep(vec2(0.0), vec2(0.06), uv) * (1.0 - smoothstep(vec2(0.94), vec2(1.0), uv));
+                float d = texture2D(uDepth, clamp(uv, 0.0, 1.0)).r;
+                float surfaceAt = (uWaterLevel - uCamPos.y) / max(air.y, 0.01);
+                bool aboveWater = d >= 1.0 || length(viewPos(clamp(uv, 0.0, 1.0), d)) > surfaceAt;
+                if (aboveWater)
+                    above = mix(above, texture2D(uRefraction, clamp(uv, 0.0, 1.0)).rgb, e.x * e.y);
+            }
+            // The sun through the waves: each facet that bends the line of
+            // sight towards the sun flashes.
+            float sunHit = max(dot(air, normalize(uLightDir)), 0.0);
+            above += uLightColor * (pow(sunHit, 180.0) * 14.0 + pow(sunHit, 14.0) * 0.5);
+        }
+
+        // The mirror: what lies below, by screen space reflection, fading
+        // into the colour of the water looking down where it finds nothing.
+        // (The scene on screen is not fogged yet; the long way down and back
+        // up is, roughly, by mixing in the water.)
+        vec3 mirror = uDeepColor * 1.3;
+        if (uSsrOn != 0) {
+            mat3 rot = mat3(uView);
+            vec3 Pv = (uView * vec4(P, 1.0)).xyz;
+            // (off a calmer surface: the full waves scatter it into specks)
+            vec3 calm = normalize(mix(N, vec3(0.0, 1.0, 0.0), 0.8));
+            vec4 hit = traceReflection(Pv, rot * reflect(I, -calm), rot * vec3(0.0, -1.0, 0.0));
+            mirror = mix(mirror, hit.rgb * 0.35 + mirror * 0.65, hit.a);
+        }
+        vec3 col = mix(mirror, above, through);
         gl_FragColor = vec4(col, 1.0);
         return;
     }
@@ -1131,26 +1160,6 @@ float smooth01(float e0, float e1, float x)
     return t * t * (3.0f - 2.0f * t);
 }
 
-// Sunlight that enters the water is bent towards straight down (Snell's law,
-// water 1.33): the direction towards the sun as seen under water. The light
-// shafts run along it and the glow in the water sits on it, where the sun is
-// seen through the waves, rather than on the sun's true direction.
-void lightDirInWater(const float light[3], float out[3])
-{
-    if (light[1] <= 0.0f)
-    {
-        // below the horizon: no light gets in, leave it where it is
-        for (int k = 0; k < 3; ++k)
-            out[k] = light[k];
-        return;
-    }
-    const float length = sqrtf(light[0] * light[0] + light[1] * light[1] + light[2] * light[2]);
-    const float inv = length > 0.0f ? 1.0f / length : 0.0f;
-    out[0] = light[0] * inv / 1.33f;
-    out[2] = light[2] * inv / 1.33f;
-    out[1] = sqrtf(fmaxf(1.0f - out[0] * out[0] - out[2] * out[2], 0.0f));
-}
-
 // The tiling pattern the light shafts are cut from (kShaftsFragment): the
 // edges between drifting cells, like the caustic web on the sand, once sharp
 // (red) and once wide and soft (green). It wraps at its edges, so it repeats
@@ -1654,6 +1663,7 @@ void PostEffects::useWaterProgram(const AdvancedLighting &lighting, float time, 
     glUniform3fv(loc(p, "uHorizon"), 1, sky.horizon);
     glUniform1f(loc(p, "uFogDensity"), orthographic ? 0.0f : 0.0009f + 0.0016f * rain);
     glUniform1i(loc(p, "uUnder"), underwater ? 1 : 0);
+    glUniform1f(loc(p, "uWaterLevel"), waterLevel);
     glUniform3fv(loc(p, "uDeepColor"), 1, m_deepColor);
     glUniform1i(loc(p, "uSsrOn"), orthographic ? 0 : 1);
     glUniform1f(loc(p, "uRain"), rain);

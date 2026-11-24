@@ -98,6 +98,7 @@ uniform float uFarNormalOffset;
 uniform float uFarDepthBias;
 
 uniform vec3 uLightDir;        // towards the sun or moon
+uniform vec3 uWaterLightDir;   // the same, as bent by the surface (below the water)
 uniform vec3 uLightColor;
 uniform vec3 uSkyAmbient;
 uniform vec3 uGroundAmbient;
@@ -238,7 +239,7 @@ void main()
     if (uShadowsOn != 0)
         shadow = shadowAt(vWorldPos, n);
 
-    vec3 l = normalize(uLightDir);
+    vec3 l = normalize(vWorldPos.y < uWaterLevel ? uWaterLightDir : uLightDir);
     vec3 sun = uLightColor * shadow;
     vec3 skyAmbient = uSkyAmbient * vExtra.w;
     vec3 groundAmbient = uGroundAmbient * vExtra.w;
@@ -246,8 +247,9 @@ void main()
         // Under water the sunlight dims and turns blue with depth and is
         // focused into caustics; the ambient light is scattered blue too.
         float depth = uWaterLevel - vWorldPos.y;
-        sun *= sunThroughWater(depth, l) * caustics(vWorldPos, l, uWaterLevel, uTime);
-        vec3 tint = exp(-kWaterAbsorb * depth * 0.8) * vec3(0.8, 1.3, 1.6);
+        sun *= sunThroughWater(depth, l) *
+               caustics(vWorldPos, l, uWaterLevel, uTime, length(cameraPos - vWorldPos));
+        vec3 tint = exp(-kWaterAbsorb * depth * 0.8) * vec3(0.55, 0.95, 1.2);
         skyAmbient *= tint;
         groundAmbient = skyAmbient * 0.75; // light bounced off the pale sand
     }
@@ -444,6 +446,8 @@ void AdvancedLighting::invalidate()
     m_headOn = false;
     for (int i = 0; i < 3; ++i)
         m_headPos[i] = m_headDir[i] = 0.0f;
+    m_waterLightDir[0] = m_waterLightDir[2] = 0.0f;
+    m_waterLightDir[1] = 1.0f;
     m_sky = SkyState();
     identity(m_lightView);
     identity(m_lightProj);
@@ -564,6 +568,7 @@ bool AdvancedLighting::init()
     m_locNormalOffset = glGetUniformLocation(m_program, "uNormalOffset");
     m_locDepthBias = glGetUniformLocation(m_program, "uDepthBias");
     m_locLightDir = glGetUniformLocation(m_program, "uLightDir");
+    m_locWaterLightDir = glGetUniformLocation(m_program, "uWaterLightDir");
     m_locLightColor = glGetUniformLocation(m_program, "uLightColor");
     m_locSkyAmbient = glGetUniformLocation(m_program, "uSkyAmbient");
     m_locGroundAmbient = glGetUniformLocation(m_program, "uGroundAmbient");
@@ -745,6 +750,16 @@ void AdvancedLighting::prepare(const LightingFrame &frame)
         }
     }
 
+    // Under water the sunlight has been bent towards straight down by the
+    // surface. While the camera is under water, the shadow map is drawn
+    // along that bent light too, so the shadows on the sea bed, the caustics
+    // and the light shafts all slant the same way (the land above, out of
+    // sight then, gets slightly wrong shadows).
+    lightDirInWater(lightDir, m_waterLightDir);
+    float shadowDir[3];
+    for (int i = 0; i < 3; ++i)
+        shadowDir[i] = frame.cameraUnderwater ? m_waterLightDir[i] : lightDir[i];
+
     // Orthographic light camera. With a focus it covers the ground round
     // the point the camera looks at; otherwise (the top view) every shadow
     // caster.
@@ -761,7 +776,7 @@ void AdvancedLighting::prepare(const LightingFrame &frame)
     float reach = radius * 2.0f;
     const float upY[3] = {0.0f, 1.0f, 0.0f};
     const float upZ[3] = {0.0f, 0.0f, 1.0f};
-    const float *up = fabsf(lightDir[1]) > 0.99f ? upZ : upY;
+    const float *up = fabsf(shadowDir[1]) > 0.99f ? upZ : upY;
     bool focused = false; // the fine map covers only the ground round the focus
     if (frame.hasFocus && !frame.orthographic && kShadowReach < radius)
     {
@@ -772,7 +787,7 @@ void AdvancedLighting::prepare(const LightingFrame &frame)
         // Move the centre in whole texels across the light's view, so the
         // shadows' edges do not crawl as the camera moves.
         float s[3], u[3];
-        const float f[3] = {-lightDir[0], -lightDir[1], -lightDir[2]};
+        const float f[3] = {-shadowDir[0], -shadowDir[1], -shadowDir[2]};
         cross3(f, up, s);
         normalize3(s);
         cross3(s, f, u);
@@ -784,8 +799,8 @@ void AdvancedLighting::prepare(const LightingFrame &frame)
             center[i] += s[i] * ds + u[i] * du;
     }
 
-    const float eye[3] = {center[0] + lightDir[0] * reach, center[1] + lightDir[1] * reach,
-                          center[2] + lightDir[2] * reach};
+    const float eye[3] = {center[0] + shadowDir[0] * reach, center[1] + shadowDir[1] * reach,
+                          center[2] + shadowDir[2] * reach};
     lookAt(eye, center, up, m_lightView);
 
     // Receivers may lie far behind the casters (long evening shadows on the
@@ -815,7 +830,7 @@ void AdvancedLighting::prepare(const LightingFrame &frame)
         const float farRadius = kFarShadowReach;
         float farCenter[3] = {frame.focus[0], frame.focus[1], frame.focus[2]};
         float s[3], u[3];
-        const float f[3] = {-lightDir[0], -lightDir[1], -lightDir[2]};
+        const float f[3] = {-shadowDir[0], -shadowDir[1], -shadowDir[2]};
         cross3(f, up, s);
         normalize3(s);
         cross3(s, f, u);
@@ -825,9 +840,9 @@ void AdvancedLighting::prepare(const LightingFrame &frame)
         const float du = floorf(cu / texel + 0.5f) * texel - cu;
         for (int i = 0; i < 3; ++i)
             farCenter[i] += s[i] * ds + u[i] * du;
-        const float farEye[3] = {farCenter[0] + lightDir[0] * reach,
-                                 farCenter[1] + lightDir[1] * reach,
-                                 farCenter[2] + lightDir[2] * reach};
+        const float farEye[3] = {farCenter[0] + shadowDir[0] * reach,
+                                 farCenter[1] + shadowDir[1] * reach,
+                                 farCenter[2] + shadowDir[2] * reach};
         lookAt(farEye, farCenter, up, m_farView);
         ortho(-farRadius, farRadius, -farRadius, farRadius, nearPlane, farPlane, m_farProj);
         float farViewProj[16];
@@ -912,6 +927,7 @@ void AdvancedLighting::begin(const LightingFrame &frame)
     glUniform1f(m_locFarNormalOffset, m_farNormalOffset);
     glUniform1f(m_locFarDepthBias, m_farDepthBias);
     glUniform3fv(m_locLightDir, 1, m_sky.lightDir);
+    glUniform3fv(m_locWaterLightDir, 1, m_waterLightDir);
     glUniform3fv(m_locLightColor, 1, m_sky.lightColor);
     glUniformMatrix4fv(m_locView, 1, GL_FALSE, view);
     glUniform1i(m_locHdr, frame.hdr ? 1 : 0);

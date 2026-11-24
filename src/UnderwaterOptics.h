@@ -7,7 +7,8 @@
 
                   * caustics(): the bright, moving web of light that the
                     waves focus onto everything under water. It is the
-                    edge pattern of a slowly drifting cell (Voronoi) noise.
+                    edge pattern of a slowly drifting cell (Voronoi) noise,
+                    sharp just under the surface and softer deeper down.
                   * sunThroughWater(): how much sunlight is left after
                     travelling down to a point. Red is absorbed first, so
                     deep water turns blue.
@@ -24,11 +25,32 @@
 *************************************************************************/
 #pragma once
 
+#include <math.h>
+
+// Sunlight that enters the water is bent towards straight down (Snell's law,
+// water 1.33): the direction towards the sun as seen under water. Under the
+// surface the light shafts, the shadows, the caustics and the sun seen
+// through the waves all use it. A light below the horizon is left as it is.
+inline void lightDirInWater(const float light[3], float out[3])
+{
+    if (light[1] <= 0.0f)
+    {
+        for (int k = 0; k < 3; ++k)
+            out[k] = light[k];
+        return;
+    }
+    const float length = sqrtf(light[0] * light[0] + light[1] * light[1] + light[2] * light[2]);
+    const float inv = length > 0.0f ? 1.0f / length : 0.0f;
+    out[0] = light[0] * inv / 1.33f;
+    out[2] = light[2] * inv / 1.33f;
+    out[1] = sqrtf(fmaxf(1.0f - out[0] * out[0] - out[2] * out[2], 0.0f));
+}
+
 const char *const kUnderwaterOpticsGlsl = R"GLSL(
 // Sunlight lost per world unit of depth (red, green, blue).
 const vec3 kWaterAbsorb = vec3(0.020, 0.0070, 0.0045);
 // Light lost per world unit along the line of sight.
-const vec3 kFogExtinction = vec3(0.0125, 0.0050, 0.0034);
+const vec3 kFogExtinction = vec3(0.0170, 0.0055, 0.0035);
 
 vec2 opticsHash(vec2 p)
 {
@@ -36,8 +58,9 @@ vec2 opticsHash(vec2 p)
     return fract(sin(p) * 43758.5453);
 }
 
-// One layer of the caustic web: bright where two moving cells meet.
-float causticLayer(vec2 p, float t)
+// One layer of the caustic web: how far p is from the line where two moving
+// cells meet (0 on it).
+float causticEdge(vec2 p, float t)
 {
     p += vec2(sin(p.y * 0.9 + t * 0.7), sin(p.x * 0.8 - t * 0.6)) * 0.3;
     vec2 i = floor(p);
@@ -57,18 +80,34 @@ float causticLayer(vec2 p, float t)
             }
         }
     }
-    return 1.0 - smoothstep(0.0, 0.28, d2 - d1);
+    return d2 - d1;
 }
 
-// Caustic brightness for a point below the surface. The pattern is looked up
-// where the sun ray through the point crossed the surface, so it slides with
-// the sun. Averages roughly 1.
-float caustics(vec3 p, vec3 lightDir, float waterLevel, float t)
+// The lines of the web at width w, each colour a little wider than the one
+// before (the water bends blue more than red, so the lines' edges are
+// bluish), divided by their average so they average 1.
+vec3 causticLines(float e, float w)
+{
+    vec3 width = w * vec3(0.8, 1.0, 1.25);
+    return exp(-e / width) * (1.0 + 1.6 * width) / (2.45 * width);
+}
+
+// Caustic light for a point below the surface, as a factor on the sunlight
+// there: about 1 on average. The pattern is looked up where the (bent) sun
+// ray through the point crossed the surface, so it slides with the sun.
+// Just under the waves the lines are sharp and bright; deeper down the
+// light that the waves focused spreads out again, so they widen and fade.
+// Far from the camera (eyeDist) they widen too, as the water blurs them,
+// which also keeps them from flickering.
+vec3 caustics(vec3 p, vec3 lightDir, float waterLevel, float t, float eyeDist)
 {
     float down = max(waterLevel - p.y, 0.0);
     vec2 s = p.xz + lightDir.xz / max(lightDir.y, 0.2) * down;
-    float c = causticLayer(s * 0.11, t) * 0.65 + causticLayer(s * 0.19 + 3.7, t * 1.3) * 0.35;
-    return 0.35 + c * c * 2.6;
+    float w = 0.03 + down * 0.0012 + eyeDist * 0.0012;
+    vec3 c = causticLines(causticEdge(s * 0.11, t), w) * 0.65 +
+             causticLines(causticEdge(s * 0.19 + 3.7, t * 1.3), w * 1.2) * 0.35;
+    float contrast = (0.6 + 0.4 * exp(-down / 80.0)) * exp(-eyeDist * 0.004);
+    return mix(vec3(1.0), c, contrast);
 }
 
 // Fraction of sunlight that reaches a point at this depth.

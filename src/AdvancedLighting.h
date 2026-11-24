@@ -207,6 +207,7 @@ class AdvancedLighting
     int m_locNormalOffset;
     int m_locDepthBias;
     int m_locLightDir;
+    int m_locWaterLightDir;
     int m_locLightColor;
     int m_locSkyAmbient;
     int m_locGroundAmbient;
@@ -247,4 +248,5 @@ class AdvancedLighting
     bool m_headOn;
     float m_headPos[3];
     float m_headDir[3];
+    float m_waterLightDir[3]; // the light as bent by the water surface
 };
