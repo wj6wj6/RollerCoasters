@@ -21,6 +21,7 @@
 #include "AppControl.h"
 #include "CallBacks.H"
 #include "TexturePack.h"
+#include "WindowsKey.h"
 #include "Utilities/Platform.H"
 
 #ifndef NOMINMAX
@@ -131,6 +132,7 @@ TrainWindow::~TrainWindow()
 {
     if (window)
     {
+        WindowsKeyHook::stop();
         trainView->make_current();
         delete trainView; // also takes the touchpad's hook off the window
         // GLFW's procedure back in place, so it sees the window go
@@ -168,6 +170,10 @@ bool TrainWindow::open(std::string &error)
     // The start size grows with the display's scaling (150 % makes it half
     // as big again); the interface's GUI scale follows the window.
     glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE);
+    // Fullscreen stays on its screen when another window comes in front
+    // (Alt+Tab, Start, a click on the second screen) instead of going down
+    // to the taskbar; switchFullscreen() keeps it from staying on top.
+    glfwWindowHint(GLFW_AUTO_ICONIFY, GLFW_FALSE);
     window =
         glfwCreateWindow(kStartWidth, kStartHeight, "Train and Roller Coaster", nullptr, nullptr);
     if (!window)
@@ -202,6 +208,8 @@ bool TrainWindow::open(std::string &error)
              reinterpret_cast<HANDLE>(GetWindowLongPtrW(hwnd, GWLP_WNDPROC)));
     SetPropW(hwnd, kWindowProperty, this);
     SetWindowLongPtrW(hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(wheelProc));
+    // The Windows key does nothing while the world is played (WindowsKey.h).
+    WindowsKeyHook::setWindow(hwnd);
 
     int width = 0, height = 0;
     glfwGetFramebufferSize(window, &width, &height);
@@ -263,6 +271,7 @@ void TrainWindow::run()
             platform::runDueTimeouts();
         }
         switchFullscreen();
+        WindowsKeyHook::update(playing());
 
         now = glfwGetTime();
         if (settings.run)
@@ -353,6 +362,13 @@ void TrainWindow::switchFullscreen()
         glfwGetWindowSize(window, &m_windowedWidth, &m_windowedHeight);
         // the monitor's own mode: the screen does not change resolution
         glfwSetWindowMonitor(window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+        // GLFW puts a fullscreen window above all others, where it would
+        // hide the window brought in front of it: it is not minimized when
+        // it loses the focus any more (GLFW_AUTO_ICONIFY). In front it
+        // still covers the taskbar, which Windows lowers for a window
+        // filling the screen.
+        SetWindowPos(glfwGetWin32Window(window), HWND_NOTOPMOST, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     }
     else
     {
@@ -367,6 +383,14 @@ void TrainWindow::switchFullscreen()
     int width = 0, height = 0;
     glfwGetFramebufferSize(window, &width, &height);
     resized(width, height);
+}
+
+bool TrainWindow::playing() const
+{
+    // not on the loading screen either: the loop may be busy there, and
+    // the hook would slow every key press in the system meanwhile
+    return !automated && window && glfwGetWindowAttrib(window, GLFW_FOCUSED) == GLFW_TRUE &&
+           trainView->frameShowsScene && !menu.open();
 }
 
 void TrainWindow::drawInterface()

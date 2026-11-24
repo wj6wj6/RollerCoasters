@@ -91,7 +91,7 @@ xvfb-run -a ctest --test-dir out/build/linux --output-on-failure
 tests/linux/win32-syntax.sh
 ```
 
-`tests/linux/` 只用系統的 OpenGL／GLU 與 `stubs/` 裡的 `<windows.h>` 替身，編譯 `main.cpp`、`TrainView.cpp`、`TrainWindow.cpp`、`TouchpadGestures.cpp` 以外的原始碼與全部檢查程式（GLFW 只用到標頭）；這四個檔案只做 MinGW 語法檢查。新增測試時，在 `CMakeLists.txt` 與 `tests/linux/CMakeLists.txt` 都加上同樣的來源檔。
+`tests/linux/` 只用系統的 OpenGL／GLU 與 `stubs/` 裡的 `<windows.h>` 替身，編譯 `main.cpp`、`TrainView.cpp`、`TrainWindow.cpp`、`TouchpadGestures.cpp`、`WindowsKey.cpp` 以外的原始碼與全部檢查程式（GLFW 只用到標頭）；這五個檔案只做 MinGW 語法檢查。新增測試時，在 `CMakeLists.txt` 與 `tests/linux/CMakeLists.txt` 都加上同樣的來源檔。
 撤銷本機設定可執行 `git config --unset core.hooksPath`。
 
 ## 測試範圍
