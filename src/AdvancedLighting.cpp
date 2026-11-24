@@ -247,6 +247,11 @@ void main()
         // Under water the sunlight dims and turns blue with depth and is
         // focused into caustics; the ambient light is scattered blue too.
         float depth = uWaterLevel - vWorldPos.y;
+        // The surface bends the light steeper but lets no more of it
+        // through: per unit of level ground the sea bed gets what the
+        // surface got (less a few percent reflected), so the bent beam is
+        // weaker by the ratio of the two slopes.
+        sun *= 0.97 * max(normalize(uLightDir).y, 0.0) / max(l.y, 0.05);
         sun *= sunThroughWater(depth, l) *
                caustics(vWorldPos, l, uWaterLevel, uTime, length(cameraPos - vWorldPos));
         vec3 tint = exp(-kWaterAbsorb * depth * 0.8) * vec3(0.55, 0.95, 1.2);
