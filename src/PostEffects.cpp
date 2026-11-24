@@ -688,7 +688,9 @@ void main()
 // shafts are the light the waves focus into these lines and knots, seen in
 // the water on its way down: each shaft ends on a bright line on the sand.
 // r: the fine web, about 1 on average; g: how strongly the waves focus
-// there; b: the big swells' bright spots, about 1 on average.
+// there; b: the big swells' bright spots, about 1 on average; a: a slow
+// noise (0..1) that sets how deep each beam comes into focus and how wide
+// it is, so no two look alike.
 const char *kCausticMapFragment = R"GLSL(
 varying vec2 vUv;
 uniform vec2 uMapCenter;
@@ -698,7 +700,8 @@ void main()
 {
     vec2 s = uMapCenter + (vUv - 0.5) * uMapSize;
     gl_FragColor = vec4(causticWeb(s, 0.07, uTime).g, causticPatch(s, uTime),
-                        causticSwell(s, uTime), 1.0);
+                        causticSwell(s, uTime),
+                        opticsNoise(s * 0.045 + vec2(-uTime * 0.04, uTime * 0.03)));
 }
 )GLSL";
 
@@ -744,21 +747,31 @@ float sunAt(vec3 p)
 }
 
 // How much light the waves above focus into the sun ray that crossed the
-// surface at s and is now this deep, about 1 on average: mostly the big
-// swells' bright spots (pillars of light), with the fine web as streaks in
-// them near the surface.
+// surface at s and is now this deep, about 1 on average: the big swells'
+// bright spots, drawn out into pillars along the ray.
+// Right under the surface the light is still even: the waves only bring it
+// together a few units further down, so each beam fades in below the
+// surface instead of starting on it as if painted there, and how far down
+// varies from beam to beam. Some beams are narrow and sharp, others wide
+// and soft (a blurrier mip level), and the strength comes and goes in
+// patches.
 float beamsAt(vec2 s, float depth)
 {
     vec2 uv = (s - uMapCenter) / uMapSize + 0.5;
-    vec3 m = texture2D(uCausticMap, uv, depth * 0.04).rgb;
+    float lod = depth * 0.04;
+    vec4 m = texture2D(uCausticMap, uv, lod);
+    vec4 soft = texture2D(uCausticMap, uv, lod + 1.5);
     vec2 inside = smoothstep(vec2(0.0), vec2(0.05), uv) * (1.0 - smoothstep(vec2(0.95), vec2(1.0), uv));
-    float sharp = exp(-depth * 0.025);
+    float vary = soft.a;
     // Squared: the light gathers in few, bright pillars with darker water
     // between them, so a ray that passes one stands out from its neighbours.
-    float swell = m.b * m.b / 4.1;
-    float fine = mix(1.0, m.r, 0.5 * sharp);
-    float contrast = (0.8 + 0.2 * sharp) * clamp(0.6 + 0.8 * m.g, 0.0, 1.0) * inside.x * inside.y;
-    return mix(1.0, swell * fine, contrast);
+    float sharpSwell = m.b * m.b / 4.1;
+    float softSwell = soft.b * soft.b / 3.0;
+    float swell = mix(sharpSwell, softSwell, smoothstep(0.3, 0.7, vary));
+    float focus = 1.5 + 7.0 * vary;
+    float formed = smoothstep(0.0, focus, depth) * mix(1.0, 0.75, smoothstep(focus * 3.0, focus * 6.0, depth));
+    float contrast = formed * clamp(0.6 + 0.8 * m.g, 0.0, 1.0) * inside.x * inside.y;
+    return mix(1.0, swell, contrast);
 }
 
 void main()
