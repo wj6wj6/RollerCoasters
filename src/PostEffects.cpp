@@ -771,7 +771,9 @@ float beamsAt(vec2 s, float depth)
     float focus = 1.5 + 7.0 * vary;
     float formed = smoothstep(0.0, focus, depth) * mix(1.0, 0.75, smoothstep(focus * 3.0, focus * 6.0, depth));
     float contrast = formed * clamp(0.6 + 0.8 * m.g, 0.0, 1.0) * inside.x * inside.y;
-    return mix(1.0, swell, contrast);
+    // Pushed past a plain mix: brighter beams with darker water between,
+    // the average about the same.
+    return max(1.0 + (swell - 1.0) * contrast * 1.7, 0.15);
 }
 
 void main()
@@ -799,7 +801,10 @@ void main()
         float t = (float(i) + jitter) * dt;
         vec3 p = uCamPos + V * t;
         float depth = max(uWaterLevel - p.y, 0.0);
-        float beam = beamsAt(p.xz + slant * depth, depth);
+        // The waves tilt each beam a little on its way through the
+        // surface, so neighbouring beams are not quite parallel.
+        vec2 tilt = vec2(sin(p.z * 0.045 + uTime * 0.11), sin(p.x * 0.05 - uTime * 0.09)) * 0.07;
+        float beam = beamsAt(p.xz + (slant + tilt) * depth, depth);
         shafts += sunAt(p) * beam * sunThroughWater(depth, L) * exp(-kFogExtinction * t) * dt;
         if (uHeadOn != 0) {
             // The headlight cone lighting up the water it passes through.
