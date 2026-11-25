@@ -163,48 +163,8 @@ void main()
 }
 )GLSL";
 
-// Shared by the water's vertex and fragment shaders: the large waves.
-// Gerstner waves move each point of the surface round a circle instead of
-// just up and down, which sharpens the crests and flattens the troughs.
-// A real sea is many waves of unrelated lengths from a spread of
-// directions, so it never repeats; a few waves of round lengths add up to
-// a grid of crests. So there are eight, their lengths in no simple ratio,
-// their directions spread round the wind's (roughly from the west-south-
-// west) and each with its own phase.
-const char *kWaveGlsl = R"GLSL(
-void gerstner(vec2 dir, float len, float amp, float phase, vec2 p, float t, float shortest,
-              inout vec3 disp, inout vec3 slope)
-{
-    if (len < shortest)
-        return;
-    float k = 6.2831853 / len;
-    float w = sqrt(9.8 * k) * 0.6;
-    float ph = k * dot(dir, p) - w * t + phase;
-    float q = 0.07 / (k * amp);   // steepness: the eight waves share 0.56
-    disp.xz += dir * (q * amp * cos(ph));
-    disp.y += amp * sin(ph);
-    slope.xz += dir * (k * amp * cos(ph));
-    slope.y += q * k * amp * sin(ph);
-}
-
-// Displacement and normal of the surface at rest position p, from the
-// waves at least `shortest` long (the grid's vertices are too far apart to
-// follow the shortest ones, which only shade it).
-void oceanWaves(vec2 p, float t, float shortest, out vec3 disp, out vec3 normal)
-{
-    disp = vec3(0.0);
-    vec3 s = vec3(0.0);
-    gerstner(normalize(vec2(0.944, 0.330)), 46.3, 0.30, 0.0, p, t, shortest, disp, s);
-    gerstner(normalize(vec2(0.731, -0.682)), 31.7, 0.17, 2.1, p, t, shortest, disp, s);
-    gerstner(normalize(vec2(0.281, 0.960)), 23.9, 0.12, 4.4, p, t, shortest, disp, s);
-    gerstner(normalize(vec2(0.990, -0.141)), 17.3, 0.08, 1.3, p, t, shortest, disp, s);
-    gerstner(normalize(vec2(0.616, 0.788)), 12.9, 0.06, 5.6, p, t, shortest, disp, s);
-    gerstner(normalize(vec2(0.857, -0.515)), 9.7, 0.04, 3.2, p, t, shortest, disp, s);
-    gerstner(normalize(vec2(-0.208, 0.978)), 7.1, 0.03, 0.7, p, t, shortest, disp, s);
-    gerstner(normalize(vec2(0.951, 0.309)), 5.3, 0.02, 4.9, p, t, shortest, disp, s);
-    normal = normalize(vec3(-s.x, 1.0 - s.y, -s.z));
-}
-)GLSL";
+// The ocean's eight Gerstner waves live in UnderwaterOptics.h (kOceanWavesGlsl)
+// so the water surface and underwater caustics/light shafts stay in lockstep.
 
 // The surface is a grid of quads around the camera; the waves move its
 // vertices. Further out the grid ends in flat skirts, so the waves fade to
@@ -642,16 +602,19 @@ void main()
 }
 )GLSL";
 
-// Under water, part 1 (half size): light shafts. Each view ray is marched,
-// asking the shadow map whether the sun reaches each step and modulating it by
-// the caustic pattern at the surface above, so the shafts stream down in
-// moving bands.
+// Under water, part 1 (half size): volumetric light shafts. Each view ray is
+// marched with denser steps near the camera, checking both shadow cascades and
+// modulating sunlight by broad drifting wave swells so rays stream down as
+// smooth curtains rather than noisy high-frequency slices.
 const char *kShaftsFragment = R"GLSL(
 varying vec2 vUv;
 uniform sampler2D uDepth;
 uniform sampler2DShadow uShadowMap;
 uniform mat4 uLightMatrix;
 uniform int uShadowsOn;
+uniform sampler2DShadow uFarShadowMap;
+uniform mat4 uFarMatrix;
+uniform int uFarOn;
 uniform mat4 uInvViewProj;
 uniform vec3 uCamPos;
 uniform vec3 uLightDir;
@@ -668,9 +631,20 @@ float sunAt(vec3 p)
         return 1.0;
     vec4 sc = uLightMatrix * vec4(p, 1.0);
     vec3 c = sc.xyz / sc.w;
-    if (c.z >= 1.0)
-        return 1.0;
-    return shadow2D(uShadowMap, vec3(c.xy, c.z - 0.002)).r;
+    float edge = max(abs(c.x - 0.5), abs(c.y - 0.5));
+    float fine = c.z >= 1.0 ? 1.0 : shadow2D(uShadowMap, vec3(c.xy, c.z - 0.002)).r;
+    float toCoarse = smoothstep(0.42, 0.5, edge);
+    if (toCoarse <= 0.0)
+        return fine;
+    float coarse = 1.0;
+    if (uFarOn != 0) {
+        vec4 fc = uFarMatrix * vec4(p, 1.0);
+        vec3 f = fc.xyz / fc.w;
+        float farEdge = max(abs(f.x - 0.5), abs(f.y - 0.5));
+        coarse = f.z >= 1.0 ? 1.0 : shadow2D(uFarShadowMap, vec3(f.xy, f.z - 0.003)).r;
+        coarse = mix(coarse, 1.0, smoothstep(0.44, 0.5, farEdge));
+    }
+    return mix(fine, coarse, toCoarse);
 }
 
 void main()
@@ -685,35 +659,42 @@ void main()
         wdist = min(dist, (uWaterLevel - uCamPos.y) / V.y);
 
     vec3 L = normalize(uLightDir);
-    const int steps = 36;
-    float dt = min(wdist, 170.0) / float(steps);
+    vec3 lr = refractedLightDir(L);
+    const int steps = 40;
+    float maxDist = min(wdist, 175.0);
     // Interleaved gradient noise: a fixed, even dither that hides banding.
     float jitter = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
     vec3 shafts = vec3(0.0);
     vec3 lamp = vec3(0.0);
     for (int i = 0; i < steps; ++i) {
-        float t = (float(i) + jitter) * dt;
+        float u = (float(i) + jitter) / float(steps);
+        float t = maxDist * mix(u, u * u, 0.55);
+        float dt = maxDist * mix(1.0, 2.0 * u, 0.55) / float(steps);
         vec3 p = uCamPos + V * t;
         float depth = uWaterLevel - p.y;
         if (depth < 0.0)
             break;
-        // Fine caustic streaks inside broad beams: the pattern is looked up
-        // where the sun ray through p crossed the surface.
-        float c = caustics(p, L, uWaterLevel, uTime);
-        vec2 s = p.xz + L.xz / max(L.y, 0.2) * depth;
-        float beam = 0.25 + 1.5 * causticLayer(s * 0.034, uTime * 0.5);
-        shafts += sunAt(p) * c * c * beam * sunThroughWater(depth, L) * exp(-kFogExtinction * t) * dt;
+        vec2 s = p.xz + lr.xz / lr.y * depth;
+        float beam = waterShaftField(s, uTime);
+        float surfaceFade = smoothstep(0.0, 1.8, depth);
+        float farFade = 1.0 - smoothstep(115.0, 175.0, t);
+        shafts += sunAt(p) * beam * surfaceFade * farFade * sunThroughWater(depth, L) *
+                  exp(-kFogExtinction * t) * dt;
         if (uHeadOn != 0) {
             // The headlight cone lighting up the water it passes through.
             vec3 toP = p - uHeadPos;
             float hd = length(toP);
             float cone = smoothstep(0.90, 0.985, dot(toP / max(hd, 0.001), uHeadDir));
-            lamp += cone * (1.0 - smoothstep(50.0, 95.0, hd)) / (1.0 + hd * hd * 0.004) * exp(-kFogExtinction * t) * dt;
+            lamp += cone * (1.0 - smoothstep(50.0, 95.0, hd)) / (1.0 + hd * hd * 0.004) *
+                    exp(-kFogExtinction * t) * dt;
         }
     }
-    // Scattering is strongest looking towards the sun.
-    float phase = 0.3 + 0.7 * pow(max(dot(V, L), 0.0), 3.0);
-    shafts *= uLightColor * phase * 0.0042;
+    // Forward-peaked Henyey-Greenstein scattering in seawater plus a soft ambient term.
+    float cosTheta = dot(V, lr);
+    float g = 0.52;
+    float hg = (1.0 - g * g) / (4.0 * pow(max(1.0 + g * g - 2.0 * g * cosTheta, 0.05), 1.5));
+    float phase = 0.24 + 0.76 * hg;
+    shafts *= uLightColor * phase * 0.0052;
     shafts += lamp * vec3(0.55, 0.52, 0.42) * 0.011;
     gl_FragColor = vec4(shafts, 1.0);
 }
@@ -944,6 +925,45 @@ void main()
 }
 )GLSL";
 
+// Depth-aware separable blur for underwater light shafts: smooths ray-march
+// dither without haloing across foreground arches, corals or the train.
+const char *kShaftBlurFragment = R"GLSL(
+varying vec2 vUv;
+uniform sampler2D uSrc;
+uniform sampler2D uDepth;
+uniform mat4 uInvProj;
+uniform vec2 uStep;
+
+float linearDepth(vec2 uv)
+{
+    float d = texture2D(uDepth, uv).r;
+    if (d >= 1.0)
+        return 2000.0;
+    vec4 p = uInvProj * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+    return -p.z / p.w;
+}
+
+void main()
+{
+    float z0 = linearDepth(vUv);
+    float sigmaZ = max(z0 * 0.08, 2.0);
+    vec3 sum = texture2D(uSrc, vUv).rgb * 0.227027;
+    float wSum = 0.227027;
+    for (int i = 1; i <= 4; ++i) {
+        float fi = float(i);
+        float gw = i == 1 ? 0.1945946 : (i == 2 ? 0.1216216 : (i == 3 ? 0.054054 : 0.016216));
+        vec2 off = uStep * fi;
+        vec2 uvP = vUv + off;
+        vec2 uvN = vUv - off;
+        float wP = gw * exp(-abs(linearDepth(uvP) - z0) / sigmaZ);
+        float wN = gw * exp(-abs(linearDepth(uvN) - z0) / sigmaZ);
+        sum += texture2D(uSrc, uvP).rgb * wP + texture2D(uSrc, uvN).rgb * wN;
+        wSum += wP + wN;
+    }
+    gl_FragColor = vec4(sum / max(wSum, 0.0001), 1.0);
+}
+)GLSL";
+
 // Marches from each pixel towards the sun and collects the open sky it
 // passes: anything in between (trees, the train) leaves a dark streak.
 const char *kRaysFragment = R"GLSL(
@@ -1133,7 +1153,7 @@ void PostEffects::invalidate()
     m_halfB = Target();
     m_rays = Target();
     m_skyProgram = m_waterProgram = m_ssaoProgram = m_aoApplyProgram = 0;
-    m_brightProgram = m_blurProgram = m_raysProgram = m_compositeProgram = 0;
+    m_brightProgram = m_blurProgram = m_shaftBlurProgram = m_raysProgram = m_compositeProgram = 0;
     m_underwaterProgram = m_shaftsProgram = m_particleProgram = m_wetProgram = 0;
     m_waterList = 0;
     for (int i = 0; i < 3; ++i)
@@ -1157,8 +1177,8 @@ bool PostEffects::init()
 
     m_skyProgram = makeProgram(kSkyFragment, "sky", kNoise);
     {
-        const char *vertex[3] = {kWaveGlsl, kLandWaterMotionGlsl, kWaterVertex};
-        const char *fragment[4] = {kNoise, kWaveGlsl, kSsrGlsl, kWaterFragment};
+        const char *vertex[3] = {kOceanWavesGlsl, kLandWaterMotionGlsl, kWaterVertex};
+        const char *fragment[4] = {kNoise, kOceanWavesGlsl, kSsrGlsl, kWaterFragment};
         m_waterProgram = makeProgramParts(vertex, 3, fragment, 4, "water");
     }
     m_wetProgram = makeProgram(kWetFragment, "wet ground", kNoise, kSsrGlsl);
@@ -1166,10 +1186,16 @@ bool PostEffects::init()
     m_aoApplyProgram = makeProgram(kAoApplyFragment, "ao apply");
     m_brightProgram = makeProgram(kBrightFragment, "bright");
     m_blurProgram = makeProgram(kBlurFragment, "blur");
+    m_shaftBlurProgram = makeProgram(kShaftBlurFragment, "shaft blur");
     m_raysProgram = makeProgram(kRaysFragment, "god rays");
     m_compositeProgram = makeProgram(kCompositeFragment, "composite");
-    m_shaftsProgram = makeProgram(kShaftsFragment, "light shafts", kNoise, kUnderwaterOpticsGlsl);
-    m_underwaterProgram = makeProgram(kUnderwaterFragment, "underwater", kUnderwaterOpticsGlsl);
+    {
+        const char *vertex[1] = {kQuadVertex};
+        const char *fragment[4] = {kNoise, kOceanWavesGlsl, kUnderwaterOpticsGlsl, kShaftsFragment};
+        m_shaftsProgram = makeProgramParts(vertex, 1, fragment, 4, "light shafts");
+    }
+    m_underwaterProgram =
+        makeProgram(kUnderwaterFragment, "underwater", kOceanWavesGlsl, kUnderwaterOpticsGlsl);
     {
         const char *vertex[1] = {kParticleVertex};
         const char *fragment[1] = {kParticleFragment};
@@ -1177,8 +1203,8 @@ bool PostEffects::init()
     }
 
     m_ok = m_skyProgram && m_waterProgram && m_ssaoProgram && m_aoApplyProgram && m_brightProgram &&
-           m_blurProgram && m_raysProgram && m_compositeProgram && m_underwaterProgram &&
-           m_shaftsProgram && m_particleProgram && m_wetProgram;
+           m_blurProgram && m_shaftBlurProgram && m_raysProgram && m_compositeProgram &&
+           m_underwaterProgram && m_shaftsProgram && m_particleProgram && m_wetProgram;
     return m_ok;
 }
 
@@ -1730,17 +1756,21 @@ void PostEffects::applyUnderwater(const AdvancedLighting &lighting, float time)
         identity(invViewProj);
     const SkyState &sky = lighting.sky();
 
-    // Light shafts at half size (the expensive part), blurred a little to
-    // hide the dither.
+    // Light shafts at half size (the expensive part), smoothed with a
+    // depth-aware blur to hide dither without haloing foreground geometry.
     bindTarget(m_rays);
     GLuint p = m_shaftsProgram;
     glUseProgram(p);
     bindTexture(0, m_copy.depth);
     bindTexture(1, lighting.shadowTexture());
+    bindTexture(2, lighting.farShadowTexture());
     glUniform1i(loc(p, "uDepth"), 0);
     glUniform1i(loc(p, "uShadowMap"), 1);
     glUniformMatrix4fv(loc(p, "uLightMatrix"), 1, GL_FALSE, lighting.lightMatrix());
     glUniform1i(loc(p, "uShadowsOn"), lighting.shadowMapValid() ? 1 : 0);
+    glUniform1i(loc(p, "uFarShadowMap"), 2);
+    glUniformMatrix4fv(loc(p, "uFarMatrix"), 1, GL_FALSE, lighting.farMatrix());
+    glUniform1i(loc(p, "uFarOn"), (lighting.shadowMapValid() && lighting.farShadowValid()) ? 1 : 0);
     glUniformMatrix4fv(loc(p, "uInvViewProj"), 1, GL_FALSE, invViewProj);
     glUniform3fv(loc(p, "uCamPos"), 1, m_camera);
     glUniform3fv(loc(p, "uLightDir"), 1, sky.lightDir);
@@ -1751,8 +1781,8 @@ void PostEffects::applyUnderwater(const AdvancedLighting &lighting, float time)
     glUniform3fv(loc(p, "uHeadPos"), 1, lighting.headlightPosition());
     glUniform3fv(loc(p, "uHeadDir"), 1, lighting.headlightDirection());
     fullscreenQuad();
-    unbindTextures(2);
-    blur(m_rays, m_halfB, 1.0f);
+    unbindTextures(3);
+    bilateralBlur(m_rays, m_halfB, m_copy.depth, 1.4f);
 
     // Fog the scene and add the shafts.
     bindTarget(m_scene);
@@ -1790,6 +1820,27 @@ void PostEffects::blur(Target &src, Target &tmp, float radius)
     bindTexture(0, tmp.color);
     glUniform2f(loc(m_blurProgram, "uStep"), 0.0f, radius / static_cast<float>(src.height));
     fullscreenQuad();
+}
+
+void PostEffects::bilateralBlur(Target &src, Target &tmp, unsigned int depthTex, float radius)
+{
+    const GLuint p = m_shaftBlurProgram;
+    glUseProgram(p);
+    glUniform1i(loc(p, "uSrc"), 0);
+    glUniform1i(loc(p, "uDepth"), 1);
+    glUniformMatrix4fv(loc(p, "uInvProj"), 1, GL_FALSE, m_invProj);
+    bindTexture(1, depthTex);
+
+    bindTarget(tmp);
+    bindTexture(0, src.color);
+    glUniform2f(loc(p, "uStep"), radius / static_cast<float>(src.width), 0.0f);
+    fullscreenQuad();
+
+    bindTarget(src);
+    bindTexture(0, tmp.color);
+    glUniform2f(loc(p, "uStep"), 0.0f, radius / static_cast<float>(src.height));
+    fullscreenQuad();
+    unbindTextures(2);
 }
 
 void PostEffects::finish(const SkyState &sky, bool bloom, bool underwater)

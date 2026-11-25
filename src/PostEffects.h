@@ -122,6 +122,7 @@ class PostEffects
     void bindTarget(const Target &t);
     void fullscreenQuad();
     void blur(Target &src, Target &tmp, float radius);
+    void bilateralBlur(Target &src, Target &tmp, unsigned int depthTex, float radius);
     void buildWaterMesh();
     // copies the scene so far for the water to look through
     void copyScene();
@@ -150,6 +151,7 @@ class PostEffects
     unsigned int m_aoApplyProgram;
     unsigned int m_brightProgram;
     unsigned int m_blurProgram;
+    unsigned int m_shaftBlurProgram;
     unsigned int m_raysProgram;
     unsigned int m_compositeProgram;
     unsigned int m_underwaterProgram;
