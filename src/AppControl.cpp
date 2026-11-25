@@ -61,6 +61,25 @@ bool readCamera(const char *text, Camera &value)
     return false;
 }
 
+bool readMenu(const char *text, Menu &value)
+{
+    static const struct
+    {
+        const char *name;
+        Menu menu;
+    } kMenus[] = {{"pause", Menu::Pause},       {"ride", Menu::Ride},
+                  {"camera", Menu::Camera},     {"track", Menu::Track},
+                  {"lighting", Menu::Lighting}, {"world", Menu::World},
+                  {"controls", Menu::Controls}};
+    for (const auto &m : kMenus)
+        if (std::strcmp(text, m.name) == 0)
+        {
+            value = m.menu;
+            return true;
+        }
+    return false;
+}
+
 bool readSize(const char *text, int &width, int &height)
 {
     char *end = nullptr;
@@ -140,6 +159,7 @@ const char *usage()
            "                      [--scenery on|off] [--light on|off] [--water on|off]\n"
            "                      [--rain on|off] [--shadows on|off]\n"
            "                      [--adaptive on|off] [--samples on|off]\n"
+           "                      [--menu pause|ride|camera|track|lighting|world|controls]\n"
            "                      [--time <0-24>] [--u <train position>]\n"
            "                      [--frames <1-600>] [--size <width>x<height>]\n"
            "Exit codes: 0 passed, 1 a check failed, 2 wrong command line.\n";
@@ -190,7 +210,7 @@ bool parse(int argc, const char *const *argv, Options &options, std::string &err
         static const char *const kValueOptions[] = {
             "--screenshot", "--benchmark", "--track",  "--pack",    "--camera",   "--scenery",
             "--light",      "--water",     "--rain",   "--shadows", "--adaptive", "--samples",
-            "--time",       "--u",         "--frames", "--size"};
+            "--time",       "--u",         "--frames", "--size",    "--menu"};
         bool known = false;
         for (const char *name : kValueOptions)
             known = known || arg == name;
@@ -237,6 +257,8 @@ bool parse(int argc, const char *const *argv, Options &options, std::string &err
             ok = readSwitch(value, options.adaptive);
         else if (arg == "--samples")
             ok = readSwitch(value, options.samples);
+        else if (arg == "--menu")
+            ok = readMenu(value, options.menu);
         else if (arg == "--time")
             ok = readNumber(value, 0.0f, 24.0f, options.time);
         else if (arg == "--u")

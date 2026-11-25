@@ -140,9 +140,19 @@ int main(int argc, char **argv)
         return AppControl::kFail;
     }
     tw.trainView->startAutomation(automated ? &options : nullptr);
-    // A person starts on the title screen; a check goes straight to the ride.
+    // A person starts on the title screen; a check goes straight to the ride,
+    // with a game menu screen open over it when --menu asks for one.
     if (!automated)
         tw.menu.show(tw, GameMenu::Screen::Title);
+    else if (options.menu != AppControl::Menu::None)
+    {
+        static const GameMenu::Screen kScreens[] = {
+            GameMenu::Screen::None,   GameMenu::Screen::Pause,   GameMenu::Screen::Ride,
+            GameMenu::Screen::Camera, GameMenu::Screen::Track,   GameMenu::Screen::Lighting,
+            GameMenu::Screen::World,  GameMenu::Screen::Controls};
+        tw.menu.show(tw, GameMenu::Screen::None); // riding: Back leads to the game menu
+        tw.menu.show(tw, kScreens[static_cast<int>(options.menu)]);
+    }
     tw.run();
     if (!automated)
         return AppControl::kPass;

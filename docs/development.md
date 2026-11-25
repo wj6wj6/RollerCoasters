@@ -120,7 +120,7 @@ tests/linux/win32-syntax.sh
 - `TexturePackCheck`：zip 的三種 DEFLATE 區塊解碼與截斷資料、PNG 解碼與取動畫第一格、zip 與資料夾材質包的開啟、替代與染色、不是材質包的資料夾被拒絕、依名稱列出材質包。
 - `TwoFingerGestureCheck`：觸控板兩指濾波，驗證靜止不動、純捏合不轉動、純移動不縮放、兩者明顯時同時作用。
 - `TrackRoundTripCheck`：正式 `CTrack::writePoints/readPoints` 與真實暫存檔，驗證座標、方向、控制點數與載入後列車位置歸零；只有 x y z 的舊檔仍可載入；點數不合法、空檔、點的行數少於宣告或某行缺 x y z 時，原軌道與列車位置不變，並且傳回說明原因的錯誤文字；不存在的檔案與寫進不存在的資料夾也回報失敗；中文檔名（UTF-8 路徑，Windows 上以 `_wfopen_s` 開啟）可存可讀。
-- `AppControlCheck`：命令列解析與錯誤、`checkTrackFile()` 與正式 `CTrack::readPoints()` 對同一份檔案的結果一致、PNG 寫入後以材質包用的同一個解碼器讀回逐像素相同、空白畫面不被當成已畫出、`--doctor` 的資料夾檢查（隔離的暫存資料夾）。
+- `AppControlCheck`：命令列解析與錯誤（含 `--adaptive`、`--samples`、`--menu`）、`checkTrackFile()` 與正式 `CTrack::readPoints()` 對同一份檔案的結果一致、PNG 寫入後以材質包用的同一個解碼器讀回逐像素相同、空白畫面不被當成已畫出、`--doctor` 的資料夾檢查（隔離的暫存資料夾）。
 - `FoldersCheck`：遊戲內軌道清單用的資料夾工具（`src/Folders.*`）以真實暫存資料夾驗證：只列出指定副檔名（不分大小寫）的檔案並依名稱排序、Windows 不能用的檔名（空白、`\ / : * ? " < > |`、結尾的點或空白、CON／NUL／COM1 等裝置名稱）被拒絕、補 `.txt` 時名稱裡的點不算副檔名、`exists()` 與 `make()`；拖進視窗時的 `copyInto()`：複製檔案與整個資料夾、從資料夾本身拖來或內容相同時不再複製、同名不同內容時取名 `loop (2).txt` 且原檔不變、不存在的檔案回報原因。
 - `VersionCheck`：啟動正式 executable 的 `--version`，不建立 GUI。
 

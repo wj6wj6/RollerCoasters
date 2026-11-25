@@ -20,11 +20,12 @@
 - 成功：`smoke -Only tour`（預設展示的 Train 畫面）。輸出的 `world` 行是場景出現所花的秒數，可以拿來比較第一次生成與讀檔。
 - 空狀態：`smoke -Only world-flat`（`--scenery off`，接近 `Reset` 後的畫面）。
 - 視窗大小：`screenshot -Name narrow -AppArgs '--size','800x600'`。
-- 選單、快捷欄與 `Run`、`Reset Track` 沒有 CLI，需要手動檢查；自動模式（`--doctor`、`--screenshot`）不畫快捷欄與按鍵提示，截圖和以前一樣只有場景。
+- 快捷欄與 `Run`、`Reset Track` 沒有 CLI，需要手動檢查；自動模式（`--doctor`、`--screenshot`）不畫快捷欄與按鍵提示，截圖只有場景。
+- 選單畫面的排版：`screenshot -Name menu-track -AppArgs '--menu','track'`（`pause`、`ride`、`camera`、`track`、`lighting`、`world`、`controls`），在場景上打開該畫面再截圖；自動模式不收輸入，按鈕只能看、不能點。
 
 ## 容易騙過檢查的假象
 
-- 截圖不含快捷欄、按鍵提示與選單；它們的文字、位置與縮放只能手動看。
+- 截圖不含快捷欄與按鍵提示；選單只有 `--menu` 打開的那一頁，滑鼠停留的亮框與點擊效果只能手動看。
 - 載入畫面也是「畫出東西」的畫面：泥土背景加進度條會通過 `frame` 檢查。所以 `--screenshot` 只計算載入完成後的幀；`world` 行的秒數若接近 0，表示讀到了存檔。
 - 讀檔與重新生成走不同的路徑。要測生成，先刪掉 `data\saves\`（或重新建置 `LandWorld.cpp`），否則測到的只是讀檔。
 - 場景出現後的第一幀，貼圖可能還沒全部換好，所以預設畫 5 幀。

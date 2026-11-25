@@ -372,7 +372,9 @@ void TrainWindow::drawInterface()
     ui::Gui &gui = trainView->m_gui;
     PerfScope phase(PerfStage::Interface);
     gui.beginFrame(trainView->w(), trainView->h());
-    if (!automated)
+    // A check's pictures show only the scene, unless --menu opened a screen
+    // (main.cpp) to see it; that screen takes no input.
+    if (!automated || menu.screen() != GameMenu::Screen::None)
         menu.draw(*this, gui, glfwGetTime());
     trainView->m_guiRenderer.draw(gui);
 }
