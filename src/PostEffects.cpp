@@ -688,7 +688,8 @@ void main()
 // shafts are the light the waves focus into these lines and knots, seen in
 // the water on its way down: each shaft ends on a bright line on the sand.
 // r: the fine web, about 1 on average; g: how strongly the waves focus
-// there; b: the big swells' bright spots, about 1 on average; a: a slow
+// there; b: the big swells' bright spots, in groups, about 1 on average;
+// a: a slow
 // noise (0..1) that sets how deep each beam comes into focus and how wide
 // it is, so no two look alike.
 const char *kCausticMapFragment = R"GLSL(
@@ -696,11 +697,21 @@ varying vec2 vUv;
 uniform vec2 uMapCenter;
 uniform float uMapSize;
 uniform float uTime;
+// The big swells come in groups: a few clusters of strong ones with wide
+// stretches of calmer water between them, drifting slowly. About 1 on
+// average.
+float swellGroups(vec2 s, float t)
+{
+    float n = 0.65 * opticsNoise(s * 0.011 + vec2(t * 0.012, -t * 0.008)) +
+              0.35 * opticsNoise(s * 0.031 + vec2(5.2 - t * 0.02, t * 0.015));
+    return (0.25 + 0.75 * smoothstep(0.45, 0.8, n)) / 0.44;
+}
+
 void main()
 {
     vec2 s = uMapCenter + (vUv - 0.5) * uMapSize;
     gl_FragColor = vec4(causticWeb(s, 0.07, uTime).g, causticPatch(s, uTime),
-                        causticSwell(s, uTime),
+                        causticSwell(s, uTime) * swellGroups(s, uTime),
                         opticsNoise(s * 0.045 + vec2(-uTime * 0.04, uTime * 0.03)));
 }
 )GLSL";
@@ -765,8 +776,8 @@ float beamsAt(vec2 s, float depth)
     float vary = soft.a;
     // Squared: the light gathers in few, bright pillars with darker water
     // between them, so a ray that passes one stands out from its neighbours.
-    float sharpSwell = m.b * m.b / 4.1;
-    float softSwell = soft.b * soft.b / 3.0;
+    float sharpSwell = m.b * m.b / 5.4;
+    float softSwell = soft.b * soft.b / 3.9;
     float swell = mix(sharpSwell, softSwell, smoothstep(0.3, 0.7, vary));
     float focus = 1.5 + 7.0 * vary;
     float formed = smoothstep(0.0, focus, depth) * mix(1.0, 0.75, smoothstep(focus * 3.0, focus * 6.0, depth));
