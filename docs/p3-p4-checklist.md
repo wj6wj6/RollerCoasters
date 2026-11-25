@@ -37,8 +37,8 @@
   - 在 `Ride` 選單新增 `Physics` 開關（搭配 Arc-Length）：依高度差做動能／位能加減速（上坡慢、下坡快），設最低速度避免停在坡頂。
 - [ ] **3D 翻轉／垂直迴圈朝向支援（P3 進階項）**
   - 改善 `makeTrackFrame()`（改用平行傳輸框架或納入 `ControlPoint::orient`），讓大迴圈（Vertical Loop）與螺旋軌道不會發生側向翻轉。
-- [ ] **Adaptive subdivision（P3 進階項）**
-  - 依曲率自適應調整軌道取樣密度，附取樣點／線框檢視模式方便 Demo 展示差異。
+- [x] **Adaptive subdivision（P3 進階項）**
+  - 依曲率自適應調整軌道取樣密度，附取樣點／線框檢視模式方便 Demo 展示差異。（`Track` > `Adaptive`／`Samples`，見 [ADR 0020](adr/0020-adaptive-track-subdivision.md)）
 - [ ] **火車冒煙（P3 創意項）**
   - 在熔爐礦車上方加入上升消散的蒸氣／火星粒子。
 

@@ -139,6 +139,7 @@ const char *usage()
            "                      [--camera world|train|chase|top|fly]\n"
            "                      [--scenery on|off] [--light on|off] [--water on|off]\n"
            "                      [--rain on|off] [--shadows on|off]\n"
+           "                      [--adaptive on|off] [--samples on|off]\n"
            "                      [--time <0-24>] [--u <train position>]\n"
            "                      [--frames <1-600>] [--size <width>x<height>]\n"
            "Exit codes: 0 passed, 1 a check failed, 2 wrong command line.\n";
@@ -187,8 +188,8 @@ bool parse(int argc, const char *const *argv, Options &options, std::string &err
             continue;
         }
         static const char *const kValueOptions[] = {
-            "--screenshot", "--benchmark", "--track",  "--pack", "--camera",
-            "--scenery",    "--light",     "--water",  "--rain", "--shadows",
+            "--screenshot", "--benchmark", "--track",  "--pack",    "--camera",   "--scenery",
+            "--light",      "--water",     "--rain",   "--shadows", "--adaptive", "--samples",
             "--time",       "--u",         "--frames", "--size"};
         bool known = false;
         for (const char *name : kValueOptions)
@@ -232,6 +233,10 @@ bool parse(int argc, const char *const *argv, Options &options, std::string &err
             ok = readSwitch(value, options.rain);
         else if (arg == "--shadows")
             ok = readSwitch(value, options.shadows);
+        else if (arg == "--adaptive")
+            ok = readSwitch(value, options.adaptive);
+        else if (arg == "--samples")
+            ok = readSwitch(value, options.samples);
         else if (arg == "--time")
             ok = readNumber(value, 0.0f, 24.0f, options.time);
         else if (arg == "--u")

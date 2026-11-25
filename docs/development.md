@@ -107,10 +107,11 @@ tests/linux/win32-syntax.sh
 - `GuiCheck`：方塊遊戲風介面（`src/Ui/*`）不需 OpenGL：像素字型的寬度、下伸與未知字元、atlas 內容與配置、自動 GUI 縮放，以及按鈕按下即觸發且只觸發一次、空白處不吃事件、停用的按鈕不觸發、開關翻轉、循環按鈕左鍵往後右鍵往前並回繞、滑桿按下設值、拖出範圍時夾住、放開後停止、清單滾輪捲動到底即停、點選滑鼠下的列、清單與自畫區域（世界清單）的雙擊各回報一次，以及文字欄接收打字與 Backspace、只收可印的 ASCII、到長度上限為止；自畫清單（按鍵設定）只在滑鼠在上面時收到一次滾輪，固定文字顏色的按鈕同樣只觸發一次。
 - `GlfwInputCheck`：GLFW 事件轉 `InputEvent`（`src/Utilities/GlfwInput.*`）：字母、數字、符號、F 鍵與數字鍵盤的鍵碼，修飾鍵與按住的滑鼠鍵，拖曳、雙擊的時間與距離、`forgetClick()` 之後不算雙擊，滾輪方向，失去焦點時清掉按住的狀態，打的字轉成 `Text` 事件（Unicode 碼位）。
 - `EditKeysCheck`：控制點編輯鍵位對照正式 `FlyCam`：Fly 下沒有飛行鍵是編輯指令、Fly 的編輯鍵都是 `FlyCam` 不用的鍵、World／Top 的鍵位不變；在 `KeyBinds` 改鍵後指令跟著換到新鍵、舊鍵失效，沒改的指令不受影響。
-- `PerfStatsCheck`：效能統計（`src/PerfStats.*`、`src/PerfOverlay.*`）不需 OpenGL：關閉時不記錄、幀外的 Update 算進下一幀、階段巢狀自己只算一次、景物跨階段累加、CPU 工作不含 Swap、GPU timestamp 依打點順序配對且數量不符時忽略、幀成本取 CPU 與 GPU 較慢者、摘要的 fps／平均／最小／最大／95%、`PerfScope` 回報給目前的 `PerfStats`、`--benchmark` 報告列出最大的成本，以及 F3 畫面在最小 GUI（320×240）時不超出視窗；程式的記憶體讀得到，`Mem:` 一行的格式，F3 左欄顯示它。
+- `PerfStatsCheck`：效能統計（`src/PerfStats.*`、`src/PerfOverlay.*`）不需 OpenGL：關閉時不記錄、幀外的 Update 算進下一幀、階段巢狀自己只算一次、景物跨階段累加、CPU 工作不含 Swap、GPU timestamp 依打點順序配對且數量不符時忽略、幀成本取 CPU 與 GPU 較慢者、摘要的 fps／平均／最小／最大／95%、`PerfScope` 回報給目前的 `PerfStats`、`--benchmark` 報告列出最大的成本，以及 F3 畫面在最小 GUI（320×240）時不超出視窗；程式的記憶體讀得到，`Mem:` 一行的格式，F3 左欄顯示它；鐵軌取樣數一行（`Rails:`，自適應或固定）的格式。
 - `KeyBindsCheck`：可自訂按鍵（`src/KeyBinds.*`）：預設值就是原本的鍵、指令要修飾鍵完全相符（`Ctrl+Z` 不是 `Ctrl+Shift+Z`）而 Fly 自己的鍵不管修飾鍵、左右 Shift／Ctrl 視為同一鍵、預設沒有衝突而同一相機下共用的鍵算衝突（Train 的 R 與編輯的 R 不算）、`Reset`、單按修飾鍵當按鍵、所有鍵名讀回同一個鍵、`data/keybinds.txt` 存回讀回一致且跳過讀不懂的行、`Lock Windows Key` 預設開、關掉會存回讀回且 `Reset All` 不動它（舊檔沒有這行時是開），以及正式 `FlyCam` 用給它的鍵飛行。
 - `WindowsKeyCheck`：遊戲中的 Windows 鍵（`src/WindowsKey.h` 的 `WindowsKeyGate`）：遊戲中按下、重複與放開都吃掉，選單中按下的放開也照樣傳給系統（就算中途回到遊戲），遊戲中按下的放開也照樣吃掉（就算中途開了選單），左右鍵各自成對，沒有按下的放開不吃。hook 本身（`WindowsKeyHook`）需要真的 Windows，不在測試裡。
 - `GizmoDragCheck`：移動把手（`src/TransformGizmo.*`）找得到滑鼠下的把手，拖曳時點正好落在滑鼠下，且只沿把手允許的軸或平面移動。
+- `TrackSubdivisionCheck`：鐵軌的自適應細分（`src/TrackSampling.*`）：B-spline 與 Cardinal 在起始軌道、長直線加急彎的跑道形與點分布不均的爬坡上，每一段直線離曲線不超過誤差上限、轉角不超過上限（已切到最細的尖點除外），彎道的取樣密度遠高於直線、總點數遠少於固定取樣；取樣從 u = 0 依序到整圈終點、都在曲線上、累積長度與細分量測差 0.2% 以內；Linear 只取控制點與轉角兩側的點；`TrackMesh` 依開關用自適應或固定取樣，切換時重算。
 - `TrackInsertCheck`：新增控制點（`src/TrackInsert.*`）後軌道仍經過點擊處、新點插在前後兩點之間並內插傾斜、列車留在原位、螢幕上找得到滑鼠下的軌道位置。
 - `TrackHistoryCheck`：上一步／下一步（`src/TrackHistory.*`）回到當時的軌道與選取、下一步能前進、新修改清掉下一步、點數不變時列車留在原位、只保留最近的步數。
 - `TrackSpacingCheck`：弧長表讓枕木等距，控制點分佈很不平均時，以獨立的細分弧長量測誤差仍在 2% 以內；快取的軌道網格（`TrackMesh`）每根枕木六個面、八條鐵軌 strip 長度相同，枕木中心落在軌道上、法線為單位長，軌道不變時不重算，移動控制點、改樣條或加點時重算。

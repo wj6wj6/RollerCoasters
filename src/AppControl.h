@@ -75,8 +75,10 @@ struct Options
     Switch water = Switch::Keep;
     Switch rain = Switch::Keep;
     Switch shadows = Switch::Keep;
-    float time = -1.0f;   // --time: hour of the day, 0..24; negative keeps it
-    float trainU = -1.0f; // --u: where the train is; negative keeps it
+    Switch adaptive = Switch::Keep; // Track > Adaptive
+    Switch samples = Switch::Keep;  // Track > Samples
+    float time = -1.0f;             // --time: hour of the day, 0..24; negative keeps it
+    float trainU = -1.0f;           // --u: where the train is; negative keeps it
     int frames = 5; // frames drawn before the screenshot is taken; --benchmark: measured (300)
     int width = 0;  // --size: the window, 0 keeps it
     int height = 0;

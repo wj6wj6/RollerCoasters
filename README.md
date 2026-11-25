@@ -56,7 +56,7 @@ pwsh -File scripts/check.ps1 -Stage all -Compiler clang -Config Release
 
 上表與下面各相機、編輯的按鍵都是預設值，可以在 Esc →`Controls...`（或標題的 `Options...`→`Controls...`）改，照方塊遊戲的 `Controls`→`Key Binds`：每個指令一列，有主要按鍵與第二個按鍵；點按鍵後按新的鍵（可以加 Ctrl／Shift／Alt，例如 `Ctrl+Z`；只按 Ctrl 等修飾鍵再放開就是那個鍵本身），按 Esc 清成 `None`，點別處取消。同一個相機下兩個指令用到同一個鍵時顯示成紅字（例如 Train 相機的 `Look Ahead Again` 和編輯的 `Tilt Point` 都是 R，但不會同時能用，所以不算衝突）。每列的 `Reset` 回到預設，`Reset All` 全部回到預設。設定存在 exe 旁的 `data/keybinds.txt`，下次開啟沿用；左上角提示、快捷欄格子角落與 `Camera` 畫面的說明會顯示改過的鍵。Esc 本身不能改。Fly 相機的移動鍵按住時不管修飾鍵（按 Ctrl 加速時 W 照樣前進）；Fly 上升／下降原本還有 Page Up／Page Down，現在每個指令最多兩個鍵，預設保留 Space／E 與 Shift／Q。
 
-選單（Esc）：`Back to Ride`、`Ride`（Run、Arc Length、Speed、前後步進）、`Camera`（相機、FOV、Fly 速度）、`Track`（Spline、Edit、新增／刪除、Undo／Redo、Load／Save、R±X／R±Z、選取控制點的 X／Y／Z 微調、Reset Track）、`Lighting`（Light+、Shadows、Headlight、Bloom、SSAO、Time、Fullscreen）、`World`（Water、Rain、Scenery、Grand Tour、材質包、Open Pack Folder）、`Controls`（自訂按鍵）、`Grand Tour`、`Quit to Title`（回標題畫面，從標題畫面的 `Quit` 結束程式）。開關按一下切換，滑桿可拖曳或點；按鈕按下就生效。
+選單（Esc）：`Back to Ride`、`Ride`（Run、Arc Length、Speed、前後步進）、`Camera`（相機、FOV、Fly 速度）、`Track`（Spline、Edit、新增／刪除、Undo／Redo、Load／Save、R±X／R±Z、選取控制點的 X／Y／Z 微調、Reset Track、Adaptive 自適應細分、Samples 顯示取樣點）、`Lighting`（Light+、Shadows、Headlight、Bloom、SSAO、Time、Fullscreen）、`World`（Water、Rain、Scenery、Grand Tour、材質包、Open Pack Folder）、`Controls`（自訂按鍵）、`Grand Tour`、`Quit to Title`（回標題畫面，從標題畫面的 `Quit` 結束程式）。開關按一下切換，滑桿可拖曳或點；按鈕按下就生效。
 
 - `Grand Tour` 是一條 62 個控制點的長路線（每個轉彎的夾角都不小於 90 度，沒有銳角的急彎或髮夾彎），繞行整座方塊風島嶼與東北新大陸後潛入海底再回來：
   從海上飛向村莊（風車、小屋、麥田、路燈）→ 沿雪山岩壁螺旋爬升，跨過從山上一路跌進海裡的溪流瀑布 →

@@ -117,6 +117,13 @@ int main()
               options.track == "t.txt",
           "scene options also work when the window stays open");
 
+    check(
+        parses({"--screenshot", "a.png", "--adaptive", "off", "--samples", "on"}, options, error) &&
+            options.adaptive == Switch::Off && options.samples == Switch::On,
+        "--adaptive and --samples switch the track's subdivision and its samples");
+    check(parses({"--track", "t.txt"}, options, error) && options.adaptive == Switch::Keep &&
+              options.samples == Switch::Keep,
+          "the track's subdivision is left alone unless told");
     check(refused({"--frobnicate"}), "an unknown option is refused");
     check(refused({"stray"}), "a stray argument is refused");
     check(refused({"--screenshot"}), "an option without its value is refused");

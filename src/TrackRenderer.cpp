@@ -32,8 +32,9 @@ const float kSleeperHalfLength = 1.85f;
 const float kSleeperHalfDepth = 0.45f;
 const float kSleeperBottom = -0.18f;
 const float kSleeperTop = kRailBottom;
-const float kSleeperSpacing = 1.5f;   // target centre-to-centre spacing along the track
-const int kArcSamplesPerSegment = 48; // density of the arc-length table
+const float kSleeperSpacing = 1.5f; // target centre-to-centre spacing along the track
+const int kArcSamplesPerSegment =
+    TrackMesh::kUniformSamplesPerSegment; // density of the arc-length table
 
 // Pixel-art texture setup: 16x16 texels, about 4 texels per world unit.
 const int kTextureSize = 16;
@@ -332,25 +333,9 @@ void makeTrackFrame(const Pnt3f &forwardInput, Pnt3f &side, Pnt3f &up)
 //========================================================================
 void TrackArcTable::build(const CTrack &track, TrackSplineType splineType, int samplesPerSegment)
 {
-    m_samples.clear();
-    const int pointCount = static_cast<int>(track.points.size());
-    if (pointCount < 4 || samplesPerSegment < 1)
-        return;
-
-    const int sampleCount = pointCount * samplesPerSegment;
-    m_samples.reserve(sampleCount + 1);
-    float distance = 0.0f;
-    Pnt3f previous = track.evaluatePosition(0.0f, splineType);
-    for (int i = 0; i <= sampleCount; ++i)
-    {
-        TrackArcSample sample;
-        sample.u = static_cast<float>(i) / static_cast<float>(samplesPerSegment);
-        sample.position = track.evaluatePosition(sample.u, splineType);
-        distance += length(subtract(sample.position, previous));
-        sample.distance = distance;
-        m_samples.push_back(sample);
-        previous = sample.position;
-    }
+    // Kept dense and even in u whatever the rails use: looking up a distance
+    // interpolates u linearly between two entries, which needs short ones.
+    m_samples = sampleTrackUniform(track, splineType, samplesPerSegment);
 }
 
 float TrackArcTable::totalLength() const
@@ -385,9 +370,10 @@ float TrackArcTable::parameterAtDistance(float distance) const
 //
 // * Mesh
 //========================================================================
-bool TrackMesh::update(const CTrack &track, TrackSplineType splineType)
+bool TrackMesh::update(const CTrack &track, TrackSplineType splineType, bool adaptive)
 {
-    bool same = m_built && splineType == m_splineType && track.points.size() == m_points.size();
+    bool same = m_built && splineType == m_splineType && adaptive == m_adaptive &&
+                track.points.size() == m_points.size();
     for (size_t i = 0; same && i < m_points.size(); ++i)
     {
         const Pnt3f &a = track.points[i].pos, &b = m_points[i];
@@ -398,6 +384,7 @@ bool TrackMesh::update(const CTrack &track, TrackSplineType splineType)
 
     m_built = true;
     m_splineType = splineType;
+    m_adaptive = adaptive;
     m_points.clear();
     for (const ControlPoint &p : track.points)
         m_points.push_back(p.pos);
@@ -408,6 +395,7 @@ bool TrackMesh::update(const CTrack &track, TrackSplineType splineType)
 void TrackMesh::build(const CTrack &track, TrackSplineType splineType)
 {
     m_vertices.clear();
+    m_railSamples.clear();
     m_sleeperVertices = 0;
     m_railStripVertices = 0;
     if (track.points.size() < 4)
@@ -421,7 +409,9 @@ void TrackMesh::build(const CTrack &track, TrackSplineType splineType)
     // all the way round, including across the seam where the loop closes.
     const int count = std::max(1, static_cast<int>(floorf(total / kSleeperSpacing + 0.5f)));
     const float spacing = total / static_cast<float>(count);
-    const std::vector<TrackArcSample> &samples = m_arcTable.samples();
+    // The rails: adaptive subdivision, or the arc-length table's even steps.
+    m_railSamples = m_adaptive ? sampleTrackAdaptive(track, splineType) : m_arcTable.samples();
+    const std::vector<TrackArcSample> &samples = m_railSamples;
     m_vertices.reserve(static_cast<size_t>(count) * 24 + samples.size() * 2 * kRailStrips);
 
     const float depthTexels = 2.0f * kSleeperHalfDepth * kTexelsPerUnit;
@@ -445,7 +435,7 @@ void TrackMesh::build(const CTrack &track, TrackSplineType splineType)
     }
     m_sleeperVertices = static_cast<int>(m_vertices.size());
 
-    // Rails: frames at every sample of the arc-length table.
+    // Rails: a frame at every rail sample.
     std::vector<RailFrame> frames;
     frames.reserve(samples.size());
     for (const TrackArcSample &sample : samples)
@@ -575,11 +565,12 @@ bool TrackRenderer::bindMesh()
     return true;
 }
 
-void TrackRenderer::draw(const CTrack &track, TrackSplineType splineType, bool doingShadows)
+void TrackRenderer::draw(const CTrack &track, TrackSplineType splineType, bool doingShadows,
+                         bool adaptive)
 {
     if (track.points.size() < 4)
         return;
-    if (m_mesh.update(track, splineType))
+    if (m_mesh.update(track, splineType, adaptive))
         m_bufferStale = true;
     if (m_mesh.vertices().empty())
         return;
@@ -611,6 +602,70 @@ void TrackRenderer::draw(const CTrack &track, TrackSplineType splineType, bool d
             glDrawArrays(GL_QUAD_STRIP, m_mesh.sleeperVertexCount() + i * strip, strip);
         if (m_buffer != 0)
             glBindBuffer(GL_ARRAY_BUFFER, 0);
+    }
+
+    glPopClientAttrib();
+    glPopAttrib();
+}
+
+void TrackRenderer::drawSamples() const
+{
+    const std::vector<TrackArcSample> &samples = m_mesh.railSamples();
+    if (samples.size() < 2)
+        return;
+
+    // The frame at each sample, as the rails are built from it. The track's
+    // direction there is the average of the pieces on either side, which is
+    // what the rails' own frames come close to.
+    const size_t n = samples.size();
+    std::vector<float> line, ribs;
+    line.reserve(n * 3);
+    ribs.reserve(n * 6);
+    for (size_t i = 0; i < n; ++i)
+    {
+        const Pnt3f &here = samples[i].position;
+        // the last sample is the first one again: its neighbours wrap round
+        const Pnt3f &before = samples[i > 0 ? i - 1 : n - 2].position;
+        const Pnt3f &after = samples[i + 1 < n ? i + 1 : 1].position;
+        Pnt3f side, up;
+        makeTrackFrame(subtract(after, before), side, up);
+        const Pnt3f centre = here + up * (kRailTop + 0.02f);
+        line.insert(line.end(), {centre.x, centre.y, centre.z});
+        const float reach = kRailOffset + kRailHalfWidth + 0.25f;
+        const Pnt3f a = centre + side * -reach, b = centre + side * reach;
+        ribs.insert(ribs.end(), {a.x, a.y, a.z, b.x, b.y, b.z});
+    }
+
+    glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_LINE_BIT | GL_POINT_BIT);
+    glPushClientAttrib(GL_CLIENT_VERTEX_ARRAY_BIT);
+    if (GLAD_GL_VERSION_1_5)
+        glBindBuffer(GL_ARRAY_BUFFER, 0); // the arrays below are in memory
+    glDisable(GL_LIGHTING);
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_DEPTH_TEST); // seen through the ground and tunnels too
+    glDisable(GL_CULL_FACE);
+    glEnableClientState(GL_VERTEX_ARRAY);
+
+    // as a block game's debug lines: a dark outline under bright ones, so
+    // they read on snow and on grass alike
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        const bool outline = pass == 0;
+        glLineWidth(outline ? 4.0f : 2.0f);
+        glVertexPointer(3, GL_FLOAT, 0, ribs.data());
+        if (outline)
+            glColor3f(0.0f, 0.0f, 0.0f);
+        else
+            glColor3f(1.0f, 0.85f, 0.1f); // ribs: yellow
+        glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(n * 2));
+        glVertexPointer(3, GL_FLOAT, 0, line.data());
+        if (!outline)
+            glColor3f(0.25f, 0.9f, 1.0f); // centre line: cyan
+        glDrawArrays(GL_LINE_STRIP, 0, static_cast<GLsizei>(n));
+        glPointSize(outline ? 8.0f : 5.0f);
+        if (!outline)
+            glColor3f(1.0f, 0.3f, 0.2f); // samples: red
+        glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(n));
     }
 
     glPopClientAttrib();
