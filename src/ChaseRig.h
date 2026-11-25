@@ -10,12 +10,20 @@
                   of it; where a tunnel or the rock leaves less room above
                   the track, fit() brings the camera lower and nearer while
                   keeping the rider low in the picture as far as it can.
-                  TrainView places it on the track and keeps it out of the
-                  blocks; dragging turns it round the train (orbit()).
-                  ChaseRigCheck tests the numbers.
+                  Follower moves it along with the train without jumps:
+                  it looks along the stretch of track the camera is about
+                  to pass over, so it comes down before a tunnel's roof or
+                  an overhang instead of being pushed down under it, and
+                  never nearer than the riders' height and a half. Dragging
+                  turns it round the train (orbit()). TrainView samples the
+                  track and answers where the blocks are. ChaseRigCheck
+                  tests the numbers.
 
 *************************************************************************/
 #pragma once
+
+#include <functional>
+#include <vector>
 
 namespace ChaseRig
 {
@@ -84,5 +92,84 @@ const float kMaxTilt = 80.0f;
 // up and the camera goes down). The pitch is cut short where the view would
 // tilt past kMaxTilt. With both 0, nothing moves.
 void orbit(const Point &pivot, Point &eye, Point &look, float yawDegrees, float pitchDegrees);
+
+// A point of the track `back` units behind the front of the train along it
+// (negative: ahead of the train), and the track's up there.
+struct TrackSample
+{
+    float back;
+    Point base;
+    Point up;
+};
+
+// Is there a block at this point? (TrainView: the island's or the sea
+// floor's, as they are drawn.)
+using Solid = std::function<bool(const Point &)>;
+
+// How high above base, along up, the camera can go: a block and a half
+// short of the first block over it, no higher than upTo, and never lower
+// than kLowest even when a block is right there.
+const float kLowest = 1.0f;
+float room(const Solid &solid, const Point &base, const Point &up, float upTo);
+
+// Where the track is `back` behind the front of the train, between the
+// samples (sorted by back, nearest the front first); the first or the last
+// sample beyond them.
+void sampleAt(const std::vector<TrackSample> &track, float back, Point &base, Point &up);
+
+// The Chase camera as it follows the train: `behind` the middle of the last
+// cart along the track, `height` above it, and the eye there.
+struct Follow
+{
+    float behind;
+    float height;
+    Point eye;
+};
+
+// Follows the train from one frame to the next without jumps:
+//  * It looks at the room over the track the camera is about to pass over
+//    (from where it is up to the front of the train and beyond), each low
+//    stretch counting for less the further ahead it is: allowed height =
+//    room + kDescentSlope x distance. So it starts down well before a roof
+//    and is low enough by the time it gets there, and nothing ever has to
+//    push it down at once.
+//  * Where the roof is low it comes nearer (fit()), but never nearer than
+//    kNearestRiders riders' heights, so the view does not end up on the
+//    back of the last cart.
+//  * It moves like a critically damped spring, so it starts and stops
+//    gently rather than with a jolt: up again slowly once out from under
+//    the roof, nearer or further back smoothly, never faster than 8 units a
+//    second.
+// `track` must reach from kAhead ahead of the train's front to the last
+// cart plus the open placement's distance behind it.
+class Follower
+{
+  public:
+    // how far ahead of the train's front the samples should reach
+    static constexpr float kAhead = 30.0f;
+    // how much a low roof counts less for each unit further along the track
+    static constexpr float kDescentSlope = 0.35f;
+    // never nearer the last cart than this many riders' heights
+    static constexpr float kNearestRiders = 1.5f;
+
+    // The next update goes straight to the place, as when the Chase camera
+    // is chosen.
+    void reset()
+    {
+        m_valid = false;
+    }
+    // dt: seconds since the last update (a negative or a long one jumps
+    // straight to the place). lastHead: the last rider's head; a block
+    // between it and the camera brings the camera nearer.
+    Follow update(const std::vector<TrackSample> &track, const Solid &solid, const Train &train,
+                  float fovY, float dt, const Point &lastHead);
+
+  private:
+    bool m_valid = false;
+    float m_behind = 0.0f;
+    float m_height = 0.0f;
+    float m_behindSpeed = 0.0f; // units a second, carried from one update to the next
+    float m_heightSpeed = 0.0f;
+};
 
 } // namespace ChaseRig

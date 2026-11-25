@@ -5,11 +5,16 @@
 // taller riders; under a low roof it stays at or under the roof and comes no nearer than allowed,
 // the head still below the middle where the roof leaves room for that; following moves towards
 // the target without passing it; turning round the train keeps the camera as far from the middle
-// of the train, turns the view the way it is dragged and never tips it over.
+// of the train, turns the view the way it is dragged and never tips it over; riding through a
+// tunnel and under a low overhang, the follower moves the camera without jumps, comes down before
+// a roof instead of under it, stays out of the rock and no nearer than the riders' height and a
+// half, and goes back up once out.
 #include "ChaseRig.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <vector>
 
 namespace
 {
@@ -131,6 +136,82 @@ int main()
         }
     expect(sameReach, "turning keeps the camera as far from the middle of the train");
     expect(bounded, "the view never tilts past the limit, so the picture never turns over");
+
+    // Riding a straight track along +x through a tunnel (roof 8 above the rails from x = 200 to
+    // 260) and under a short ledge (6 above, x = 400 to 405), 20 units a second at 60 frames a
+    // second.
+    {
+        const ChaseRig::Train train = {23.0f, 5.35f};
+        const float fov = 70.0f;
+        const ChaseRig::Placement open = ChaseRig::plan(train, fov);
+        auto roofAt = [](float x) {
+            if (x >= 200.0f && x <= 260.0f)
+                return 8.0f;
+            if (x >= 400.0f && x <= 405.0f)
+                return 6.0f;
+            return 1e9f;
+        };
+        const ChaseRig::Solid solid = [&](const ChaseRig::Point &p) {
+            return p.y >= roofAt(p.x) && p.y < 30.0f;
+        };
+        const float spacing = 0.25f;
+        ChaseRig::Follower follower;
+        std::vector<ChaseRig::TrackSample> samples;
+        const float speed = 20.0f, dt = 1.0f / 60.0f;
+        float lastHeight = -1.0f, lastBehind = -1.0f;
+        float worstRise = 0.0f, worstFall = 0.0f, worstAlong = 0.0f, nearest = 1e9f;
+        float lastStep = 0.0f, lastAlongStep = 0.0f, worstJolt = 0.0f;
+        float clearance = 1e9f, heightAtTunnel = -1.0f, heightAtLedge = -1.0f, lastLow = 0.0f;
+        bool inRock = false;
+        for (float front = 0.0f; front < 600.0f; front += speed * dt)
+        {
+            samples.clear();
+            for (float back = -ChaseRig::Follower::kAhead;
+                 back <= train.length + open.behind + 1.0f; back += spacing)
+                samples.push_back({back, {front - back, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}});
+            const ChaseRig::Point head = {front - train.length, train.riderTop, 0.0f};
+            const ChaseRig::Follow f = follower.update(samples, solid, train, fov, dt, head);
+            if (lastHeight >= 0.0f)
+            {
+                worstRise = std::max(worstRise, f.height - lastHeight);
+                worstFall = std::max(worstFall, lastHeight - f.height);
+                worstAlong = std::max(worstAlong, std::fabs(f.behind - lastBehind));
+                // how much the speed changes from one frame to the next: a jolt
+                const float step = f.height - lastHeight, alongStep = f.behind - lastBehind;
+                worstJolt = std::max(worstJolt, std::max(std::fabs(step - lastStep),
+                                                         std::fabs(alongStep - lastAlongStep)));
+                lastStep = step;
+                lastAlongStep = alongStep;
+            }
+            lastHeight = f.height;
+            lastBehind = f.behind;
+            nearest = std::min(nearest, f.behind);
+            inRock = inRock || solid(f.eye);
+            clearance = std::min(clearance, roofAt(f.eye.x) - f.eye.y);
+            const float camera = f.eye.x;
+            if (heightAtTunnel < 0.0f && camera >= 200.0f)
+                heightAtTunnel = f.height;
+            if (heightAtLedge < 0.0f && camera >= 400.0f)
+                heightAtLedge = f.height;
+            if (camera > 405.0f && camera < 600.0f - train.length)
+                lastLow = f.height;
+        }
+        std::printf("ride: worst rise %.3f, fall %.3f, along %.3f a frame, jolt %.4f; nearest "
+                    "%.2f; clearance %.2f; at the tunnel %.2f, at the ledge %.2f, after %.2f\n",
+                    worstRise, worstFall, worstAlong, worstJolt, nearest, clearance, heightAtTunnel,
+                    heightAtLedge, lastLow);
+        // 8 units a second is 0.133 a frame
+        expect(worstRise < 0.14f && worstFall < 0.14f && worstAlong < 0.14f,
+               "riding in and out of a tunnel and under a ledge, the camera never jumps");
+        expect(worstJolt < 0.02f, "nor does its speed: it starts and stops gently");
+        expect(!inRock && clearance >= 1.0f,
+               "the camera stays out of the rock, with room to spare");
+        expect(heightAtTunnel <= 8.0f - 1.5f + 0.01f && heightAtLedge <= 6.0f - 1.5f + 0.01f,
+               "it is already down when it reaches a roof, not pushed down under it");
+        expect(nearest >= ChaseRig::Follower::kNearestRiders * train.riderTop - 0.01f,
+               "never nearer the last cart than the riders' height and a half");
+        expect(std::fabs(lastLow - open.height) < 0.05f, "back up once out from under the roof");
+    }
 
     std::printf("%s\n", failures == 0 ? "ChaseRigCheck passed" : "ChaseRigCheck FAILED");
     return failures == 0 ? 0 : 1;

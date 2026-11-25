@@ -7,6 +7,7 @@
 
 #include "ChaseRig.h"
 
+#include <algorithm>
 #include <math.h>
 
 namespace ChaseRig
@@ -160,6 +161,172 @@ void orbit(const Point &pivot, Point &eye, Point &look, float yawDegrees, float 
     }
     eye = add(pivot, fromPivot);
     look = add(pivot, toLook);
+}
+
+namespace
+{
+Point scale(const Point &v, float k)
+{
+    return {v.x * k, v.y * k, v.z * k};
+}
+Point lerp(const Point &a, const Point &b, float t)
+{
+    return {a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t};
+}
+// a block and a half of air kept between the camera and a block over it
+const float kMargin = 1.5f;
+// Where the camera aims to be under a roof comes down more gently than the
+// limit (kDescentSlope) and is all the way down kSettle units before the
+// roof, so the camera, following it smoothly, has caught up by then and the
+// limit itself never has to stop it.
+const float kAimSlope = 0.2f;
+const float kSettle = 20.0f;
+// ... and a little under the limit, which a spring that is still settling
+// would otherwise just touch
+const float kAimBelow = 0.3f;
+// how long (seconds, about) the camera takes to get where it aims, and how
+// fast it may go: along the track, down, and up once out from under a roof
+const float kAlongTime = 0.8f;
+const float kFallTime = 0.3f;
+const float kRiseTime = 1.2f;
+const float kMaxSpeed = 8.0f;
+
+// Moves `current` towards `target` like a critically damped spring, so it
+// starts and stops gently (its speed never jumps) and does not overshoot;
+// speed carries over from one call to the next.
+float smoothDamp(float current, float target, float &speed, float smoothTime, float dt)
+{
+    const float omega = 2.0f / smoothTime;
+    const float x = omega * dt;
+    const float decay = 1.0f / (1.0f + x + 0.48f * x * x + 0.235f * x * x * x);
+    const float most = kMaxSpeed * smoothTime;
+    const float change = std::min(most, std::max(-most, current - target));
+    const float aim = current - change;
+    const float pull = (speed + omega * change) * dt;
+    speed = (speed - omega * pull) * decay;
+    float next = aim + (change + pull) * decay;
+    if ((target > current) == (next > target))
+    {
+        next = target;
+        speed = 0.0f;
+    }
+    return next;
+}
+} // namespace
+
+float room(const Solid &solid, const Point &base, const Point &up, float upTo)
+{
+    for (float h = 1.0f; h <= upTo + kMargin; h += 0.5f)
+        if (solid(add(base, scale(up, h))))
+            return std::max(kLowest, h - kMargin);
+    return upTo;
+}
+
+void sampleAt(const std::vector<TrackSample> &track, float back, Point &base, Point &up)
+{
+    if (track.empty())
+    {
+        base = {0.0f, 0.0f, 0.0f};
+        up = {0.0f, 1.0f, 0.0f};
+        return;
+    }
+    if (back <= track.front().back || track.size() == 1)
+    {
+        base = track.front().base;
+        up = track.front().up;
+        return;
+    }
+    if (back >= track.back().back)
+    {
+        base = track.back().base;
+        up = track.back().up;
+        return;
+    }
+    const auto after = std::lower_bound(
+        track.begin(), track.end(), back,
+        [](const TrackSample &sample, float value) { return sample.back < value; });
+    const TrackSample &b = *after;
+    const TrackSample &a = *(after - 1);
+    const float span = b.back - a.back;
+    const float t = span > 1e-6f ? (back - a.back) / span : 0.0f;
+    base = lerp(a.base, b.base, t);
+    up = lerp(a.up, b.up, t);
+    const float length = sqrtf(dot(up, up));
+    up = length > 1e-6f ? scale(up, 1.0f / length) : Point{0.0f, 1.0f, 0.0f};
+}
+
+Follow Follower::update(const std::vector<TrackSample> &track, const Solid &solid,
+                        const Train &train, float fovY, float dt, const Point &lastHead)
+{
+    const Placement open = plan(train, fovY);
+    const float nearest = std::min(open.behind, kNearestRiders * train.riderTop);
+    std::vector<float> rooms(track.size());
+    for (size_t k = 0; k < track.size(); ++k)
+        rooms[k] = room(solid, track[k].base, track[k].up, open.height);
+    // The highest the camera may be `behind` the last cart: under every
+    // roof between it and the front of the train and beyond, each the less
+    // the further along it is, so the limit comes down gradually as a roof
+    // draws near and never all at once. The samples just behind the camera
+    // count too, for the block right over it. `slope`, `settle` and `below`
+    // give the limit itself, or the gentler, earlier, lower height the
+    // camera aims for.
+    const float spacing = track.size() > 1 ? track[1].back - track[0].back : 0.0f;
+    auto ceiling = [&](float behind, float slope, float settle, float below) {
+        const float at = train.length + behind;
+        float limit = open.height;
+        for (size_t k = 0; k < track.size() && track[k].back <= at + spacing; ++k)
+        {
+            const float ahead = std::max(0.0f, at - track[k].back - settle);
+            const float roof = rooms[k] < open.height ? rooms[k] - below : rooms[k];
+            limit = std::min(limit, roof + slope * ahead);
+        }
+        return std::max(kLowest, limit);
+    };
+    auto limit = [&](float behind) { return ceiling(behind, kDescentSlope, 0.0f, 0.0f); };
+    auto aimFor = [&](float behind) { return ceiling(behind, kAimSlope, kSettle, kAimBelow); };
+
+    const float from = m_valid ? m_behind : open.behind;
+    Placement want = fit(open, aimFor(from), nearest, train, fovY);
+    // and a clear line to the last rider (a bend in a tunnel), or nearer
+    for (int pass = 0; pass < 4 && want.behind > nearest; ++pass)
+    {
+        Point base, up;
+        sampleAt(track, train.length + want.behind, base, up);
+        const Point eye = add(base, scale(up, std::min(want.height, limit(want.behind))));
+        bool clear = true;
+        for (int k = 1; k < 12 && clear; ++k)
+            clear = !solid(lerp(eye, lastHead, static_cast<float>(k) / 12.0f));
+        if (clear)
+            break;
+        want.behind = std::max(nearest, want.behind * 0.7f);
+    }
+
+    if (!m_valid || dt <= 0.0f || dt > 1.0f)
+    {
+        m_behind = want.behind;
+        m_height = std::min(want.height, aimFor(m_behind));
+        m_behindSpeed = 0.0f;
+        m_heightSpeed = 0.0f;
+        m_valid = true;
+    }
+    else
+    {
+        m_behind = smoothDamp(m_behind, want.behind, m_behindSpeed, kAlongTime, dt);
+        const float target = std::min(want.height, aimFor(m_behind));
+        m_height = smoothDamp(m_height, target, m_heightSpeed,
+                              target > m_height ? kRiseTime : kFallTime, dt);
+    }
+    // the limit only ever comes down gradually, so keeping under it is no
+    // jump (and the camera, aiming lower and earlier, is under it anyway)
+    const float most = limit(m_behind);
+    if (m_height > most)
+    {
+        m_height = most;
+        m_heightSpeed = std::min(m_heightSpeed, 0.0f);
+    }
+    Point base, up;
+    sampleAt(track, train.length + m_behind, base, up);
+    return {m_behind, m_height, add(base, scale(up, m_height))};
 }
 
 } // namespace ChaseRig
