@@ -704,7 +704,7 @@ float swellGroups(vec2 s, float t)
 {
     float n = 0.65 * opticsNoise(s * 0.011 + vec2(t * 0.012, -t * 0.008)) +
               0.35 * opticsNoise(s * 0.031 + vec2(5.2 - t * 0.02, t * 0.015));
-    return (0.25 + 0.75 * smoothstep(0.45, 0.8, n)) / 0.44;
+    return (0.45 + 0.55 * smoothstep(0.4, 0.75, n)) / 0.64;
 }
 
 void main()
@@ -776,8 +776,8 @@ float beamsAt(vec2 s, float depth)
     float vary = soft.a;
     // Squared: the light gathers in few, bright pillars with darker water
     // between them, so a ray that passes one stands out from its neighbours.
-    float sharpSwell = m.b * m.b / 5.4;
-    float softSwell = soft.b * soft.b / 3.9;
+    float sharpSwell = m.b * m.b / 4.5;
+    float softSwell = soft.b * soft.b / 3.3;
     float swell = mix(sharpSwell, softSwell, smoothstep(0.3, 0.7, vary));
     float focus = 1.5 + 7.0 * vary;
     float formed = smoothstep(0.0, focus, depth) * mix(1.0, 0.75, smoothstep(focus * 3.0, focus * 6.0, depth));
