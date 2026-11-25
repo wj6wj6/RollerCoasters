@@ -149,6 +149,7 @@ pwsh -File scripts/check.ps1 -Stage all -Config Release
 - [開發設定與品質檢查](docs/development.md)
 - [貢獻流程](CONTRIBUTING.md)
 - [架構與資料流](docs/architecture.md)
+- [P3 / P4 開發清單與禁忌](docs/p3-p4-checklist.md)
 - [發布、備份與手動驗證](docs/operations.md)
 - [驗證流程與功能地圖](.agents/skills/verify-app/SKILL.md)（`scripts/control-app.ps1`）
 - [AI 開發規範](AGENTS.md)
