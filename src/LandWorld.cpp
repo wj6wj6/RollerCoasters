@@ -6744,7 +6744,8 @@ void LandWorld::buildSupportMesh()
                 const float x = -1.8f + 3.6f * roll(61 + k);
                 const size_t at =
                     static_cast<size_t>(roll(66 + k) * static_cast<float>(levels.size()));
-                const float y = levels[std::min(at, levels.size() - 1)] - 0.45f;
+                // (no std::min here: <windows.h> makes min a macro in this file)
+                const float y = levels[at < levels.size() ? at : levels.size() - 1] - 0.45f;
                 const float drop = 1.0f + 3.5f * roll(71 + k);
                 const float z = roll(76 + k) < 0.5f ? 0.33f : -0.33f;
                 addTrestleVines(batches, f, x, y, z, drop, 0.8f + 0.6f * roll(81 + k));
