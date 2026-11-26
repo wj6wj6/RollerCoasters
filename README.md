@@ -51,12 +51,14 @@ pwsh -File scripts/check.ps1 -Stage all -Compiler clang -Config Release
 | `1`–`9` | 快捷欄：`1` World、`2` Train、`3` Chase、`4` Top、`5` Fly 相機，`6` Edit 開關，`7` 新增控制點，`8` 刪除控制點，`9` Run；也可以直接點格子 |
 | F1 | 隱藏／顯示左上角提示與快捷欄 |
 | F3 | 效能畫面開關（像方塊遊戲的 F3 除錯畫面）：每秒畫幾幀、一幀花多少毫秒、CPU 與 GPU 各花多少，右上角列出每個階段（Shadow maps、Reflection、Scene、Post effects…）與每種景物（Land、Ocean、Track…）的時間，左下角是最近幾百幀的時間圖 |
+| `V` | 海面波浪模式輪替：`Gerstner` → `Height Map` → `Wave Equation`（同 `World` 的 `Waves`，任何相機都可以按） |
+| `B` | 丟一顆石頭到滑鼠指到的海面（Fly 鎖定滑鼠時是準心）；波浪不是 `Wave Equation` 時會切過去。Fly 關閉 `Edit` 時按右鍵也一樣，像方塊遊戲右鍵使用手上的東西 |
 | F11 | 全螢幕開關（任何畫面都可以按，包括標題與選單）；再按一次回到原本的視窗位置與大小。全螢幕時 Alt+Tab 或點另一個螢幕，遊戲留在原處不會縮到工作列 |
 | Windows 鍵 | `Controls` 的 `Lock Windows Key` 開著時（預設），遊戲中（視窗在前面、沒有開選單）沒有作用，不會跳出開始功能表把遊戲換到後面；按 Esc 打開選單後照常可用，Alt+Tab 隨時可用 |
 
 上表與下面各相機、編輯的按鍵都是預設值，可以在 Esc →`Controls...`（或標題的 `Options...`→`Controls...`）改，照方塊遊戲的 `Controls`→`Key Binds`：每個指令一列，有主要按鍵與第二個按鍵；點按鍵後按新的鍵（可以加 Ctrl／Shift／Alt，例如 `Ctrl+Z`；只按 Ctrl 等修飾鍵再放開就是那個鍵本身），按 Esc 清成 `None`，點別處取消。同一個相機下兩個指令用到同一個鍵時顯示成紅字（例如 Train 相機的 `Look Ahead Again` 和編輯的 `Tilt Point` 都是 R，但不會同時能用，所以不算衝突）。每列的 `Reset` 回到預設，`Reset All` 全部回到預設。設定存在 exe 旁的 `data/keybinds.txt`，下次開啟沿用；左上角提示、快捷欄格子角落與 `Camera` 畫面的說明會顯示改過的鍵。Esc 本身不能改。Fly 相機的移動鍵按住時不管修飾鍵（按 Ctrl 加速時 W 照樣前進）；Fly 上升／下降原本還有 Page Up／Page Down，現在每個指令最多兩個鍵，預設保留 Space／E 與 Shift／Q。
 
-選單（Esc）：`Back to Ride`、`Ride`（Run、Arc Length、Speed、前後步進）、`Camera`（相機、FOV、Fly 速度）、`Track`（Spline、Edit、新增／刪除、Undo／Redo、Load／Save、R±X／R±Z、選取控制點的 X／Y／Z 微調、Reset Track、Adaptive 自適應細分、Samples 顯示取樣點）、`Lighting`（Light+、Shadows、Headlight、Bloom、SSAO、Time、Fullscreen）、`World`（Water、Rain、Scenery、Grand Tour、材質包、Open Pack Folder）、`Controls`（自訂按鍵）、`Grand Tour`、`Quit to Title`（回標題畫面，從標題畫面的 `Quit` 結束程式）。開關按一下切換，滑桿可拖曳或點；按鈕按下就生效。
+選單（Esc）：`Back to Ride`、`Ride`（Run、Arc Length、Speed、前後步進）、`Camera`（相機、FOV、Fly 速度）、`Track`（Spline、Edit、新增／刪除、Undo／Redo、Load／Save、R±X／R±Z、選取控制點的 X／Y／Z 微調、Reset Track、Adaptive 自適應細分、Samples 顯示取樣點）、`Lighting`（Light+、Shadows、Headlight、Bloom、SSAO、Time、Fullscreen）、`World`（Water、Rain、Scenery、Grand Tour、Waves 海面波浪模式、材質包、Open Pack Folder）、`Controls`（自訂按鍵）、`Grand Tour`、`Quit to Title`（回標題畫面，從標題畫面的 `Quit` 結束程式）。開關按一下切換，滑桿可拖曳或點；按鈕按下就生效。
 
 - `Grand Tour` 是一條 62 個控制點的長路線（每個轉彎的夾角都不小於 90 度，沒有銳角的急彎或髮夾彎），繞行整座方塊風島嶼與東北新大陸後潛入海底再回來：
   從海上飛向村莊（風車、小屋、麥田、路燈）→ 沿雪山岩壁螺旋爬升，跨過從山上一路跌進海裡的溪流瀑布 →
@@ -121,6 +123,11 @@ pwsh -File scripts/check.ps1 -Stage all -Compiler clang -Config Release
 - `Scenery` 關閉時是原本的平坦草地島，用來編輯自己的軌道。
 - `Grand Tour` 的海底段：環形閘門、珊瑚礁、海藻林、岩拱、遺跡、沉船與水晶隧道；海裡有魚群、鯊魚、海龜、魟魚、鯨魚與水母。鏡頭在水下時有 caustics、光束、頭燈光錐、微粒與氣泡，抬頭看得到水面的 Snell 窗。
 - 水面：Gerstner 波加上捲動噪點，白浪只在部分區域出現；倒影先做螢幕空間反射，沒打中時退回平面反射。
+- 海面波浪模式（P4 的 Water surface 三項，`World` →`Waves` 或 `V` 切換，`--waves gerstner|heightmap|equation` 也可以指定）：
+  - `Gerstner`（預設，P4 Sine waves）：8 組 Gerstner 波，vertex shader 推動網格。
+  - `Height Map`（P4 Height maps）：課程附的 200 張 `HeightMap` 序列圖做成 3D 貼圖（x、z 在一張圖裡，第三軸是時間，三軸都重複，所以圖會無縫鋪滿、序列會循環），分三層疊加：`H(x, z, t) = Σ aᵢ (b(Aᵢ(x, z) + Bᵢ, Atᵢ t + Btᵢ) − 平均)`。三層各自的大小（52、23、9.5 單位一張）、方向、速度（9、6.3、4.1 秒播一輪）與振幅不同，不會排成格子。vertex shader 依高度推動頂點（依網格大小取對應的 mip，不抖動），fragment shader 用相鄰三點的高度差算法線。
+  - `Wave Equation`（P4 Wave equation）：在 GPU 上解二維波動方程式 ∂²h/∂t² = c²(∂²h/∂x² + ∂²h/∂z²)，1024 × 1024 格、每格 0.5 單位，五點 Laplacian 與 Verlet 積分 `h(t+Δt) = h + d·(h − h(t−Δt)) + k·(四鄰之和 − 4h)`，`k = (cΔt/Δx)²`（c = 7 單位／秒，每秒 60 步）；兩張 RG32F 貼圖輪流當輸入輸出（ping-pong FBO），網格跟著鏡頭以整格移動，漣漪留在世界中原處，邊緣有吸收層不反彈。激起漣漪的方式：`B` 丟石頭、Fly 右鍵、列車衝進或衝出海面時濺起一圈、礦車貼著水面跑時拖出尾流、下雨時雨滴落在鏡頭附近。
+  - 高度圖預設用 repo 內的 `assets/heightmaps/waves.png`（課程序列每隔一張、縮成 256 × 256 拼成一張，約 2.2 MB，來源見該資料夾的 README）；把課程的 `HeightMap` 資料夾（`000.png`…`199.png`）放在 exe 旁就改用原始 512 × 512 全部 200 張。
 - `Rain` 開啟下雨：天空轉陰、出現雨絲與水面漣漪，雨淋得到的地方逐漸變濕，地面水窪會反射景物；屋簷下、樹下較乾，隧道與屋內不濕。關閉後慢慢變乾。
 
 ### 材質包

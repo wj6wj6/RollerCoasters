@@ -79,6 +79,9 @@ flowchart LR
     Effects --> Frame[renderAdvancedFrame]
     Frame --> Lighting[AdvancedLighting / 兩層 shadow map、逐像素光照、頭燈]
     Frame --> Post[PostEffects / 天空、水面、雨、SSAO、Bloom、色調映射]
+    Post --> Surface[WaterSurface / 高度圖 3D 貼圖、波動方程 ping-pong FBO]
+    Surface --> Waves[WaterWaves / 波浪模式、高度圖載入與疊加、波動方程網格、列車與雨的擾動]
+    Effects -->|stirWater：列車尾流、雨滴；V／B 換模式、丟石頭| Surface
     Frame -->|drawGround / drawUnderwater / drawObjects / drawSurfaceWater| View
     Window -->|drawNow：beginFrame、Swap、endFrame| Perf[PerfStats / 每幀各階段與各景物的 CPU、GPU 毫秒]
     Frame -->|PerfScope：Shadow maps、Reflection、Scene、Post effects| Perf
@@ -136,6 +139,8 @@ flowchart LR
 | `src/TrainViewEffects.cpp` | 把 `SceneSettings` 的光影設定轉成 `LightingFrame`，並呼叫 `renderAdvancedFrame()`。 |
 | `src/AdvancedLighting.h/.cpp` | 跟著鏡頭的兩層 shadow map（鏡頭附近 150 單位的細圖、外圍 600 單位的粗圖，交界處混合）、GLSL 逐像素光照、日夜與頭燈。`setUnlit(true)` 讓不該依法線明暗的東西（方塊雲）一律用天空光加太陽或月亮的光色照亮，跟著時間與下雨變化。 |
 | `src/PostEffects.h/.cpp` | 浮點 frame buffer 與後製：天空、水面與 SSR、雨與濕地反射、SSAO、Bloom、god rays、ACES。 |
+| `src/WaterSurface.h/.cpp` | 海面 `Height Map` 與 `Wave Equation` 模式的 GPU 部分：高度圖序列的 3D 貼圖、波動方程的兩張 RG32F 貼圖與 FBO（每步一個全畫面 pass，擾動一次最多 8 個）、交給海面 shader 的 uniform 與 GLSL（`waveHeightVertex`、`waveNormal`）。見 [ADR 0021](adr/0021-height-map-and-wave-equation-water.md)。 |
+| `src/WaterWaves.h/.cpp` | 海面波浪模式的純計算部分：模式名稱、高度圖載入（課程序列資料夾或 atlas）與三層疊加 `heightAt()`、波動方程 `WaveGrid`（與 shader 同一套公式的 CPU 版）、跟隨鏡頭的整格移動、列車入水與尾流 `TrainSplash`、雨滴、視線與海面交點；由 `WaterWavesCheck` 測試。 |
 | `src/UnderwaterOptics.h` | 水下吸收、caustics 與水色常數，三個 shader 共用。 |
 | `src/LandWaterMotion.h` | 島上的水怎麼動（水面輕微起伏、落水處攪動、瀑布朝空氣的面輕微擺動），光照 shader 與水面 shader 共用，依 `LandWorld` 寫在頂點上的標記。 |
 | `src/MatrixMath.h` | 光影程式用的 column-major 4×4 矩陣輔助函式。 |

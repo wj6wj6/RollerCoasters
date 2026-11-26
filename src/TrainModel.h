@@ -21,6 +21,7 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
 #include "Track.H"
 
@@ -49,6 +50,10 @@ float length();
 
 // How high above the rails the riders' heads reach (world units).
 float riderTop();
+
+// Where each vehicle is (x, y, z of each, at its wheels), the furnace cart
+// first, as draw() puts them.
+void vehiclePositions(const CTrack &track, TrackSplineType splineType, std::vector<float> &out);
 
 // The track parameter `distance` further back along the track from u.
 float parameterBehind(const CTrack &track, float u, float distance, TrackSplineType splineType);

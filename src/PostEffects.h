@@ -13,7 +13,9 @@
                     normals, planar reflection (the scene is rendered a
                     second time, mirrored), refraction of the sea bed,
                     depth-based colour absorption, Fresnel, sun glints,
-                    shadows and shore foam.
+                    shadows and shore foam. The waves are Gerstner waves,
+                    the course's height maps or the wave equation
+                    (WaterSurface.h, World > Waves).
                   * Under water (camera below the surface): blue distance
                     fog, light shafts traced through the shadow map and
                     the caustics, drifting specks and rising bubbles, and
@@ -35,6 +37,7 @@
 #include <vector>
 
 #include "AdvancedLighting.h"
+#include "WaterSurface.h"
 
 struct EffectToggles
 {
@@ -79,6 +82,12 @@ class PostEffects
 
     // Height of the sea.
     float waterLevel;
+    // How the sea's surface moves (World > Waves), and the wave equation's
+    // disturbances.
+    WaterSurface &surface()
+    {
+        return m_surface;
+    }
     // Points bubbles rise from (x, y, z for each), seen under water.
     std::vector<float> bubbleSources;
 
@@ -123,6 +132,7 @@ class PostEffects
     void fullscreenQuad();
     void blur(Target &src, Target &tmp, float radius);
     void buildWaterMesh();
+    void buildFineWaterMesh();
     // copies the scene so far for the water to look through
     void copyScene();
     // binds the water's program and sets what the sea and the water on land
@@ -156,7 +166,9 @@ class PostEffects
     unsigned int m_shaftsProgram;
     unsigned int m_particleProgram;
     unsigned int m_wetProgram;
-    unsigned int m_waterList; // display list of the surface mesh
+    unsigned int m_waterList;     // display list of the surface mesh
+    unsigned int m_fineWaterList; // the finer one for the height maps and the wave equation
+    WaterSurface m_surface;
 
     float m_camera[3];       // camera position, set by setUnderwaterCamera()
     float m_deepColor[3];    // colour of the water looking down ...

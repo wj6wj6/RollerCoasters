@@ -186,6 +186,23 @@ const Command kCommands[KeyBinds::kActions] = {
      false,
      {key(Key::Keypad + '0'), none()}},
 
+    // two letters nothing else uses: V cycles World > Waves, B drops a stone
+    // where the mouse (or the Fly crosshair) meets the sea
+    {Action::CycleWaves,
+     "water.waves",
+     "Cycle Waves",
+     Group::Water,
+     kAnywhere,
+     false,
+     {key('v'), none()}},
+    {Action::DropStone,
+     "water.stone",
+     "Drop a Stone (Wave Equation)",
+     Group::Water,
+     kAnywhere,
+     false,
+     {key('b'), none()}},
+
     {Action::ToggleEdit,
      "edit.toggle",
      "Edit On / Off",
@@ -399,6 +416,8 @@ const char *KeyBinds::groupName(Group group)
         return "Hotbar";
     case Group::Ride:
         return "Ride and Cameras";
+    case Group::Water:
+        return "Water";
     case Group::Editing:
         return "Editing Points";
     case Group::Fly:

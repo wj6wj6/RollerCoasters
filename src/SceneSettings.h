@@ -45,6 +45,7 @@ struct SceneSettings
 
     // World
     bool water = true;   // reflective ocean
+    int waves = 0;       // WaveModel: 0 Gerstner, 1 height maps, 2 wave equation
     bool rain = false;   // wet ground, streaks and ripples
     bool scenery = true; // the island's scenery, or level grass
 };
