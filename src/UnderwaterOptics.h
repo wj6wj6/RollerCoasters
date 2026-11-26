@@ -152,7 +152,7 @@ vec3 caustics(vec3 p, vec3 lightDir, float waterLevel, float t, float eyeDist, f
     float w = 0.04 + down * 0.0012 + eyeDist * 0.0012;
     // Kept gentle: a web drawn at full strength reads as a net laid on the
     // sand rather than light.
-    float contrast = 0.6 * (0.6 + 0.4 * exp(-down / 80.0)) * exp(-eyeDist * 0.004) *
+    float contrast = 0.8 * (0.6 + 0.4 * exp(-down / 80.0)) * exp(-eyeDist * 0.004) *
                      (0.35 + 0.9 * causticPatch(s, t));
     vec3 web = mix(vec3(0.92), causticWeb(s, w, t), clamp(contrast, 0.0, 1.0));
     return web * mix(1.0, swell, 0.3 * exp(-eyeDist * 0.004));
