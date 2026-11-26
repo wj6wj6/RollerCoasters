@@ -7,10 +7,7 @@
 
                   * caustics(): the bright, moving web of light that the
                     waves focus onto everything under water. It is the
-                    edge pattern of a slowly drifting cell (Voronoi) noise,
-                    strong just under the surface and fading with depth;
-                    causticStreaks() is the same pattern at full strength,
-                    for the streaks in the light shafts.
+                    edge pattern of a slowly drifting cell (Voronoi) noise.
                   * sunThroughWater(): how much sunlight is left after
                     travelling down to a point. Red is absorbed first, so
                     deep water turns blue.
@@ -66,25 +63,12 @@ float causticLayer(vec2 p, float t)
 // Caustic brightness for a point below the surface. The pattern is looked up
 // where the sun ray through the point crossed the surface, so it slides with
 // the sun. Averages roughly 1.
-// The caustic pattern where the sun ray through p crossed the surface,
-// 0.35 to about 3 (1 on average): the streaks inside the light shafts.
-float causticStreaks(vec3 p, vec3 lightDir, float waterLevel, float t)
+float caustics(vec3 p, vec3 lightDir, float waterLevel, float t)
 {
     float down = max(waterLevel - p.y, 0.0);
     vec2 s = p.xz + lightDir.xz / max(lightDir.y, 0.2) * down;
     float c = causticLayer(s * 0.11, t) * 0.65 + causticLayer(s * 0.19 + 3.7, t * 1.3) * 0.35;
     return 0.35 + c * c * 2.6;
-}
-
-// The caustics the sea bed and everything under water are lit by: just
-// under the surface the focused light is sharp and bright; deeper down it
-// spreads out and the pattern fades, as real caustics do (a strong net at
-// every depth looked painted on).
-float caustics(vec3 p, vec3 lightDir, float waterLevel, float t)
-{
-    float down = max(waterLevel - p.y, 0.0);
-    float fade = exp(-down * 0.035);
-    return mix(1.0, causticStreaks(p, lightDir, waterLevel, t) * 0.8 + 0.1, fade);
 }
 
 // Fraction of sunlight that reaches a point at this depth.

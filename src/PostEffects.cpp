@@ -712,7 +712,7 @@ void main()
             break;
         // Fine caustic streaks inside broad beams: the pattern is looked up
         // where the sun ray through p crossed the surface.
-        float c = causticStreaks(p, L, uWaterLevel, uTime);
+        float c = caustics(p, L, uWaterLevel, uTime);
         vec2 s = p.xz + L.xz / max(L.y, 0.2) * depth;
         float beam = 0.25 + 1.5 * causticLayer(s * 0.034, uTime * 0.5);
         shafts += sunAt(p) * c * c * beam * sunThroughWater(depth, L) * exp(-kFogExtinction * t) * dt;
