@@ -73,6 +73,9 @@ float opticsNoise(vec2 p)
 float causticEdge(vec2 p, float t)
 {
     p += vec2(sin(p.y * 0.9 + t * 0.7), sin(p.x * 0.8 - t * 0.6)) * 0.3;
+    // A second, finer warp a few times across each cell bends the cells'
+    // straight edges into curving, uneven threads, as real caustics are.
+    p += vec2(sin(p.y * 2.7 + p.x * 0.6 + t * 0.9), sin(p.x * 2.3 - p.y * 0.7 - t * 0.8)) * 0.2;
     vec2 i = floor(p);
     vec2 f = fract(p);
     float d1 = 8.0;
@@ -146,8 +149,10 @@ vec3 caustics(vec3 p, vec3 lightDir, float waterLevel, float t, float eyeDist, f
 {
     float down = max(waterLevel - p.y, 0.0);
     vec2 s = p.xz + lightDir.xz / max(lightDir.y, 0.2) * down;
-    float w = 0.03 + down * 0.0012 + eyeDist * 0.0012;
-    float contrast = (0.6 + 0.4 * exp(-down / 80.0)) * exp(-eyeDist * 0.004) *
+    float w = 0.04 + down * 0.0012 + eyeDist * 0.0012;
+    // Kept gentle: a web drawn at full strength reads as a net laid on the
+    // sand rather than light.
+    float contrast = 0.6 * (0.6 + 0.4 * exp(-down / 80.0)) * exp(-eyeDist * 0.004) *
                      (0.35 + 0.9 * causticPatch(s, t));
     vec3 web = mix(vec3(0.92), causticWeb(s, w, t), clamp(contrast, 0.0, 1.0));
     return web * mix(1.0, swell, 0.3 * exp(-eyeDist * 0.004));
