@@ -414,7 +414,11 @@ void main()
         N = normalize(faceN + mix(flatRipple, fallRipple, fall));
     } else {
         oceanWaves(vBase, uTime, 0.0, disp, N);
-        vec2 g = rippleSlope(vBase, uTime);
+        // the open sea is never glassy: the ripples a little stronger, and
+        // a layer of the smallest, quickest ones the wind raises, stretched
+        // across it so they lie in rows
+        vec2 g = rippleSlope(vBase, uTime) * 1.5;
+        g += noiseSlope(vec2(vBase.x * 6.0, vBase.y * 9.0) + vec2(uTime * 0.9, -uTime * 0.6)) * 0.012;
         if (uRain > 0.0)
             g += rainSlope(vBase, uTime) * uRain;
         N = normalize(vec3(N.x - g.x, N.y, N.z - g.y));
@@ -474,10 +478,16 @@ void main()
         }
     }
 
-    // Light is absorbed with depth, red first: shallow water is clear and
-    // turquoise, deep water blue.
+    // Sea water both absorbs light, red first, and scatters it off what
+    // floats in it: the further the view goes into it, the more of what is
+    // seen is that scattered light, a deep blue-green, and the less the sea
+    // bed. So the shallows over sand are clear turquoise and the open sea a
+    // deep blue in which the bottom is lost after a few blocks, as in a real
+    // sea (it was as clear as a swimming pool all the way down). The water on
+    // land keeps the clearer water of a pond.
     float sunUp = clamp(uLightDir.y * 2.0, 0.0, 1.0);
-    vec3 scatter = vec3(0.004, 0.050, 0.11) * (uLightColor * sunUp * mix(0.6, 1.0, shadow) + uZenith * 2.0);
+    vec3 scatterColour = uIsland != 0 ? vec3(0.004, 0.050, 0.11) : vec3(0.0018, 0.022, 0.046);
+    vec3 scatter = scatterColour * (uLightColor * sunUp * mix(0.6, 1.0, shadow) + uZenith * 2.0);
     // The water on land is only a few blocks deep: it takes its colour as
     // if it were deeper, so a shallow pond still looks like water.
     // A fall has the rock right behind it, so it takes the colour of a
@@ -486,14 +496,17 @@ void main()
     float looksDeep = thickness;
     if (uIsland != 0)
         looksDeep = thickness * 3.0 + mix(0.8, 3.0, fall);
-    vec3 absorb = exp(-looksDeep * vec3(0.12, 0.030, 0.020));
+    vec3 extinction = uIsland != 0 ? vec3(0.12, 0.030, 0.020) : vec3(0.22, 0.060, 0.045);
+    vec3 absorb = exp(-looksDeep * extinction);
     vec3 body = refr * absorb + scatter * (1.0 - absorb);
 
     // Reflection: what is on screen where the mirrored ray lands (SSR);
     // where that finds nothing, the mirrored view drawn beforehand (it is
     // mirrored in the sea's surface, so the water on land, higher up, takes
     // the sky's colour instead).
-    vec3 refl = texture2D(uReflection, suv + distort).rgb;
+    // (the sea's waves break the mirrored view up more than they bend the
+    // view through it, so its reflection is not a sheet of glass)
+    vec3 refl = texture2D(uReflection, suv + distort * (uIsland != 0 ? 1.0 : 2.2)).rgb;
     if (uIsland != 0)
         refl = mix(uHorizon, uZenith, clamp(reflect(-V, N).y * 1.5, 0.0, 1.0));
     if (uSsrOn != 0) {
@@ -699,7 +712,7 @@ void main()
             break;
         // Fine caustic streaks inside broad beams: the pattern is looked up
         // where the sun ray through p crossed the surface.
-        float c = caustics(p, L, uWaterLevel, uTime);
+        float c = causticStreaks(p, L, uWaterLevel, uTime);
         vec2 s = p.xz + L.xz / max(L.y, 0.2) * depth;
         float beam = 0.25 + 1.5 * causticLayer(s * 0.034, uTime * 0.5);
         shafts += sunAt(p) * c * c * beam * sunThroughWater(depth, L) * exp(-kFogExtinction * t) * dt;
