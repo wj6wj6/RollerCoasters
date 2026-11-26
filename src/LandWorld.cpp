@@ -6515,10 +6515,10 @@ void addTrestleLantern(Batches &batches, const TrestleFrame &f, float x, float y
 // (spruce in the snow, mangrove in the swamp, dark timber by the volcano, in
 // the badlands and the bamboo hills, oak elsewhere), each a shade lighter or
 // darker, under a cap of planks; braced crosswise, with single braces, or
-// with knee braces only; each tall post on a pier of stone (dressed, rough
-// or mossy, some with a slab on top; out at sea mossy cobble rising from the
-// sea bed out of the water), the snow on them in the mountains and leaves
-// growing on them in the jungle; lanterns on chains of different lengths
+// with knee braces only; every post on stone (on land a wide, low footing
+// half sunk in the ground; out at sea a pier rising from the sea bed out of
+// the water under a slab; dressed, rough or mossy), the snow on it in the
+// mountains and leaves growing against it in the jungle; lanterns on chains of different lengths
 // here and there (never two trestles running, sometimes one on each side);
 // vines of different lengths hanging in the swamp and the bamboo hills.
 // The dice are thrown from where each trestle stands, so it looks the same
@@ -6584,17 +6584,24 @@ void LandWorld::buildSupportMesh()
         };
         for (int side = 0; side < 2; ++side)
         {
+            pierTop[side] = t.ground[side];
+            if (!t.post[side])
+                continue;
+            // Every post stands on stone. On land a footing, wide and low,
+            // half sunk in the ground with the post standing on it, as a
+            // timber post's foundation is; out at sea a pier rising from the
+            // sea bed to just out of the water under a slab a little wider
+            // still. Only the stone, and a little the size, change from one
+            // to the next: piers of all heights round the posts looked like
+            // sleeves pulled over them.
             const float ground = t.ground[side];
             const bool sea = ground < water;
-            pierTop[side] = sea ? water + 0.6f + 0.9f * roll(10 + side)
-                                : ground + 0.8f + 1.0f * roll(10 + side);
-            // a short post needs no pier: it stands on the ground
-            if (!t.post[side] || t.top - pierTop[side] < 1.5f)
-            {
-                pierTop[side] = ground;
+            float top = sea ? water + 0.45f + 0.25f * roll(10 + side)
+                            : ground + 0.45f + 0.15f * roll(10 + side);
+            top = fminf(top, t.top - 1.0f); // a low trestle: the post still shows
+            if (top <= ground + 0.2f)
                 continue;
-            }
-            const float half = (sea ? 0.7f : 0.55f) + 0.15f * roll(12 + side);
+            const float half = (sea ? 0.72f : 0.8f) + 0.1f * roll(12 + side);
             const float r = roll(14 + side);
             int stone;
             if (sea)
@@ -6607,17 +6614,16 @@ void LandWorld::buildSupportMesh()
                             : (r < 0.75f ? T::COBBLE : (r < 0.9f ? T::MOSSY_BRICKS : T::MOSSY));
             const float x = t.foot[side];
             f.shade = 0.88f + 0.1f * roll(16 + side);
-            const float lo[3] = {x - half, ground - 0.6f, -half};
-            const float hi[3] = {x + half, pierTop[side], half};
+            const float lo[3] = {x - half, ground - 0.8f, -half};
+            const float hi[3] = {x + half, top, half};
             addTrestleBox(batches, stone, f, lo, hi, 0.0f);
-            float top = pierTop[side];
-            if (roll(18 + side) < 0.35f)
+            if (sea)
             {
-                // a dressed slab overhanging the pier a little
-                const float slabLo[3] = {x - half - 0.12f, top, -half - 0.12f};
-                const float slabHi[3] = {x + half + 0.12f, top + 0.25f, half + 0.12f};
+                // the pier's slab, overhanging it a little
+                const float slabLo[3] = {x - half - 0.15f, top, -half - 0.15f};
+                const float slabHi[3] = {x + half + 0.15f, top + 0.3f, half + 0.15f};
                 addTrestleBox(batches, T::STONE_BRICKS, f, slabLo, slabHi, 0.0f);
-                top += 0.25f;
+                top += 0.3f;
             }
             f.shade = 0.95f;
             if (snowy)
@@ -6628,13 +6634,12 @@ void LandWorld::buildSupportMesh()
             }
             else if (leaves >= 0 && roll(20 + side) < (overgrown ? 0.55f : 0.5f))
             {
-                // leaves grown over a corner of the pier
-                const float size = 0.35f + 0.3f * roll(22 + side);
-                const float cxp =
-                    x + (roll(24 + side) < 0.5f ? -1.0f : 1.0f) * (half - size * 0.5f);
-                const float czp = (roll(26 + side) < 0.5f ? -1.0f : 1.0f) * (half - size * 0.5f);
-                const float leafLo[3] = {cxp - size, top - size * 0.6f, czp - size};
-                const float leafHi[3] = {cxp + size, top + size, czp + size};
+                // leaves grown up against a corner of the stone
+                const float size = 0.3f + 0.25f * roll(22 + side);
+                const float cxp = x + (roll(24 + side) < 0.5f ? -1.0f : 1.0f) * half;
+                const float czp = (roll(26 + side) < 0.5f ? -1.0f : 1.0f) * half;
+                const float leafLo[3] = {cxp - size, top - size * 1.2f, czp - size};
+                const float leafHi[3] = {cxp + size, top + size * 0.5f, czp + size};
                 addTrestleBox(batches, leaves, f, leafLo, leafHi, 0.0f);
             }
             pierTop[side] = top;
