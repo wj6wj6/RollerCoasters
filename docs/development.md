@@ -96,6 +96,7 @@ tests/linux/win32-syntax.sh
 
 ## 測試範圍
 
+- `WaterWavesCheck`：海面波浪模式（`WaterWaves`）：模式輪替、atlas 切成影格與三軸重複的三線性取樣（與 GL 一致）、repo 內高度圖的影格數、無縫與循環、三層疊加後的波高與平均；波動方程網格的穩定條件、石頭只壓下落點、波前以約 c 的速度擴散且是圓的、漣漪會衰減且長時間不發散、網格跟著鏡頭整格移動時漣漪留在世界原處、跳太遠時清空；列車衝入／衝出海面、貼水面尾流、停著或在深水不擾動、瞬移不算；雨滴數量與範圍；視線與海面的交點。在 repo 根目錄執行（讀 `assets/heightmaps/waves.png`）。
 - `GestureMotionCheck`：正式 `platform::` event loop／timer（`PlatformLoop.cpp`）與 `ArcBallCam`，以 `InputEvent` 送入事件，涵蓋手勢平滑度、總旋轉量、重設、水平線、縮放、俯仰限制、觸控板細小位移立即套用、空白處拖曳旋轉、旋轉與縮放同時作用及拖曳中縮放。
 - `FlyCamCheck`：正式 `platform::` event loop／timer 與 `FlyCam`，以 `InputEvent` 送入事件，涵蓋由 World 視圖矩陣接續、視角差補償、WASD／空白鍵／Shift／QE 依實際時間移動與放開即停、Ctrl 加速、方向鍵轉向與俯仰限制、拖曳看、滑鼠看、滾輪調速、觸控板捲動／捏合／平移、速度按鍵與失去焦點時停止、地面（含 `setGround()` 降低與升高後不跳動）與場景範圍限制、視野設定與上下限，以及 `lookAt()` 走短邊平滑轉向且使用者轉頭時立即讓出。
 - `WaterFlowCheck`：水流規則（`src/WaterFlow.*`）：平地擴散 7 格、方向權重（999、落差在鄰格下方為 0、4 格內最短路徑）、只往最近落差流、超出 4 格時平均擴散、繞牆搜尋、落地後從水位 1 重新擴散、大海吸收。
@@ -120,7 +121,7 @@ tests/linux/win32-syntax.sh
 - `TexturePackCheck`：zip 的三種 DEFLATE 區塊解碼與截斷資料、PNG 解碼與取動畫第一格、zip 與資料夾材質包的開啟、替代與染色、不是材質包的資料夾被拒絕、依名稱列出材質包。
 - `TwoFingerGestureCheck`：觸控板兩指濾波，驗證靜止不動、純捏合不轉動、純移動不縮放、兩者明顯時同時作用。
 - `TrackRoundTripCheck`：正式 `CTrack::writePoints/readPoints` 與真實暫存檔，驗證座標、方向、控制點數與載入後列車位置歸零；只有 x y z 的舊檔仍可載入；點數不合法、空檔、點的行數少於宣告或某行缺 x y z 時，原軌道與列車位置不變，並且傳回說明原因的錯誤文字；不存在的檔案與寫進不存在的資料夾也回報失敗；中文檔名（UTF-8 路徑，Windows 上以 `_wfopen_s` 開啟）可存可讀。
-- `AppControlCheck`：命令列解析與錯誤（含 `--adaptive`、`--samples`、`--menu`）、`checkTrackFile()` 與正式 `CTrack::readPoints()` 對同一份檔案的結果一致、PNG 寫入後以材質包用的同一個解碼器讀回逐像素相同、空白畫面不被當成已畫出、`--doctor` 的資料夾檢查（隔離的暫存資料夾）。
+- `AppControlCheck`：命令列解析與錯誤（含 `--adaptive`、`--samples`、`--menu`、`--waves`）、`checkTrackFile()` 與正式 `CTrack::readPoints()` 對同一份檔案的結果一致、PNG 寫入後以材質包用的同一個解碼器讀回逐像素相同、空白畫面不被當成已畫出、`--doctor` 的資料夾檢查（隔離的暫存資料夾）。
 - `FoldersCheck`：遊戲內軌道清單用的資料夾工具（`src/Folders.*`）以真實暫存資料夾驗證：只列出指定副檔名（不分大小寫）的檔案並依名稱排序、Windows 不能用的檔名（空白、`\ / : * ? " < > |`、結尾的點或空白、CON／NUL／COM1 等裝置名稱）被拒絕、補 `.txt` 時名稱裡的點不算副檔名、`exists()` 與 `make()`；拖進視窗時的 `copyInto()`：複製檔案與整個資料夾、從資料夾本身拖來或內容相同時不再複製、同名不同內容時取名 `loop (2).txt` 且原檔不變、不存在的檔案回報原因。
 - `VersionCheck`：啟動正式 executable 的 `--version`，不建立 GUI。
 

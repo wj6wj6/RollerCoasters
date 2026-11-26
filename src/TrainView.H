@@ -223,6 +223,13 @@ class TrainView final : public Viewport
     bool advancedLightingOn();
     void drawAdvanced();
     void fillLightingFrame(LightingFrame &frame);
+    // World > Waves: what disturbs the wave equation this frame (the train
+    // going through the surface, the rain), before the sea is drawn
+    void stirWater(const LightingFrame &frame);
+    // V cycles the waves, B drops a stone; true when the key was one of them
+    bool waterKey(const InputEvent &e);
+    // a stone into the sea where the line of sight through this pixel meets it
+    void dropStone(int mouseX, int mouseY);
 
     // the island everything stands on (the scenery, or the level editor
     // island), the trestles under the track and the sea floor around it
@@ -363,4 +370,9 @@ class TrainView final : public Viewport
     float m_rain = 0.0f;         // 0 dry sky, 1 pouring
     float m_wetness = 0.0f;      // 0 dry ground, 1 soaked: lags behind the rain
     float m_weatherTime = -1.0f; // when the weather was last advanced
+
+    // The wave equation's disturbances (TrainViewEffects.cpp).
+    WaterWaves::TrainSplash m_trainSplash;
+    unsigned m_rainSeed = 12345u;
+    float m_stirTime = -1.0f; // when the water was last stirred
 };

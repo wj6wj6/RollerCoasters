@@ -648,6 +648,8 @@ bool TrainWindow::applyOptions(const AppControl::Options &options, std::string &
     set(settings.shadows, options.shadows);
     set(settings.adaptiveTrack, options.adaptive);
     set(settings.showSamples, options.samples);
+    if (options.waves >= 0)
+        settings.waves = options.waves;
     if (options.time >= 0)
         settings.timeOfDay = options.time;
     if (options.trainU >= 0)

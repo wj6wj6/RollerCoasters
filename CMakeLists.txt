@@ -99,6 +99,8 @@ add_executable(RollerCoasters
     src/TransformGizmo.h src/TransformGizmo.cpp
     src/UnderwaterOptics.h
     src/WaterFlow.h src/WaterFlow.cpp
+    src/WaterSurface.h src/WaterSurface.cpp
+    src/WaterWaves.h src/WaterWaves.cpp
     src/WorldShape.h src/WorldShape.cpp
     src/ZipArchive.h src/ZipArchive.cpp
     src/CallBacks.H src/CallBacks.cpp
@@ -131,6 +133,8 @@ target_link_libraries(RollerCoasters PRIVATE Utilities glad glfw hid imm32)
 add_custom_command(TARGET RollerCoasters POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:RollerCoasters>/TrackFiles"
     COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:RollerCoasters>/texturepacks"
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${PROJECT_SOURCE_DIR}/assets"
+        "$<TARGET_FILE_DIR:RollerCoasters>/assets"
     VERBATIM)
 set_target_properties(RollerCoasters PROPERTIES
     VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:RollerCoasters>")
@@ -154,6 +158,13 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     target_link_libraries(WaterFlowCheck PRIVATE project_options)
     add_test(NAME WaterFlowCheck COMMAND WaterFlowCheck)
     set_tests_properties(WaterFlowCheck PROPERTIES TIMEOUT 10 LABELS integration)
+
+    add_executable(WaterWavesCheck tests/WaterWavesCheck.cpp src/WaterWaves.cpp)
+    target_include_directories(WaterWavesCheck PRIVATE src)
+    target_link_libraries(WaterWavesCheck PRIVATE Utilities)
+    add_test(NAME WaterWavesCheck COMMAND WaterWavesCheck
+        WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
+    set_tests_properties(WaterWavesCheck PROPERTIES TIMEOUT 60 LABELS integration)
 
     add_executable(EditKeysCheck tests/EditKeysCheck.cpp src/EditKeys.cpp src/KeyBinds.cpp)
     target_include_directories(EditKeysCheck PRIVATE src src/Utilities)
@@ -319,3 +330,4 @@ install(DIRECTORY docs/ DESTINATION docs)
 install(DIRECTORY DESTINATION TrackFiles)
 # where the user puts texture packs (TexturePack.h); none is shipped
 install(DIRECTORY DESTINATION texturepacks)
+install(DIRECTORY assets/ DESTINATION assets)

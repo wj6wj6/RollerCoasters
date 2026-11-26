@@ -19,6 +19,7 @@
 #include "PerfStats.h"
 #include "LandWaterMotion.h"
 #include "UnderwaterOptics.h"
+#include "WaterSurface.h"
 
 namespace
 {
@@ -211,6 +212,9 @@ void oceanWaves(vec2 p, float t, float shortest, out vec3 disp, out vec3 normal)
 // nothing before they get there.
 // The water on land (uIsland) is the faces of its blocks instead, in world
 // space, moved as LandWaterMotion.h says.
+// With the height maps or the wave equation (uWaveModel, WaterSurface.h)
+// the surface only rises and falls, by the height they give, on a finer
+// mesh whose cells (gl_MultiTexCoord0.x wide) grow away from the middle.
 const char *kWaterVertex = R"GLSL(
 uniform vec2 uCenter;      // where the grid is, snapped to its cell size
 uniform float uTime;
@@ -241,8 +245,11 @@ void main()
     vec3 base = vec3(gl_Vertex.x + uCenter.x, gl_Vertex.y, gl_Vertex.z + uCenter.y);
     float fade = 1.0 - smoothstep(0.55 * uWaveReach, 0.95 * uWaveReach, length(gl_Vertex.xz));
     vec3 disp;
-    vec3 normal;
-    oceanWaves(base.xz, uTime, 12.0, disp, normal); // four grid cells or longer
+    if (uWaveModel == 0) {
+        vec3 normal;
+        oceanWaves(base.xz, uTime, 12.0, disp, normal); // four grid cells or longer
+    } else
+        disp = vec3(0.0, waveHeightVertex(base.xz, uTime, gl_MultiTexCoord0.x), 0.0);
     vec3 world = base + disp * fade;
     vBase = base.xz;
     vWave = fade;
@@ -413,10 +420,21 @@ void main()
         vec3 fallRipple = across * s.x + vec3(0.0, s.y, 0.0);
         N = normalize(faceN + mix(flatRipple, fallRipple, fall));
     } else {
-        oceanWaves(vBase, uTime, 0.0, disp, N);
-        vec2 g = rippleSlope(vBase, uTime);
+        // the fine ripples are a little weaker over the height maps, which
+        // have their own, and over the wave equation's ripples, which
+        // should stand out
+        float fine = 1.0;
+        if (uWaveModel == 0)
+            oceanWaves(vBase, uTime, 0.0, disp, N);
+        else {
+            float h;
+            N = waveNormal(vBase, uTime, h);
+            disp = vec3(0.0, h, 0.0);
+            fine = uWaveModel == 1 ? 0.6 : 0.35;
+        }
+        vec2 g = rippleSlope(vBase, uTime) * fine;
         if (uRain > 0.0)
-            g += rainSlope(vBase, uTime) * uRain;
+            g += rainSlope(vBase, uTime) * uRain * fine;
         N = normalize(vec3(N.x - g.x, N.y, N.z - g.y));
     }
     // Calm the waves far away so they do not shimmer.
@@ -1110,6 +1128,17 @@ float smooth01(float e0, float e1, float x)
 const int kWaterGridCells = 160;
 const float kWaterGridCell = 3.0f;
 
+// The finer mesh for the height maps and the wave equation: as far out,
+// with this many cells a side, about 0.85 units wide in the middle and
+// 4 at the edge (x = reach (a s + (1 - a) s^3), s from -1 to 1).
+const int kFineWaterCells = 256;
+const float kFineWaterLinear = 0.45f;
+const float kFineWaterSnap = 1.0f;
+
+// The texture units the surface's height maps and wave grid are bound to.
+const int kHeightMapUnit = 4;
+const int kWaveStateUnit = 5;
+
 } // namespace
 
 PostEffects::PostEffects() : waterLevel(-1.0f)
@@ -1136,6 +1165,8 @@ void PostEffects::invalidate()
     m_brightProgram = m_blurProgram = m_raysProgram = m_compositeProgram = 0;
     m_underwaterProgram = m_shaftsProgram = m_particleProgram = m_wetProgram = 0;
     m_waterList = 0;
+    m_fineWaterList = 0;
+    m_surface.invalidate();
     for (int i = 0; i < 3; ++i)
         m_camera[i] = m_deepColor[i] = m_shallowColor[i] = 0.0f;
     identity(m_view);
@@ -1157,9 +1188,22 @@ bool PostEffects::init()
 
     m_skyProgram = makeProgram(kSkyFragment, "sky", kNoise);
     {
-        const char *vertex[3] = {kWaveGlsl, kLandWaterMotionGlsl, kWaterVertex};
-        const char *fragment[4] = {kNoise, kWaveGlsl, kSsrGlsl, kWaterFragment};
-        m_waterProgram = makeProgramParts(vertex, 3, fragment, 4, "water");
+        const char *vertex[4] = {kWaveGlsl, kLandWaterMotionGlsl, kWaterSurfaceVertexGlsl,
+                                 kWaterVertex};
+        const char *fragment[5] = {kNoise, kWaveGlsl, kSsrGlsl, kWaterSurfaceFragmentGlsl,
+                                   kWaterFragment};
+        m_waterProgram = makeProgramParts(vertex, 4, fragment, 5, "water");
+        if (m_waterProgram)
+        {
+            // The surface's textures have units of their own from the
+            // start: a 3D and a 2D sampler left on the same unit would
+            // make every draw with the program fail.
+            glUseProgram(m_waterProgram);
+            glUniform1i(loc(m_waterProgram, "uWaveModel"), 0);
+            glUniform1i(loc(m_waterProgram, "uHeightMaps"), kHeightMapUnit);
+            glUniform1i(loc(m_waterProgram, "uWaveState"), kWaveStateUnit);
+            glUseProgram(0);
+        }
     }
     m_wetProgram = makeProgram(kWetFragment, "wet ground", kNoise, kSsrGlsl);
     m_ssaoProgram = makeProgram(kSsaoFragment, "ssao", kNoise);
@@ -1468,6 +1512,60 @@ void PostEffects::buildWaterMesh()
     glEndList();
 }
 
+// The finer mesh: cells grow from the middle out, with no seams between
+// sizes; each vertex carries its cell's width in texture coordinate s.
+void PostEffects::buildFineWaterMesh()
+{
+    const float reach = kWaterGridCell * static_cast<float>(kWaterGridCells) * 0.5f;
+    const float horizon = 3500.0f;
+    const float y = waterLevel;
+    const float a = kFineWaterLinear;
+    auto along = [&](int i) {
+        const float s = static_cast<float>(i) / static_cast<float>(kFineWaterCells) * 2.0f - 1.0f;
+        return reach * (a * s + (1.0f - a) * s * s * s);
+    };
+    auto width = [&](int i) {
+        const float s = static_cast<float>(i) / static_cast<float>(kFineWaterCells) * 2.0f - 1.0f;
+        return reach * (a + 3.0f * (1.0f - a) * s * s) * 2.0f / static_cast<float>(kFineWaterCells);
+    };
+    std::vector<float> at(kFineWaterCells + 1), cell(kFineWaterCells + 1);
+    for (int i = 0; i <= kFineWaterCells; ++i)
+    {
+        at[static_cast<size_t>(i)] = along(i);
+        cell[static_cast<size_t>(i)] = width(i);
+    }
+    m_fineWaterList = glGenLists(1);
+    glNewList(m_fineWaterList, GL_COMPILE);
+    for (int k = 0; k < kFineWaterCells; ++k)
+    {
+        glBegin(GL_TRIANGLE_STRIP);
+        for (int i = 0; i <= kFineWaterCells; ++i)
+        {
+            const size_t ui = static_cast<size_t>(i), uk = static_cast<size_t>(k);
+            glTexCoord1f(fmaxf(cell[ui], cell[uk + 1]));
+            glVertex3f(at[ui], y, at[uk + 1]);
+            glTexCoord1f(fmaxf(cell[ui], cell[uk]));
+            glVertex3f(at[ui], y, at[uk]);
+        }
+        glEnd();
+    }
+    const float skirts[4][4] = {{-horizon, -horizon, horizon, -reach},
+                                {-horizon, reach, horizon, horizon},
+                                {-horizon, -reach, -reach, reach},
+                                {reach, -reach, horizon, reach}};
+    glTexCoord1f(cell[0]);
+    glBegin(GL_QUADS);
+    for (const float *r : skirts)
+    {
+        glVertex3f(r[0], y, r[1]);
+        glVertex3f(r[0], y, r[3]);
+        glVertex3f(r[2], y, r[3]);
+        glVertex3f(r[2], y, r[1]);
+    }
+    glEnd();
+    glEndList();
+}
+
 void PostEffects::copyScene()
 {
     // The water needs to see what is under it: copy colour and depth first,
@@ -1522,8 +1620,6 @@ void PostEffects::drawWater(const AdvancedLighting &lighting, float time, bool o
                             bool underwater, float rain)
 {
     PerfScope part(PerfStage::Water);
-    copyScene();
-
     float invView[16];
     if (!invert(m_view, invView))
         identity(invView);
@@ -1547,13 +1643,21 @@ void PostEffects::drawWater(const AdvancedLighting &lighting, float time, bool o
             cz += fz / flat * ahead;
         }
     }
-    cx = floorf(cx / kWaterGridCell) * kWaterGridCell;
-    cz = floorf(cz / kWaterGridCell) * kWaterGridCell;
+    // the wave equation's grid stays round the same place; its steps due
+    // run now, before the scene is copied (they draw into frame buffers
+    // of their own)
+    const bool fine = m_surface.model() != WaveModel::Gerstner;
+    m_surface.simulate(time, cx, cz);
+    copyScene();
+    const float snap = fine ? kFineWaterSnap : kWaterGridCell;
+    cx = floorf(cx / snap) * snap;
+    cz = floorf(cz / snap) * snap;
 
     useWaterProgram(lighting, time, orthographic, underwater, rain, 0);
     const GLuint p = m_waterProgram;
     glUniform2f(loc(p, "uCenter"), cx, cz);
     glUniform1f(loc(p, "uWaveReach"), reach);
+    m_surface.bind(p, kHeightMapUnit, kWaveStateUnit);
 
     glPushAttrib(GL_ENABLE_BIT | GL_DEPTH_BUFFER_BIT | GL_POLYGON_BIT);
     glEnable(GL_DEPTH_TEST);
@@ -1561,11 +1665,21 @@ void PostEffects::drawWater(const AdvancedLighting &lighting, float time, bool o
     glDisable(GL_BLEND);
     glDisable(GL_CULL_FACE);
     glDepthMask(GL_TRUE);
-    if (!m_waterList)
-        buildWaterMesh();
-    glCallList(m_waterList);
+    if (fine)
+    {
+        if (!m_fineWaterList)
+            buildFineWaterMesh();
+        glCallList(m_fineWaterList);
+    }
+    else
+    {
+        if (!m_waterList)
+            buildWaterMesh();
+        glCallList(m_waterList);
+    }
     glPopAttrib();
 
+    m_surface.unbind(kHeightMapUnit, kWaveStateUnit);
     unbindTextures(4);
     glUseProgram(0);
 }

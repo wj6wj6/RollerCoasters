@@ -39,6 +39,7 @@ pwsh -File scripts/check.ps1 -Stage all -Config Release
 使用 Clang 封裝時加上 `-Compiler clang`，交付目錄改為 `out/package/clang/Release/`，執行期前置需求相同。
 目前未包含安裝程式、程式簽章與自動更新；正式對外發布前應另行規劃。
 交付目錄不含任何材質包，只有空的 `texturepacks/` 資料夾，使用者把自己的材質包放進去（見 README「材質包」）。
+`assets/` 隨建置（post-build 複製到 exe 旁）與安裝一起交付，目前只有海面 `Height Map` 模式的 `assets/heightmaps/waves.png`；少了它程式仍可執行，只是 `Height Map` 改用程式產生的替代圖並在 stderr 說明。
 `--version` 驗證程式與執行期可啟動，無法驗證 GPU 呈現；在目標機器上用 `RollerCoasters.exe --doctor` 檢查 OpenGL、shader 路徑與資料夾。
 
 ## 自動驗證（control-app）

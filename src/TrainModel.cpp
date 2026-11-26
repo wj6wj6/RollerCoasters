@@ -649,6 +649,24 @@ float TrainModel::riderTop()
     return (kRide + kHips + 12.0f + 8.5f) * kPx;
 }
 
+void TrainModel::vehiclePositions(const CTrack &track, TrackSplineType splineType,
+                                  std::vector<float> &out)
+{
+    out.clear();
+    if (track.points.size() < 4)
+        return;
+    float u = track.trainU;
+    for (int car = 0; car < kVehicles; ++car)
+    {
+        if (car > 0)
+            u = stepBack(track, u, car == 1 ? kEngineToCart : kCartToCart, splineType);
+        const Pnt3f p = track.evaluatePosition(u, splineType);
+        out.push_back(p.x);
+        out.push_back(p.y);
+        out.push_back(p.z);
+    }
+}
+
 float TrainModel::parameterBehind(const CTrack &track, float u, float distance,
                                   TrackSplineType splineType)
 {

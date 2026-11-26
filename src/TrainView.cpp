@@ -469,6 +469,9 @@ int TrainView::handleInput(const InputEvent &e)
     // and carrying a point along in Fly (G)
     if (m_carrying && carryEvent(e))
         return 1;
+    // V and B, for the sea's waves, in any camera
+    if (e.type == InputType::KeyDown && waterKey(e))
+        return 1;
 
     // see if the ArcBall will handle the event - if it does,
     // then we're done
@@ -503,10 +506,15 @@ int TrainView::handleInput(const InputEvent &e)
             }
             // With Edit on the mouse buttons build, as in Minecraft: left
             // removes the point at the crosshair, right places a new one,
-            // middle selects (picks) it. With Edit off they do nothing.
+            // middle selects (picks) it. With Edit off a right click uses
+            // what is in hand, as in Minecraft: throws a stone into the
+            // sea at the crosshair (seen with World > Waves on Wave
+            // Equation); the others do nothing.
             case InputType::Push:
                 if (canEdit())
                     flyBuildClick(e.button);
+                else if (e.button == Mouse::Right)
+                    dropStone(w() / 2, h() / 2);
                 return 1;
             case InputType::Release:
                 return 1;

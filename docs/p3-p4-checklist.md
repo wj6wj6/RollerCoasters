@@ -19,18 +19,20 @@
 - **Sine waves**：8 組 Gerstner Waves（Vertex Shader 推動 2D 網格）＋ 3 層細節噪點波紋與雨滴漣漪（Fragment Shader）。
 - **Multi-passed scenic refraction and reflection**：獨立 Reflection Pass（鏡射相機＋裁切面）＋ 場景折射與深度複本 ＋ Planar Reflection 與 SSR 混合 ＋ Beer-Lambert 水深吸收 ＋ Schlick Fresnel。
 - **Caustics effect**：動態雙層 Voronoi 焦散網格投射於海底與水下場景。
+- **Height maps**：課程 200 張 `HeightMap` 序列圖做成 3D 貼圖，三層不同大小、方向與速度疊加，vertex shader 位移、fragment shader 算法線（`World` > `Waves` > `Height Map`，見 [ADR 0021](adr/0021-height-map-and-wave-equation-water.md)）。
+- **Wave equation**：GPU ping-pong FBO 解二維波動方程（1024² 格、Verlet、吸收邊界、跟著鏡頭移動），丟石頭（`B`／Fly 右鍵）、列車穿過海面、雨滴激起漣漪（`World` > `Waves` > `Wave Equation`）。
 
 ---
 
 ## 要做什麼（To Do）
 
 ### 1. 至少要做到的底線（補齊 P4 與 P3 題目基準項）
-- [ ] **Wave equation 水面模擬（P4 基準）**
+- [x] **Wave equation 水面模擬（P4 基準）**
   - 用 GPU Shader（Ping-Pong FBO）或 2D 網格數值求解波動方程式，並支援互動激起波浪（例如滑鼠點擊水面、雨滴落點，或列車進出海面處）。
-- [ ] **Height maps 水面生成（P4 基準）**
+- [x] **Height maps 水面生成（P4 基準）**
   - 載入課程提供的 `HeightMap` 序列圖（或多層高度圖）做 Vertex 高度位移與法線計算。
 - [ ] **水面模型與反射／折射展示切換（P4 基準）**
-  - 在選單提供 `Water Model`（`Gerstner` / `Height Map` / `Wave Equation`）及反射／折射對照（純天空環境反射折射 vs Multi-pass 場景反射折射）即時切換；預設維持目前視覺最佳的設定。
+  - 在選單提供 `Water Model`（`Gerstner` / `Height Map` / `Wave Equation`，已完成：`World` > `Waves`、`V`）及反射／折射對照（純天空環境反射折射 vs Multi-pass 場景反射折射）即時切換；預設維持目前視覺最佳的設定。
 - [ ] **整合水下光學強化分支**
   - 檢查並整合 `claude/project-thread-4ey6fb` 的真實 Snell 窗、焦散圖與水下體積光柱進 `main`。
 - [ ] **雲霄飛車簡易物理（P3 基準加分項）**

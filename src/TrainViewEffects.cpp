@@ -19,6 +19,7 @@
 #include <glad/glad.h>
 
 #include "LandTextures.h"
+#include "MatrixMath.h"
 #include "PixelArt.h"
 #include "TrainView.H"
 #include "TrainModel.h"
@@ -231,9 +232,80 @@ void TrainView::drawAdvanced()
     if (effects.bubbleSources.empty())
         effects.bubbleSources = OceanWorld::bubbleSources();
     effects.waterLevel = OceanWorld::waterLevel();
+    effects.surface().setModel(WaterWaves::fromIndex(tw->settings.waves));
+    if (toggles.water)
+        stirWater(frame);
 
     TrainViewScene scene(this);
     renderAdvancedFrame(lighting, effects, frame, toggles, w(), h(), scene);
+}
+
+//************************************************************************
+//
+// * World > Waves on Wave Equation: the train and the rain stir the sea
+//========================================================================
+void TrainView::stirWater(const LightingFrame &frame)
+{
+    WaterSurface &surface = effects.surface();
+    const float seconds = m_stirTime < 0.0f ? 0.0f : fminf(frame.time - m_stirTime, 0.25f);
+    m_stirTime = frame.time;
+    if (surface.model() != WaveModel::Equation)
+    {
+        m_trainSplash.reset();
+        return;
+    }
+    std::vector<WaterWaves::Drop> drops;
+    std::vector<float> vehicles;
+    TrainModel::vehiclePositions(*m_pTrack, static_cast<TrackSplineType>(tw->settings.spline),
+                                 vehicles);
+    m_trainSplash.update(vehicles, effects.waterLevel, seconds, drops);
+
+    // the rain lands round the camera
+    float view[16], invView[16];
+    glGetFloatv(GL_MODELVIEW_MATRIX, view);
+    if (invert(view, invView))
+        WaterWaves::rainDrops(frame.rain, seconds, invView[12], invView[14], 70.0f, m_rainSeed,
+                              drops);
+    for (const WaterWaves::Drop &drop : drops)
+        surface.addDrop(drop);
+}
+
+bool TrainView::waterKey(const InputEvent &e)
+{
+    if (tw->keys.matches(KeyBinds::Action::CycleWaves, e))
+    {
+        tw->settings.waves =
+            static_cast<int>(WaterWaves::next(WaterWaves::fromIndex(tw->settings.waves)));
+        tw->damageMe();
+        return true;
+    }
+    if (tw->keys.matches(KeyBinds::Action::DropStone, e))
+    {
+        // at the crosshair while Fly holds the mouse, else under the mouse
+        if (tw->settings.camera == CameraView::Fly && mouseCaptured)
+            dropStone(w() / 2, h() / 2);
+        else
+            dropStone(e.x, e.y);
+        return true;
+    }
+    return false;
+}
+
+void TrainView::dropStone(int mouseX, int mouseY)
+{
+    if (!m_editCameraValid || !tw->settings.water)
+        return;
+    double origin[3], direction[3];
+    float x, z;
+    if (!TransformGizmo::lineOfSight(m_editCamera, mouseX, mouseY, origin, direction) ||
+        !WaterWaves::hitWater(origin, direction, OceanWorld::waterLevel(), x, z))
+        return;
+    // only the wave equation shows it: a stone switches the waves to it
+    if (tw->settings.waves != static_cast<int>(WaveModel::Equation))
+        tw->settings.waves = static_cast<int>(WaveModel::Equation);
+    effects.surface().setModel(WaveModel::Equation);
+    effects.surface().addDrop(WaterWaves::stone(x, z));
+    tw->damageMe();
 }
 
 //************************************************************************

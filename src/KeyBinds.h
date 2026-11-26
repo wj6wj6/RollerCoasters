@@ -70,6 +70,9 @@ class KeyBinds
         CameraWorld,
         CameraTop,
         CameraTrain,
+        // Water (World > Waves)
+        CycleWaves,
+        DropStone,
         // Editing (World, Top and Fly)
         ToggleEdit,
         Undo,
@@ -107,6 +110,7 @@ class KeyBinds
         Interface,
         Hotbar,
         Ride,
+        Water,
         Editing,
         Fly
     };

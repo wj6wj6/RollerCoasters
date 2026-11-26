@@ -40,6 +40,11 @@ struct Camera
     int viewport[4];
 };
 
+// The line of sight through window pixel (mouseX, mouseY): a point on it and
+// its unit direction. False when the camera cannot be inverted.
+bool lineOfSight(const Camera &camera, int mouseX, int mouseY, double origin[3],
+                 double direction[3]);
+
 // How long the arrows must be in world units to cover `pixels` on screen.
 float worldSize(const Camera &camera, const float position[3], float pixels);
 

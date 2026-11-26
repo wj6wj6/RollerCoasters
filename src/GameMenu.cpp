@@ -24,6 +24,7 @@
 #include "KeyBinds.h"
 #include "Ui/PixelFont.h"
 #include "Utilities/Platform.H"
+#include "WaterWaves.h"
 #include "WorldSave.h"
 #include "TrainView.H"
 #include "TrainWindow.H"
@@ -1081,24 +1082,35 @@ void GameMenu::drawWorld(TrainWindow &tw, ui::Gui &gui)
         show(tw, Screen::None);
         return;
     }
+    // how the sea's surface moves: the Gerstner waves, the course's height
+    // maps, or the wave equation that stones, the train and the rain stir
+    static const std::vector<std::string> waves = {WaterWaves::name(WaveModel::Gerstner),
+                                                   WaterWaves::name(WaveModel::HeightMap),
+                                                   WaterWaves::name(WaveModel::Equation)};
+    if (gui.cycle(left(gui, 2), "Waves", waves, s.waves))
+        tw.damageMe();
+    const std::string hint = s.waves == static_cast<int>(WaveModel::Equation)
+                                 ? tw.keys.keyText(KeyBinds::Action::DropStone) + " drops a stone"
+                                 : tw.keys.keyText(KeyBinds::Action::CycleWaves) + " anywhere";
+    gui.text(right(gui, 2).x + 4, right(gui, 2).y + 6, hint, ui::kGrey);
 
-    gui.text(wide(gui, 2).x, wide(gui, 2).y + 2, "Texture Pack", ui::kWhite);
-    gui.text(wide(gui, 2).x + wide(gui, 2).w, wide(gui, 2).y + 2, tw.texturePackNote, ui::kGrey,
+    gui.text(wide(gui, 3).x, wide(gui, 3).y + 2, "Texture Pack", ui::kWhite);
+    gui.text(wide(gui, 3).x + wide(gui, 3).w, wide(gui, 3).y + 2, tw.texturePackNote, ui::kGrey,
              ui::Align::Right);
     int selected = 0;
     for (size_t i = 0; i < tw.texturePackPaths.size(); ++i)
         if (tw.texturePackPaths[i] == tw.texturePackPath)
             selected = static_cast<int>(i);
-    const Rect list = {wide(gui, 2).x, wide(gui, 2).y + 12, 310, 2 * kRowStep - 14};
+    const Rect list = {wide(gui, 3).x, wide(gui, 3).y + 12, 310, 2 * kRowStep - 14};
     if (gui.list(list, tw.texturePackNames, selected, m_packScroll))
         useTexturePack(&tw, static_cast<size_t>(selected));
-    if (gui.button(wide(gui, 4), "Open Pack Folder"))
+    if (gui.button(wide(gui, 5), "Open Pack Folder"))
         openTexturePackFolder(&tw);
-    gui.text(gui.width() / 2, top(gui) + 5 * kRowStep + 1,
+    gui.text(gui.width() / 2, top(gui) + 6 * kRowStep + 1,
              fit(m_dropNote.empty() ? "Drop texture packs on this window to add them" : m_dropNote,
                  gui.width() - 20),
              m_dropNote.empty() ? ui::kGrey : ui::kWhite, ui::Align::Center);
-    done(tw, gui, 6);
+    done(tw, gui, 7);
 }
 
 //************************************************************************

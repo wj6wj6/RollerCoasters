@@ -11,3 +11,4 @@ CMakeLists.txt text eol=lf
 .githooks/* text eol=lf
 *.lib binary
 *.Lib binary
+*.png binary

@@ -282,6 +282,13 @@ void drawPlane(const float p[3], int normal, float size, bool highlight)
 }
 } // namespace
 
+bool TransformGizmo::lineOfSight(const Camera &camera, int mouseX, int mouseY, double origin[3],
+                                 double direction[3])
+{
+    return mouseRay(camera, static_cast<double>(mouseX), static_cast<double>(mouseY), origin,
+                    direction);
+}
+
 float TransformGizmo::worldSize(const Camera &camera, const float position[3], float pixels)
 {
     // One world unit sideways at the point: how many pixels is that?

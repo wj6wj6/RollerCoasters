@@ -91,6 +91,7 @@ struct Options
     Switch adaptive = Switch::Keep; // Track > Adaptive
     Switch samples = Switch::Keep;  // Track > Samples
     Menu menu = Menu::None;         // --menu: a game menu screen left open
+    int waves = -1;                 // --waves: World > Waves (WaveModel), negative keeps it
     float time = -1.0f;             // --time: hour of the day, 0..24; negative keeps it
     float trainU = -1.0f;           // --u: where the train is; negative keeps it
     int frames = 5; // frames drawn before the screenshot is taken; --benchmark: measured (300)

@@ -61,6 +61,18 @@ bool readCamera(const char *text, Camera &value)
     return false;
 }
 
+bool readWaves(const char *text, int &value)
+{
+    static const char *const kWaves[] = {"gerstner", "heightmap", "equation"};
+    for (int i = 0; i < 3; ++i)
+        if (std::strcmp(text, kWaves[i]) == 0)
+        {
+            value = i;
+            return true;
+        }
+    return false;
+}
+
 bool readMenu(const char *text, Menu &value)
 {
     static const struct
@@ -159,6 +171,7 @@ const char *usage()
            "                      [--scenery on|off] [--light on|off] [--water on|off]\n"
            "                      [--rain on|off] [--shadows on|off]\n"
            "                      [--adaptive on|off] [--samples on|off]\n"
+           "                      [--waves gerstner|heightmap|equation]\n"
            "                      [--menu pause|ride|camera|track|lighting|world|controls]\n"
            "                      [--time <0-24>] [--u <train position>]\n"
            "                      [--frames <1-600>] [--size <width>x<height>]\n"
@@ -210,7 +223,7 @@ bool parse(int argc, const char *const *argv, Options &options, std::string &err
         static const char *const kValueOptions[] = {
             "--screenshot", "--benchmark", "--track",  "--pack",    "--camera",   "--scenery",
             "--light",      "--water",     "--rain",   "--shadows", "--adaptive", "--samples",
-            "--time",       "--u",         "--frames", "--size",    "--menu"};
+            "--time",       "--u",         "--frames", "--size",    "--menu",     "--waves"};
         bool known = false;
         for (const char *name : kValueOptions)
             known = known || arg == name;
@@ -259,6 +272,8 @@ bool parse(int argc, const char *const *argv, Options &options, std::string &err
             ok = readSwitch(value, options.samples);
         else if (arg == "--menu")
             ok = readMenu(value, options.menu);
+        else if (arg == "--waves")
+            ok = readWaves(value, options.waves);
         else if (arg == "--time")
             ok = readNumber(value, 0.0f, 24.0f, options.time);
         else if (arg == "--u")
