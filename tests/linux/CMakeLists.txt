@@ -68,7 +68,11 @@ check(KeyBindsCheck SOURCES src/KeyBinds.cpp LIBS Utilities)
 check(HeadLookCheck LIBS Utilities)
 check(TwoFingerGestureCheck LIBS Utilities)
 check(TrackRoundTripCheck SOURCES src/Track.cpp src/ControlPoint.cpp LIBS Utilities)
-check(TrackSpacingCheck SOURCES src/Track.cpp src/ControlPoint.cpp src/TrackRenderer.cpp
+check(TrackSpacingCheck
+    SOURCES src/Track.cpp src/ControlPoint.cpp src/TrackRenderer.cpp src/TrackSampling.cpp
+    LIBS Utilities glad)
+check(TrackSubdivisionCheck
+    SOURCES src/Track.cpp src/ControlPoint.cpp src/TrackRenderer.cpp src/TrackSampling.cpp
     LIBS Utilities glad)
 check(GizmoDragCheck SOURCES src/TransformGizmo.cpp LIBS glad)
 check(TrackHistoryCheck SOURCES src/TrackHistory.cpp src/Track.cpp src/ControlPoint.cpp

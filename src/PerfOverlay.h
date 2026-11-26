@@ -46,6 +46,9 @@ namespace PerfOverlay
 // The camera and the switches that change the cost of a frame most, as
 // lines: "Camera: Train", "Light+: on (shadows, water, bloom, SSAO)", ...
 std::vector<std::string> sceneLines(const SceneSettings &s);
+// How many points the rails are built from (TrackRenderer):
+// "Rails: 1665 samples, adaptive (fixed: 2977)", or "" when none yet.
+std::string trackLine(int samples, int uniformSamples, int uniformPerSegment, bool adaptive);
 // The left column's text, top to bottom (also tested on its own).
 std::vector<std::string> leftLines(const PerfStats::Summary &s, const PerfInfo &info, int pixelW,
                                    int pixelH);
