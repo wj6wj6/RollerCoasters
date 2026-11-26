@@ -330,6 +330,36 @@ vec2 rippleSlope(vec2 p, float t)
     return s1 + s2 + s3;
 }
 
+// High-frequency sharp-crested capillary & short-gravity wave cascade for the
+// open ocean. Height falls off quickly with frequency, but wave slope stays
+// strong well into the capillary band (Phillips/JONSWAP), shattering specular
+// reflections into crisp multi-scale facets with distance LOD to prevent far shimmer.
+vec2 oceanDetailSlope(vec2 p, float t, float dist)
+{
+    vec2 q = p;
+    vec2 g = vec2(0.0);
+    float freq = 0.72;
+    float amp = 0.165;
+    float angle = 0.35;
+    for (int i = 0; i < 12; ++i) {
+        float lod = 1.0 - smoothstep(35.0, 180.0, dist * freq * 0.14);
+        if (lod <= 0.001)
+            break;
+        vec2 dir = vec2(cos(angle), sin(angle));
+        float speed = sqrt(9.8 * freq) * 0.58 + 0.30 * freq;
+        float x = dot(dir, q) * freq - t * speed + float(i) * 1.73;
+        float e = exp(sin(x) - 1.0);
+        float slope1d = e * cos(x);
+        // Domain drag: each wave pushes higher-frequency wavelets for realistic chop.
+        q -= dir * (slope1d * (0.55 / freq));
+        g += dir * (slope1d * amp * lod);
+        freq *= 1.38;
+        amp *= 0.89;
+        angle += 2.3999632;
+    }
+    return g;
+}
+
 // Rings spreading from where rain drops land: one drop per cell at a time.
 vec2 rainSlope(vec2 p, float t)
 {
@@ -355,9 +385,9 @@ void main()
     float dist = length(toCam);
     vec3 V = toCam / dist;
 
-    // Normal: the big waves, then the ripples (and rain rings) on top. The
-    // water on land has only the ripples, a little stronger; on a fall or
-    // the side of a step they run down it.
+    // Normal: the big waves, then high-frequency sharp-crested capillary chop
+    // (and rain rings) on top. The water on land keeps smoother ripples; on a
+    // fall or the side of a step they run down it.
     vec3 disp = vec3(0.0);
     vec3 N = vec3(0.0, 1.0, 0.0);
     // The water on land's normal is smooth over the bend where it pours
@@ -380,7 +410,7 @@ void main()
         N = normalize(faceN + mix(flatRipple, fallRipple, fall));
     } else {
         oceanWaves(vBase, uTime, 0.0, disp, N);
-        vec2 g = rippleSlope(vBase, uTime * 1.45) * 1.75;
+        vec2 g = oceanDetailSlope(vBase, uTime, dist);
         if (uRain > 0.0)
             g += rainSlope(vBase, uTime) * uRain;
         N = normalize(vec3(N.x - g.x, N.y, N.z - g.y));
@@ -399,15 +429,15 @@ void main()
         float directSun = max(dot(-V, L), 0.0);
         // Let the sun shine smoothly through the window even at lower angles.
         float window = max(smoothstep(0.24, 0.56, cosView), pow(directSun, 14.0) * 0.85);
-        vec2 ruv = clamp(suv + N.xz * 0.036, vec2(0.002), vec2(0.998));
+        vec2 ruv = clamp(suv + N.xz * 0.026, vec2(0.002), vec2(0.998));
         if (texture2D(uDepth, ruv).r < gl_FragCoord.z)
             ruv = suv;
         vec3 above = texture2D(uRefraction, ruv).rgb;
         if (directSun > 0.88) {
             // Soften the crisp square sky sun through the moving water surface
             // into a luminous liquid glow rather than a jagged warped polygon.
-            vec2 o1 = vec2(0.006, 0.003) + N.xz * 0.008;
-            vec2 o2 = vec2(-0.004, 0.007) - N.xz * 0.006;
+            vec2 o1 = vec2(0.006, 0.003) + N.xz * 0.006;
+            vec2 o2 = vec2(-0.004, 0.007) - N.xz * 0.005;
             vec2 u1 = clamp(ruv + o1, vec2(0.002), vec2(0.998));
             vec2 u2 = clamp(ruv - o1, vec2(0.002), vec2(0.998));
             vec2 u3 = clamp(ruv + o2, vec2(0.002), vec2(0.998));
@@ -421,7 +451,7 @@ void main()
         }
         // Wave-facet sun glitter aligned with the visible sky sun (no second
         // displaced sun or abrupt critical-angle cut across the sun).
-        vec3 sunRay = normalize(-V + vec3(N.x, 0.0, N.z) * 0.48);
+        vec3 sunRay = normalize(-V + vec3(N.x, 0.0, N.z) * 0.42);
         float sunHit = max(dot(sunRay, L), 0.0);
         vec3 glitter =
             uLightColor * (pow(sunHit, 160.0) * 6.5 + pow(sunHit, 26.0) * 0.85 + pow(directSun, 10.0) * 0.25);
@@ -484,6 +514,12 @@ void main()
         looksDeep = thickness * 3.0 + mix(0.8, 3.0, fall);
     vec3 absorb = exp(-looksDeep * vec3(0.12, 0.030, 0.020));
     vec3 body = refr * absorb + scatter * (1.0 - absorb);
+    if (uIsland == 0) {
+        // Subtle turquoise subsurface glow through thin, sunlit wave crests.
+        float back = pow(max(dot(-V, normalize(uLightDir)), 0.0), 3.0);
+        float sss = max(disp.y, 0.0) * (0.30 + 0.70 * back) * sunUp * mix(0.4, 1.0, shadow);
+        body += vec3(0.014, 0.105, 0.125) * uLightColor * sss * (1.0 - absorb.g);
+    }
 
     // Reflection: what is on screen where the mirrored ray lands (SSR);
     // where that finds nothing, the mirrored view drawn beforehand (it is
