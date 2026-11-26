@@ -43,10 +43,11 @@ std::vector<unsigned char> readFile(const std::string &path)
     FILE *fp = openUtf8(path.c_str(), "rb");
     if (!fp)
         return bytes;
-    unsigned char buffer[65536];
+    std::vector<unsigned char> buffer(65536);
     size_t got;
-    while ((got = fread(buffer, 1, sizeof(buffer), fp)) > 0)
-        bytes.insert(bytes.end(), buffer, buffer + got);
+    while ((got = fread(buffer.data(), 1, buffer.size(), fp)) > 0)
+        bytes.insert(bytes.end(), buffer.begin(),
+                     buffer.begin() + static_cast<std::ptrdiff_t>(got));
     fclose(fp);
     return bytes;
 }
