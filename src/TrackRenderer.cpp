@@ -1,7 +1,8 @@
 /************************************************************************
      File:        TrackRenderer.cpp
 
-     Comment:     Blocky pixel-art rails and sleepers. See TrackRenderer.H.
+     Comment:     Blocky pixel-art rails, tie plates and sleepers. See
+                  TrackRenderer.H.
 *************************************************************************/
 
 #ifdef _WIN32
@@ -24,14 +25,23 @@ namespace
 // Track dimensions in world units (the default track is about 100 units across).
 // As a block game's rails sit inside its minecarts' width: the carts
 // (TrainModel) are a little wider than the rails' outer edges.
-const float kRailOffset = 1.1f;     // distance from the centre line to each rail
-const float kRailHalfWidth = 0.12f; // rails are square iron bars
-const float kRailBottom = 0.12f;    // rails sit on top of the sleepers
-const float kRailTop = 0.46f;       // stays just below the bottom of the train car
+const float kRailOffset = 1.1f; // distance from the centre line to each rail
+// A rail's cross-section, as a real rail's: a head the wheels run on, a thin
+// web and a wide foot, in units across the rail and up from the track.
+const float kRailTop = 0.46f;        // stays just below the bottom of the train car
+const float kHeadHalfWidth = 0.13f;  // the head
+const float kHeadBottom = 0.34f;     //
+const float kWebHalfWidth = 0.05f;   // the web
+const float kFootHalfWidth = 0.19f;  // the foot
+const float kFootTop = 0.21f;        //
+const float kRailBottom = 0.15f;     // on a tie plate on the sleeper
+const float kPlateHalfWidth = 0.27f; // tie plates: across the rail
+const float kPlateHalfDepth = 0.32f; // and along it
+const float kSpikeHalf = 0.05f;      // a spike's square head beside the foot
 const float kSleeperHalfLength = 1.85f;
 const float kSleeperHalfDepth = 0.45f;
 const float kSleeperBottom = -0.18f;
-const float kSleeperTop = kRailBottom;
+const float kSleeperTop = 0.12f;      // the tie plates and rails sit on it
 const float kSleeperSpacing = 1.5f;   // target centre-to-centre spacing along the track
 const int kArcSamplesPerSegment = 48; // density of the arc-length table
 
@@ -283,6 +293,56 @@ void appendSleeperBox(std::vector<TrackVertex> &out, const Frame &f, float s0, f
     add(0, t0 + tHeight, x0, y1, z0);
 }
 
+// A box from lo to hi in the sleeper's local frame (x = side, y = up,
+// z = forward), every face showing the texture's band t0..t1 across it and
+// s0..s1 along: the tie plates and spikes, in iron.
+void appendIronBox(std::vector<TrackVertex> &out, const Frame &f, const float lo[3],
+                   const float hi[3], float t0, float t1)
+{
+    Pnt3f normal;
+    auto setNormal = [&](float x, float y, float z) {
+        normal = f.side * x + f.up * y + f.forward * z;
+    };
+    auto add = [&](float s, float t, float x, float y, float z) {
+        out.push_back(makeVertex(f.position + f.side * x + f.up * y + f.forward * z, normal, s, t));
+    };
+    const float x0 = lo[0], y0 = lo[1], z0 = lo[2], x1 = hi[0], y1 = hi[1], z1 = hi[2];
+    const float s1 = (z1 - z0) * kTexelsPerUnit / kTextureSize;
+    setNormal(0, 1, 0);
+    add(0, t0, x0, y1, z0);
+    add(s1, t0, x0, y1, z1);
+    add(s1, t1, x1, y1, z1);
+    add(0, t1, x1, y1, z0);
+    setNormal(0, -1, 0);
+    add(0, t0, x0, y0, z0);
+    add(0, t1, x1, y0, z0);
+    add(s1, t1, x1, y0, z1);
+    add(s1, t0, x0, y0, z1);
+    setNormal(0, 0, 1);
+    add(0, t0, x0, y0, z1);
+    add(0, t1, x1, y0, z1);
+    add(s1, t1, x1, y1, z1);
+    add(s1, t0, x0, y1, z1);
+    setNormal(0, 0, -1);
+    add(0, t1, x1, y0, z0);
+    add(0, t0, x0, y0, z0);
+    add(s1, t0, x0, y1, z0);
+    add(s1, t1, x1, y1, z0);
+    setNormal(1, 0, 0);
+    add(0, t0, x1, y0, z1);
+    add(s1, t0, x1, y0, z0);
+    add(s1, t1, x1, y1, z0);
+    add(0, t1, x1, y1, z1);
+    setNormal(-1, 0, 0);
+    add(0, t0, x0, y0, z0);
+    add(s1, t0, x0, y0, z1);
+    add(s1, t1, x0, y1, z1);
+    add(0, t1, x0, y1, z0);
+}
+
+// The texture's dull grey edge band, for the iron that is not worn bright.
+const float kDullT0 = 0.0f, kDullT1 = 0.28f;
+
 struct RailFrame
 {
     Pnt3f position;
@@ -409,6 +469,7 @@ void TrackMesh::build(const CTrack &track, TrackSplineType splineType)
 {
     m_vertices.clear();
     m_sleeperVertices = 0;
+    m_plateVertices = 0;
     m_railStripVertices = 0;
     if (track.points.size() < 4)
         return;
@@ -422,8 +483,11 @@ void TrackMesh::build(const CTrack &track, TrackSplineType splineType)
     const int count = std::max(1, static_cast<int>(floorf(total / kSleeperSpacing + 0.5f)));
     const float spacing = total / static_cast<float>(count);
     const std::vector<TrackArcSample> &samples = m_arcTable.samples();
-    m_vertices.reserve(static_cast<size_t>(count) * 24 + samples.size() * 2 * kRailStrips);
+    m_vertices.reserve(static_cast<size_t>(count) * 24 * (1 + kPlateBoxes) +
+                       samples.size() * 2 * kRailStrips);
 
+    std::vector<Frame> sleeperFrames;
+    sleeperFrames.reserve(static_cast<size_t>(count));
     const float depthTexels = 2.0f * kSleeperHalfDepth * kTexelsPerUnit;
     const float heightTexels = (kSleeperTop - kSleeperBottom) * kTexelsPerUnit;
     for (int i = 0; i < count; ++i)
@@ -442,8 +506,29 @@ void TrackMesh::build(const CTrack &track, TrackSplineType splineType)
         const float t1 = t0 + depthTexels / kTextureSize;
         appendSleeperBox(m_vertices, frame, flip ? 1.0f : 0.0f, flip ? 0.0f : 1.0f, t0, t1,
                          heightTexels / kTextureSize);
+        sleeperFrames.push_back(frame);
     }
     m_sleeperVertices = static_cast<int>(m_vertices.size());
+
+    // On each sleeper, under each rail, an iron tie plate with a spike on
+    // either side of the rail's foot.
+    for (const Frame &frame : sleeperFrames)
+        for (int rail = -1; rail <= 1; rail += 2)
+        {
+            const float c = kRailOffset * static_cast<float>(rail);
+            const float plateLo[3] = {c - kPlateHalfWidth, kSleeperTop, -kPlateHalfDepth};
+            const float plateHi[3] = {c + kPlateHalfWidth, kRailBottom, kPlateHalfDepth};
+            appendIronBox(m_vertices, frame, plateLo, plateHi, kDullT0, kDullT1);
+            for (int spike = -1; spike <= 1; spike += 2)
+            {
+                const float x = c + static_cast<float>(spike) * (kFootHalfWidth + kSpikeHalf);
+                const float z = static_cast<float>(spike) * 0.12f; // staggered
+                const float lo[3] = {x - kSpikeHalf, kRailBottom, z - kSpikeHalf};
+                const float hi[3] = {x + kSpikeHalf, kRailBottom + 0.05f, z + kSpikeHalf};
+                appendIronBox(m_vertices, frame, lo, hi, kDullT0, kDullT1);
+            }
+        }
+    m_plateVertices = static_cast<int>(m_vertices.size()) - m_sleeperVertices;
 
     // Rails: frames at every sample of the arc-length table.
     std::vector<RailFrame> frames;
@@ -457,38 +542,44 @@ void TrackMesh::build(const CTrack &track, TrackSplineType splineType)
         frames.push_back(frame);
     }
 
-    // Each rail is a square bar swept along the curve: four quad strips, one per face.
-    // corner(a, b): a picks the left (-1) or right (+1) edge, b the bottom (0) or top (1).
-    for (int rail = -1; rail <= 1; rail += 2)
+    // Each rail is its cross-section swept along the curve: one quad strip
+    // per face of the head, web and foot, going round the section clockwise
+    // (seen along the track). Only the head's top, where the wheels wear it,
+    // shows the texture's bright polished band; the rest is dull grey.
+    struct Face
     {
-        auto corner = [&](const RailFrame &f, float a, int b) {
-            const float x = kRailOffset * static_cast<float>(rail) + kRailHalfWidth * a;
-            const float y = b ? kRailTop : kRailBottom;
-            return f.position + f.side * x + f.up * y;
-        };
-        struct Face
-        {
-            float a0;
-            int b0;
-            float a1;
-            int b1;
-            float normalSide;
-            float normalUp;
-        };
-        const Face faces[4] = {
-            {-1.0f, 1, 1.0f, 1, 0.0f, 1.0f},   // top
-            {1.0f, 1, 1.0f, 0, 1.0f, 0.0f},    // right
-            {-1.0f, 0, -1.0f, 1, -1.0f, 0.0f}, // left
-            {1.0f, 0, -1.0f, 0, 0.0f, -1.0f},  // bottom
-        };
+        float x0, y0, x1, y1; // its two edges in the section
+        float normalSide, normalUp;
+        float t0, t1;
+    };
+    const float h = kHeadHalfWidth, w = kWebHalfWidth, f = kFootHalfWidth;
+    const Face faces[kRailStrips / 2] = {
+        {-h, kRailTop, h, kRailTop, 0, 1, 0.0f, 1.0f},               // head: top
+        {h, kRailTop, h, kHeadBottom, 1, 0, kDullT0, kDullT1},       // right
+        {h, kHeadBottom, w, kHeadBottom, 0, -1, kDullT0, kDullT1},   // under, right
+        {w, kHeadBottom, w, kFootTop, 1, 0, kDullT0, kDullT1},       // web: right
+        {w, kFootTop, f, kFootTop, 0, 1, kDullT0, kDullT1},          // foot: top, right
+        {f, kFootTop, f, kRailBottom, 1, 0, kDullT0, kDullT1},       // right
+        {f, kRailBottom, -f, kRailBottom, 0, -1, kDullT0, kDullT1},  // bottom
+        {-f, kRailBottom, -f, kFootTop, -1, 0, kDullT0, kDullT1},    // left
+        {-f, kFootTop, -w, kFootTop, 0, 1, kDullT0, kDullT1},        // top, left
+        {-w, kFootTop, -w, kHeadBottom, -1, 0, kDullT0, kDullT1},    // web: left
+        {-w, kHeadBottom, -h, kHeadBottom, 0, -1, kDullT0, kDullT1}, // head: under, left
+        {-h, kHeadBottom, -h, kRailTop, -1, 0, kDullT0, kDullT1},    // left
+    };
+    for (int rail = -1; rail <= 1; rail += 2)
         for (const Face &face : faces)
-            for (const RailFrame &f : frames)
+            for (const RailFrame &fr : frames)
             {
-                const Pnt3f normal = f.side * face.normalSide + f.up * face.normalUp;
-                m_vertices.push_back(makeVertex(corner(f, face.a0, face.b0), normal, f.s, 0.0f));
-                m_vertices.push_back(makeVertex(corner(f, face.a1, face.b1), normal, f.s, 1.0f));
+                const float c = kRailOffset * static_cast<float>(rail);
+                const Pnt3f normal = fr.side * face.normalSide + fr.up * face.normalUp;
+                m_vertices.push_back(
+                    makeVertex(fr.position + fr.side * (c + face.x0) + fr.up * face.y0, normal,
+                               fr.s, face.t0));
+                m_vertices.push_back(
+                    makeVertex(fr.position + fr.side * (c + face.x1) + fr.up * face.y1, normal,
+                               fr.s, face.t1));
             }
-    }
     m_railStripVertices = static_cast<int>(frames.size()) * 2;
 }
 
@@ -606,9 +697,11 @@ void TrackRenderer::draw(const CTrack &track, TrackSplineType splineType, bool d
 
         if (!doingShadows)
             glBindTexture(GL_TEXTURE_2D, m_ironTexture);
+        glDrawArrays(GL_QUADS, m_mesh.sleeperVertexCount(), m_mesh.plateVertexCount());
         const int strip = m_mesh.railStripVertexCount();
+        const int rails = m_mesh.sleeperVertexCount() + m_mesh.plateVertexCount();
         for (int i = 0; i < TrackMesh::kRailStrips; ++i)
-            glDrawArrays(GL_QUAD_STRIP, m_mesh.sleeperVertexCount() + i * strip, strip);
+            glDrawArrays(GL_QUAD_STRIP, rails + i * strip, strip);
         if (m_buffer != 0)
             glBindBuffer(GL_ARRAY_BUFFER, 0);
     }

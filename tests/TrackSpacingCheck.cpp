@@ -83,8 +83,11 @@ static bool checkMesh(const char *name, CTrack track, TrackSplineType type)
     const int strip = mesh.railStripVertexCount();
     expect(sleepers > 0 && sleepers % 24 == 0, "six quads per sleeper");
     expect(strip > 0 && strip % 2 == 0, "rail strips hold vertex pairs");
-    expect(static_cast<int>(v.size()) == sleepers + TrackMesh::kRailStrips * strip,
-           "sleepers then eight rail strips");
+    const int plates = mesh.plateVertexCount();
+    expect(plates == sleepers * TrackMesh::kPlateBoxes,
+           "a tie plate and two spikes under each rail on every sleeper");
+    expect(static_cast<int>(v.size()) == sleepers + plates + TrackMesh::kRailStrips * strip,
+           "sleepers, then the plates, then the rail strips");
 
     // Unit normals; every sleeper sits on the track (its box is centred
     // 0.03 below the centre line, between its bottom and top).
@@ -118,12 +121,15 @@ static bool checkMesh(const char *name, CTrack track, TrackSplineType type)
             break;
         }
     }
-    // The first rail strip starts at the top of the left rail at u = 0.
+    // The first rail strip, after the plates, starts at the left edge of
+    // the left rail's head, on top, at u = 0 (1.1 out, the head 0.13 across
+    // each way, its top 0.46 up).
     {
         Pnt3f side, up;
         makeTrackFrame(track.evaluateTangent(0.0f, type), side, up);
-        const Pnt3f expected = track.evaluatePosition(0.0f, type) + side * -1.22f + up * 0.46f;
-        expect(distanceBetween(vertexPosition(v[static_cast<size_t>(sleepers)]), expected) < 1e-3f,
+        const Pnt3f expected = track.evaluatePosition(0.0f, type) + side * -1.23f + up * 0.46f;
+        expect(distanceBetween(vertexPosition(v[static_cast<size_t>(sleepers + plates)]),
+                               expected) < 1e-3f,
                "left rail top corner");
     }
 
