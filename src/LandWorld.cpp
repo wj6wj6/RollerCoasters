@@ -6602,10 +6602,8 @@ void addTrestleLantern(Batches &batches, const TrestleFrame &f, float x, float y
 // (spruce in the snow, mangrove in the swamp, dark timber by the volcano, in
 // the badlands and the bamboo hills, oak elsewhere), each a shade lighter or
 // darker, under a cap of planks; braced crosswise, with single braces, or
-// with knee braces only; every post on stone (on land a wide, low footing
-// half sunk in the ground; out at sea a pier rising from the sea bed out of
-// the water under a slab; dressed, rough or mossy), the snow on it in the
-// mountains and leaves growing against it in the jungle; lanterns on chains
+// with knee braces only; the posts going straight into the ground or the
+// sea bed, and snow on the beams in the mountains; lanterns on chains
 // of different lengths here and there (never two trestles running,
 // sometimes one on each side); small vines here and there, hanging from the
 // beams or climbing a post, and many in the swamp and the bamboo hills; and
@@ -6635,7 +6633,7 @@ void LandWorld::buildSupportMesh()
         const int biome = Grid::insideColumn(bx, bz) && onIsland(bx, bz)
                               ? g.biome[Grid::column(bx, bz)]
                               : -1; // out at sea
-        int wood = T::OAK_SIDE, planks = T::PLANKS, leaves = -1;
+        int wood = T::OAK_SIDE, planks = T::PLANKS;
         if (biome == ALPINE)
         {
             wood = T::SPRUCE_SIDE;
@@ -6645,28 +6643,28 @@ void LandWorld::buildSupportMesh()
         {
             wood = T::MANGROVE_SIDE;
             planks = T::SPRUCE_PLANKS;
-            leaves = T::LEAVES_MANGROVE;
         }
         else if (biome == BAMBOO_JUNGLE)
         {
             wood = T::DARK_OAK_SIDE;
             planks = T::SPRUCE_PLANKS;
-            leaves = T::LEAVES_BAMBOO;
         }
         else if (biome == VOLCANO || biome == MESA)
         {
             wood = T::DARK_OAK_SIDE;
             planks = T::SPRUCE_PLANKS;
         }
-        else if (biome == MEADOW && roll(0) < 0.2f)
-            leaves = T::LEAVES_OAK; // now and then a little overgrown here too
         const bool overgrown = biome == MANGROVE || biome == BAMBOO_JUNGLE;
         const bool snowy = biome == ALPINE;
         const bool both = t.post[0] && t.post[1];
         const float post = 0.25f + 0.07f * roll(1);
 
-        // the piers, and where each post meets its own
-        float pierTop[2] = {0.0f, 0.0f};
+        // Where each post goes into the ground or the sea bed (a little below
+        // it, so no gap shows on a slope), and the ground or the water at its
+        // foot: what a lantern hangs clear of, what the beams stop above and
+        // where a climbing vine starts. No stone round the posts: footings
+        // turned to the track in a world of blocks looked put on.
+        float footY[2], baseY[2];
         auto postX = [&](int side, float h) {
             const float topX = side == 0 ? -1.3f : 1.3f;
             const float ground = t.ground[side];
@@ -6674,73 +6672,16 @@ void LandWorld::buildSupportMesh()
         };
         for (int side = 0; side < 2; ++side)
         {
-            pierTop[side] = t.ground[side];
-            if (!t.post[side])
-                continue;
-            // Every post stands on stone. On land a footing, wide and low,
-            // half sunk in the ground with the post standing on it, as a
-            // timber post's foundation is; out at sea a pier rising from the
-            // sea bed to just out of the water under a slab a little wider
-            // still. Only the stone, and a little the size, change from one
-            // to the next: piers of all heights round the posts looked like
-            // sleeves pulled over them.
-            const float ground = t.ground[side];
-            const bool sea = ground < water;
-            float top = sea ? water + 0.45f + 0.25f * roll(10 + side)
-                            : ground + 0.45f + 0.15f * roll(10 + side);
-            top = fminf(top, t.top - 1.0f); // a low trestle: the post still shows
-            if (top <= ground + 0.2f)
-                continue;
-            const float half = (sea ? 0.72f : 0.8f) + 0.1f * roll(12 + side);
-            const float r = roll(14 + side);
-            int stone;
-            if (sea)
-                stone = r < 0.6f ? T::MOSSY : (r < 0.85f ? T::COBBLE : T::MOSSY_BRICKS);
-            else if (overgrown)
-                stone = r < 0.45f ? T::MOSSY_BRICKS : (r < 0.75f ? T::MOSSY : T::STONE_BRICKS);
-            else
-                stone = r < 0.5f
-                            ? T::STONE_BRICKS
-                            : (r < 0.75f ? T::COBBLE : (r < 0.9f ? T::MOSSY_BRICKS : T::MOSSY));
-            const float x = t.foot[side];
-            f.shade = 0.88f + 0.1f * roll(16 + side);
-            const float lo[3] = {x - half, ground - 0.8f, -half};
-            const float hi[3] = {x + half, top, half};
-            addTrestleBox(batches, stone, f, lo, hi, 0.0f);
-            if (sea)
-            {
-                // the pier's slab, overhanging it a little
-                const float slabLo[3] = {x - half - 0.15f, top, -half - 0.15f};
-                const float slabHi[3] = {x + half + 0.15f, top + 0.3f, half + 0.15f};
-                addTrestleBox(batches, T::STONE_BRICKS, f, slabLo, slabHi, 0.0f);
-                top += 0.3f;
-            }
-            f.shade = 0.95f;
-            if (snowy)
-            {
-                const float snowLo[3] = {x - half - 0.02f, top, -half - 0.02f};
-                const float snowHi[3] = {x + half + 0.02f, top + 0.1f, half + 0.02f};
-                addTrestleBox(batches, T::SNOW, f, snowLo, snowHi, 0.0f);
-            }
-            else if (leaves >= 0 && roll(20 + side) < (overgrown ? 0.55f : 0.5f))
-            {
-                // leaves grown up against a corner of the stone
-                const float size = 0.3f + 0.25f * roll(22 + side);
-                const float cxp = x + (roll(24 + side) < 0.5f ? -1.0f : 1.0f) * half;
-                const float czp = (roll(26 + side) < 0.5f ? -1.0f : 1.0f) * half;
-                const float leafLo[3] = {cxp - size, top - size * 1.2f, czp - size};
-                const float leafHi[3] = {cxp + size, top + size * 0.5f, czp + size};
-                addTrestleBox(batches, leaves, f, leafLo, leafHi, 0.0f);
-            }
-            pierTop[side] = top;
+            footY[side] = t.ground[side] - 0.6f;
+            baseY[side] = fmaxf(t.ground[side], water);
         }
-        // the posts, leaning in from their piers to the cap
+        // the posts, leaning in from the ground to the cap
         for (int side = 0; side < 2; ++side)
         {
             if (!t.post[side])
                 continue;
             f.shade = 0.84f + 0.14f * roll(30 + side);
-            const float a[3] = {postX(side, pierTop[side]), pierTop[side], 0.0f};
+            const float a[3] = {postX(side, footY[side]), footY[side], 0.0f};
             const float b[3] = {side == 0 ? -1.3f : 1.3f, t.top - 0.45f, 0.0f};
             addTrestleBeam(batches, wood, f, a, b, post, post);
         }
@@ -6756,7 +6697,7 @@ void LandWorld::buildSupportMesh()
                 lit[1 - side] = true;
         }
         for (int side = 0; side < 2; ++side)
-            lit[side] = lit[side] && t.post[side] && t.top - pierTop[side] > 4.0f;
+            lit[side] = lit[side] && t.post[side] && t.top - baseY[side] > 4.0f;
         litBefore = lit[0] || lit[1];
         // the cap under the sleepers, reaching out over a lantern
         f.shade = 0.88f + 0.1f * roll(43);
@@ -6770,13 +6711,13 @@ void LandWorld::buildSupportMesh()
             if (lit[side])
                 addTrestleLantern(batches, f, side == 0 ? -2.3f : 2.3f, t.top - 0.5f, 0.0f,
                                   0.3f + 0.9f * roll(44 + side));
-        // cross beams down to the higher pier, and the bracing: crosswise,
+        // cross beams down to above the higher ground or the water, and the bracing: crosswise,
         // single braces turning each way in turn, or knee braces only
         f.shade = 0.86f + 0.1f * roll(50);
         std::vector<float> levels = {t.top - 0.5f};
         if (both)
         {
-            const float low = fmaxf(pierTop[0], pierTop[1]) + 1.0f;
+            const float low = fmaxf(baseY[0], baseY[1]) + 1.0f;
             const float step = 5.0f + 1.5f * roll(51);
             for (float h = t.top - 0.5f - step; h > low; h -= step)
                 levels.push_back(h);
@@ -6821,7 +6762,7 @@ void LandWorld::buildSupportMesh()
         if (!both || roll(52) >= 0.8f)
             for (int side = 0; side < 2; ++side)
             {
-                if (!t.post[side] || t.top - pierTop[side] < 3.0f)
+                if (!t.post[side] || t.top - baseY[side] < 3.0f)
                     continue;
                 const float in = side == 0 ? 1.0f : -1.0f;
                 const float h = t.top - 0.5f;
@@ -6833,7 +6774,7 @@ void LandWorld::buildSupportMesh()
         // meadows, on the crags and out at sea than in the badlands, by the
         // volcano or in the snow, and a lot where the jungle and the swamp
         // grow over everything. Some hang from the cap and the beams, some
-        // climb a post from its stone.
+        // climb a post from the ground or the water.
         const float vineChance = overgrown ? 1.0f : vineChanceIn(biome);
         if (roll(60) < vineChance)
         {
@@ -6853,14 +6794,14 @@ void LandWorld::buildSupportMesh()
                     overgrown ? 0.8f + 0.6f * roll(82 + k) : 0.5f + 0.5f * roll(82 + k);
                 addTrestleVines(batches, f, x, y, z, drop, width);
             }
-            // one climbing a post, from its stone part of the way up
+            // one climbing a post from the ground or the water part of the way up
             if (roll(87) < (overgrown ? 0.6f : 0.5f))
             {
                 const int side = roll(88) < 0.5f ? 0 : 1;
-                if (t.post[side])
+                const float y0 = baseY[side];
+                const float y1 = fminf(t.top - 0.6f, y0 + 1.2f + 2.8f * roll(89));
+                if (t.post[side] && y1 > y0 + 0.5f)
                 {
-                    const float y0 = pierTop[side] - 0.05f;
-                    const float y1 = fminf(t.top - 0.6f, y0 + 1.2f + 2.8f * roll(89));
                     const float z = (roll(90) < 0.5f ? 1.0f : -1.0f) * (post + 0.02f);
                     addTrestleClimber(batches, f, postX(side, y0), y0, postX(side, y1), y1, z,
                                       post * 1.8f);
