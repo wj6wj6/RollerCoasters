@@ -257,7 +257,7 @@ void main()
         submerge = smoothstep(0.0, 0.9, depth);
         lightVec = normalize(mix(l, refractedLightDir(l), submerge));
         float skyOpen = smoothstep(0.05, 0.35, vExtra.w);
-        float upWeight = mix(0.22, 1.0, smoothstep(0.0, 0.7, n.y));
+        float upWeight = mix(0.32, 1.0, smoothstep(0.0, 0.7, n.y));
         vec3 caustic = mix(vec3(1.0), causticsRgb(vWorldPos, l, uWaterLevel, uTime),
                            upWeight * skyOpen * submerge);
         sun *= mix(vec3(1.0), sunThroughWater(depth, l), submerge) * caustic;

@@ -374,7 +374,7 @@ void main()
         N = normalize(faceN + mix(flatRipple, fallRipple, fall));
     } else {
         oceanWaves(vBase, uTime, 0.0, disp, N);
-        vec2 g = rippleSlope(vBase, uTime);
+        vec2 g = rippleSlope(vBase, uTime * 1.45) * 1.75;
         if (uRain > 0.0)
             g += rainSlope(vBase, uTime) * uRain;
         N = normalize(vec3(N.x - g.x, N.y, N.z - g.y));
@@ -385,23 +385,34 @@ void main()
     vec2 suv = gl_FragCoord.xy / uScreen;
     if (uUnder != 0) {
         // Seen from below, light from above comes through Snell's window,
-        // a cone round straight up; outside it the surface mirrors the water
-        // below. The window is drawn wider and softer than the real 48
-        // degrees, with a little of the sky still showing in the mirror,
-        // and the waves bend the view only a little: a narrow window with
-        // the rest of the surface a solid blue looked like a lid.
-        float cosView = abs(dot(V, N));
-        float window = smoothstep(0.22, 0.55, cosView);
-        vec3 above = texture2D(uRefraction, suv + N.xz * 0.025).rgb;
-        // The sun through the waves: each facet that happens to bend the
-        // line of sight towards the sun flashes.
-        vec3 out1 = refract(-V, -N, 1.33);
-        float sunHit = max(dot(out1, normalize(uLightDir)), 0.0);
-        vec3 glitter = uLightColor * (pow(sunHit, 180.0) * 14.0 + pow(sunHit, 14.0) * 0.5);
-        vec3 mirror = uDeepColor * 1.6 + above * 0.2;
+        // a wide undulating cone around straight up; outside it the underside
+        // of the waves acts as a rippling silvery-blue liquid mirror.
+        vec3 nUnder = -N;
+        float cosView = max(dot(V, nUnder), 0.0);
+        float window = smoothstep(0.24, 0.56, cosView);
+        vec2 ruv = clamp(suv + N.xz * 0.065, vec2(0.002), vec2(0.998));
+        if (texture2D(uDepth, ruv).r < gl_FragCoord.z)
+            ruv = suv;
+        vec3 above = texture2D(uRefraction, ruv).rgb;
+        // The sun through the undulating waves: bright glints plus a broader
+        // liquid caustic sheen on slopes bent towards the sun.
+        vec3 L = normalize(uLightDir);
+        vec3 out1 = refract(-V, nUnder, 1.33);
+        float sunHit = max(dot(out1, L), 0.0);
+        vec3 glitter = uLightColor * (pow(sunHit, 160.0) * 14.0 + pow(sunHit, 22.0) * 1.15);
+        // Total internal reflection outside the window: undulating wave facets
+        // catch silvery turquoise light on crests and darken in troughs.
+        vec3 R = reflect(-V, nUnder);
+        vec3 reflWater = mix(uDeepColor * 0.75,
+                             uDeepColor * 2.4 + vec3(0.015, 0.075, 0.115),
+                             smoothstep(-0.45, 0.15, R.y));
+        float waveTilt = max(dot(N, normalize(vec3(L.x, 0.45, L.z))), 0.0);
+        float facet = smoothstep(0.45, 0.92, waveTilt);
+        vec3 silver = (uDeepColor * 2.2 + uLightColor * vec3(0.05, 0.16, 0.22)) * facet;
+        vec3 mirror = reflWater + silver + above * (0.14 + 0.14 * facet);
         vec3 col = mix(mirror, above + glitter, window);
-        float rim = smoothstep(0.16, 0.26, cosView) - smoothstep(0.26, 0.4, cosView);
-        col += (uDeepColor * 2.0 + uLightColor * 0.06) * rim;
+        float rim = smoothstep(0.18, 0.30, cosView) - smoothstep(0.30, 0.46, cosView);
+        col += (uDeepColor * 2.5 + uLightColor * vec3(0.06, 0.16, 0.20)) * rim * (0.65 + 0.7 * facet);
         gl_FragColor = vec4(col, 1.0);
         return;
     }
@@ -491,7 +502,7 @@ void main()
                  noise(P.xz * 0.037 - vec2(uTime * 0.017, -uTime * 0.029)) * 0.35;
     gust = mix(smoothstep(0.44, 0.72, gust), 1.0, uRain * 0.6);
     float breaking = smoothstep(0.38, 0.68, noise(P.xz * 0.13 + vec2(uTime * 0.06, -uTime * 0.04)));
-    float crest = smoothstep(0.42, 0.66, disp.y) * vWave * 0.5 * gust * breaking;
+    float crest = smoothstep(0.60, 0.96, disp.y) * vWave * 0.5 * gust * breaking;
     float foam = max(edge, crest) * smoothstep(0.15, 0.45, pattern + edge * 0.35);
     vec3 foamLight = uLightColor * max(uLightDir.y, 0.0) * shadow + uZenith * 1.5 + uHorizon * 0.3;
     col = mix(col, foamLight * 0.9, foam * 0.85);
@@ -694,7 +705,7 @@ void main()
     float g = 0.52;
     float hg = (1.0 - g * g) / (4.0 * pow(max(1.0 + g * g - 2.0 * g * cosTheta, 0.05), 1.5));
     float phase = 0.24 + 0.76 * hg;
-    shafts *= uLightColor * phase * 0.0052;
+    shafts *= uLightColor * phase * 0.0085;
     shafts += lamp * vec3(0.55, 0.52, 0.42) * 0.011;
     gl_FragColor = vec4(shafts, 1.0);
 }
@@ -1782,7 +1793,7 @@ void PostEffects::applyUnderwater(const AdvancedLighting &lighting, float time)
     glUniform3fv(loc(p, "uHeadDir"), 1, lighting.headlightDirection());
     fullscreenQuad();
     unbindTextures(3);
-    bilateralBlur(m_rays, m_halfB, m_copy.depth, 1.4f);
+    bilateralBlur(m_rays, m_halfB, m_copy.depth, 0.95f);
 
     // Fog the scene and add the shafts.
     bindTarget(m_scene);

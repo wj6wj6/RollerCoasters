@@ -13,9 +13,9 @@
                   * causticsRgb(): analytic C2 optical Jacobian focusing
                     combining the real Gerstner oceanWaves with rotated
                     quintic surface ripples, inverse-ray fold warping,
-                    depth-dependent softening and chromatic dispersion.
-                  * waterShaftField(): broad volumetric shaft modulation
-                    driven directly by the large ocean swells overhead.
+                    macro swell lensing, depth softening and dispersion.
+                  * waterShaftField(): distinct, swaying volumetric beam
+                    modulation driven directly by the ocean swells overhead.
                   * sunThroughWater(): depth absorption along the refracted
                     sun ray (red absorbed first).
                   * openWater(): water colour along a line of sight.
@@ -37,9 +37,9 @@ void gerstner(vec2 dir, float len, float amp, float phase, vec2 p, float t, floa
     if (len < shortest)
         return;
     float k = 6.2831853 / len;
-    float w = sqrt(9.8 * k) * 0.6;
+    float w = sqrt(9.8 * k) * 0.85;
     float ph = k * dot(dir, p) - w * t + phase;
-    float q = 0.07 / (k * amp);   // steepness: the eight waves share 0.56
+    float q = 0.09 / (k * amp);   // steepness: the eight waves share 0.72
     disp.xz += dir * (q * amp * cos(ph));
     disp.y += amp * sin(ph);
     slope.xz += dir * (k * amp * cos(ph));
@@ -53,14 +53,14 @@ void oceanWaves(vec2 p, float t, float shortest, out vec3 disp, out vec3 normal)
 {
     disp = vec3(0.0);
     vec3 s = vec3(0.0);
-    gerstner(normalize(vec2(0.944, 0.330)), 46.3, 0.30, 0.0, p, t, shortest, disp, s);
-    gerstner(normalize(vec2(0.731, -0.682)), 31.7, 0.17, 2.1, p, t, shortest, disp, s);
-    gerstner(normalize(vec2(0.281, 0.960)), 23.9, 0.12, 4.4, p, t, shortest, disp, s);
-    gerstner(normalize(vec2(0.990, -0.141)), 17.3, 0.08, 1.3, p, t, shortest, disp, s);
-    gerstner(normalize(vec2(0.616, 0.788)), 12.9, 0.06, 5.6, p, t, shortest, disp, s);
-    gerstner(normalize(vec2(0.857, -0.515)), 9.7, 0.04, 3.2, p, t, shortest, disp, s);
-    gerstner(normalize(vec2(-0.208, 0.978)), 7.1, 0.03, 0.7, p, t, shortest, disp, s);
-    gerstner(normalize(vec2(0.951, 0.309)), 5.3, 0.02, 4.9, p, t, shortest, disp, s);
+    gerstner(normalize(vec2(0.944, 0.330)), 46.3, 0.42, 0.0, p, t, shortest, disp, s);
+    gerstner(normalize(vec2(0.731, -0.682)), 31.7, 0.25, 2.1, p, t, shortest, disp, s);
+    gerstner(normalize(vec2(0.281, 0.960)), 23.9, 0.18, 4.4, p, t, shortest, disp, s);
+    gerstner(normalize(vec2(0.990, -0.141)), 17.3, 0.12, 1.3, p, t, shortest, disp, s);
+    gerstner(normalize(vec2(0.616, 0.788)), 12.9, 0.09, 5.6, p, t, shortest, disp, s);
+    gerstner(normalize(vec2(0.857, -0.515)), 9.7, 0.065, 3.2, p, t, shortest, disp, s);
+    gerstner(normalize(vec2(-0.208, 0.978)), 7.1, 0.048, 0.7, p, t, shortest, disp, s);
+    gerstner(normalize(vec2(0.951, 0.309)), 5.3, 0.032, 4.9, p, t, shortest, disp, s);
     normal = normalize(vec3(-s.x, 1.0 - s.y, -s.z));
 }
 
@@ -72,7 +72,7 @@ void gerstnerGradHessian(vec2 dir, float len, float amp, float phase, vec2 p, fl
     if (len < shortest)
         return;
     float k = 6.2831853 / len;
-    float w = sqrt(9.8 * k) * 0.6;
+    float w = sqrt(9.8 * k) * 0.85;
     float ph = k * dot(dir, p) - w * t + phase;
     grad += dir * (k * amp * cos(ph));
     float h = -k * k * amp * sin(ph);
@@ -83,14 +83,14 @@ void oceanWavesGradHessian(vec2 p, float t, float shortest, out vec2 grad, out v
 {
     grad = vec2(0.0);
     hess = vec3(0.0);
-    gerstnerGradHessian(normalize(vec2(0.944, 0.330)), 46.3, 0.30, 0.0, p, t, shortest, grad, hess);
-    gerstnerGradHessian(normalize(vec2(0.731, -0.682)), 31.7, 0.17, 2.1, p, t, shortest, grad, hess);
-    gerstnerGradHessian(normalize(vec2(0.281, 0.960)), 23.9, 0.12, 4.4, p, t, shortest, grad, hess);
-    gerstnerGradHessian(normalize(vec2(0.990, -0.141)), 17.3, 0.08, 1.3, p, t, shortest, grad, hess);
-    gerstnerGradHessian(normalize(vec2(0.616, 0.788)), 12.9, 0.06, 5.6, p, t, shortest, grad, hess);
-    gerstnerGradHessian(normalize(vec2(0.857, -0.515)), 9.7, 0.04, 3.2, p, t, shortest, grad, hess);
-    gerstnerGradHessian(normalize(vec2(-0.208, 0.978)), 7.1, 0.03, 0.7, p, t, shortest, grad, hess);
-    gerstnerGradHessian(normalize(vec2(0.951, 0.309)), 5.3, 0.02, 4.9, p, t, shortest, grad, hess);
+    gerstnerGradHessian(normalize(vec2(0.944, 0.330)), 46.3, 0.42, 0.0, p, t, shortest, grad, hess);
+    gerstnerGradHessian(normalize(vec2(0.731, -0.682)), 31.7, 0.25, 2.1, p, t, shortest, grad, hess);
+    gerstnerGradHessian(normalize(vec2(0.281, 0.960)), 23.9, 0.18, 4.4, p, t, shortest, grad, hess);
+    gerstnerGradHessian(normalize(vec2(0.990, -0.141)), 17.3, 0.12, 1.3, p, t, shortest, grad, hess);
+    gerstnerGradHessian(normalize(vec2(0.616, 0.788)), 12.9, 0.09, 5.6, p, t, shortest, grad, hess);
+    gerstnerGradHessian(normalize(vec2(0.857, -0.515)), 9.7, 0.065, 3.2, p, t, shortest, grad, hess);
+    gerstnerGradHessian(normalize(vec2(-0.208, 0.978)), 7.1, 0.048, 0.7, p, t, shortest, grad, hess);
+    gerstnerGradHessian(normalize(vec2(0.951, 0.309)), 5.3, 0.032, 4.9, p, t, shortest, grad, hess);
 }
 )GLSL";
 
@@ -152,18 +152,18 @@ void accumRotatedRippleGH(vec2 p, float cRot, float sRot, float scale, vec2 offs
 }
 
 // Combined water surface slope and curvature from the real 8 oceanWaves plus
-// three rotated C2 quintic capillary ripple octaves.
+// three rotated C2 quintic capillary ripple octaves at ocean-block tempo.
 void oceanSurfaceGH(vec2 p, float t, float detail, out vec2 grad, out vec3 hess)
 {
     oceanWavesGradHessian(p, t, 0.0, grad, hess);
-    grad *= 3.2;
-    hess *= 6.5;
-    accumRotatedRippleGH(p, 0.94, 0.34, 0.21, vec2(-t * 0.36, -t * 0.14), 2.6, grad, hess);
-    accumRotatedRippleGH(p, 0.65, -0.76, 0.34, vec2(t * 0.28 + 3.1, -t * 0.32 - 1.7), 1.45, grad,
+    grad *= 2.8;
+    hess *= 5.4;
+    accumRotatedRippleGH(p, 0.94, 0.34, 0.19, vec2(-t * 0.84, -t * 0.32), 2.8, grad, hess);
+    accumRotatedRippleGH(p, 0.65, -0.76, 0.32, vec2(t * 0.64 + 3.1, -t * 0.72 - 1.7), 1.55, grad,
                          hess);
     if (detail > 0.02)
-        accumRotatedRippleGH(p, 0.31, 0.95, 0.58, vec2(-t * 0.48 - 4.3, t * 0.26 + 2.2),
-                             0.58 * detail, grad, hess);
+        accumRotatedRippleGH(p, 0.31, 0.95, 0.54, vec2(-t * 1.05 - 4.3, t * 0.58 + 2.2),
+                             0.62 * detail, grad, hess);
 }
 
 float jacobianIntensity(vec3 hess, float lever, float soft)
@@ -172,23 +172,24 @@ float jacobianIntensity(vec3 hess, float lever, float soft)
     float jzz = 1.0 + lever * hess.y;
     float jxz = lever * hess.z;
     float det = jxx * jzz - jxz * jxz;
-    return clamp((1.0 + soft) / (abs(det) + soft), 0.55, 2.65);
+    return clamp((1.0 + soft) / (abs(det) + soft), 0.50, 2.75);
 }
 
 // Coloured caustic multiplier for a point below the surface: uses first-order
-// inverse-ray fold warping and the analytic Jacobian of oceanWaves + ripples,
-// with wavelength-dependent focal levers for subtle chromatic dispersion.
+// inverse-ray fold warping, analytic Jacobian of oceanWaves + ripples, and
+// macro swell lensing from the large overhead waves so light sweeps across
+// the sea floor even at deep ride depths (25-40 units).
 vec3 causticsRgb(vec3 p, vec3 lightDir, float waterLevel, float t)
 {
     float down = max(waterLevel - p.y, 0.0);
     vec3 lr = refractedLightDir(lightDir);
     vec2 s = p.xz + lr.xz / lr.y * down;
 
-    float nearSurface = smoothstep(0.0, 2.2, down);
-    float deepSoft = clamp((down - 4.0) / 36.0, 0.0, 1.0);
-    float detail = 1.0 - 0.78 * deepSoft;
-    float strength = nearSurface * mix(1.0, 0.55, deepSoft);
-    float lever = mix(0.85, 1.55, smoothstep(0.0, 10.0, down)) * mix(1.0, 0.78, deepSoft);
+    float nearSurface = smoothstep(0.0, 2.0, down);
+    float deepSoft = clamp((down - 10.0) / 55.0, 0.0, 1.0);
+    float detail = 1.0 - 0.55 * deepSoft;
+    float strength = nearSurface * mix(1.0, 0.72, deepSoft);
+    float lever = mix(0.88, 1.42, smoothstep(0.0, 10.0, down)) * mix(1.0, 0.85, deepSoft);
 
     vec2 grad0;
     vec3 hess0;
@@ -198,23 +199,31 @@ vec3 causticsRgb(vec3 p, vec3 lightDir, float waterLevel, float t)
     vec3 hessW;
     oceanSurfaceGH(warped, t, detail, gradW, hessW);
 
-    float soft = mix(0.75, 0.36, detail);
-    float dispScale = 0.07 * (1.0 - 0.45 * deepSoft);
+    // Broad light-and-shadow bands cast by the 5 large ocean swells overhead.
+    vec2 swellGrad;
+    vec3 swellHess;
+    oceanWavesGradHessian(s, t, 12.0, swellGrad, swellHess);
+    float swell = mix(1.0, mix(0.68, 1.40, smoothstep(-0.042, 0.046, -(swellHess.x + swellHess.y))),
+                      nearSurface);
+
+    float soft = mix(0.70, 0.36, detail);
+    float dispScale = 0.08 * (1.0 - 0.35 * deepSoft);
     vec3 focused = vec3(jacobianIntensity(hessW, lever * (1.0 - dispScale), soft),
                         jacobianIntensity(hessW, lever, soft),
                         jacobianIntensity(hessW, lever * (1.0 + dispScale), soft));
-    return mix(vec3(1.0), focused, strength);
+    return mix(vec3(1.0), focused, strength) * swell;
 }
 
-// Broad volumetric shaft modulation driven directly by the five large ocean
-// swells (>= 12 units) that displace the sea surface mesh overhead.
+// Distinct, swaying volumetric shaft modulation driven directly by the ocean
+// swells overhead: broad curtains from the 5 large waves plus livelier sub-rays.
 float waterShaftField(vec2 s, float t)
 {
     vec2 grad;
     vec3 hess;
-    oceanWavesGradHessian(s, t, 12.0, grad, hess);
-    float focus = smoothstep(-0.026, 0.030, -(hess.x + hess.y));
-    return 0.30 + 1.35 * focus * focus;
+    oceanWavesGradHessian(s, t, 9.0, grad, hess);
+    float conv = -(hess.x + hess.y);
+    float focus = smoothstep(-0.040, 0.058, conv);
+    return 0.08 + 2.35 * pow(focus, 2.1);
 }
 
 // Fraction of sunlight that reaches a point at this depth along the refracted ray.
