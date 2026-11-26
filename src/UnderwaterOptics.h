@@ -113,6 +113,15 @@ float opticsHash12(vec2 p)
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
 }
 
+float opticsValueNoise(vec2 p)
+{
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(opticsHash12(i), opticsHash12(i + vec2(1.0, 0.0)), u.x),
+               mix(opticsHash12(i + vec2(0.0, 1.0)), opticsHash12(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
 // Analytic gradient and C2-continuous 2x2 Hessian (Hxx, Hyy, Hxy) of quintic
 // value noise: second derivative vanishes at cell edges so Jacobian caustics
 // show zero lattice seams.
@@ -214,16 +223,35 @@ vec3 causticsRgb(vec3 p, vec3 lightDir, float waterLevel, float t)
     return mix(vec3(1.0), focused, strength) * swell;
 }
 
-// Distinct, swaying volumetric shaft modulation driven directly by the ocean
-// swells overhead: broad curtains from the 5 large waves plus livelier sub-rays.
-float waterShaftField(vec2 s, float t)
+// Non-periodic, breathing and gently swaying volumetric sunbeams, subtly
+// steered by the real oceanWaves slopes overhead without forming scrolling bars.
+float waterShaftField(vec2 s, float depth, float t)
 {
-    vec2 grad;
-    vec3 hess;
-    oceanWavesGradHessian(s, t, 9.0, grad, hess);
-    float conv = -(hess.x + hess.y);
-    float focus = smoothstep(-0.040, 0.058, conv);
-    return 0.08 + 2.35 * pow(focus, 2.1);
+    vec2 waveGrad;
+    vec3 waveHess;
+    oceanWavesGradHessian(s, t, 12.0, waveGrad, waveHess);
+    vec2 tilt =
+        vec2(opticsValueNoise(s * 0.045 + vec2(t * 0.22, -t * 0.17)),
+             opticsValueNoise(s * 0.045 + vec2(-t * 0.19, t * 0.23) + vec2(11.3, 5.7))) -
+        0.5;
+    vec2 r = s + (tilt * 0.24 - waveGrad * 0.85) * min(depth, 28.0);
+
+    vec2 a1 = mat2(0.94, 0.34, -0.34, 0.94) * (r * 0.065) + vec2(t * 0.20, -t * 0.15);
+    vec2 a2 =
+        mat2(0.62, -0.78, 0.78, 0.62) * (r * 0.082) + vec2(-t * 0.22, t * 0.17) + vec2(7.4, -3.9);
+    float cluster = smoothstep(0.14, 0.56, opticsValueNoise(a1) * opticsValueNoise(a2));
+
+    vec2 b1 =
+        mat2(0.41, 0.91, -0.91, 0.41) * (r * 0.19) + vec2(t * 0.40, t * 0.31) + vec2(2.1, -6.3);
+    vec2 b2 = mat2(-0.82, 0.57, -0.57, -0.82) * (r * 0.23) + vec2(-t * 0.37, -t * 0.29) +
+              vec2(-4.8, 9.2);
+    float wisp = smoothstep(0.16, 0.54, opticsValueNoise(b1) * opticsValueNoise(b2));
+
+    float nearDetail = 1.0 - smoothstep(4.0, 28.0, depth);
+    float swellPulse = mix(0.84, 1.22, smoothstep(-0.042, 0.046, -(waveHess.x + waveHess.y)));
+    float shaft = cluster * mix(0.65, 0.32 + 1.25 * wisp, nearDetail) * swellPulse;
+    float depthFade = exp(-depth * 0.024);
+    return (0.05 + 1.65 * shaft) * depthFade;
 }
 
 // Fraction of sunlight that reaches a point at this depth along the refracted ray.

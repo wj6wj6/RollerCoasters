@@ -672,7 +672,7 @@ void main()
     vec3 L = normalize(uLightDir);
     vec3 lr = refractedLightDir(L);
     const int steps = 40;
-    float maxDist = min(wdist, 175.0);
+    float maxDist = min(wdist, 145.0);
     // Interleaved gradient noise: a fixed, even dither that hides banding.
     float jitter = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
     vec3 shafts = vec3(0.0);
@@ -686,9 +686,9 @@ void main()
         if (depth < 0.0)
             break;
         vec2 s = p.xz + lr.xz / lr.y * depth;
-        float beam = waterShaftField(s, uTime);
-        float surfaceFade = smoothstep(0.0, 1.8, depth);
-        float farFade = 1.0 - smoothstep(115.0, 175.0, t);
+        float beam = waterShaftField(s, depth, uTime);
+        float surfaceFade = smoothstep(0.0, 1.0, depth);
+        float farFade = exp(-t * 0.011) * (1.0 - smoothstep(95.0, 145.0, t));
         shafts += sunAt(p) * beam * surfaceFade * farFade * sunThroughWater(depth, L) *
                   exp(-kFogExtinction * t) * dt;
         if (uHeadOn != 0) {
@@ -700,12 +700,13 @@ void main()
                     exp(-kFogExtinction * t) * dt;
         }
     }
-    // Forward-peaked Henyey-Greenstein scattering in seawater plus a soft ambient term.
+    // Forward-peaked Henyey-Greenstein scattering, strongest towards the sun and surface.
     float cosTheta = dot(V, lr);
-    float g = 0.52;
+    float g = 0.58;
     float hg = (1.0 - g * g) / (4.0 * pow(max(1.0 + g * g - 2.0 * g * cosTheta, 0.05), 1.5));
-    float phase = 0.24 + 0.76 * hg;
-    shafts *= uLightColor * phase * 0.0085;
+    float upBias = 0.68 + 0.48 * smoothstep(-0.25, 0.55, V.y);
+    float phase = (0.16 + 0.84 * hg) * upBias;
+    shafts *= uLightColor * phase * 0.0115;
     shafts += lamp * vec3(0.55, 0.52, 0.42) * 0.011;
     gl_FragColor = vec4(shafts, 1.0);
 }
