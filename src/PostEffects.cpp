@@ -388,18 +388,37 @@ void main()
         // a wide undulating cone around straight up; outside it the underside
         // of the waves acts as a rippling silvery-blue liquid mirror.
         vec3 nUnder = -N;
+        vec3 L = normalize(uLightDir);
         float cosView = max(dot(V, nUnder), 0.0);
-        float window = smoothstep(0.24, 0.56, cosView);
-        vec2 ruv = clamp(suv + N.xz * 0.065, vec2(0.002), vec2(0.998));
+        float directSun = max(dot(-V, L), 0.0);
+        // Let the sun shine smoothly through the window even at lower angles.
+        float window = max(smoothstep(0.24, 0.56, cosView), pow(directSun, 14.0) * 0.85);
+        vec2 ruv = clamp(suv + N.xz * 0.036, vec2(0.002), vec2(0.998));
         if (texture2D(uDepth, ruv).r < gl_FragCoord.z)
             ruv = suv;
         vec3 above = texture2D(uRefraction, ruv).rgb;
-        // The sun through the undulating waves: bright glints plus a broader
-        // liquid caustic sheen on slopes bent towards the sun.
-        vec3 L = normalize(uLightDir);
-        vec3 out1 = refract(-V, nUnder, 1.33);
-        float sunHit = max(dot(out1, L), 0.0);
-        vec3 glitter = uLightColor * (pow(sunHit, 160.0) * 14.0 + pow(sunHit, 22.0) * 1.15);
+        if (directSun > 0.88) {
+            // Soften the crisp square sky sun through the moving water surface
+            // into a luminous liquid glow rather than a jagged warped polygon.
+            vec2 o1 = vec2(0.006, 0.003) + N.xz * 0.008;
+            vec2 o2 = vec2(-0.004, 0.007) - N.xz * 0.006;
+            vec2 u1 = clamp(ruv + o1, vec2(0.002), vec2(0.998));
+            vec2 u2 = clamp(ruv - o1, vec2(0.002), vec2(0.998));
+            vec2 u3 = clamp(ruv + o2, vec2(0.002), vec2(0.998));
+            vec2 u4 = clamp(ruv - o2, vec2(0.002), vec2(0.998));
+            vec3 soft = above * 0.28 +
+                        (texture2D(uDepth, u1).r < gl_FragCoord.z ? above : texture2D(uRefraction, u1).rgb) * 0.18 +
+                        (texture2D(uDepth, u2).r < gl_FragCoord.z ? above : texture2D(uRefraction, u2).rgb) * 0.18 +
+                        (texture2D(uDepth, u3).r < gl_FragCoord.z ? above : texture2D(uRefraction, u3).rgb) * 0.18 +
+                        (texture2D(uDepth, u4).r < gl_FragCoord.z ? above : texture2D(uRefraction, u4).rgb) * 0.18;
+            above = mix(above, soft, smoothstep(0.88, 0.96, directSun));
+        }
+        // Wave-facet sun glitter aligned with the visible sky sun (no second
+        // displaced sun or abrupt critical-angle cut across the sun).
+        vec3 sunRay = normalize(-V + vec3(N.x, 0.0, N.z) * 0.48);
+        float sunHit = max(dot(sunRay, L), 0.0);
+        vec3 glitter =
+            uLightColor * (pow(sunHit, 160.0) * 6.5 + pow(sunHit, 26.0) * 0.85 + pow(directSun, 10.0) * 0.25);
         // Total internal reflection outside the window: undulating wave facets
         // catch silvery turquoise light on crests and darken in troughs.
         vec3 R = reflect(-V, nUnder);
@@ -706,7 +725,7 @@ void main()
     float hg = (1.0 - g * g) / (4.0 * pow(max(1.0 + g * g - 2.0 * g * cosTheta, 0.05), 1.5));
     float upBias = 0.68 + 0.48 * smoothstep(-0.25, 0.55, V.y);
     float phase = (0.16 + 0.84 * hg) * upBias;
-    shafts *= uLightColor * phase * 0.0115;
+    shafts *= uLightColor * phase * 0.021;
     shafts += lamp * vec3(0.55, 0.52, 0.42) * 0.011;
     gl_FragColor = vec4(shafts, 1.0);
 }
@@ -1640,8 +1659,8 @@ void PostEffects::setUnderwaterCamera(const float cameraPos[3], const SkyState &
     // blue below by day, a little darker the deeper the camera is, nearly
     // black at night.
     const float depth = fmaxf(waterLevel - cameraPos[1], 0.0f);
-    const float shallow[3] = {0.020f, 0.170f, 0.330f};
-    const float deep[3] = {0.003f, 0.040f, 0.150f};
+    const float shallow[3] = {0.016f, 0.145f, 0.295f};
+    const float deep[3] = {0.003f, 0.036f, 0.135f};
     const float absorb[3] = {0.020f, 0.0070f, 0.0045f};
     const float light = (0.06f + 0.94f * sky.day) * (1.0f - 0.35f * sky.overcast);
     for (int i = 0; i < 3; ++i)

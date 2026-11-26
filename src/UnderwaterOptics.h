@@ -98,7 +98,7 @@ const char *const kUnderwaterOpticsGlsl = R"GLSL(
 // Sunlight lost per world unit of depth (red, green, blue).
 const vec3 kWaterAbsorb = vec3(0.020, 0.0070, 0.0045);
 // Light lost per world unit along the line of sight.
-const vec3 kFogExtinction = vec3(0.0125, 0.0050, 0.0034);
+const vec3 kFogExtinction = vec3(0.0195, 0.0086, 0.0060);
 
 // Direction towards the sun or moon after refracting into water (n_air / n_water = 0.75).
 vec3 refractedLightDir(vec3 lightDir)
@@ -239,19 +239,19 @@ float waterShaftField(vec2 s, float depth, float t)
     vec2 a1 = mat2(0.94, 0.34, -0.34, 0.94) * (r * 0.065) + vec2(t * 0.20, -t * 0.15);
     vec2 a2 =
         mat2(0.62, -0.78, 0.78, 0.62) * (r * 0.082) + vec2(-t * 0.22, t * 0.17) + vec2(7.4, -3.9);
-    float cluster = smoothstep(0.14, 0.56, opticsValueNoise(a1) * opticsValueNoise(a2));
+    float cluster = smoothstep(0.09, 0.45, opticsValueNoise(a1) * opticsValueNoise(a2));
 
     vec2 b1 =
         mat2(0.41, 0.91, -0.91, 0.41) * (r * 0.19) + vec2(t * 0.40, t * 0.31) + vec2(2.1, -6.3);
     vec2 b2 = mat2(-0.82, 0.57, -0.57, -0.82) * (r * 0.23) + vec2(-t * 0.37, -t * 0.29) +
               vec2(-4.8, 9.2);
-    float wisp = smoothstep(0.16, 0.54, opticsValueNoise(b1) * opticsValueNoise(b2));
+    float wisp = smoothstep(0.14, 0.50, opticsValueNoise(b1) * opticsValueNoise(b2));
 
     float nearDetail = 1.0 - smoothstep(4.0, 28.0, depth);
     float swellPulse = mix(0.84, 1.22, smoothstep(-0.042, 0.046, -(waveHess.x + waveHess.y)));
     float shaft = cluster * mix(0.65, 0.32 + 1.25 * wisp, nearDetail) * swellPulse;
-    float depthFade = exp(-depth * 0.024);
-    return (0.05 + 1.65 * shaft) * depthFade;
+    float depthFade = exp(-depth * 0.017);
+    return (0.03 + 1.95 * shaft) * depthFade;
 }
 
 // Fraction of sunlight that reaches a point at this depth along the refracted ray.
