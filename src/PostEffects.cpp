@@ -314,14 +314,20 @@ vec2 noiseSlope(vec2 p)
     return vec2(noise(p + vec2(e, 0.0)) - h, noise(p + vec2(0.0, e)) - h) / e;
 }
 
-// Fine ripples: the slopes of three layers of noise sliding over each other
-// in different directions.
+// Fine ripples: three rotated, domain-warped layers of turbulent chop so the
+// surface shows no axis-aligned noise grid regularity.
 vec2 rippleSlope(vec2 p, float t)
 {
-    vec2 g = noiseSlope(p * 0.55 + vec2(t * 0.35, t * 0.22)) * 0.060;
-    g += noiseSlope(p * 1.30 + vec2(-t * 0.45, t * 0.30)) * 0.035;
-    g += noiseSlope(p * 2.90 + vec2(t * 0.25, -t * 0.55)) * 0.018;
-    return g;
+    vec2 q1 = mat2(0.93, 0.37, -0.37, 0.93) * (p * 0.52) + vec2(t * 0.33, t * 0.21);
+    vec2 g1 = noiseSlope(q1);
+    vec2 q2 = mat2(0.57, -0.82, 0.82, 0.57) * (p * 1.18) + vec2(-t * 0.42, t * 0.29) + g1 * 0.35;
+    vec2 g2 = noiseSlope(q2);
+    vec2 q3 = mat2(-0.41, 0.91, -0.91, -0.41) * (p * 2.55) + vec2(t * 0.27, -t * 0.51) - g2 * 0.28;
+    vec2 g3 = noiseSlope(q3);
+    vec2 s1 = mat2(0.93, -0.37, 0.37, 0.93) * g1 * 0.062;
+    vec2 s2 = mat2(0.57, 0.82, -0.82, 0.57) * g2 * 0.038;
+    vec2 s3 = mat2(-0.41, -0.91, 0.91, -0.41) * g3 * 0.020;
+    return s1 + s2 + s3;
 }
 
 // Rings spreading from where rain drops land: one drop per cell at a time.

@@ -31,6 +31,22 @@
 // Eight waves with unrelated lengths and directions spread round the wind's
 // avoid any repeating grid of crests.
 const char *const kOceanWavesGlsl = R"GLSL(
+// Slow spatial curvature so long swells bend and break instead of forming
+// straight infinite ridges across the ocean.
+vec2 waveWarp(vec2 p, float t)
+{
+    return vec2(sin(p.y * 0.023 + t * 0.17) * 5.5 + cos((p.x - p.y) * 0.017 - t * 0.13) * 4.0,
+                cos(p.x * 0.021 - t * 0.15) * 5.5 + sin((p.x + p.y) * 0.019 + t * 0.11) * 4.0);
+}
+
+// Patchy wave-group envelope (sets of larger swells separated by calmer lulls).
+float waveGroup(vec2 p, float t, float seed)
+{
+    float a = sin(p.x * 0.029 - p.y * 0.018 - t * 0.23 + seed);
+    float b = cos(p.x * 0.015 + p.y * 0.031 + t * 0.19 - seed * 1.7);
+    return 0.62 + 0.38 * (0.5 + 0.5 * a * b) * 1.6;
+}
+
 void gerstner(vec2 dir, float len, float amp, float phase, vec2 p, float t, float shortest,
               inout vec3 disp, inout vec3 slope)
 {
@@ -39,7 +55,7 @@ void gerstner(vec2 dir, float len, float amp, float phase, vec2 p, float t, floa
     float k = 6.2831853 / len;
     float w = sqrt(9.8 * k) * 0.85;
     float ph = k * dot(dir, p) - w * t + phase;
-    float q = 0.09 / (k * amp);   // steepness: the eight waves share 0.72
+    float q = 0.085 / (k * max(amp, 0.001));
     disp.xz += dir * (q * amp * cos(ph));
     disp.y += amp * sin(ph);
     slope.xz += dir * (k * amp * cos(ph));
@@ -53,14 +69,17 @@ void oceanWaves(vec2 p, float t, float shortest, out vec3 disp, out vec3 normal)
 {
     disp = vec3(0.0);
     vec3 s = vec3(0.0);
-    gerstner(normalize(vec2(0.944, 0.330)), 46.3, 0.42, 0.0, p, t, shortest, disp, s);
-    gerstner(normalize(vec2(0.731, -0.682)), 31.7, 0.25, 2.1, p, t, shortest, disp, s);
-    gerstner(normalize(vec2(0.281, 0.960)), 23.9, 0.18, 4.4, p, t, shortest, disp, s);
-    gerstner(normalize(vec2(0.990, -0.141)), 17.3, 0.12, 1.3, p, t, shortest, disp, s);
-    gerstner(normalize(vec2(0.616, 0.788)), 12.9, 0.09, 5.6, p, t, shortest, disp, s);
-    gerstner(normalize(vec2(0.857, -0.515)), 9.7, 0.065, 3.2, p, t, shortest, disp, s);
-    gerstner(normalize(vec2(-0.208, 0.978)), 7.1, 0.048, 0.7, p, t, shortest, disp, s);
-    gerstner(normalize(vec2(0.951, 0.309)), 5.3, 0.032, 4.9, p, t, shortest, disp, s);
+    vec2 wp = p + waveWarp(p, t);
+    float gA = waveGroup(p, t, 0.4);
+    float gB = waveGroup(p, t, 2.7);
+    gerstner(normalize(vec2(0.92, 0.39)), 43.7, 0.38 * gA, 0.0, wp, t, shortest, disp, s);
+    gerstner(normalize(vec2(0.58, -0.81)), 29.3, 0.24 * gB, 2.1, wp, t, shortest, disp, s);
+    gerstner(normalize(vec2(-0.31, 0.95)), 21.1, 0.18 * gA, 4.4, wp, t, shortest, disp, s);
+    gerstner(normalize(vec2(0.87, -0.49)), 15.7, 0.13 * gB, 1.3, wp, t, shortest, disp, s);
+    gerstner(normalize(vec2(-0.64, 0.77)), 11.9, 0.095 * gA, 5.6, wp, t, shortest, disp, s);
+    gerstner(normalize(vec2(0.36, 0.93)), 8.9, 0.068 * gB, 3.2, wp, t, shortest, disp, s);
+    gerstner(normalize(vec2(-0.82, -0.57)), 6.7, 0.050 * gA, 0.7, wp, t, shortest, disp, s);
+    gerstner(normalize(vec2(0.76, 0.65)), 4.9, 0.034 * gB, 4.9, wp, t, shortest, disp, s);
     normal = normalize(vec3(-s.x, 1.0 - s.y, -s.z));
 }
 
@@ -83,14 +102,25 @@ void oceanWavesGradHessian(vec2 p, float t, float shortest, out vec2 grad, out v
 {
     grad = vec2(0.0);
     hess = vec3(0.0);
-    gerstnerGradHessian(normalize(vec2(0.944, 0.330)), 46.3, 0.42, 0.0, p, t, shortest, grad, hess);
-    gerstnerGradHessian(normalize(vec2(0.731, -0.682)), 31.7, 0.25, 2.1, p, t, shortest, grad, hess);
-    gerstnerGradHessian(normalize(vec2(0.281, 0.960)), 23.9, 0.18, 4.4, p, t, shortest, grad, hess);
-    gerstnerGradHessian(normalize(vec2(0.990, -0.141)), 17.3, 0.12, 1.3, p, t, shortest, grad, hess);
-    gerstnerGradHessian(normalize(vec2(0.616, 0.788)), 12.9, 0.09, 5.6, p, t, shortest, grad, hess);
-    gerstnerGradHessian(normalize(vec2(0.857, -0.515)), 9.7, 0.065, 3.2, p, t, shortest, grad, hess);
-    gerstnerGradHessian(normalize(vec2(-0.208, 0.978)), 7.1, 0.048, 0.7, p, t, shortest, grad, hess);
-    gerstnerGradHessian(normalize(vec2(0.951, 0.309)), 5.3, 0.032, 4.9, p, t, shortest, grad, hess);
+    vec2 wp = p + waveWarp(p, t);
+    float gA = waveGroup(p, t, 0.4);
+    float gB = waveGroup(p, t, 2.7);
+    gerstnerGradHessian(normalize(vec2(0.92, 0.39)), 43.7, 0.38 * gA, 0.0, wp, t, shortest, grad,
+                        hess);
+    gerstnerGradHessian(normalize(vec2(0.58, -0.81)), 29.3, 0.24 * gB, 2.1, wp, t, shortest, grad,
+                        hess);
+    gerstnerGradHessian(normalize(vec2(-0.31, 0.95)), 21.1, 0.18 * gA, 4.4, wp, t, shortest, grad,
+                        hess);
+    gerstnerGradHessian(normalize(vec2(0.87, -0.49)), 15.7, 0.13 * gB, 1.3, wp, t, shortest, grad,
+                        hess);
+    gerstnerGradHessian(normalize(vec2(-0.64, 0.77)), 11.9, 0.095 * gA, 5.6, wp, t, shortest, grad,
+                        hess);
+    gerstnerGradHessian(normalize(vec2(0.36, 0.93)), 8.9, 0.068 * gB, 3.2, wp, t, shortest, grad,
+                        hess);
+    gerstnerGradHessian(normalize(vec2(-0.82, -0.57)), 6.7, 0.050 * gA, 0.7, wp, t, shortest, grad,
+                        hess);
+    gerstnerGradHessian(normalize(vec2(0.76, 0.65)), 4.9, 0.034 * gB, 4.9, wp, t, shortest, grad,
+                        hess);
 }
 )GLSL";
 
@@ -223,35 +253,49 @@ vec3 causticsRgb(vec3 p, vec3 lightDir, float waterLevel, float t)
     return mix(vec3(1.0), focused, strength) * swell;
 }
 
-// Non-periodic, breathing and gently swaying volumetric sunbeams, subtly
-// steered by the real oceanWaves slopes overhead without forming scrolling bars.
+// Irregular, domain-warped multi-scale volumetric sunbeams: sparse macro
+// bundles leave wide calm gaps, heavily warped medium shafts vary in width
+// and spacing, and transient narrow needles shimmer unpredictably inside,
+// subtly steered by the curved overhead oceanWaves slopes.
 float waterShaftField(vec2 s, float depth, float t)
 {
     vec2 waveGrad;
     vec3 waveHess;
     oceanWavesGradHessian(s, t, 12.0, waveGrad, waveHess);
-    vec2 tilt =
-        vec2(opticsValueNoise(s * 0.045 + vec2(t * 0.22, -t * 0.17)),
-             opticsValueNoise(s * 0.045 + vec2(-t * 0.19, t * 0.23) + vec2(11.3, 5.7))) -
+    vec2 warp =
+        vec2(opticsValueNoise(s * 0.032 + vec2(t * 0.14, -t * 0.11)),
+             opticsValueNoise(s * 0.032 + vec2(-t * 0.12, t * 0.15) + vec2(17.3, 9.1))) -
         0.5;
-    vec2 r = s + (tilt * 0.24 - waveGrad * 0.85) * min(depth, 28.0);
+    vec2 r = s + warp * (16.0 + min(depth, 30.0) * 0.30) - waveGrad * (min(depth, 28.0) * 0.75);
 
-    vec2 a1 = mat2(0.94, 0.34, -0.34, 0.94) * (r * 0.065) + vec2(t * 0.20, -t * 0.15);
+    // Sparse asymmetric bundles (~50-70 unit calm stretches vs sunlit clusters).
+    float m1 = opticsValueNoise(r * 0.024 + vec2(t * 0.07, -t * 0.05) + vec2(0.0, 3.1));
+    float m2 = opticsValueNoise(mat2(0.68, 0.73, -0.73, 0.68) * (r * 0.031) +
+                                vec2(-t * 0.06, t * 0.08) + vec2(8.4, -5.2));
+    float bundle = smoothstep(0.14, 0.56, m1 * m2);
+
+    // Uneven medium shafts with non-linear time wobble to break steady rhythm.
+    float t1 = t * 0.24 + sin(t * 0.37) * 0.35;
+    float t2 = t * 0.21 + cos(t * 0.43) * 0.35;
+    vec2 a1 = mat2(0.91, 0.41, -0.41, 0.91) * (r * 0.058) + vec2(t1, -t2 * 0.8);
     vec2 a2 =
-        mat2(0.62, -0.78, 0.78, 0.62) * (r * 0.082) + vec2(-t * 0.22, t * 0.17) + vec2(7.4, -3.9);
-    float cluster = smoothstep(0.09, 0.45, opticsValueNoise(a1) * opticsValueNoise(a2));
+        mat2(0.53, -0.85, 0.85, 0.53) * (r * 0.095) + vec2(-t2, t1 * 0.7) + vec2(7.4, -3.9);
+    float med = smoothstep(0.16, 0.54, opticsValueNoise(a1) * opticsValueNoise(a2));
 
+    // Narrow, transient flickering slivers inside the clusters.
     vec2 b1 =
-        mat2(0.41, 0.91, -0.91, 0.41) * (r * 0.19) + vec2(t * 0.40, t * 0.31) + vec2(2.1, -6.3);
-    vec2 b2 = mat2(-0.82, 0.57, -0.57, -0.82) * (r * 0.23) + vec2(-t * 0.37, -t * 0.29) +
+        mat2(0.37, 0.93, -0.93, 0.37) * (r * 0.17) + vec2(t * 0.44, t * 0.33) + vec2(2.1, -6.3);
+    vec2 b2 = mat2(-0.84, 0.54, -0.54, -0.84) * (r * 0.22) + vec2(-t * 0.40, -t * 0.35) +
               vec2(-4.8, 9.2);
-    float wisp = smoothstep(0.14, 0.50, opticsValueNoise(b1) * opticsValueNoise(b2));
+    float needle = smoothstep(0.22, 0.60, opticsValueNoise(b1) * opticsValueNoise(b2));
 
-    float nearDetail = 1.0 - smoothstep(4.0, 28.0, depth);
+    float nearDetail = 1.0 - smoothstep(4.0, 30.0, depth);
     float swellPulse = mix(0.84, 1.22, smoothstep(-0.042, 0.046, -(waveHess.x + waveHess.y)));
-    float shaft = cluster * mix(0.65, 0.32 + 1.25 * wisp, nearDetail) * swellPulse;
+    float shaft = bundle * (0.28 + 1.15 * med + 1.65 * needle * (0.35 + 0.65 * nearDetail)) *
+                  swellPulse;
+    shaft += 0.38 * med * needle * nearDetail;
     float depthFade = exp(-depth * 0.017);
-    return (0.03 + 1.95 * shaft) * depthFade;
+    return (0.02 + 1.85 * shaft) * depthFade;
 }
 
 // Fraction of sunlight that reaches a point at this depth along the refracted ray.
