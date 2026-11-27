@@ -122,7 +122,9 @@ class PostEffects
     void bindTarget(const Target &t);
     void fullscreenQuad();
     void blur(Target &src, Target &tmp, float radius);
+    void bilateralBlur(Target &src, Target &tmp, unsigned int depthTex, float radius);
     void buildWaterMesh();
+    void buildCoastSdf();
     // copies the scene so far for the water to look through
     void copyScene();
     // binds the water's program and sets what the sea and the water on land
@@ -143,6 +145,8 @@ class PostEffects
     Target m_halfA;      // AO, then bloom
     Target m_halfB;      // blur temporary
     Target m_rays;       // god rays, or the light shafts under water
+    Target m_shaftNear;  // the shaft map round the camera, 4 depths each ...
+    Target m_shaftFar;   // ... see kShaftMapFragment
 
     unsigned int m_skyProgram;
     unsigned int m_waterProgram;
@@ -150,13 +154,16 @@ class PostEffects
     unsigned int m_aoApplyProgram;
     unsigned int m_brightProgram;
     unsigned int m_blurProgram;
+    unsigned int m_shaftBlurProgram;
     unsigned int m_raysProgram;
     unsigned int m_compositeProgram;
     unsigned int m_underwaterProgram;
     unsigned int m_shaftsProgram;
+    unsigned int m_shaftMapProgram;
     unsigned int m_particleProgram;
     unsigned int m_wetProgram;
     unsigned int m_waterList; // display list of the surface mesh
+    unsigned int m_coastSdf;  // bilinear offshore distance field (WorldShape::inland)
 
     float m_camera[3];       // camera position, set by setUnderwaterCamera()
     float m_deepColor[3];    // colour of the water looking down ...
