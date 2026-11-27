@@ -79,6 +79,7 @@ flowchart LR
     Effects --> Frame[renderAdvancedFrame]
     Frame --> Lighting[AdvancedLighting / 兩層 shadow map、逐像素光照、頭燈]
     Frame --> Post[PostEffects / 天空、水面、雨、SSAO、Bloom、色調映射]
+    Post -->|海岸線 SDF 貼圖| Shape
     Frame -->|drawGround / drawUnderwater / drawObjects / drawSurfaceWater| View
     Window -->|drawNow：beginFrame、Swap、endFrame| Perf[PerfStats / 每幀各階段與各景物的 CPU、GPU 毫秒]
     Frame -->|PerfScope：Shadow maps、Reflection、Scene、Post effects| Perf
@@ -135,7 +136,7 @@ flowchart LR
 | `src/TrainView.H/.cpp` | OpenGL 畫面：相機投影、場景繪製、控制點選取與編輯、滑鼠鎖定、觸控板與滾輪訊息；狀態文字交給 `GameMenu` 畫在快捷欄上方。 |
 | `src/TrainViewEffects.cpp` | 把 `SceneSettings` 的光影設定轉成 `LightingFrame`，並呼叫 `renderAdvancedFrame()`。 |
 | `src/AdvancedLighting.h/.cpp` | 跟著鏡頭的兩層 shadow map（鏡頭附近 150 單位的細圖、外圍 600 單位的粗圖，交界處混合）、GLSL 逐像素光照、日夜與頭燈。`setUnlit(true)` 讓不該依法線明暗的東西（方塊雲）一律用天空光加太陽或月亮的光色照亮，跟著時間與下雨變化。 |
-| `src/PostEffects.h/.cpp` | 浮點 frame buffer 與後製：天空、水面與 SSR、雨與濕地反射、SSAO、Bloom、god rays、ACES。 |
+| `src/PostEffects.h/.cpp` | 浮點 frame buffer 與後製：天空、水面（含 `WorldShape::inland()` 海岸線 SDF 碎浪、泡沫網與高俯視角高光）與 SSR、雨與濕地反射、SSAO、Bloom、god rays、ACES。 |
 | `src/UnderwaterOptics.h` | 海面 Gerstner 波、水下折射、Jacobian 焦散、光束場與水色常數，由海面、光照、光束與水下霧四個 shader 共用。 |
 | `src/LandWaterMotion.h` | 島上的水怎麼動（水面輕微起伏、落水處攪動、瀑布朝空氣的面輕微擺動），光照 shader 與水面 shader 共用，依 `LandWorld` 寫在頂點上的標記。 |
 | `src/MatrixMath.h` | 光影程式用的 column-major 4×4 矩陣輔助函式。 |
@@ -157,7 +158,7 @@ flowchart LR
 | `src/Mobs.h/.cpp` | 島上的羊、豬、牛：照方塊遊戲模型以像素為單位的方塊與其貼圖配置（box UV）、內建皮膚、上傳與繪製；由 `MobsCheck` 測試模型每一面都落在皮膚上。 |
 | `src/OceanWorld.h/.cpp` | 海床、海底景物、海洋生物，以及 `Grand Tour` 的控制點與取樣。 |
 | `src/BlockMesh.h/.cpp` | `LandWorld` 與 `OceanWorld` 的分塊 mesh：頂點壓成 44 bytes（法線與顏色用 byte），每種材質一段，以 `GL_QUADS` 畫，畫完把目前的顏色、法線與材質座標設成最後一個頂點的值（同 display list）。一個世界的所有 mesh 放在同一個 `Arena`（建好後合併成一個 vertex buffer），每個 pass 依材質用 `glMultiDrawArrays` 畫看得到的分塊（NVIDIA 整個世界一起依材質分組，其他顯示卡一個分塊一組，見 `drawWindow()`）。`pack()` 與 `Arena::plan()` 不需 OpenGL，由 `BlockMeshCheck` 測試。見 [ADR 0017](adr/0017-block-meshes-in-vertex-buffers.md)、[ADR 0018](adr/0018-one-buffer-per-world.md)。 |
-| `src/WorldShape.h/.cpp` | 世界尺寸、放大倍率與海岸線（陸地與海底共用）。 |
+| `src/WorldShape.h/.cpp` | 世界尺寸、放大倍率與海岸線（陸地、海底與海面海岸線 SDF 共用）。 |
 | `src/WaterFlow.h/.cpp` | 方塊遊戲式的水流擴散規則。 |
 | `src/Frustum.h/.cpp` | 從目前矩陣取出視錐平面，做分塊剔除。 |
 | `src/PixelArt.h/.cpp` | 程序貼圖的雜湊、繪圖與上傳輔助函式。 |
