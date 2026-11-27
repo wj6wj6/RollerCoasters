@@ -282,7 +282,9 @@ vec4 traceReflection(vec3 P, vec3 R, vec3 planeN)
 }
 )GLSL";
 
-const char *kWaterFragment = R"GLSL(
+// Split into parts passed to glShaderSource() so every raw string literal stays
+// well below MSVC's 16,380-byte literal limit (C2026).
+const char *kWaterHelpers = R"GLSL(
 varying vec3 vWorld;
 varying vec2 vBase;
 varying float vWave;
@@ -398,7 +400,9 @@ vec2 rainSlope(vec2 p, float t)
     }
     return g * 0.22;
 }
+)GLSL";
 
+const char *kWaterFragment = R"GLSL(
 void main()
 {
     vec3 P = vWorld;
@@ -575,7 +579,9 @@ void main()
         float sss = max(disp.y, 0.0) * (0.30 + 0.70 * back) * sunUp * mix(0.4, 1.0, shadow);
         body += vec3(0.014, 0.105, 0.125) * uLightColor * sss * (1.0 - absorb.g);
     }
+)GLSL";
 
+const char *kWaterFragmentTail = R"GLSL(
     // Reflection: what is on screen where the mirrored ray lands (SSR);
     // where that finds nothing, the mirrored view drawn beforehand (it is
     // mirrored in the sea's surface, so the water on land, higher up, takes
@@ -1339,8 +1345,9 @@ bool PostEffects::init()
     m_skyProgram = makeProgram(kSkyFragment, "sky", kNoise);
     {
         const char *vertex[3] = {kOceanWavesGlsl, kLandWaterMotionGlsl, kWaterVertex};
-        const char *fragment[4] = {kNoise, kOceanWavesGlsl, kSsrGlsl, kWaterFragment};
-        m_waterProgram = makeProgramParts(vertex, 3, fragment, 4, "water");
+        const char *fragment[6] = {kNoise,        kOceanWavesGlsl, kSsrGlsl,
+                                   kWaterHelpers, kWaterFragment,  kWaterFragmentTail};
+        m_waterProgram = makeProgramParts(vertex, 3, fragment, 6, "water");
     }
     m_wetProgram = makeProgram(kWetFragment, "wet ground", kNoise, kSsrGlsl);
     m_ssaoProgram = makeProgram(kSsaoFragment, "ssao", kNoise);
