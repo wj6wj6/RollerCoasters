@@ -113,6 +113,7 @@ add_executable(RollerCoasters
     src/TrackInsert.h src/TrackInsert.cpp
     src/TouchpadGestures.H src/TouchpadGestures.cpp
     src/TrackRenderer.H src/TrackRenderer.cpp
+    src/TrackSampling.h src/TrackSampling.cpp
     src/TrainView.H src/TrainView.cpp
     src/TrainWindow.H src/TrainWindow.cpp
     src/WindowsKey.h src/WindowsKey.cpp
@@ -186,11 +187,18 @@ if(ROLLERCOASTERS_BUILD_TESTS)
     set_tests_properties(TrackRoundTripCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
     add_executable(TrackSpacingCheck tests/TrackSpacingCheck.cpp
-        src/Track.cpp src/ControlPoint.cpp src/TrackRenderer.cpp)
+        src/Track.cpp src/ControlPoint.cpp src/TrackRenderer.cpp src/TrackSampling.cpp)
     target_include_directories(TrackSpacingCheck PRIVATE src)
     target_link_libraries(TrackSpacingCheck PRIVATE Utilities glad)
     add_test(NAME TrackSpacingCheck COMMAND TrackSpacingCheck)
     set_tests_properties(TrackSpacingCheck PROPERTIES TIMEOUT 10 LABELS integration)
+
+    add_executable(TrackSubdivisionCheck tests/TrackSubdivisionCheck.cpp
+        src/Track.cpp src/ControlPoint.cpp src/TrackRenderer.cpp src/TrackSampling.cpp)
+    target_include_directories(TrackSubdivisionCheck PRIVATE src)
+    target_link_libraries(TrackSubdivisionCheck PRIVATE Utilities glad)
+    add_test(NAME TrackSubdivisionCheck COMMAND TrackSubdivisionCheck)
+    set_tests_properties(TrackSubdivisionCheck PROPERTIES TIMEOUT 10 LABELS integration)
 
     add_executable(AppControlCheck tests/AppControlCheck.cpp src/AppControl.cpp
         src/Track.cpp src/ControlPoint.cpp

@@ -201,6 +201,13 @@ int main()
     expect(info.lines.size() == 3 && info.lines[0] == "Camera: World" &&
                info.lines[1].find("shadows") != std::string::npos,
            "the scene's lines name the camera and the switches");
+    expect(PerfOverlay::trackLine(1665, 2977, 48, true) ==
+                   "Rails: 1665 samples, adaptive (fixed: 2977)" &&
+               PerfOverlay::trackLine(2977, 2977, 48, false) ==
+                   "Rails: 2977 samples, fixed 48 a segment" &&
+               PerfOverlay::trackLine(0, 0, 48, true).empty(),
+           "the rails' line says how they were sampled");
+    info.lines.push_back(PerfOverlay::trackLine(1665, 2977, 48, true));
     ui::Gui gui;
     gui.beginFrame(640, 480, 2);
     PerfOverlay::draw(gui, perf, info, 300 / 60.0);

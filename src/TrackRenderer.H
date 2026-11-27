@@ -13,6 +13,11 @@
                   a cumulative arc-length table, so their spacing stays
                   even no matter how the control points are spread.
 
+                  The rails are straight pieces between points along the
+                  curve: by default where adaptive subdivision puts them
+                  (TrackSampling.h: many in bends, few on straights), or a
+                  fixed 48 per control-point segment with it switched off.
+
                   The sleepers and rails are worked out once into a mesh
                   (TrackMesh) kept in a vertex buffer, and worked out again
                   only when a control point moves or the spline type
@@ -24,19 +29,12 @@
 #include <vector>
 
 #include "Track.H"
+#include "TrackSampling.h"
 
 // Build an orthonormal frame (side, up) for a direction of travel.
 // The frame keeps "up" close to world +Y, so it is shared by the train,
 // the train camera and the track.
 void makeTrackFrame(const Pnt3f &forward, Pnt3f &side, Pnt3f &up);
-
-// One entry of the cumulative arc-length table.
-struct TrackArcSample
-{
-    float u;        // spline parameter
-    float distance; // arc length from u = 0 to here
-    Pnt3f position; // curve position at u
-};
 
 // Dense, closed-loop table that maps arc length back to the spline parameter.
 class TrackArcTable
@@ -73,9 +71,11 @@ struct TrackVertex
 class TrackMesh
 {
   public:
-    // Work the mesh out again if the control points or the spline type have
-    // changed since the last call; true when it did.
-    bool update(const CTrack &track, TrackSplineType splineType);
+    // Work the mesh out again if the control points, the spline type or the
+    // way the rails are sampled have changed since the last call; true when
+    // it did. adaptive: rails from adaptive subdivision, else a fixed number
+    // of points per segment.
+    bool update(const CTrack &track, TrackSplineType splineType, bool adaptive = true);
 
     const std::vector<TrackVertex> &vertices() const
     {
@@ -99,11 +99,24 @@ class TrackMesh
     static const int kRailStrips = 24;
     // boxes on each sleeper: a plate and two spikes for each of the two rails
     static const int kPlateBoxes = 6;
+    // The points along the centre line the rails are built from.
+    const std::vector<TrackArcSample> &railSamples() const
+    {
+        return m_railSamples;
+    }
+    // How many the fixed sampling takes for the same track, to compare.
+    int uniformSampleCount() const
+    {
+        return static_cast<int>(m_arcTable.samples().size());
+    }
+    static const int kUniformSamplesPerSegment = 48;
 
   private:
     void build(const CTrack &track, TrackSplineType splineType);
 
     TrackArcTable m_arcTable;
+    std::vector<TrackArcSample> m_railSamples;
+    bool m_adaptive = true;
     std::vector<TrackVertex> m_vertices;
     int m_sleeperVertices = 0;
     int m_plateVertices = 0;
@@ -129,8 +142,26 @@ class TrackRenderer
     void setPictures(std::vector<unsigned char> wood, std::vector<unsigned char> iron);
 
     // Draw sleepers and rails. With doingShadows the caller has already set
-    // the shadow colour, so nothing is coloured or textured here.
-    void draw(const CTrack &track, TrackSplineType splineType, bool doingShadows);
+    // the shadow colour, so nothing is coloured or textured here. adaptive:
+    // see TrackMesh::update().
+    void draw(const CTrack &track, TrackSplineType splineType, bool doingShadows,
+              bool adaptive = true);
+
+    // The points the rails are built from, for showing how the track was
+    // subdivided: a line along them, a rib across the rails at each and a
+    // dot on each. Drawn over everything, without lighting. Call after
+    // draw(), which works the mesh out.
+    void drawSamples() const;
+
+    // Points the rails are built from now, and with the fixed sampling.
+    int railSampleCount() const
+    {
+        return static_cast<int>(m_mesh.railSamples().size());
+    }
+    int uniformSampleCount() const
+    {
+        return m_mesh.uniformSampleCount();
+    }
 
   private:
     void ensureTextures();

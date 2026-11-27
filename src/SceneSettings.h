@@ -30,6 +30,10 @@ struct SceneSettings
     // Track
     int spline = 3;    // TrackSplineType: 1 linear, 2 cardinal, 3 B-spline
     bool edit = false; // show the control points and their handles
+    // rails from adaptive subdivision (many pieces in bends, few on
+    // straights), or a fixed 48 pieces per control-point segment
+    bool adaptiveTrack = true;
+    bool showSamples = false; // draw the rails' sample points over the scene
 
     // Lighting
     bool lighting = true; // shader lighting, shadow maps, sky and fog

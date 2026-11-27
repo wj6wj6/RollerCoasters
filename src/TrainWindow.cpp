@@ -372,7 +372,9 @@ void TrainWindow::drawInterface()
     ui::Gui &gui = trainView->m_gui;
     PerfScope phase(PerfStage::Interface);
     gui.beginFrame(trainView->w(), trainView->h());
-    if (!automated)
+    // A check's pictures show only the scene, unless --menu opened a screen
+    // (main.cpp) to see it; that screen takes no input.
+    if (!automated || menu.screen() != GameMenu::Screen::None)
         menu.draw(*this, gui, glfwGetTime());
     trainView->m_guiRenderer.draw(gui);
 }
@@ -644,6 +646,8 @@ bool TrainWindow::applyOptions(const AppControl::Options &options, std::string &
     set(settings.water, options.water);
     set(settings.rain, options.rain);
     set(settings.shadows, options.shadows);
+    set(settings.adaptiveTrack, options.adaptive);
+    set(settings.showSamples, options.samples);
     if (options.time >= 0)
         settings.timeOfDay = options.time;
     if (options.trainU >= 0)
