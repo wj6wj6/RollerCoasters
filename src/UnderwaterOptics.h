@@ -125,14 +125,14 @@ float causticPatch(vec2 s, float t)
 }
 
 // The big swells under the ripples: a coarse web whose crossings are the
-// spots where they gather the light most (cells of about 20 units). These
+// spots where they gather the light most (cells of about 10 units). These
 // are what the light shafts follow, and they brighten the caustics on the
 // sea bed under each shaft. About 1 on average. Costly: drawn once a frame
 // into PostEffects' caustic map and read from there.
 float causticSwell(vec2 s, float t)
 {
-    float a = exp(-causticEdge(s * 0.04, t * 0.6) / 0.11);
-    float b = exp(-causticEdge(mat2(0.8, -0.6, 0.6, 0.8) * s * 0.055 + 1.3, t * 0.75) / 0.143);
+    float a = exp(-causticEdge(s * 0.08, t * 0.6) / 0.11);
+    float b = exp(-causticEdge(mat2(0.8, -0.6, 0.6, 0.8) * s * 0.11 + 1.3, t * 0.75) / 0.143);
     return a * b * 13.7;
 }
 

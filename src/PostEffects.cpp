@@ -434,8 +434,12 @@ void main()
         // reflection) showing the water and the sea bed below. Near the
         // edge of the window the Fresnel term turns one into the other.
         vec3 I = -V;                        // from the eye up to the surface
-        vec3 air = refract(I, -N, 1.33);    // on into the air; zero past the edge
-        float cosAir = abs(dot(air, N));
+        // Off a calmer surface than the full waves: the ripples alone would
+        // tear the window's edge into a spray of flecks. The waves still
+        // bend its edge and everything in it.
+        vec3 Nw = normalize(mix(N, vec3(0.0, 1.0, 0.0), 0.55));
+        vec3 air = refract(I, -Nw, 1.33);   // on into the air; zero past the edge
+        float cosAir = abs(dot(air, Nw));
         float through = dot(air, air) > 0.0 ? 1.0 - (0.02 + 0.98 * pow(1.0 - cosAir, 5.0)) : 0.0;
 
         // The sky (and the island and clouds) in the bent direction: what
@@ -704,7 +708,7 @@ float swellGroups(vec2 s, float t)
 {
     float n = 0.65 * opticsNoise(s * 0.011 + vec2(t * 0.012, -t * 0.008)) +
               0.35 * opticsNoise(s * 0.031 + vec2(5.2 - t * 0.02, t * 0.015));
-    return (0.45 + 0.55 * smoothstep(0.4, 0.75, n)) / 0.64;
+    return (0.65 + 0.35 * smoothstep(0.4, 0.75, n)) / 0.76;
 }
 
 void main()
@@ -769,7 +773,7 @@ float sunAt(vec3 p)
 float beamsAt(vec2 s, float depth)
 {
     vec2 uv = (s - uMapCenter) / uMapSize + 0.5;
-    float lod = depth * 0.04;
+    float lod = depth * 0.02;
     vec4 m = texture2D(uCausticMap, uv, lod);
     vec4 soft = texture2D(uCausticMap, uv, lod + 1.5);
     vec2 inside = smoothstep(vec2(0.0), vec2(0.05), uv) * (1.0 - smoothstep(vec2(0.95), vec2(1.0), uv));
@@ -779,7 +783,7 @@ float beamsAt(vec2 s, float depth)
     float sharpSwell = m.b * m.b / 4.5;
     float softSwell = soft.b * soft.b / 3.3;
     float swell = mix(sharpSwell, softSwell, smoothstep(0.3, 0.7, vary));
-    float focus = 1.5 + 7.0 * vary;
+    float focus = 0.5 + 2.5 * vary;
     float formed = smoothstep(0.0, focus, depth) * mix(1.0, 0.75, smoothstep(focus * 3.0, focus * 6.0, depth));
     float contrast = formed * clamp(0.6 + 0.8 * m.g, 0.0, 1.0) * inside.x * inside.y;
     // Pushed past a plain mix: brighter beams with darker water between,
