@@ -145,6 +145,8 @@ class PostEffects
     Target m_halfA;      // AO, then bloom
     Target m_halfB;      // blur temporary
     Target m_rays;       // god rays, or the light shafts under water
+    Target m_shaftNear;  // the shaft map round the camera, 4 depths each ...
+    Target m_shaftFar;   // ... see kShaftMapFragment
 
     unsigned int m_skyProgram;
     unsigned int m_waterProgram;
@@ -157,6 +159,7 @@ class PostEffects
     unsigned int m_compositeProgram;
     unsigned int m_underwaterProgram;
     unsigned int m_shaftsProgram;
+    unsigned int m_shaftMapProgram;
     unsigned int m_particleProgram;
     unsigned int m_wetProgram;
     unsigned int m_waterList; // display list of the surface mesh

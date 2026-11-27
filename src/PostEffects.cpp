@@ -861,9 +861,32 @@ void main()
 // marched with denser steps near the camera, checking both shadow cascades and
 // modulating sunlight by broad drifting wave swells so rays stream down as
 // smooth curtains rather than noisy high-frequency slices.
+// Under water, part 0: the shaft map. waterShaftField() (the beams the
+// waves focus, see UnderwaterOptics.h) at eight depths, over a square round
+// the camera, drawn once a frame into two textures (four depths each). The
+// light shafts below read it instead of working out the waves at every step
+// of every pixel, which cost about 4 ms a frame at 2560x1559.
+const char *kShaftMapFragment = R"GLSL(
+varying vec2 vUv;
+uniform vec2 uMapCenter;
+uniform float uMapSize;
+uniform float uTime;
+uniform vec4 uDepths;
+void main()
+{
+    vec2 s = uMapCenter + (vUv - 0.5) * uMapSize;
+    gl_FragColor = vec4(waterShaftField(s, uDepths.x, uTime), waterShaftField(s, uDepths.y, uTime),
+                        waterShaftField(s, uDepths.z, uTime), waterShaftField(s, uDepths.w, uTime));
+}
+)GLSL";
+
 const char *kShaftsFragment = R"GLSL(
 varying vec2 vUv;
 uniform sampler2D uDepth;
+uniform sampler2D uShaftNear; // the shaft map at depths 2, 6, 11, 17
+uniform sampler2D uShaftFar;  // ... and 24, 32, 42, 55
+uniform vec2 uMapCenter;
+uniform float uMapSize;
 uniform sampler2DShadow uShadowMap;
 uniform mat4 uLightMatrix;
 uniform int uShadowsOn;
@@ -902,6 +925,28 @@ float sunAt(vec3 p)
     return mix(fine, coarse, toCoarse);
 }
 
+// waterShaftField(s, depth) from the shaft map: the two depths either
+// side, mixed.
+float shaftFromMap(vec2 s, float depth)
+{
+    vec2 uv = (s - uMapCenter) / uMapSize + 0.5;
+    vec4 a = texture2D(uShaftNear, uv);
+    vec4 b = texture2D(uShaftFar, uv);
+    if (depth < 6.0)
+        return mix(a.x, a.y, clamp((depth - 2.0) / 4.0, 0.0, 1.0));
+    if (depth < 11.0)
+        return mix(a.y, a.z, (depth - 6.0) / 5.0);
+    if (depth < 17.0)
+        return mix(a.z, a.w, (depth - 11.0) / 6.0);
+    if (depth < 24.0)
+        return mix(a.w, b.x, (depth - 17.0) / 7.0);
+    if (depth < 32.0)
+        return mix(b.x, b.y, (depth - 24.0) / 8.0);
+    if (depth < 42.0)
+        return mix(b.y, b.z, (depth - 32.0) / 10.0);
+    return mix(b.z, b.w, clamp((depth - 42.0) / 13.0, 0.0, 1.0)) * exp(-max(depth - 55.0, 0.0) * 0.017);
+}
+
 void main()
 {
     float d = texture2D(uDepth, vUv).r;
@@ -930,7 +975,7 @@ void main()
         if (depth < 0.0)
             break;
         vec2 s = p.xz + lr.xz / lr.y * depth;
-        float beam = waterShaftField(s, depth, uTime);
+        float beam = shaftFromMap(s, depth);
         float surfaceFade = smoothstep(0.0, 1.0, depth);
         float farFade = exp(-t * 0.011) * (1.0 - smoothstep(95.0, 145.0, t));
         shafts += sunAt(p) * beam * surfaceFade * farFade * sunThroughWater(depth, L) *
@@ -1408,6 +1453,9 @@ void PostEffects::invalidate()
     m_halfA = Target();
     m_halfB = Target();
     m_rays = Target();
+    m_shaftNear = Target();
+    m_shaftFar = Target();
+    m_shaftMapProgram = 0;
     m_skyProgram = m_waterProgram = m_ssaoProgram = m_aoApplyProgram = 0;
     m_brightProgram = m_blurProgram = m_shaftBlurProgram = m_raysProgram = m_compositeProgram = 0;
     m_underwaterProgram = m_shaftsProgram = m_particleProgram = m_wetProgram = 0;
@@ -1453,6 +1501,9 @@ bool PostEffects::init()
         const char *vertex[1] = {kQuadVertex};
         const char *fragment[4] = {kNoise, kOceanWavesGlsl, kUnderwaterOpticsGlsl, kShaftsFragment};
         m_shaftsProgram = makeProgramParts(vertex, 1, fragment, 4, "light shafts");
+        const char *mapFragment[4] = {kNoise, kOceanWavesGlsl, kUnderwaterOpticsGlsl,
+                                      kShaftMapFragment};
+        m_shaftMapProgram = makeProgramParts(vertex, 1, mapFragment, 4, "shaft map");
     }
     m_underwaterProgram =
         makeProgram(kUnderwaterFragment, "underwater", kOceanWavesGlsl, kUnderwaterOpticsGlsl);
@@ -1465,8 +1516,8 @@ bool PostEffects::init()
 
     m_ok = m_skyProgram && m_waterProgram && m_ssaoProgram && m_aoApplyProgram && m_brightProgram &&
            m_blurProgram && m_shaftBlurProgram && m_raysProgram && m_compositeProgram &&
-           m_underwaterProgram && m_shaftsProgram && m_particleProgram && m_wetProgram &&
-           m_coastSdf;
+           m_underwaterProgram && m_shaftsProgram && m_shaftMapProgram && m_particleProgram &&
+           m_wetProgram && m_coastSdf;
     return m_ok;
 }
 
@@ -1545,6 +1596,8 @@ void PostEffects::releaseTargets()
     releaseTarget(m_halfA);
     releaseTarget(m_halfB);
     releaseTarget(m_rays);
+    releaseTarget(m_shaftNear);
+    releaseTarget(m_shaftFar);
 }
 
 void PostEffects::bindTarget(const Target &t)
@@ -2048,11 +2101,52 @@ void PostEffects::applyUnderwater(const AdvancedLighting &lighting, float time)
         identity(invViewProj);
     const SkyState &sky = lighting.sky();
 
+    // The shaft map: a square round the camera, shifted towards where the
+    // sun rays it sees came through the surface, moved in whole texels so
+    // the beams do not crawl as the camera moves.
+    const int mapTexels = 512;
+    const float mapSize = 400.0f;
+    float mapCenter[2];
+    {
+        // as refractedLightDir() in UnderwaterOptics.h
+        const float *l = sky.lightDir;
+        const float inv = 1.0f / fmaxf(sqrtf(l[0] * l[0] + l[1] * l[1] + l[2] * l[2]), 1e-6f);
+        const float hx = l[0] * inv * 0.75f;
+        const float hz = l[2] * inv * 0.75f;
+        const float vy = sqrtf(fmaxf(1.0f - hx * hx - hz * hz, 0.16f));
+        const float depth = fmaxf(waterLevel - m_camera[1], 0.0f) + 15.0f;
+        const float texel = mapSize / static_cast<float>(mapTexels);
+        mapCenter[0] = floorf((m_camera[0] + hx / vy * depth) / texel) * texel;
+        mapCenter[1] = floorf((m_camera[2] + hz / vy * depth) / texel) * texel;
+    }
+    if (m_shaftNear.fbo == 0)
+    {
+        createTarget(m_shaftNear, mapTexels, mapTexels, false, false);
+        createTarget(m_shaftFar, mapTexels, mapTexels, false, false);
+    }
+    GLuint p = m_shaftMapProgram;
+    glUseProgram(p);
+    glUniform2fv(loc(p, "uMapCenter"), 1, mapCenter);
+    glUniform1f(loc(p, "uMapSize"), mapSize);
+    glUniform1f(loc(p, "uTime"), time);
+    bindTarget(m_shaftNear);
+    glUniform4f(loc(p, "uDepths"), 2.0f, 6.0f, 11.0f, 17.0f);
+    fullscreenQuad();
+    bindTarget(m_shaftFar);
+    glUniform4f(loc(p, "uDepths"), 24.0f, 32.0f, 42.0f, 55.0f);
+    fullscreenQuad();
+
     // Light shafts at half size (the expensive part), smoothed with a
     // depth-aware blur to hide dither without haloing foreground geometry.
     bindTarget(m_rays);
-    GLuint p = m_shaftsProgram;
+    p = m_shaftsProgram;
     glUseProgram(p);
+    bindTexture(3, m_shaftNear.color);
+    bindTexture(4, m_shaftFar.color);
+    glUniform1i(loc(p, "uShaftNear"), 3);
+    glUniform1i(loc(p, "uShaftFar"), 4);
+    glUniform2fv(loc(p, "uMapCenter"), 1, mapCenter);
+    glUniform1f(loc(p, "uMapSize"), mapSize);
     bindTexture(0, m_copy.depth);
     bindTexture(1, lighting.shadowTexture());
     bindTexture(2, lighting.farShadowTexture());
@@ -2073,7 +2167,7 @@ void PostEffects::applyUnderwater(const AdvancedLighting &lighting, float time)
     glUniform3fv(loc(p, "uHeadPos"), 1, lighting.headlightPosition());
     glUniform3fv(loc(p, "uHeadDir"), 1, lighting.headlightDirection());
     fullscreenQuad();
-    unbindTextures(3);
+    unbindTextures(5);
     bilateralBlur(m_rays, m_halfB, m_copy.depth, 0.95f);
 
     // Fog the scene and add the shafts.
