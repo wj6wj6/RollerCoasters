@@ -167,6 +167,52 @@ void main()
 // The ocean's eight Gerstner waves live in UnderwaterOptics.h (kOceanWavesGlsl)
 // so the water surface and underwater caustics/light shafts stay in lockstep.
 
+// Coastal shoaling wave model shared by kWaterVertex and kWaterFragment so the
+// lifted 3D wave ridge, its tilted sunlit normal, breaking foam lip and shore
+// impact swash stay in exact lockstep all the way into bays and shore blocks.
+const char *kCoastWaveGlsl = R"GLSL(
+uniform sampler2D uCoastSdf; // continuous offshore distance (WorldShape::inland)
+
+void coastWave(vec2 p, float sd, float t, out float h, out float dh, out float crest,
+               out float wake, out float envOut)
+{
+    // Stays active all the way into recessed voxel coves (sd down to -3.5) so
+    // incoming rollers never fade out before hitting the rocks or sand beach.
+    float env = smoothstep(-9.0, -3.5, sd) * (1.0 - smoothstep(14.0, 36.0, sd));
+    if (env <= 0.001) {
+        h = 0.0;
+        dh = 0.0;
+        crest = 0.0;
+        wake = 0.0;
+        envOut = 0.0;
+        return;
+    }
+    // Nonlinear shoaling: waves slow and compress gently as depth drops near shore.
+    float shoal = exp(-max(sd + 5.0, 0.0) * 0.09);
+    float sEff = sd - 3.2 * shoal;
+    float dsEff = 1.0 + 0.288 * shoal;
+    float warp = (noise(p * 0.042 + vec2(t * 0.032, -t * 0.024)) - 0.5) * 4.2 +
+                 (noise(p * 0.115 + vec2(-t * 0.048, t * 0.036)) - 0.5) * 1.3;
+    float waveSet =
+        0.45 + 0.55 * smoothstep(0.18, 0.78, noise(p * 0.022 + vec2(-t * 0.045, t * 0.035)));
+    // Periodic skewed Stokes/shoaling wave rolling shoreward (sd decreasing):
+    // steep front face facing shore (dh > 0), sharp crest, gentle seaward back.
+    float theta = (sEff + warp) * 0.40 + t * 1.18;
+    float rawH = 0.62 * sin(theta) + 0.28 * sin(2.0 * theta - 0.65) +
+                 0.12 * sin(3.0 * theta - 1.30);
+    float rawDh = (0.62 * cos(theta) + 0.56 * cos(2.0 * theta - 0.65) +
+                   0.36 * cos(3.0 * theta - 1.30)) *
+                  0.40 * dsEff;
+    float amp = env * waveSet;
+    h = rawH * amp;
+    dh = rawDh * amp;
+    float wPh = fract((theta - 1.05) / 6.2831853);
+    crest = smoothstep(0.32, 0.92, rawH) * amp;
+    wake = smoothstep(0.0, 0.09, wPh) * pow(1.0 - smoothstep(0.09, 0.74, wPh), 1.65) * amp;
+    envOut = amp;
+}
+)GLSL";
+
 // The surface is a grid of quads around the camera; the waves move its
 // vertices. Further out the grid ends in flat skirts, so the waves fade to
 // nothing before they get there.
@@ -204,6 +250,22 @@ void main()
     vec3 disp;
     vec3 normal;
     oceanWaves(base.xz, uTime, 12.0, disp, normal); // four grid cells or longer
+    vec2 sdfUv = base.xz / 1280.0 + 0.5;
+    float sd = texture2DLod(uCoastSdf, sdfUv, 0.0).r;
+    if (sd > -9.0 && sd < 36.0) {
+        float cH, cDh, cCrest, cWake, cEnv;
+        coastWave(base.xz, sd, uTime, cH, cDh, cCrest, cWake, cEnv);
+        float du = 1.0 / 256.0;
+        vec2 g = vec2(texture2DLod(uCoastSdf, sdfUv + vec2(du, 0.0), 0.0).r -
+                          texture2DLod(uCoastSdf, sdfUv - vec2(du, 0.0), 0.0).r,
+                      texture2DLod(uCoastSdf, sdfUv + vec2(0.0, du), 0.0).r -
+                          texture2DLod(uCoastSdf, sdfUv - vec2(0.0, du), 0.0).r);
+        float gl = length(g);
+        vec2 seaDir = gl > 1e-4 ? g / gl : vec2(1.0, 0.0);
+        // Lift the rolling coastal crest and pitch its lip gently shoreward.
+        disp.y += cH * 0.56;
+        disp.xz -= seaDir * (cCrest * 0.45);
+    }
     vec3 world = base + disp * fade;
     vBase = base.xz;
     vWave = fade;
@@ -293,7 +355,6 @@ varying float vStirred;
 uniform int uIsland;       // the water on land: no big waves, nothing under it to see from below
 uniform sampler2D uReflection;
 uniform sampler2DShadow uShadowMap;
-uniform sampler2D uCoastSdf; // continuous offshore distance (WorldShape::inland)
 uniform mat4 uLightMatrix;
 uniform mat4 uView;
 uniform int uShadowsOn;
@@ -410,9 +471,26 @@ void main()
     float dist = length(toCam);
     vec3 V = toCam / dist;
 
-    // Normal: the big waves, then high-frequency sharp-crested capillary chop
-    // (and rain rings) on top. The water on land keeps smoother ripples; on a
-    // fall or the side of a step they run down it.
+    vec2 suv = gl_FragCoord.xy / uScreen;
+    vec3 waterView = viewPos(suv, gl_FragCoord.z);
+    vec3 upView = uView[1].xyz;
+    vec2 sdfUv = vBase / 1280.0 + 0.5;
+    float coastSdf = uIsland == 0 ? texture2D(uCoastSdf, sdfUv).r : 100.0;
+    float cH = 0.0;
+    float cDh = 0.0;
+    float cCrest = 0.0;
+    float cWake = 0.0;
+    float cEnv = 0.0;
+    float shallowMask = 0.0;
+    if (uIsland == 0 && coastSdf > -9.0 && coastSdf < 36.0) {
+        coastWave(vBase, coastSdf, uTime, cH, cDh, cCrest, cWake, cEnv);
+        float cVert = max(0.0, dot(waterView - viewPos(suv, texture2D(uDepth, suv).r), upView));
+        shallowMask = uUnder != 0 ? 1.0 : (1.0 - smoothstep(14.0, 24.0, cVert));
+    }
+
+    // Normal: the big waves, coastal shoaling rollers, then high-frequency
+    // sharp-crested capillary chop (and rain rings) on top. The water on land
+    // keeps smoother ripples; on a fall or the side of a step they run down it.
     vec3 disp = vec3(0.0);
     vec3 N = vec3(0.0, 1.0, 0.0);
     // The water on land's normal is smooth over the bend where it pours
@@ -436,6 +514,19 @@ void main()
     } else {
         oceanWaves(vBase, uTime, 0.0, disp, N);
         vec2 g = oceanDetailSlope(vBase, uTime, dist);
+        if (cEnv > 0.001 && shallowMask > 0.001) {
+            float du = 1.0 / 256.0;
+            vec2 cg = vec2(texture2D(uCoastSdf, sdfUv + vec2(du, 0.0)).r -
+                               texture2D(uCoastSdf, sdfUv - vec2(du, 0.0)).r,
+                           texture2D(uCoastSdf, sdfUv + vec2(0.0, du)).r -
+                               texture2D(uCoastSdf, sdfUv - vec2(0.0, du)).r);
+            float gl = length(cg);
+            vec2 seaDir = gl > 1e-4 ? cg / gl : vec2(1.0, 0.0);
+            // Steep shoreward-facing front face and gentle seaward back give
+            // each rolling breaker 3D curvature, refraction bending and highlights.
+            g += seaDir * (cDh * 0.78 * shallowMask);
+            disp.y += cH * 0.56 * shallowMask;
+        }
         if (uRain > 0.0)
             g += rainSlope(vBase, uTime) * uRain;
         N = normalize(vec3(N.x - g.x, N.y, N.z - g.y));
@@ -443,7 +534,6 @@ void main()
     // Calm the waves far away so they do not shimmer.
     N = normalize(mix(N, vec3(0.0, 1.0, 0.0), clamp(dist / 500.0, 0.0, 0.85)));
 
-    vec2 suv = gl_FragCoord.xy / uScreen;
     if (uUnder != 0) {
         // Seen from below, light from above comes through Snell's window,
         // a wide undulating cone around straight up; outside it the underside
@@ -496,7 +586,6 @@ void main()
         gl_FragColor = vec4(col, 1.0);
         return;
     }
-    vec3 waterView = viewPos(suv, gl_FragCoord.z);
     // (on the water on land only the ripples bend the view, not the slope
     // of the face, or the bend over an edge would show what is far away)
     vec2 distort = (uIsland != 0 ? N.xz - faceN.xz : N.xz) * 0.03;
@@ -515,7 +604,6 @@ void main()
     // Smooth true vertical depth (guarded against foreground geometry) across
     // a two-ring kernel (~3.5 world units) to soften 5-unit voxel staircase
     // steps along shallow shelves without lateral offset bias.
-    vec3 upView = uView[1].xyz;
     float vertDepth = max(0.0, dot(waterView - viewPos(ruv, sceneDepth), upView));
     float smoothVert = vertDepth;
     if (uIsland == 0) {
@@ -537,9 +625,8 @@ void main()
             }
         }
         smoothVert = tSum / wSum;
+        shallowMask = 1.0 - smoothstep(14.0, 24.0, smoothVert);
     }
-    // Continuous bilinear coastline distance field (positive offshore in world units).
-    float coastSdf = uIsland == 0 ? texture2D(uCoastSdf, P.xz / 1280.0 + 0.5).r : 100.0;
     float coastNoise = (noise(P.xz * 0.14 + vec2(3.1, -1.7)) - 0.5) * 1.4 +
                        (noise(P.xz * 0.36 + vec2(-2.3, 4.9)) - 0.5) * 0.5;
     float smoothShore = max(0.0, smoothVert + coastNoise * 0.55);
@@ -574,10 +661,13 @@ void main()
     vec3 absorb = exp(-looksDeep * extinction);
     vec3 body = refr * absorb + scatter * (1.0 - absorb);
     if (uIsland == 0) {
-        // Subtle turquoise subsurface glow through thin, sunlit wave crests.
+        // Turquoise subsurface glow through thin sunlit wave crests, plus subtle
+        // trough darkening ahead of each coastal breaker for crisp 3D relief.
         float back = pow(max(dot(-V, normalize(uLightDir)), 0.0), 3.0);
-        float sss = max(disp.y, 0.0) * (0.30 + 0.70 * back) * sunUp * mix(0.4, 1.0, shadow);
-        body += vec3(0.014, 0.105, 0.125) * uLightColor * sss * (1.0 - absorb.g);
+        float crestLift = max(disp.y, 0.0) + max(cH, 0.0) * 1.15 * shallowMask;
+        float sss = crestLift * (0.34 + 0.66 * back) * sunUp * mix(0.4, 1.0, shadow);
+        body += vec3(0.016, 0.115, 0.135) * uLightColor * sss * (0.35 + 0.65 * (1.0 - absorb.g));
+        body *= 1.0 - 0.16 * max(-cH, 0.0) * shallowMask;
     }
 )GLSL";
 
@@ -622,31 +712,31 @@ const char *kWaterFragmentTail = R"GLSL(
     float specFloor = uIsland == 0 ? (0.58 + 0.72 * fresnel) : (0.3 + fresnel);
     col += uLightColor * spec * shadow * specFloor * glints;
 
-    // Porous lacy foam along shores, asymmetric breaking coastal surf (driven
-    // by the continuous coastline SDF with zero voxel stair-stepping), and
-    // gusty wind whitecaps out at sea.
+    // Porous lacy shore swash (surging in and draining back in lockstep with
+    // each incoming coastal roller instead of vanishing at the boundary),
+    // breaking coastal rollers, and gusty wind whitecaps out at sea.
     float lace = foamLace(P.xz, uTime);
     float edgeFoam = uIsland == 0 ? 1.0 : 0.4 * (1.0 - fall);
-    float shoreLip = (1.0 - smoothstep(0.0, 0.65, smoothShore)) * smoothstep(0.22, 0.58, lace);
-    float shoreWeb = (1.0 - smoothstep(0.0, 2.6, smoothShore)) * smoothstep(0.38, 0.78, lace) * 0.80;
+    float hit = smoothstep(0.08, 0.85, cH) * shallowMask;
+    float backwash = cWake * shallowMask;
+    float swash = max(hit, backwash * 0.80);
+    float lipReach = uIsland == 0 ? mix(0.60, 1.85, swash) : 0.65;
+    float webReach = uIsland == 0 ? mix(1.90, 4.60, max(backwash, hit * 0.70)) : 2.20;
+    float shoreLip = (1.0 - smoothstep(0.0, lipReach, smoothShore)) *
+                     smoothstep(mix(0.28, 0.08, hit), mix(0.62, 0.40, hit), lace) *
+                     (0.66 + 0.34 * hit);
+    float shoreWeb = (1.0 - smoothstep(0.0, webReach, smoothShore)) *
+                     smoothstep(0.36, 0.78, lace) * (0.52 + 0.46 * swash);
     float edge = max(shoreLip, shoreWeb) * edgeFoam;
 
-    // Asymmetric breaking surf along the real islands' smooth coastline SDF:
-    // sharp bright breaking leading edge with a long lacy trailing wake.
+    // Breaking coastal rollers: build smoothly from offshore swells into foamy
+    // breakers and carry all the way into the shore impact swash without fading out.
     float surf = 0.0;
-    if (uIsland == 0 && coastSdf > -12.0 && coastSdf < 42.0 && smoothVert < 18.0) {
-        float sd = max(coastSdf, 0.0);
-        float surfWarp = (noise(P.xz * 0.055 + vec2(uTime * 0.04, -uTime * 0.03)) - 0.5) * 3.4 +
-                         (noise(P.xz * 0.16 + vec2(-uTime * 0.07, uTime * 0.05)) - 0.5) * 1.1;
-        float surfEnv = smoothstep(0.6, 3.2, sd) * (1.0 - smoothstep(12.0, 26.0, sd)) *
-                        (1.0 - smoothstep(10.0, 17.0, smoothVert));
-        float surfSet = smoothstep(0.24, 0.74, noise(P.xz * 0.035 + vec2(-uTime * 0.05, uTime * 0.04)));
-        float ph = fract(sd * 0.14 + uTime * 0.24 + surfWarp * 0.24);
-        float crestFront = smoothstep(0.0, 0.09, ph) * (1.0 - smoothstep(0.09, 0.26, ph));
-        float wake = smoothstep(0.07, 0.17, ph) * pow(1.0 - smoothstep(0.17, 0.88, ph), 1.9);
-        float surfCrest = crestFront * smoothstep(0.24, 0.60, lace) * 0.92;
-        float surfWake = wake * smoothstep(0.38, 0.80, lace) * 0.58;
-        surf = max(surfCrest, surfWake) * surfEnv * (0.40 + 0.60 * surfSet);
+    if (uIsland == 0 && cEnv > 0.001 && shallowMask > 0.001) {
+        float breakAmp = (1.0 - smoothstep(10.0, 28.0, coastSdf)) * shallowMask;
+        float surfCrest = cCrest * smoothstep(0.18, 0.56, lace) * 0.95;
+        float surfWake = cWake * smoothstep(0.36, 0.78, lace) * 0.58;
+        surf = max(surfCrest, surfWake) * breakAmp;
     }
 
     float gust = noise(P.xz * 0.011 + vec2(uTime * 0.021, uTime * 0.013)) * 0.65 +
@@ -655,7 +745,7 @@ const char *kWaterFragmentTail = R"GLSL(
     float breaking = smoothstep(0.38, 0.68, noise(P.xz * 0.13 + vec2(uTime * 0.06, -uTime * 0.04)));
     float crest = smoothstep(0.60, 0.96, disp.y) * vWave * 0.55 * gust * breaking *
                   smoothstep(0.32, 0.74, lace);
-    float foam = clamp(max(max(edge, surf), crest), 0.0, 0.92);
+    float foam = clamp(max(max(edge, surf), crest), 0.0, 0.94);
     vec3 foamLight = uLightColor * max(uLightDir.y, 0.0) * shadow + uZenith * 1.5 + uHorizon * 0.3;
     // Thin lacy foam picks up a subtle turquoise tint; thick breaking lips stay crisp white.
     vec3 foamTint = mix(vec3(0.76, 0.92, 0.96), vec3(0.98, 0.99, 1.0), foam);
@@ -1215,11 +1305,11 @@ GLuint compile(GLenum type, const char *const *parts, int count, const char *nam
 GLuint makeProgramParts(const char *const *vertex, int vertexCount, const char *const *fragment,
                         int fragmentCount, const char *name)
 {
-    const char *parts[8] = {"#version 120\n"};
-    for (int i = 0; i < vertexCount && i < 7; ++i)
+    const char *parts[12] = {"#version 120\n"};
+    for (int i = 0; i < vertexCount && i < 11; ++i)
         parts[i + 1] = vertex[i];
     GLuint vs = compile(GL_VERTEX_SHADER, parts, vertexCount + 1, name);
-    for (int i = 0; i < fragmentCount && i < 7; ++i)
+    for (int i = 0; i < fragmentCount && i < 11; ++i)
         parts[i + 1] = fragment[i];
     GLuint fs = compile(GL_FRAGMENT_SHADER, parts, fragmentCount + 1, name);
     if (!vs || !fs)
@@ -1344,10 +1434,12 @@ bool PostEffects::init()
 
     m_skyProgram = makeProgram(kSkyFragment, "sky", kNoise);
     {
-        const char *vertex[3] = {kOceanWavesGlsl, kLandWaterMotionGlsl, kWaterVertex};
-        const char *fragment[6] = {kNoise,        kOceanWavesGlsl, kSsrGlsl,
-                                   kWaterHelpers, kWaterFragment,  kWaterFragmentTail};
-        m_waterProgram = makeProgramParts(vertex, 3, fragment, 6, "water");
+        const char *vertex[5] = {kNoise, kOceanWavesGlsl, kLandWaterMotionGlsl, kCoastWaveGlsl,
+                                 kWaterVertex};
+        const char *fragment[7] = {
+            kNoise,        kOceanWavesGlsl, kSsrGlsl,          kCoastWaveGlsl,
+            kWaterHelpers, kWaterFragment,  kWaterFragmentTail};
+        m_waterProgram = makeProgramParts(vertex, 5, fragment, 7, "water");
     }
     m_wetProgram = makeProgram(kWetFragment, "wet ground", kNoise, kSsrGlsl);
     m_ssaoProgram = makeProgram(kSsaoFragment, "ssao", kNoise);
