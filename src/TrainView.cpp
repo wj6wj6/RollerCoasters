@@ -1324,6 +1324,10 @@ void TrainView::drawEditOverlay()
                              m_editMode == EDIT_IDLE ? m_hoverHandle : m_editHandle, modal);
     }
 
+    // Track > Samples: where the rails were subdivided, over everything
+    if (tw->settings.showSamples && m_pTrack->points.size() >= 4)
+        m_trackRenderer.drawSamples();
+
     // adding a point: a marker where it would go, drawn over everything
     const bool placing = m_placing && canEdit();
     // building in Fly: a ghost point where a right click would put one, and a
@@ -2017,7 +2021,7 @@ void TrainView::drawStuff(bool doingShadows)
     {
         const TrackSplineType splineType = static_cast<TrackSplineType>(tw->settings.spline);
         PerfScope part(PerfStage::Track);
-        m_trackRenderer.draw(*m_pTrack, splineType, doingShadows);
+        m_trackRenderer.draw(*m_pTrack, splineType, doingShadows, tw->settings.adaptiveTrack);
     }
 
 #ifdef EXAMPLE_SOLUTION

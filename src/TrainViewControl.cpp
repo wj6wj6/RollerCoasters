@@ -228,6 +228,9 @@ void TrainView::benchmarkFrame()
         about.push_back(memory);
     for (const std::string &line : PerfOverlay::sceneLines(tw->settings))
         about.push_back(line);
+    about.push_back(PerfOverlay::trackLine(
+        m_trackRenderer.railSampleCount(), m_trackRenderer.uniformSampleCount(),
+        TrackMesh::kUniformSamplesPerSegment, tw->settings.adaptiveTrack));
     about.push_back("");
     const std::string text = PerfStats::report(summary, about);
     std::fputs(text.c_str(), stdout);

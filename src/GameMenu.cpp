@@ -103,6 +103,14 @@ std::string fit(const std::string &text, int width)
     return "..." + tail;
 }
 
+// How many points the rails are built from (PerfOverlay::trackLine()).
+std::string trackSamplesText(const TrainWindow &tw)
+{
+    const TrackRenderer &track = tw.trainView->m_trackRenderer;
+    return PerfOverlay::trackLine(track.railSampleCount(), track.uniformSampleCount(),
+                                  TrackMesh::kUniformSamplesPerSegment, tw.settings.adaptiveTrack);
+}
+
 std::string hoursText(float hours)
 {
     const int minutes = static_cast<int>(hours * 60.0f + 0.5f);
@@ -555,6 +563,7 @@ void GameMenu::drawPerf(TrainWindow &tw, ui::Gui &gui)
     info.renderer = view.glRenderer;
     info.glVersion = view.glVersionText;
     info.lines = PerfOverlay::sceneLines(tw.settings);
+    info.lines.push_back(trackSamplesText(tw));
     info.vsync = true;
     info.gpuTimer = view.perfGpuOn;
     info.memory = PerfStats::memoryLine(PerfStats::memory());
@@ -999,6 +1008,16 @@ void GameMenu::drawTrack(TrainWindow &tw, ui::Gui &gui)
             tw.nudgeSelected(i / 2, (i % 2 != 0) ? 1.0f : -1.0f);
     if (gui.button(left(gui, 6), "Reset Track"))
         resetCB(&tw);
+    // how the rails follow the curve: adaptive subdivision, and its samples
+    // drawn over the scene to see where it put them
+    const Rect subdivision = right(gui, 6);
+    const Rect adaptive = {subdivision.x, subdivision.y, subdivision.w / 2 - 1, subdivision.h};
+    const Rect samples = {adaptive.x + adaptive.w + 2, subdivision.y,
+                          subdivision.w - adaptive.w - 2, subdivision.h};
+    if (gui.toggle(adaptive, "Adaptive", s.adaptiveTrack))
+        tw.damageMe();
+    if (gui.toggle(samples, "Samples", s.showSamples))
+        tw.damageMe();
     std::string where = "No point selected";
     if (selected)
     {
@@ -1008,7 +1027,10 @@ void GameMenu::drawTrack(TrainWindow &tw, ui::Gui &gui)
                       static_cast<double>(p.x), static_cast<double>(p.y), static_cast<double>(p.z));
         where = text;
     }
-    gui.text(right(gui, 6).x + 4, right(gui, 6).y + 6, where, ui::kGrey);
+    // above the buttons, on the right of the title
+    gui.text(right(gui, 0).x + right(gui, 0).w, top(gui) - 22, where, ui::kGrey, ui::Align::Right);
+    gui.text(gui.width() / 2, top(gui) + 7 * kRowStep - 2, trackSamplesText(tw), ui::kGrey,
+             ui::Align::Center);
     done(tw, gui, 7);
 }
 

@@ -55,6 +55,19 @@ enum class Camera
     Fly
 };
 
+// A game menu screen open over the ride (--menu), to see it in a screenshot.
+enum class Menu
+{
+    None,
+    Pause,
+    Ride,
+    Camera,
+    Track,
+    Lighting,
+    World,
+    Controls
+};
+
 // An on/off switch in the menu: left as the program starts it, or set.
 enum class Switch
 {
@@ -75,8 +88,11 @@ struct Options
     Switch water = Switch::Keep;
     Switch rain = Switch::Keep;
     Switch shadows = Switch::Keep;
-    float time = -1.0f;   // --time: hour of the day, 0..24; negative keeps it
-    float trainU = -1.0f; // --u: where the train is; negative keeps it
+    Switch adaptive = Switch::Keep; // Track > Adaptive
+    Switch samples = Switch::Keep;  // Track > Samples
+    Menu menu = Menu::None;         // --menu: a game menu screen left open
+    float time = -1.0f;             // --time: hour of the day, 0..24; negative keeps it
+    float trainU = -1.0f;           // --u: where the train is; negative keeps it
     int frames = 5; // frames drawn before the screenshot is taken; --benchmark: measured (300)
     int width = 0;  // --size: the window, 0 keeps it
     int height = 0;

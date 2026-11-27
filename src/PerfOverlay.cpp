@@ -197,6 +197,21 @@ std::vector<std::string> PerfOverlay::sceneLines(const SceneSettings &s)
     return out;
 }
 
+std::string PerfOverlay::trackLine(int samples, int uniformSamples, int uniformPerSegment,
+                                   bool adaptive)
+{
+    if (samples <= 0)
+        return "";
+    char text[96];
+    if (adaptive)
+        std::snprintf(text, sizeof text, "Rails: %d samples, adaptive (fixed: %d)", samples,
+                      uniformSamples);
+    else
+        std::snprintf(text, sizeof text, "Rails: %d samples, fixed %d a segment", samples,
+                      uniformPerSegment);
+    return text;
+}
+
 std::vector<std::string> PerfOverlay::leftLines(const PerfStats::Summary &s, const PerfInfo &info,
                                                 int pixelW, int pixelH)
 {
