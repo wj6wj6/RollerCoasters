@@ -663,6 +663,13 @@ void main()
                                    : mix(thickness, max(0.0, smoothPath + coastNoise * 0.55), 0.72);
     vec3 extinction = uIsland != 0 ? vec3(0.12, 0.030, 0.020) : vec3(0.22, 0.060, 0.045);
     vec3 absorb = exp(-looksDeep * extinction);
+    // Seen through even a block or two of sea, the sea bed loses its colour
+    // (the reds and pinks first): the coral reefs in the shallows look like
+    // a reef under water, not a rainbow carpet. The sand stays pale.
+    if (uIsland == 0) {
+        float grey = dot(refr, vec3(0.30, 0.59, 0.11));
+        refr = mix(refr, vec3(grey) * vec3(0.82, 1.0, 1.08), 0.55 * (1.0 - exp(-looksDeep * 0.18)));
+    }
     vec3 body = refr * absorb + scatter * (1.0 - absorb);
     if (uIsland == 0) {
         // Turquoise subsurface glow through thin sunlit wave crests, plus subtle
