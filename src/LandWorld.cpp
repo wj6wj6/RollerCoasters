@@ -6679,7 +6679,10 @@ void addTrestleClimber(Batches &batches, const TrestleFrame &f, float x0, float 
                 const float uv[4][2] = {{0, v}, {kVineSlice, v}, {kVineSlice, 0}, {0, 0}};
                 const float facing = side == 0 ? sign : -sign;
                 const float normal[3] = {alongX ? 0.0f : facing, 0.0f, alongX ? facing : 0.0f};
-                addTrestleQuad(batches, LandTextures::VINES, f, corner, uv, normal, 0.0f, nullptr);
+                // (a sway too small to see: it marks the leaves as a plant, so the
+                // water's sheen and the rain's film leave them alone)
+                const float still[4] = {1e-4f, 1e-4f, 1e-4f, 1e-4f};
+                addTrestleQuad(batches, LandTextures::VINES, f, corner, uv, normal, 0.0f, still);
             }
         }
     }
@@ -6850,6 +6853,33 @@ void LandWorld::buildSupportMesh()
             f.shade = dry;
             f.tint[0] = f.tint[1] = f.tint[2] = 1.0f;
             addTrestleBeam(batches, wood, f, d, b, post, post);
+            // the tide mark: a thin pale ring of dried salt where the waves
+            // reach highest, just proud of the post
+            {
+                const float ring = post + 0.008f;
+                const float lo[3] = {postX(side, wet) - ring, wet - 0.035f, -ring};
+                const float hi[3] = {postX(side, wet) + ring, wet + 0.035f, ring};
+                f.shade = dry * 0.95f;
+                f.tint[0] = 1.0f;
+                f.tint[1] = 0.97f;
+                f.tint[2] = 0.88f;
+                addTrestleBox(batches, wood, f, lo, hi, 0.0f);
+                f.shade = dry;
+                f.tint[0] = f.tint[1] = f.tint[2] = 1.0f;
+            }
+            // and a line of scum and weed just at the water's surface
+            {
+                const float ring = post + 0.03f;
+                const float lo[3] = {postX(side, water) - ring, water - 0.05f, -ring};
+                const float hi[3] = {postX(side, water) + ring, water + 0.1f, ring};
+                f.shade = dry * 0.35f;
+                f.tint[0] = 0.8f;
+                f.tint[1] = 1.0f;
+                f.tint[2] = 0.7f;
+                addTrestleBox(batches, wood, f, lo, hi, 0.0f);
+                f.shade = dry;
+                f.tint[0] = f.tint[1] = f.tint[2] = 1.0f;
+            }
         }
         // lanterns here and there: never on two trestles running, on one
         // side or now and then both, where a post is tall enough for one to
