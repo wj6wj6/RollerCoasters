@@ -161,8 +161,11 @@ class LandWorld
     };
     float postGround(float x, float z, float from) const;
     void planSupports(const std::vector<float> &path);
+    void buildSupportMesh();
     std::vector<Trestle> m_trestles;
     std::vector<float> m_supportPath;
+    struct Supports; // their mesh
+    std::unique_ptr<Supports> m_supports;
 
     struct Scene;
     static void buildScene(Scene &scene, bool flat);

@@ -64,8 +64,10 @@ struct TrackVertex
 };
 
 // The sleepers and rails of a track as ready-to-draw vertices: first the
-// sleepers (GL_QUADS, wood), then eight quad strips of equal length for the
-// four faces of the two rails (iron).
+// sleepers (GL_QUADS, wood), then on each sleeper an iron tie plate under
+// each rail with a spike either side (GL_QUADS, iron), then quad strips of
+// equal length for the faces of the two rails (iron), each rail shaped as a
+// real one: head, web and foot.
 class TrackMesh
 {
   public:
@@ -83,12 +85,20 @@ class TrackMesh
     {
         return m_sleeperVertices;
     }
-    // Vertices in each of the eight rail strips.
+    // The tie plates and spikes, after the sleepers.
+    int plateVertexCount() const
+    {
+        return m_plateVertices;
+    }
+    // Vertices in each of the rail strips.
     int railStripVertexCount() const
     {
         return m_railStripVertices;
     }
-    static const int kRailStrips = 8;
+    // twelve faces round each rail's section
+    static const int kRailStrips = 24;
+    // boxes on each sleeper: a plate and two spikes for each of the two rails
+    static const int kPlateBoxes = 6;
     // The points along the centre line the rails are built from.
     const std::vector<TrackArcSample> &railSamples() const
     {
@@ -109,6 +119,7 @@ class TrackMesh
     bool m_adaptive = true;
     std::vector<TrackVertex> m_vertices;
     int m_sleeperVertices = 0;
+    int m_plateVertices = 0;
     int m_railStripVertices = 0;
     // what the mesh was worked out from
     bool m_built = false;

@@ -276,6 +276,13 @@ void main()
         vec3 ambient = mix(groundAmbient, skyAmbient, n.y * 0.5 + 0.5);
         color = albedo * ambient;
         color += blinnPhong(albedo, n, lightVec, v, wet, mix(1.0, 0.25, submerge)) * sun;
+        // A wet surface mirrors a little of the sky, most seen at a glance:
+        // the sheen of a post or a rock the waves have just washed, or a
+        // wall in the rain, even with the sun behind it.
+        // (not on plants that sway, which have no film of water on them)
+        float glance = pow(1.0 - max(dot(n, v), 0.0), 3.0);
+        float film = vExtra.y > 0.0 ? 0.0 : 1.0;
+        color += skyAmbient * wet * film * (0.06 + 0.5 * glance);
     }
     // Light sources look like ornaments by day and like lamps by night (and
     // in tunnels and under cover at any hour): how much the light they cast

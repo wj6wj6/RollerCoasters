@@ -142,7 +142,7 @@ flowchart LR
 | `src/MatrixMath.h` | 光影程式用的 column-major 4×4 矩陣輔助函式。 |
 | `src/Track.H/.cpp` | 控制點容器、三種樣條的位置與切線、`trainU`、軌道文字檔讀寫。 |
 | `src/ControlPoint.H/.cpp` | 控制點位置、方向向量與標記繪製。 |
-| `src/TrackRenderer.H/.cpp` | 鐵軌與枕木繪製、累積弧長表、`makeTrackFrame()`。`TrackMesh` 把枕木與鐵軌算成世界座標的頂點，只在控制點位置或樣條改變時重算；`TrackRenderer` 放進一個 vertex buffer，每個 pass（shadow map、倒影、主場景）都畫同一份。見 [ADR 0016](adr/0016-track-vertex-buffer.md)。鐵軌的取樣點來自 `TrackSampling`，開關改變時也重算；`drawSamples()` 畫出取樣點（`Track` > `Samples`）。 |
+| `src/TrackRenderer.H/.cpp` | 鐵軌與枕木繪製、累積弧長表、`makeTrackFrame()`。`TrackMesh` 把枕木、鐵墊板與道釘、鐵軌（軌頭、軌腰、軌底的斷面沿曲線掃出）算成世界座標的頂點，只在控制點位置或樣條改變時重算；`TrackRenderer` 放進一個 vertex buffer，每個 pass（shadow map、倒影、主場景）都畫同一份。見 [ADR 0016](adr/0016-track-vertex-buffer.md)。鐵軌的取樣點來自 `TrackSampling`，開關改變時也重算；`drawSamples()` 畫出取樣點（`Track` > `Samples`）。 |
 | `src/TrackSampling.h/.cpp` | 鐵軌取樣點（純計算）：固定每段等分，或自適應細分（段內離弦超過 0.02 單位或轉角超過 2 度就對半切，控制點必為取樣點、Linear 轉角兩側補點）；由 `TrackSubdivisionCheck` 測試。見 [ADR 0020](adr/0020-adaptive-track-subdivision.md)。 |
 | `src/TrainModel.h/.cpp` | 列車模型；`Chase` 相機用的列車長度、乘客高度與沿軌道往回取點。 |
 | `src/ChaseRig.h/.cpp` | `Chase` 相機的取景數學（純計算）：依列車長度、乘客高度與視野算出在車後多遠、多高，空間不夠時降低並拉近（`fit()`），以及拖曳時繞列車中段轉動（`orbit()`）。`Follower` 負責每幀跟隨：看相機接下來要經過的軌道（到車頭前方至少 30 單位，車越快看得越遠：`aheadFor()`）每一點上方的空間，越遠的低頂影響越小，所以提早慢慢降低，抵達時已經在頂下；車越快，每單位距離允許的降低越少，不論車速，下降都不超過每秒 6 單位（`kDescentRate`），高速時也不會到隧道口才被壓下；以臨界阻尼彈簧移動，速度不會突變；最近只到乘客身高 1.5 倍。由 `ChaseRigCheck` 測試（含模擬穿過隧道與低懸崖）。`TrainView` 量列車速度（車頭每秒移動距離，平滑約 0.25 秒），每幀沿軌道每 0.25 單位（高速時較疏：`spacingFor()`）取樣（`sampleTrack()`）、以 `LandWorld::solidAt()`／`OceanWorld::solidAt()` 回答哪裡有方塊；`TrainView` 用另一個 `HeadLook`（`chaseLook`）記錄轉動角度，轉到方塊後時把鏡頭拉近到方塊前。 |
@@ -151,7 +151,7 @@ flowchart LR
 | `src/TrackHistory.h/.cpp` | 控制點的上一步／下一步：每次修改前存一份整條軌道（點、`trainU`、選取）的快照；由 `TrackHistoryCheck` 測試。 |
 | `src/EditKeys.h/.cpp` | 把按鍵轉成編輯指令（鍵位來自 `KeyBinds`）；Fly 相機下新增、刪除用 Fly 自己的鍵，預設避開飛行鍵。 |
 | `src/KeyBinds.h/.cpp` | 每個鍵盤指令的名稱、分組與兩個按鍵（含 Ctrl／Shift／Alt），比對按鍵、判斷同一相機下的衝突、讀寫 `data/keybinds.txt`，並把飛行鍵交給 `FlyCam::setKeys()`。`TrainWindow` 持有一份，`GameMenu` 的 `Controls` 畫面修改它。見 [ADR 0014](adr/0014-key-binds.md)。 |
-| `src/LandWorld.h/.cpp` | 方塊島嶼：地形與生態、建築、水、沿 `Grand Tour` 挖出淨空、光照烘焙、會動的景物、木棧橋；在背景執行緒建造。方塊雲由 `drawClouds()` 另外畫（沒有自發光），`TrainView::drawGround()` 在它前後開關 `AdvancedLighting::setUnlit()`。 |
+| `src/LandWorld.h/.cpp` | 方塊島嶼：地形與生態、建築、水、沿 `Grand Tour` 挖出淨空、光照烘焙、會動的景物、木棧橋；在背景執行緒建造。木棧橋（柱、托梁、橫樑與斜撐、燈籠、藤蔓與積雪，木頭依生態區；柱子直接插進地面或海床；斜撐固定為橫樑間左右交替的單根斜撐；間距、燈籠與藤蔓依棧橋所在位置的雜湊隨機變化）在軌道改變時由 `planSupports()` 規劃、`buildSupportMesh()` 一次建成自己的小 `BlockMesh::Arena`，每個 pass 畫同一份。方塊雲由 `drawClouds()` 另外畫（沒有自發光），`TrainView::drawGround()` 在它前後開關 `AdvancedLighting::setUnlit()`。 |
 | `src/WorldSave.h` | 島與海床網格的存檔（`data/saves/*.world`，run-length 編碼），key 是生成程式的建置時間與網格尺寸。 |
 | `src/CellQueue.h` | 光照 flood fill 用的單一 vector 佇列（取代 MSVC Debug 下很慢的 `std::deque`）。 |
 | `src/LandTextures.h/.cpp` | 島嶼方塊與植物的程序貼圖。 |
