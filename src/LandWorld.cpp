@@ -6552,15 +6552,16 @@ void addTrestleVines(Batches &batches, const TrestleFrame &f, float x, float y, 
     }
 }
 
-// A clump of leaves over (lo, hi): two or three blocks of leaves of
-// different sizes overlapping inside it, not one box, and as dark as the
-// island's trees in the shade of their own leaves. seed: where it is.
+// A clump of leaves over (lo, hi): three to five small blocks of leaves of
+// different sizes scattered through it, some hanging lower than others, not
+// one box, and as dark as the island's trees in the shade of their own
+// leaves. seed: where it is.
 void addLeafClump(Batches &batches, int texture, const TrestleFrame &frame, const float lo[3],
                   const float hi[3], unsigned int seed)
 {
     TrestleFrame f = frame;
     f.shade = 0.68f;
-    const int parts = 2 + static_cast<int>(hash(0, 1, seed) % 2u);
+    const int parts = 3 + static_cast<int>(hash(0, 1, seed) % 3u);
     for (int i = 0; i < parts; ++i)
     {
         float a[3], b[3];
@@ -6569,8 +6570,8 @@ void addLeafClump(Batches &batches, int texture, const TrestleFrame &frame, cons
             const float size = hi[k] - lo[k];
             const float r0 = static_cast<float>(hash(i, 10 + k, seed) % 1000u) / 1000.0f;
             const float r1 = static_cast<float>(hash(i, 20 + k, seed) % 1000u) / 1000.0f;
-            // each block takes 55-100 % of the clump each way, somewhere in it
-            const float part = size * (0.55f + 0.45f * r0);
+            // each block takes 30-60 % of the clump each way, somewhere in it
+            const float part = size * (0.3f + 0.3f * r0);
             a[k] = lo[k] + (size - part) * r1;
             b[k] = a[k] + part;
         }
@@ -6612,39 +6613,70 @@ float vineChanceIn(int biome)
     }
 }
 
-// A vine climbing a post on its face at z, from (x0, y0) up to (x1, y1)
-// (the post leans), about `width` across, flat against the post. It winds:
-// each piece a little to one side or the other of the last and its own
-// width, with here and there a gap where the stem shows only between
-// leaves, so it is not a straight strip of tape up the post. seed: where
-// the post is, so it looks the same every time.
+// A vine climbing a post from (x0, y0) up to (x1, y1) (the post leans),
+// the post `half` across each way from its middle: it winds round it,
+// each piece on the next of its four faces, so it climbs in a spiral
+// instead of sticking to one face; each piece a little to one side of the
+// face, its own width (about `width`), and here and there one left out.
+// seed: where the post is, so it looks the same every time.
 void addTrestleClimber(Batches &batches, const TrestleFrame &f, float x0, float y0, float x1,
-                       float y1, float z, float width, unsigned int seed)
+                       float y1, float half, float width, unsigned int seed)
 {
     // the picture's first two strands across it, as hanging vines take them
     const float piece = kVinePieces * width * 0.6f;
+    const float out = half + 0.02f; // just off the post's faces
+    const int start = static_cast<int>(hash(0, 9, seed) % 4u);
     int n = 0;
     for (float a = y0; a < y1 - 1e-3f; a += piece, ++n)
     {
         auto dice = [&](unsigned int k) {
             return static_cast<float>(hash(n, static_cast<int>(k), seed) % 1000u) / 1000.0f;
         };
-        if (n > 0 && dice(1) < 0.18f)
+        if (n > 0 && dice(1) < 0.15f)
             continue;
-        const float b = fminf(y1, a + piece);
-        const float shift = (n % 2 == 0 ? 1.0f : -1.0f) * width * (0.1f + 0.25f * dice(2));
-        const float xa = x0 + (x1 - x0) * (a - y0) / (y1 - y0) + shift;
-        const float xb = x0 + (x1 - x0) * (b - y0) / (y1 - y0) + shift;
-        const float h = 0.5f * width * (0.65f + 0.5f * dice(3));
+        // a little overlap with the next piece, round the corner
+        const float b = fminf(y1, a + piece * 1.15f);
+        const float xa = x0 + (x1 - x0) * (a - y0) / (y1 - y0);
+        const float xb = x0 + (x1 - x0) * (b - y0) / (y1 - y0);
+        const float h = fminf(0.5f * width * (0.65f + 0.5f * dice(3)), out);
+        const float shift = (dice(2) - 0.5f) * 2.0f * fmaxf(out - h, 0.0f);
         const float v = (b - a) / (kVinePieces * 2.0f * h);
-        for (int side = 0; side < 2; ++side)
+        // on this face and round the corner onto the next, so it wraps
+        for (int wrap = 0; wrap < 2; ++wrap)
         {
-            const float w = side == 0 ? h : -h;
-            const float corner[4][3] = {
-                {xa - w, a, z}, {xa + w, a, z}, {xb + w, b, z}, {xb - w, b, z}};
-            const float uv[4][2] = {{0, v}, {kVineSlice, v}, {kVineSlice, 0}, {0, 0}};
-            const float normal[3] = {0.0f, 0.0f, (z > 0.0f) == (side == 0) ? 1.0f : -1.0f};
-            addTrestleQuad(batches, LandTextures::VINES, f, corner, uv, normal, 0.0f, nullptr);
+            const int face = (start + n + wrap) % 4; // +z, +x, -z, -x
+            const float sign = face < 2 ? 1.0f : -1.0f;
+            const bool alongX = face % 2 == 0; // the piece lies along x on a z face
+            for (int side = 0; side < 2; ++side)
+            {
+                const float w = side == 0 ? h : -h;
+                float corner[4][3];
+                if (alongX)
+                {
+                    const float z = sign * out;
+                    const float c[4][3] = {{xa + shift - w, a, z},
+                                           {xa + shift + w, a, z},
+                                           {xb + shift + w, b, z},
+                                           {xb + shift - w, b, z}};
+                    for (int i = 0; i < 4; ++i)
+                        for (int k = 0; k < 3; ++k)
+                            corner[i][k] = c[i][k];
+                }
+                else
+                {
+                    const float c[4][3] = {{xa + sign * out, a, shift - w},
+                                           {xa + sign * out, a, shift + w},
+                                           {xb + sign * out, b, shift + w},
+                                           {xb + sign * out, b, shift - w}};
+                    for (int i = 0; i < 4; ++i)
+                        for (int k = 0; k < 3; ++k)
+                            corner[i][k] = c[i][k];
+                }
+                const float uv[4][2] = {{0, v}, {kVineSlice, v}, {kVineSlice, 0}, {0, 0}};
+                const float facing = side == 0 ? sign : -sign;
+                const float normal[3] = {alongX ? 0.0f : facing, 0.0f, alongX ? facing : 0.0f};
+                addTrestleQuad(batches, LandTextures::VINES, f, corner, uv, normal, 0.0f, nullptr);
+            }
         }
     }
 }
@@ -6881,9 +6913,11 @@ void LandWorld::buildSupportMesh()
                 const float y = level - 0.45f;
                 const float z = roll(82 + k) < 0.5f ? 0.4f : -0.4f;
                 // the leaves grown over the beam that the strands hang from
-                if (roll(242 + k) < (overgrown ? 0.85f : 0.45f))
+                // (only where the jungle and the swamp grow over everything:
+                // elsewhere a clump on a bare beam looked stuck on)
+                if (overgrown && roll(242 + k) < 0.85f)
                 {
-                    const float hx = 0.35f + 0.55f * roll(252 + k);
+                    const float hx = 0.5f + 0.7f * roll(252 + k);
                     const float lo[3] = {x - hx, level - 0.62f - 0.2f * roll(262 + k), -0.46f};
                     const float hi[3] = {x + hx, fminf(level + 0.16f, t.top - 0.36f), 0.46f};
                     addLeafClump(batches, leafTexture, f, lo, hi, hash(px * 3 + k, pz, 790u));
@@ -6916,8 +6950,7 @@ void LandWorld::buildSupportMesh()
                 const float y1 = y0 + tall * (0.3f + 0.65f * roll(234 + side));
                 if (y1 > y0 + 0.5f)
                 {
-                    const float z = (roll(236 + side) < 0.5f ? 1.0f : -1.0f) * (post + 0.02f);
-                    addTrestleClimber(batches, f, postX(side, y0), y0, postX(side, y1), y1, z,
+                    addTrestleClimber(batches, f, postX(side, y0), y0, postX(side, y1), y1, post,
                                       post * (1.4f + 0.8f * roll(238 + side)),
                                       hash(px, pz, 760u + static_cast<unsigned int>(side)));
                 }
