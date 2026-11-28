@@ -18,6 +18,7 @@
 #include "MatrixMath.h"
 #include "PerfStats.h"
 #include "LandWaterMotion.h"
+#include "SkyHorizon.h"
 #include "UnderwaterOptics.h"
 #include "WorldShape.h"
 
@@ -96,13 +97,14 @@ void main()
         col = uHorizon * mix(1.0, 0.5, clamp(-y * 3.0, 0.0, 1.0));
 
     // The golden hour: the band of sky along the horizon glows orange on
-    // the sun's side and rose to violet on the other.
+    // the sun's side and rose to violet on the other (SkyHorizon.h: the fog
+    // over the sea and the land takes the same colour at the horizon), and
+    // fades upwards over a wide band.
     vec2 dirXZ = ray.xz / max(length(ray.xz), 1e-4);
     vec2 sunFlat = uSunDir.xz / max(length(uSunDir.xz), 1e-4);
     float toward = dot(dirXZ, sunFlat) * 0.5 + 0.5;
-    float band = exp(-max(y, 0.0) * 4.0) * (y < 0.0 ? mix(1.0, 0.4, clamp(-y * 3.0, 0.0, 1.0)) : 1.0);
-    vec3 warm = mix(vec3(0.34, 0.10, 0.28), vec3(1.25, 0.36, 0.06), toward * toward);
-    col = mix(col, warm, band * uDusk * 0.9);
+    float band = exp(-max(y, 0.0) * 3.0) * (y < 0.0 ? mix(1.0, 0.4, clamp(-y * 3.0, 0.0, 1.0)) : 1.0);
+    col = mix(col, horizonWarm(ray, uSunDir), band * uDusk * 0.9);
     // higher up the golden-hour sky turns violet
     col = mix(col, vec3(0.09, 0.07, 0.28), (1.0 - band) * uDusk * 0.35);
 
@@ -111,8 +113,7 @@ void main()
     vec3 east = normalize(cross(vec3(0.0, 1.0, 0.0), uSunDir));
     vec3 north = cross(uSunDir, east);
     float cs = max(dot(ray, uSunDir), 0.0);
-    col += uSunColor * (pow(cs, 400.0) * 2.0 + pow(cs, 24.0) * (0.25 + 0.5 * uDusk) +
-                        pow(cs, 4.0) * 0.3 * uDusk);
+    col += uSunColor * pow(cs, 400.0) * 2.0 + sunGlow(ray, uSunDir, uSunColor, uDusk);
     if (cs > 0.99) {
         vec2 q = abs(vec2(dot(ray, east), dot(ray, north)));
         col += uSunColor * vec3(1.0, 0.85 + 0.15 * uDay, 0.5 + 0.5 * uDay) * (1.0 - smoothstep(0.034, 0.037, max(q.x, q.y))) * (6.0 + 12.0 * (1.0 - uDusk));
@@ -366,6 +367,9 @@ uniform vec3 uLightDir;
 uniform vec3 uLightColor;
 uniform vec3 uZenith;
 uniform vec3 uHorizon;
+uniform vec3 uSunDir;      // for the colour the fog takes (SkyHorizon.h)
+uniform vec3 uSunColor;    // zero while the sun is down
+uniform float uDusk;
 uniform float uFogDensity;
 uniform int uUnder;        // the camera is below the surface
 uniform vec3 uDeepColor;   // colour of the water around the camera
@@ -755,7 +759,8 @@ const char *kWaterFragmentTail = R"GLSL(
     col = mix(refr, col, smoothstep(0.0, 0.25, thickness));
 
     float f = dist * uFogDensity;
-    col = mix(uHorizon, col, exp(-f * f));
+    // into the sky at the horizon behind it, as the land does
+    col = mix(horizonSky(-V, uHorizon, uSunDir, uSunColor, uDusk), col, exp(-f * f));
     gl_FragColor = vec4(col, 1.0);
 }
 )GLSL";
@@ -1480,14 +1485,14 @@ bool PostEffects::init()
         return false;
     }
 
-    m_skyProgram = makeProgram(kSkyFragment, "sky", kNoise);
+    m_skyProgram = makeProgram(kSkyFragment, "sky", kNoise, kSkyHorizonGlsl);
     {
         const char *vertex[5] = {kNoise, kOceanWavesGlsl, kLandWaterMotionGlsl, kCoastWaveGlsl,
                                  kWaterVertex};
-        const char *fragment[7] = {
-            kNoise,        kOceanWavesGlsl, kSsrGlsl,          kCoastWaveGlsl,
-            kWaterHelpers, kWaterFragment,  kWaterFragmentTail};
-        m_waterProgram = makeProgramParts(vertex, 5, fragment, 7, "water");
+        const char *fragment[8] = {kNoise,         kOceanWavesGlsl,   kSsrGlsl,
+                                   kCoastWaveGlsl, kSkyHorizonGlsl,   kWaterHelpers,
+                                   kWaterFragment, kWaterFragmentTail};
+        m_waterProgram = makeProgramParts(vertex, 5, fragment, 8, "water");
     }
     m_wetProgram = makeProgram(kWetFragment, "wet ground", kNoise, kSsrGlsl);
     m_ssaoProgram = makeProgram(kSsaoFragment, "ssao", kNoise);
@@ -1881,6 +1886,15 @@ void PostEffects::useWaterProgram(const AdvancedLighting &lighting, float time, 
     glUniform3fv(loc(p, "uLightColor"), 1, sky.lightColor);
     glUniform3fv(loc(p, "uZenith"), 1, sky.zenith);
     glUniform3fv(loc(p, "uHorizon"), 1, sky.horizon);
+    {
+        float sunColor[3] = {0.0f, 0.0f, 0.0f};
+        if (sky.sunDir[1] > 0.0f)
+            for (int i = 0; i < 3; ++i)
+                sunColor[i] = sky.lightColor[i];
+        glUniform3fv(loc(p, "uSunDir"), 1, sky.sunDir);
+        glUniform3fv(loc(p, "uSunColor"), 1, sunColor);
+        glUniform1f(loc(p, "uDusk"), sky.dusk);
+    }
     glUniform1f(loc(p, "uFogDensity"), orthographic ? 0.0f : 0.0009f + 0.0016f * rain);
     glUniform1i(loc(p, "uUnder"), underwater ? 1 : 0);
     glUniform3fv(loc(p, "uDeepColor"), 1, m_deepColor);
