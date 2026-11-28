@@ -6941,10 +6941,13 @@ void LandWorld::buildSupportMesh()
                 const float down = i + 1 < levels.size() ? levels[i + 1] - 0.2f : bottom;
                 if (up - down < 1.8f)
                     continue;
+                // in the posts' own plane and narrower than them, its ends
+                // inside them, so it does not stand out from the posts' faces
+                // seen from the side (in front of them it stuck out)
                 const int k = static_cast<int>(i % 2);
-                const float a[3] = {postX(k, up), up, 0.36f};
-                const float b[3] = {postX(1 - k, down), down, 0.36f};
-                addTrestleBeam(batches, planks, f, a, b, 0.16f, 0.07f);
+                const float a[3] = {postX(k, up), up, 0.0f};
+                const float b[3] = {postX(1 - k, down), down, 0.0f};
+                addTrestleBeam(batches, planks, f, a, b, 0.6f * post, 0.07f);
             }
         }
         // knee braces from the post up to the cap where there is only one
@@ -6955,9 +6958,9 @@ void LandWorld::buildSupportMesh()
                     continue;
                 const float in = side == 0 ? 1.0f : -1.0f;
                 const float h = t.top - 0.5f;
-                const float a[3] = {postX(side, h - 1.8f), h - 1.8f, 0.36f};
-                const float b[3] = {postX(side, h) + in * 1.2f, h - 0.1f, 0.36f};
-                addTrestleBeam(batches, planks, f, a, b, 0.14f, 0.07f);
+                const float a[3] = {postX(side, h - 1.8f), h - 1.8f, 0.0f};
+                const float b[3] = {postX(side, h) + in * 1.2f, h - 0.1f, 0.0f};
+                addTrestleBeam(batches, planks, f, a, b, 0.55f * post, 0.07f);
             }
         // Vines, grown over the trestle as over a jungle tree: most have
         // some, the jungle and the swamp a lot, the badlands, the volcano and
