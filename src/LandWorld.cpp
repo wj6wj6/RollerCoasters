@@ -6613,20 +6613,31 @@ int trestleLeavesIn(int biome)
     }
 }
 
-// How likely a trestle is to have vines, by the land round it (-1: out at
-// sea).
-float vineChanceIn(int biome)
+// A small plant standing on (x, y, z): its picture twice, crossed, as the
+// island draws its plants, `size` high and turned by `turn` (radians); its
+// top sways a little in the wind (which also marks it as a plant to the
+// lighting, so the sheen of water leaves it alone).
+void addTrestlePlant(Batches &batches, int texture, const TrestleFrame &f, float x, float y,
+                     float z, float size, float turn)
 {
-    switch (biome)
+    const float half = 0.5f * size;
+    const float sway[4] = {0.0f, 0.0f, 0.03f, 0.03f}; // bottom corners first
+    for (int plane = 0; plane < 2; ++plane)
     {
-    case MEADOW:
-    case CRAG:
-    case -1:
-        return 0.3f;
-    case ALPINE:
-        return 0.1f;
-    default: // the badlands, the volcano
-        return 0.12f;
+        const float a = turn + 1.5708f * static_cast<float>(plane);
+        const float cx = cosf(a), cz = sinf(a);
+        for (int side = 0; side < 2; ++side)
+        {
+            const float e = side == 0 ? half : -half;
+            const float corner[4][3] = {{x - cx * e, y, z - cz * e},
+                                        {x + cx * e, y, z + cz * e},
+                                        {x + cx * e, y + size, z + cz * e},
+                                        {x - cx * e, y + size, z - cz * e}};
+            const float uv[4][2] = {{0, 1}, {1, 1}, {1, 0}, {0, 0}};
+            const float facing = side == 0 ? 1.0f : -1.0f;
+            const float normal[3] = {-cz * facing, 0.0f, cx * facing};
+            addTrestleQuad(batches, texture, f, corner, uv, normal, 0.0f, sway);
+        }
     }
 }
 
@@ -6962,17 +6973,14 @@ void LandWorld::buildSupportMesh()
                 const float b[3] = {postX(side, h) + in * 1.2f, h - 0.1f, 0.0f};
                 addTrestleBeam(batches, planks, f, a, b, 0.55f * post, 0.07f);
             }
-        // Vines, grown over the trestle as over a jungle tree: most have
-        // some, the jungle and the swamp a lot, the badlands, the volcano and
-        // the snow fewer. They hang from the cap and the cross beams, thin
-        // threads and wide curtains, mostly short with a few long ones,
-        // often in bunches; some climb the posts from the ground or the
-        // water. None reaches the ground, the water or a stretch of track
-        // below.
-        // a light touch: here and there, not over everything
-        const float vineChance = overgrown ? 0.6f : vineChanceIn(biome);
+        // Vines, here and there, where the jungle and the swamp grow over
+        // everything: hanging from the cap and the cross beams, mostly short,
+        // now and then climbing a post from the ground or the water. None
+        // reaches the ground, the water or a stretch of track below.
+        // (only there: elsewhere each land dresses its trestles its own way,
+        // below)
         const int leafTexture = trestleLeavesIn(biome);
-        if (roll(60) < vineChance)
+        if (overgrown && roll(60) < 0.6f)
         {
             const int strands =
                 overgrown ? 1 + static_cast<int>(roll(61) * 3.0f) : 1 + (roll(61) < 0.3f ? 1 : 0);
@@ -7034,6 +7042,80 @@ void LandWorld::buildSupportMesh()
                 }
             }
         }
+        // Elsewhere each land dresses its trestles its own way: grass and
+        // flowers round the posts' feet in the meadows, ferns on the crags,
+        // dead bushes in the badlands and by the volcano, icicles under the
+        // cap and the beams in the snow. Out at sea the posts are soaked
+        // (above).
+        f.shade = 0.92f;
+        if (biome == ALPINE)
+        {
+            // icicles: a thin piece of ice and a thinner one under it
+            for (size_t i = 0; i < levels.size(); ++i)
+            {
+                // the cap's underside is at levels[0], a beam's 0.4 under its top
+                const float under = levels[i] - (i == 0 ? 0.0f : 0.4f);
+                const float span =
+                    i == 0 ? 1.7f : fabsf(postX(1, levels[i]) - postX(0, levels[i])) * 0.5f - post;
+                const int count = 2 + static_cast<int>(roll(310 + static_cast<int>(i)) * 4.0f);
+                for (int k = 0; k < count; ++k)
+                {
+                    const int c = 320 + 10 * static_cast<int>(i) + k;
+                    const float x = (roll(c) * 2.0f - 1.0f) * span;
+                    const float z = (roll(c + 400) - 0.5f) * 0.3f;
+                    const float len = 0.25f + 0.6f * roll(c + 800) * roll(c + 800);
+                    const float lo1[3] = {x - 0.07f, under - len * 0.55f, z - 0.07f};
+                    const float hi1[3] = {x + 0.07f, under, z + 0.07f};
+                    addTrestleBox(batches, T::ICE, f, lo1, hi1, 0.0f);
+                    const float lo2[3] = {x - 0.035f, under - len, z - 0.035f};
+                    const float hi2[3] = {x + 0.035f, under - len * 0.55f, z + 0.035f};
+                    addTrestleBox(batches, T::ICE, f, lo2, hi2, 0.0f);
+                }
+            }
+        }
+        else if (biome == MEADOW || biome == CRAG || biome == MESA || biome == VOLCANO)
+        {
+            const float chance = biome == MEADOW ? 0.75f : (biome == CRAG ? 0.6f : 0.5f);
+            for (int side = 0; side < 2; ++side)
+            {
+                if (!t.post[side] || t.ground[side] < water + 0.2f || roll(340 + side) >= chance)
+                    continue;
+                const float ground = t.ground[side];
+                const float foot = postX(side, ground);
+                const int count = biome == MEADOW ? 2 + static_cast<int>(roll(342 + side) * 3.0f)
+                                                  : 1 + (roll(342 + side) < 0.4f ? 1 : 0);
+                for (int k = 0; k < count; ++k)
+                {
+                    const int c = 350 + 20 * side + k;
+                    float dx = (roll(c) - 0.5f) * 1.6f, dz = (roll(c + 5) - 0.5f) * 1.6f;
+                    // not inside the post
+                    if (fabsf(dx) < post + 0.15f && fabsf(dz) < post + 0.15f)
+                        dx = (dx < 0.0f ? -1.0f : 1.0f) * (post + 0.15f + 0.2f * roll(c + 9));
+                    int texture = T::TALL_GRASS;
+                    float size = 1.2f + 0.6f * roll(c + 11);
+                    if (biome == MEADOW)
+                    {
+                        const float pick = roll(c + 13);
+                        if (pick > 0.5f)
+                        {
+                            static const int kFlowers[5] = {T::POPPY, T::DANDELION, T::CORNFLOWER,
+                                                            T::OXEYE, T::ALLIUM};
+                            texture = kFlowers[static_cast<int>(roll(c + 15) * 4.99f)];
+                            size = 1.0f + 0.4f * roll(c + 11);
+                        }
+                    }
+                    else if (biome == CRAG)
+                        texture = T::FERN;
+                    else
+                    {
+                        texture = T::DEAD_BUSH;
+                        size = 1.0f + 0.5f * roll(c + 11);
+                    }
+                    addTrestlePlant(batches, texture, f, foot + dx, ground, dz, size,
+                                    3.1416f * roll(c + 17));
+                }
+            }
+        }
     }
 
     // Where the track is up in the air, vines hanging from the ends of the
@@ -7054,7 +7136,7 @@ void LandWorld::buildSupportMesh()
         const int biome =
             Grid::insideColumn(bx, bz) && onIsland(bx, bz) ? g.biome[Grid::column(bx, bz)] : -1;
         const bool overgrown = biome == MANGROVE || biome == BAMBOO_JUNGLE;
-        if (roll(0) >= (overgrown ? 0.12f : 0.15f * vineChanceIn(biome)))
+        if (!overgrown || roll(0) >= 0.12f) // only where the jungle and the swamp grow
             continue;
         const float dx = m_supportPath[3 * (n + 1)] - x, dz = m_supportPath[3 * (n + 1) + 2] - z;
         const float along = sqrtf(dx * dx + dz * dz);
