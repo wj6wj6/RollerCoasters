@@ -6925,11 +6925,10 @@ void LandWorld::buildSupportMesh()
         }
     }
 
-    // Along the track, leaves grown over the ends of the sleepers here and
-    // there, outside the rails (well clear of the train), more where more
-    // grows round about, and where the track is up in the air a few vines
-    // hanging from them, long and short; none reaching the ground, the
-    // water or the track below. None under water or in a tunnel.
+    // Where the track is up in the air, vines hanging from the ends of the
+    // sleepers here and there, long and short, more where more grows round
+    // about; none reaching the ground, the water or the track below. (Leaves
+    // grown over the sleepers' ends stood out beside the track.)
     const size_t points = m_supportPath.size() / 3;
     for (size_t n = 0; n + 1 < points; n += 2)
     {
@@ -6944,36 +6943,29 @@ void LandWorld::buildSupportMesh()
         const int biome =
             Grid::insideColumn(bx, bz) && onIsland(bx, bz) ? g.biome[Grid::column(bx, bz)] : -1;
         const bool overgrown = biome == MANGROVE || biome == BAMBOO_JUNGLE;
-        if (roll(0) >= (overgrown ? 0.4f : 0.15f * vineChanceIn(biome)))
+        if (roll(0) >= (overgrown ? 0.45f : 0.2f * vineChanceIn(biome)))
             continue;
-        if (y < water + 0.5f || solidAt(false, x, y + 3.0f, z))
-            continue; // under water or in a tunnel
         const float dx = m_supportPath[3 * (n + 1)] - x, dz = m_supportPath[3 * (n + 1) + 2] - z;
         const float along = sqrtf(dx * dx + dz * dz);
         if (along < 1e-4f)
             continue;
-        // a frame with x along the track and z across it
+        // a frame with x along the track and z across it, so the strands
+        // hang off one end of a sleeper
         const float c = dz / along, s = dx / along; // across is (c, -s) in the world
         const TrestleFrame f = {x, z, s, -c, 0.95f};
         const float out = roll(2) < 0.5f ? 1.0f : -1.0f;
-        const float hx = 0.4f + 0.6f * roll(4);
-        // over the sleeper's end, from just outside the rail's foot
-        const float inner = 1.7f, outer = 2.3f + 0.15f * roll(5);
-        const float lo[3] = {-hx, y - 0.34f, out > 0.0f ? inner : -outer};
-        const float hi[3] = {hx, y + 0.24f + 0.1f * roll(6), out > 0.0f ? outer : -inner};
-        addLeafClump(batches, trestleLeavesIn(biome), f, lo, hi, hash(px, pz, 905u));
-        const int strands = 1 + static_cast<int>(roll(7) * (overgrown ? 3.0f : 2.0f));
+        const float under = y - 0.18f; // the sleepers' underside
+        const int strands = 1 + (roll(7) < (overgrown ? 0.5f : 0.25f) ? 1 : 0);
         for (int k = 0; k < strands; ++k)
         {
             const float r = roll(10 + k);
             const float drop = overgrown ? 0.6f + 6.0f * r * r : 0.5f + 3.5f * r * r;
-            const float sx = (roll(20 + k) - 0.5f) * 1.6f * hx;
-            const float across = out * (1.95f + 0.2f * roll(30 + k));
-            const float under = y - 0.34f;
+            const float sx = (roll(20 + k) - 0.5f) * 0.8f;
+            const float across = out * (1.8f + 0.1f * roll(30 + k));
             const float most = vineRoom(f, sx, across, under);
             if (most >= 0.4f)
                 addTrestleVines(batches, f, sx, under, across, fminf(drop, most),
-                                0.3f + 0.6f * roll(40 + k), hash(px + k, pz, 910u));
+                                0.3f + 0.5f * roll(40 + k), hash(px + k, pz, 910u));
         }
     }
     m_supports->arena.release();
