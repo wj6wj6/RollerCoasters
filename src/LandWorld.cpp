@@ -6777,7 +6777,54 @@ void LandWorld::buildSupportMesh()
         }
         return most;
     };
-    bool litBefore = false; // the trestle before has a lantern
+    // The trestles in runs: a run is a stretch of track up in the air, the
+    // trestles along it no more than 25 apart. Its two ends, where the track
+    // leaves the ground and comes back to it, are the bridgeheads.
+    const size_t trestles = m_trestles.size();
+    std::vector<int> runIndex(trestles, 0), runLength(trestles, 1);
+    for (size_t n = 0; n < trestles;)
+    {
+        size_t end = n + 1;
+        while (end < trestles)
+        {
+            const float dx = m_trestles[end].x - m_trestles[end - 1].x;
+            const float dz = m_trestles[end].z - m_trestles[end - 1].z;
+            if (dx * dx + dz * dz > 25.0f * 25.0f)
+                break;
+            ++end;
+        }
+        for (size_t k = n; k < end; ++k)
+        {
+            runIndex[k] = static_cast<int>(k - n);
+            runLength[k] = static_cast<int>(end - n);
+        }
+        n = end;
+    }
+    // ... and where a run goes out over the sea or comes back over land: the
+    // other bridgeheads, where the bridge meets the shore.
+    auto overSea = [&](size_t n) {
+        const Trestle &t = m_trestles[n];
+        return fmaxf(t.ground[0], t.ground[1]) < water;
+    };
+    auto bridgehead = [&](size_t n) {
+        if (runLength[n] < 3)
+            return false;
+        if (runIndex[n] == 0 || runIndex[n] == runLength[n] - 1)
+            return true;
+        return overSea(n) != overSea(n - 1) || overSea(n) != overSea(n + 1);
+    };
+    // Where the land's own dressing grows: in clusters along the track with
+    // bare stretches between them (a smooth noise over the trestles, about
+    // half of them), so it thickens and thins as plants do and leaves room,
+    // instead of a little on every one.
+    auto clustered = [&](size_t n) {
+        const float at = static_cast<float>(n) / 3.0f;
+        const int i = static_cast<int>(floorf(at));
+        const float k = at - static_cast<float>(i);
+        const float a = static_cast<float>(hash(i, 0, 731u) % 1000u) / 1000.0f;
+        const float b = static_cast<float>(hash(i + 1, 0, 731u) % 1000u) / 1000.0f;
+        return a + (b - a) * k * k * (3.0f - 2.0f * k) > 0.5f;
+    };
     for (size_t n = 0; n < m_trestles.size(); ++n)
     {
         const Trestle &t = m_trestles[n];
@@ -6892,20 +6939,20 @@ void LandWorld::buildSupportMesh()
             const float d[3] = {postX(side, from), from, 0.0f};
             addTrestleBeam(batches, wood, f, d, b, post, post);
         }
-        // lanterns here and there: never on two trestles running, on one
-        // side or now and then both, where a post is tall enough for one to
-        // hang clear of the ground
+        // Lanterns where they have a reason to be: a pair at each bridgehead
+        // (where the track leaves the ground or comes back to it, and where
+        // the bridge meets the shore), and along a long span one every fifth
+        // trestle, on the two sides in turn, so the lights mark the way across
+        // at night with dark between them. None on a short run, nor where a
+        // post is too short for one to hang clear of the ground.
         bool lit[2] = {false, false};
-        if (!litBefore && roll(40) < 0.38f)
-        {
-            const int side = roll(41) < 0.5f ? 0 : 1;
-            lit[side] = true;
-            if (roll(42) < 0.15f)
-                lit[1 - side] = true;
-        }
+        const int ri = runIndex[n], rl = runLength[n];
+        if (bridgehead(n))
+            lit[0] = lit[1] = true;
+        else if (rl >= 8 && ri % 5 == 0)
+            lit[(ri / 5) % 2] = true;
         for (int side = 0; side < 2; ++side)
             lit[side] = lit[side] && t.post[side] && t.top - baseY[side] > 4.0f;
-        litBefore = lit[0] || lit[1];
         // the cap under the sleepers, reaching out over a lantern
         f.shade = 0.88f + 0.1f * roll(43);
         {
@@ -6980,7 +7027,7 @@ void LandWorld::buildSupportMesh()
         // (only there: elsewhere each land dresses its trestles its own way,
         // below)
         const int leafTexture = trestleLeavesIn(biome);
-        if (overgrown && roll(60) < 0.6f)
+        if (overgrown && clustered(n) && roll(60) < 0.8f)
         {
             const int strands =
                 overgrown ? 1 + static_cast<int>(roll(61) * 3.0f) : 1 + (roll(61) < 0.3f ? 1 : 0);
@@ -7044,38 +7091,13 @@ void LandWorld::buildSupportMesh()
         }
         // Elsewhere each land dresses its trestles its own way: grass and
         // flowers round the posts' feet in the meadows, ferns on the crags,
-        // dead bushes in the badlands and by the volcano, icicles under the
-        // cap and the beams in the snow. Out at sea the posts are soaked
-        // (above).
+        // dead bushes in the badlands and by the volcano; in the snow, the
+        // snow on the beams is enough (icicles were too small to be seen
+        // from the train). Out at sea the posts are soaked (above).
         f.shade = 0.92f;
-        if (biome == ALPINE)
+        if ((biome == MEADOW || biome == CRAG || biome == MESA || biome == VOLCANO) && clustered(n))
         {
-            // icicles: a thin piece of ice and a thinner one under it
-            for (size_t i = 0; i < levels.size(); ++i)
-            {
-                // the cap's underside is at levels[0], a beam's 0.4 under its top
-                const float under = levels[i] - (i == 0 ? 0.0f : 0.4f);
-                const float span =
-                    i == 0 ? 1.7f : fabsf(postX(1, levels[i]) - postX(0, levels[i])) * 0.5f - post;
-                const int count = 2 + static_cast<int>(roll(310 + static_cast<int>(i)) * 4.0f);
-                for (int k = 0; k < count; ++k)
-                {
-                    const int c = 320 + 10 * static_cast<int>(i) + k;
-                    const float x = (roll(c) * 2.0f - 1.0f) * span;
-                    const float z = (roll(c + 400) - 0.5f) * 0.3f;
-                    const float len = 0.25f + 0.6f * roll(c + 800) * roll(c + 800);
-                    const float lo1[3] = {x - 0.07f, under - len * 0.55f, z - 0.07f};
-                    const float hi1[3] = {x + 0.07f, under, z + 0.07f};
-                    addTrestleBox(batches, T::ICE, f, lo1, hi1, 0.0f);
-                    const float lo2[3] = {x - 0.035f, under - len, z - 0.035f};
-                    const float hi2[3] = {x + 0.035f, under - len * 0.55f, z + 0.035f};
-                    addTrestleBox(batches, T::ICE, f, lo2, hi2, 0.0f);
-                }
-            }
-        }
-        else if (biome == MEADOW || biome == CRAG || biome == MESA || biome == VOLCANO)
-        {
-            const float chance = biome == MEADOW ? 0.75f : (biome == CRAG ? 0.6f : 0.5f);
+            const float chance = biome == MEADOW ? 0.85f : 0.7f;
             for (int side = 0; side < 2; ++side)
             {
                 if (!t.post[side] || t.ground[side] < water + 0.2f || roll(340 + side) >= chance)
