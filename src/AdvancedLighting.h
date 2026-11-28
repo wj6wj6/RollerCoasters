@@ -168,12 +168,6 @@ class AdvancedLighting
     void begin(const LightingFrame &frame);
     void end();
 
-    // For what has no usable normal, or should not be shaded by one (the
-    // clouds): lit as if it faced the sky, by the light from the sky and the
-    // sun's or the moon's colour, so it still follows the time of day, the
-    // rain and the shadows. Does nothing when the shader is not active.
-    void setUnlit(bool unlit);
-
     // While see-through surfaces (the island's water and glass) are drawn:
     // their alpha blends them. Otherwise the alpha of a solid surface carries
     // how open it is to the rain, for the wet ground pass (PostEffects).
@@ -228,7 +222,6 @@ class AdvancedLighting
     int m_locHeadPos;
     int m_locHeadDir;
     int m_locHeadColor;
-    int m_locUnlit;
     int m_locHdr;
     int m_locClipY;
     int m_locTime;

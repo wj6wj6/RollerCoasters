@@ -18,8 +18,8 @@
                   * meadows with oak, birch and cherry trees, flowers and
                     tall grass, a pond, giant mushrooms, a village with a
                     windmill and a wheat field, and grazing animals,
-                  * a floating island with a waterfall, blocky clouds and
-                    hot-air balloons.
+                  * a floating island with a waterfall, and hot-air
+                    balloons.
 
                   The blocks are carved away around the demo ride
                   (OceanWorld::demoTrack()) for all three spline types,
@@ -31,9 +31,8 @@
                   lighting as OceanWorld: sky light that fades in tunnels,
                   the glow of lava, lanterns and crystals, and ambient
                   occlusion in the corners. Everything that moves (windmill,
-                  animals, clouds, balloons) is drawn every frame from
-                  boxes; the clouds by drawClouds(), lit as the sky lights
-                  them.
+                  animals, balloons) is drawn every frame from boxes. The
+                  clouds are the sky's (PostEffects).
 
                   The flat variant is the plain grass island the track
                   editor works on: level ground and a few trees.
@@ -91,15 +90,6 @@ class LandWorld
     // scenery. shadowPass: only the solid blocks, for the shadow map.
     // time (seconds) moves the water and the animals.
     void draw(bool flat, bool shadowPass, float time);
-
-    // The blocky clouds high over the scenery (none over the flat island),
-    // drifting with time (seconds). Not for the shadow pass. They have no
-    // glow and no light of their own: under the lighting shader draw them
-    // with AdvancedLighting::setUnlit(true), which lights every face as the
-    // sky lights it (the sun's or the moon's colour and the light from the
-    // sky, as the time of day and the rain set them), so they darken at
-    // night with everything else.
-    void drawClouds(bool flat, float time);
 
     // The see-through water blocks (streams, falls, ponds). Call after
     // everything else is drawn, outside the shadow pass: they are blended
