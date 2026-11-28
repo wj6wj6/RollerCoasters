@@ -6622,11 +6622,11 @@ float vineChanceIn(int biome)
     case MEADOW:
     case CRAG:
     case -1:
-        return 0.85f;
+        return 0.3f;
     case ALPINE:
-        return 0.4f;
+        return 0.1f;
     default: // the badlands, the volcano
-        return 0.45f;
+        return 0.12f;
     }
 }
 
@@ -6969,12 +6969,13 @@ void LandWorld::buildSupportMesh()
         // often in bunches; some climb the posts from the ground or the
         // water. None reaches the ground, the water or a stretch of track
         // below.
-        const float vineChance = overgrown ? 1.0f : vineChanceIn(biome);
+        // a light touch: here and there, not over everything
+        const float vineChance = overgrown ? 0.6f : vineChanceIn(biome);
         const int leafTexture = trestleLeavesIn(biome);
         if (roll(60) < vineChance)
         {
-            const int strands = overgrown ? 4 + static_cast<int>(roll(61) * 6.0f)
-                                          : 2 + static_cast<int>(roll(61) * 3.0f);
+            const int strands =
+                overgrown ? 1 + static_cast<int>(roll(61) * 3.0f) : 1 + (roll(61) < 0.3f ? 1 : 0);
             for (int k = 0; k < strands; ++k)
             {
                 // between the posts (they lean out below, so it stays clear of
@@ -7000,12 +7001,12 @@ void LandWorld::buildSupportMesh()
                 }
                 // a bunch: one, two or three strands side by side, each its
                 // own length and width
-                const int bunch = 1 + static_cast<int>(roll(92 + k) * roll(92 + k) * 3.0f);
+                const int bunch = roll(92 + k) < 0.2f ? 2 : 1;
                 for (int b = 0; b < bunch; ++b)
                 {
                     const float r = roll(102 + 10 * k + b);
-                    const float drop = overgrown ? 0.8f + 8.0f * r * r : 0.5f + 5.0f * r * r;
-                    const float width = 0.3f + 0.9f * roll(152 + 10 * k + b);
+                    const float drop = overgrown ? 0.6f + 3.4f * r * r : 0.5f + 2.0f * r * r;
+                    const float width = 0.3f + 0.5f * roll(152 + 10 * k + b);
                     const float sx =
                         fmaxf(-0.85f, fminf(0.85f, x + (static_cast<float>(b) -
                                                         0.5f * static_cast<float>(bunch - 1)) *
@@ -7020,11 +7021,11 @@ void LandWorld::buildSupportMesh()
             // way up or nearly to the cap; in the jungle up both
             for (int side = 0; side < 2; ++side)
             {
-                if (!t.post[side] || roll(232 + side) >= (overgrown ? 0.6f : 0.2f))
+                if (!t.post[side] || roll(232 + side) >= (overgrown ? 0.3f : 0.08f))
                     continue;
                 const float y0 = baseY[side];
                 const float tall = t.top - 0.6f - y0;
-                const float y1 = y0 + tall * (0.3f + 0.65f * roll(234 + side));
+                const float y1 = y0 + tall * (0.2f + 0.35f * roll(234 + side));
                 if (y1 > y0 + 0.5f)
                 {
                     addTrestleClimber(batches, f, postX(side, y0), y0, postX(side, y1), y1, post,
@@ -7053,7 +7054,7 @@ void LandWorld::buildSupportMesh()
         const int biome =
             Grid::insideColumn(bx, bz) && onIsland(bx, bz) ? g.biome[Grid::column(bx, bz)] : -1;
         const bool overgrown = biome == MANGROVE || biome == BAMBOO_JUNGLE;
-        if (roll(0) >= (overgrown ? 0.45f : 0.2f * vineChanceIn(biome)))
+        if (roll(0) >= (overgrown ? 0.12f : 0.15f * vineChanceIn(biome)))
             continue;
         const float dx = m_supportPath[3 * (n + 1)] - x, dz = m_supportPath[3 * (n + 1) + 2] - z;
         const float along = sqrtf(dx * dx + dz * dz);
@@ -7065,11 +7066,11 @@ void LandWorld::buildSupportMesh()
         const TrestleFrame f = {x, z, s, -c, 0.95f};
         const float out = roll(2) < 0.5f ? 1.0f : -1.0f;
         const float under = y - 0.18f; // the sleepers' underside
-        const int strands = 1 + (roll(7) < (overgrown ? 0.5f : 0.25f) ? 1 : 0);
+        const int strands = 1;
         for (int k = 0; k < strands; ++k)
         {
             const float r = roll(10 + k);
-            const float drop = overgrown ? 0.6f + 6.0f * r * r : 0.5f + 3.5f * r * r;
+            const float drop = overgrown ? 0.5f + 3.0f * r * r : 0.5f + 1.8f * r * r;
             const float sx = (roll(20 + k) - 0.5f) * 0.8f;
             const float across = out * (1.8f + 0.1f * roll(30 + k));
             const float most = vineRoom(f, sx, across, under);
