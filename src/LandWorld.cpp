@@ -6516,14 +6516,20 @@ const float kVinePieces = 1.0f / kVineSlice;
 // of hanging as a flat, straight ribbon; the lower it hangs, the more it
 // sways, and a long strand swings further. seed: where it hangs, so it looks
 // the same every time.
-void addTrestleVines(Batches &batches, const TrestleFrame &f, float x, float y, float z, float drop,
-                     float width, unsigned int seed)
+void addTrestleVines(Batches &batches, const TrestleFrame &frame, float x, float y, float z,
+                     float drop, float width, unsigned int seed)
 {
+    // a little darker than the wood beside them, as leaves in the shade of
+    // the trestle (lit as brightly they stood out, almost glowing green)
+    TrestleFrame f = frame;
+    f.shade = frame.shade * 0.72f;
     // The picture's first two strands (a quarter of it across, where the
     // whole picture's thin strands vanished on a narrow strand) across it,
     // in pieces down it with the texels square (the picture does not repeat
     // upwards).
-    const float swing = fminf(0.8f, 0.15f + 0.06f * drop);
+    // (a sway of a tenth of a unit or so: more swung them through the
+    // beams and posts beside them)
+    const float swing = fminf(0.1f, 0.03f + 0.012f * drop);
     float ox = 0.0f, oz = 0.0f; // where the last piece ended, off (x, z)
     int n = 0;
     for (float top = 0.0f; top < drop - 1e-3f; ++n)
@@ -6537,7 +6543,7 @@ void addTrestleVines(Batches &batches, const TrestleFrame &f, float x, float y, 
         const float v = (bottom - top) / piece;
         float nx = ox + (dice(1) - 0.5f) * 0.35f * w, nz = oz + (dice(2) - 0.5f) * 0.25f * w;
         nx = fmaxf(-0.6f, fminf(0.6f, nx));
-        nz = fmaxf(-0.3f, fminf(0.3f, nz));
+        nz = fmaxf(-0.12f, fminf(0.12f, nz));
         const float swayTop = swing * top / drop, swayBottom = swing * bottom / drop;
         const float sway[4] = {swayBottom, swayBottom, swayTop, swayTop}; // bottom corners first
         const float h = 0.5f * w;
@@ -6630,9 +6636,11 @@ float vineChanceIn(int biome)
 // instead of sticking to one face; each piece a little to one side of the
 // face, its own width (about `width`), and here and there one left out.
 // seed: where the post is, so it looks the same every time.
-void addTrestleClimber(Batches &batches, const TrestleFrame &f, float x0, float y0, float x1,
+void addTrestleClimber(Batches &batches, const TrestleFrame &frame, float x0, float y0, float x1,
                        float y1, float half, float width, unsigned int seed)
 {
+    TrestleFrame f = frame; // darker, as the hanging vines
+    f.shade = frame.shade * 0.72f;
     // the picture's first two strands across it, as hanging vines take them
     const float piece = kVinePieces * width * 0.6f;
     const float out = half + 0.02f; // just off the post's faces
@@ -6835,58 +6843,43 @@ void LandWorld::buildSupportMesh()
             // wash over it, drying in a band above that and dry further up.
             const float wet = water + 0.5f + 0.4f * roll(34 + side);
             const float damp = wet + 0.45f + 0.25f * roll(36 + side);
-            const float m[3] = {postX(side, wet), wet, 0.0f};
-            const float d[3] = {postX(side, damp), damp, 0.0f};
-            f.shade = dry * 0.45f;
-            f.tint[0] = 0.84f;
-            f.tint[1] = 0.98f;
-            f.tint[2] = 0.82f;
-            addTrestleBeam(batches, wood, f, a, m, post, post);
-            // drying a little more in each of three steps up the band
-            for (int step = 0; step < 3; ++step)
+            // In bands up the post, all of them the post itself (nothing
+            // stands proud of it): soaked under the water, a dark line of
+            // scum and weed at the surface, soaked again up to where the
+            // waves reach, a thin pale tide mark there, then drying in three
+            // steps and dry.
+            struct Band
             {
-                const float k0 = static_cast<float>(step) / 3.0f;
-                const float k1 = static_cast<float>(step + 1) / 3.0f;
-                const float h0 = wet + (damp - wet) * k0, h1 = wet + (damp - wet) * k1;
-                const float lo[3] = {postX(side, h0), h0, 0.0f};
-                const float hi[3] = {postX(side, h1), h1, 0.0f};
-                const float drying = (static_cast<float>(step) + 0.5f) / 3.0f;
-                f.shade = dry * (0.52f + 0.48f * drying);
-                f.tint[0] = 0.86f + 0.14f * drying;
-                f.tint[1] = 0.98f + 0.02f * drying;
-                f.tint[2] = 0.84f + 0.16f * drying;
+                float top, shade, r, g, b;
+            };
+            const float dryHeight = damp - wet;
+            const Band bands[] = {
+                {water - 0.05f, 0.45f, 0.84f, 0.98f, 0.82f},
+                {water + 0.1f, 0.33f, 0.8f, 1.0f, 0.7f},
+                {wet - 0.03f, 0.45f, 0.84f, 0.98f, 0.82f},
+                {wet + 0.03f, 0.8f, 1.0f, 0.97f, 0.88f},
+                {wet + 0.03f + dryHeight / 3.0f, 0.6f, 0.9f, 0.99f, 0.87f},
+                {wet + 0.03f + dryHeight * 2.0f / 3.0f, 0.76f, 0.95f, 0.99f, 0.92f},
+                {damp, 0.92f, 0.98f, 1.0f, 0.97f},
+            };
+            float from = footY[side];
+            for (const Band &band : bands)
+            {
+                if (band.top <= from + 1e-3f)
+                    continue;
+                const float lo[3] = {postX(side, from), from, 0.0f};
+                const float hi[3] = {postX(side, band.top), band.top, 0.0f};
+                f.shade = dry * band.shade;
+                f.tint[0] = band.r;
+                f.tint[1] = band.g;
+                f.tint[2] = band.b;
                 addTrestleBeam(batches, wood, f, lo, hi, post, post);
+                from = band.top;
             }
             f.shade = dry;
             f.tint[0] = f.tint[1] = f.tint[2] = 1.0f;
+            const float d[3] = {postX(side, from), from, 0.0f};
             addTrestleBeam(batches, wood, f, d, b, post, post);
-            // the tide mark: a thin pale ring of dried salt where the waves
-            // reach highest, just proud of the post
-            {
-                const float ring = post + 0.008f;
-                const float lo[3] = {postX(side, wet) - ring, wet - 0.035f, -ring};
-                const float hi[3] = {postX(side, wet) + ring, wet + 0.035f, ring};
-                f.shade = dry * 0.95f;
-                f.tint[0] = 1.0f;
-                f.tint[1] = 0.97f;
-                f.tint[2] = 0.88f;
-                addTrestleBox(batches, wood, f, lo, hi, 0.0f);
-                f.shade = dry;
-                f.tint[0] = f.tint[1] = f.tint[2] = 1.0f;
-            }
-            // and a line of scum and weed just at the water's surface
-            {
-                const float ring = post + 0.03f;
-                const float lo[3] = {postX(side, water) - ring, water - 0.05f, -ring};
-                const float hi[3] = {postX(side, water) + ring, water + 0.1f, ring};
-                f.shade = dry * 0.35f;
-                f.tint[0] = 0.8f;
-                f.tint[1] = 1.0f;
-                f.tint[2] = 0.7f;
-                addTrestleBox(batches, wood, f, lo, hi, 0.0f);
-                f.shade = dry;
-                f.tint[0] = f.tint[1] = f.tint[2] = 1.0f;
-            }
         }
         // lanterns here and there: never on two trestles running, on one
         // side or now and then both, where a post is tall enough for one to
@@ -6981,21 +6974,25 @@ void LandWorld::buildSupportMesh()
                                           : 2 + static_cast<int>(roll(61) * 3.0f);
             for (int k = 0; k < strands; ++k)
             {
-                const float x = -1.9f + 3.8f * roll(62 + k);
+                // between the posts (they lean out below, so it stays clear of
+                // them), on the face of the beams away from the braces, so a
+                // strand swaying in the wind goes through neither
+                const float x = -0.7f + 1.4f * roll(62 + k);
                 const size_t at =
                     static_cast<size_t>(roll(72 + k) * static_cast<float>(levels.size()));
                 // (no std::min here: <windows.h> makes min a macro in this file)
                 const float level = levels[at < levels.size() ? at : levels.size() - 1];
                 const float y = level - 0.45f;
-                const float z = roll(82 + k) < 0.5f ? 0.4f : -0.4f;
+                const float z = -0.5f;
                 // the leaves grown over the beam that the strands hang from
                 // (only where the jungle and the swamp grow over everything:
                 // elsewhere a clump on a bare beam looked stuck on)
                 if (overgrown && roll(242 + k) < 0.85f)
                 {
                     const float hx = 0.5f + 0.7f * roll(252 + k);
-                    const float lo[3] = {x - hx, level - 0.62f - 0.2f * roll(262 + k), -0.46f};
-                    const float hi[3] = {x + hx, fminf(level + 0.16f, t.top - 0.36f), 0.46f};
+                    // (over the face the strands hang from)
+                    const float lo[3] = {x - hx, level - 0.62f - 0.2f * roll(262 + k), -0.66f};
+                    const float hi[3] = {x + hx, fminf(level + 0.16f, t.top - 0.36f), 0.3f};
                     addLeafClump(batches, leafTexture, f, lo, hi, hash(px * 3 + k, pz, 790u));
                 }
                 // a bunch: one, two or three strands side by side, each its
@@ -7007,8 +7004,9 @@ void LandWorld::buildSupportMesh()
                     const float drop = overgrown ? 0.8f + 8.0f * r * r : 0.5f + 5.0f * r * r;
                     const float width = 0.3f + 0.9f * roll(152 + 10 * k + b);
                     const float sx =
-                        x + (static_cast<float>(b) - 0.5f * static_cast<float>(bunch - 1)) *
-                                (0.25f + 0.25f * roll(202 + k));
+                        fmaxf(-0.85f, fminf(0.85f, x + (static_cast<float>(b) -
+                                                        0.5f * static_cast<float>(bunch - 1)) *
+                                                           (0.25f + 0.25f * roll(202 + k))));
                     const float most = vineRoom(f, sx, z, y);
                     if (most >= 0.4f)
                         addTrestleVines(batches, f, sx, y, z, fminf(drop, most), width,
@@ -7019,7 +7017,7 @@ void LandWorld::buildSupportMesh()
             // way up or nearly to the cap; in the jungle up both
             for (int side = 0; side < 2; ++side)
             {
-                if (!t.post[side] || roll(232 + side) >= (overgrown ? 0.85f : 0.45f))
+                if (!t.post[side] || roll(232 + side) >= (overgrown ? 0.6f : 0.2f))
                     continue;
                 const float y0 = baseY[side];
                 const float tall = t.top - 0.6f - y0;
@@ -7027,7 +7025,7 @@ void LandWorld::buildSupportMesh()
                 if (y1 > y0 + 0.5f)
                 {
                     addTrestleClimber(batches, f, postX(side, y0), y0, postX(side, y1), y1, post,
-                                      post * (1.4f + 0.8f * roll(238 + side)),
+                                      post * (1.0f + 0.5f * roll(238 + side)),
                                       hash(px, pz, 760u + static_cast<unsigned int>(side)));
                 }
             }
