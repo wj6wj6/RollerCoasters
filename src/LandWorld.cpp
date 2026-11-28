@@ -6548,19 +6548,30 @@ float vineChanceIn(int biome)
 }
 
 // A vine climbing a post on its face at z, from (x0, y0) up to (x1, y1)
-// (the post leans), `width` across, flat against the post.
+// (the post leans), about `width` across, flat against the post. It winds:
+// each piece a little to one side or the other of the last and its own
+// width, with here and there a gap where the stem shows only between
+// leaves, so it is not a straight strip of tape up the post. seed: where
+// the post is, so it looks the same every time.
 void addTrestleClimber(Batches &batches, const TrestleFrame &f, float x0, float y0, float x1,
-                       float y1, float z, float width)
+                       float y1, float z, float width, unsigned int seed)
 {
     // the picture's first two strands across it, as hanging vines take them
-    const float h = 0.5f * width;
-    const float piece = kVinePieces * width;
-    for (float a = y0; a < y1 - 1e-3f; a += piece)
+    const float piece = kVinePieces * width * 0.6f;
+    int n = 0;
+    for (float a = y0; a < y1 - 1e-3f; a += piece, ++n)
     {
+        auto dice = [&](unsigned int k) {
+            return static_cast<float>(hash(n, static_cast<int>(k), seed) % 1000u) / 1000.0f;
+        };
+        if (n > 0 && dice(1) < 0.18f)
+            continue;
         const float b = fminf(y1, a + piece);
-        const float xa = x0 + (x1 - x0) * (a - y0) / (y1 - y0);
-        const float xb = x0 + (x1 - x0) * (b - y0) / (y1 - y0);
-        const float v = (b - a) / piece;
+        const float shift = (n % 2 == 0 ? 1.0f : -1.0f) * width * (0.1f + 0.25f * dice(2));
+        const float xa = x0 + (x1 - x0) * (a - y0) / (y1 - y0) + shift;
+        const float xb = x0 + (x1 - x0) * (b - y0) / (y1 - y0) + shift;
+        const float h = 0.5f * width * (0.65f + 0.5f * dice(3));
+        const float v = (b - a) / (kVinePieces * 2.0f * h);
         for (int side = 0; side < 2; ++side)
         {
             const float w = side == 0 ? h : -h;
@@ -6754,9 +6765,16 @@ void LandWorld::buildSupportMesh()
                     addTrestleBox(batches, T::SNOW, f, snowLo, snowHi, 0.0f);
                 }
             }
-            for (size_t i = 0; i + 1 < levels.size(); ++i)
+            // ... and the last one from the lowest beam (or the cap, on a
+            // low trestle) down to just above the ground or the water, so no
+            // trestle stands on two bare legs
+            const float bottom = low - 0.4f;
+            for (size_t i = 0; i < levels.size(); ++i)
             {
-                const float up = levels[i] - 0.2f, down = levels[i + 1] - 0.2f;
+                const float up = levels[i] - 0.2f;
+                const float down = i + 1 < levels.size() ? levels[i + 1] - 0.2f : bottom;
+                if (up - down < 1.8f)
+                    continue;
                 const int k = static_cast<int>(i % 2);
                 const float a[3] = {postX(k, up), up, 0.36f};
                 const float b[3] = {postX(1 - k, down), down, 0.36f};
@@ -6824,7 +6842,8 @@ void LandWorld::buildSupportMesh()
                 {
                     const float z = (roll(236 + side) < 0.5f ? 1.0f : -1.0f) * (post + 0.02f);
                     addTrestleClimber(batches, f, postX(side, y0), y0, postX(side, y1), y1, z,
-                                      post * (1.4f + 0.8f * roll(238 + side)));
+                                      post * (1.4f + 0.8f * roll(238 + side)),
+                                      hash(px, pz, 760u + static_cast<unsigned int>(side)));
                 }
             }
         }
