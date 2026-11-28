@@ -173,12 +173,16 @@ void main()
 const char *kCoastWaveGlsl = R"GLSL(
 uniform sampler2D uCoastSdf; // continuous offshore distance (WorldShape::inland)
 
-void coastWave(vec2 p, float sd, float t, out float h, out float dh, out float crest,
+void coastWave(vec2 p, float sd, float open, float t, out float h, out float dh, out float crest,
                out float wake, out float envOut)
 {
     // Stays active all the way into recessed voxel coves (sd down to -3.5) so
-    // incoming rollers never fade out before hitting the rocks or sand beach.
-    float env = smoothstep(-9.0, -3.5, sd) * (1.0 - smoothstep(14.0, 36.0, sd));
+    // incoming rollers never fade out before hitting the rocks or sand beach;
+    // only the last crest or two before the shore, so they do not lie round
+    // the island in rings like contour lines; and only where the shore faces
+    // open water (open, from the coast map's green): a narrow channel or a
+    // closed bay is calm.
+    float env = smoothstep(-9.0, -3.5, sd) * (1.0 - smoothstep(6.0, 18.0, sd)) * open;
     if (env <= 0.001) {
         h = 0.0;
         dh = 0.0;
@@ -193,8 +197,10 @@ void coastWave(vec2 p, float sd, float t, out float h, out float dh, out float c
     float dsEff = 1.0 + 0.288 * shoal;
     float warp = (noise(p * 0.042 + vec2(t * 0.032, -t * 0.024)) - 0.5) * 4.2 +
                  (noise(p * 0.115 + vec2(-t * 0.048, t * 0.036)) - 0.5) * 1.3;
+    // Sets of bigger rollers come and go along the shore, with stretches
+    // where hardly any break.
     float waveSet =
-        0.45 + 0.55 * smoothstep(0.18, 0.78, noise(p * 0.022 + vec2(-t * 0.045, t * 0.035)));
+        0.12 + 0.88 * smoothstep(0.3, 0.75, noise(p * 0.022 + vec2(-t * 0.045, t * 0.035)));
     // Periodic skewed Stokes/shoaling wave rolling shoreward (sd decreasing):
     // steep front face facing shore (dh > 0), sharp crest, gentle seaward back.
     float theta = (sEff + warp) * 0.40 + t * 1.18;
@@ -251,10 +257,11 @@ void main()
     vec3 normal;
     oceanWaves(base.xz, uTime, 12.0, disp, normal); // four grid cells or longer
     vec2 sdfUv = base.xz / 1280.0 + 0.5;
-    float sd = texture2DLod(uCoastSdf, sdfUv, 0.0).r;
+    vec2 coast = texture2DLod(uCoastSdf, sdfUv, 0.0).rg;
+    float sd = coast.r;
     if (sd > -9.0 && sd < 36.0) {
         float cH, cDh, cCrest, cWake, cEnv;
-        coastWave(base.xz, sd, uTime, cH, cDh, cCrest, cWake, cEnv);
+        coastWave(base.xz, sd, coast.g, uTime, cH, cDh, cCrest, cWake, cEnv);
         float du = 1.0 / 256.0;
         vec2 g = vec2(texture2DLod(uCoastSdf, sdfUv + vec2(du, 0.0), 0.0).r -
                           texture2DLod(uCoastSdf, sdfUv - vec2(du, 0.0), 0.0).r,
@@ -475,7 +482,10 @@ void main()
     vec3 waterView = viewPos(suv, gl_FragCoord.z);
     vec3 upView = uView[1].xyz;
     vec2 sdfUv = vBase / 1280.0 + 0.5;
-    float coastSdf = uIsland == 0 ? texture2D(uCoastSdf, sdfUv).r : 100.0;
+    vec2 coast = uIsland == 0 ? texture2D(uCoastSdf, sdfUv).rg : vec2(100.0, 0.0);
+    float coastSdf = coast.r;
+    float coastOpen = coast.g; // how much the shore here faces open water
+    float seaCalm = uIsland == 0 ? 1.0 - coastOpen : 0.0; // sheltered from the open sea
     float cH = 0.0;
     float cDh = 0.0;
     float cCrest = 0.0;
@@ -483,7 +493,7 @@ void main()
     float cEnv = 0.0;
     float shallowMask = 0.0;
     if (uIsland == 0 && coastSdf > -9.0 && coastSdf < 36.0) {
-        coastWave(vBase, coastSdf, uTime, cH, cDh, cCrest, cWake, cEnv);
+        coastWave(vBase, coastSdf, coastOpen, uTime, cH, cDh, cCrest, cWake, cEnv);
         float cVert = max(0.0, dot(waterView - viewPos(suv, texture2D(uDepth, suv).r), upView));
         shallowMask = uUnder != 0 ? 1.0 : (1.0 - smoothstep(14.0, 24.0, cVert));
     }
@@ -514,6 +524,12 @@ void main()
     } else {
         oceanWaves(vBase, uTime, 0.0, disp, N);
         vec2 g = oceanDetailSlope(vBase, uTime, dist);
+        // Water sheltered from the open sea (a narrow channel through the
+        // rock, a closed bay) is calmer: smaller ripples and gentler swells,
+        // so the midday sun makes a small patch of glitter there instead of
+        // covering the whole channel in white.
+        g *= 1.0 - 0.75 * seaCalm;
+        N = normalize(mix(N, vec3(0.0, 1.0, 0.0), 0.6 * seaCalm));
         if (cEnv > 0.001 && shallowMask > 0.001) {
             float du = 1.0 / 256.0;
             vec2 cg = vec2(texture2D(uCoastSdf, sdfUv + vec2(du, 0.0)).r -
@@ -704,12 +720,17 @@ const char *kWaterFragmentTail = R"GLSL(
                      (1.0 - smoothstep(140.0, 420.0, dist));
         vec3 nSpark = normalize(vec3(N.x - micro.x, N.y, N.z - micro.y));
         float nhSpark = max(dot(nSpark, H), 0.0);
-        spec += pow(nhSpark, 210.0) * 18.0 * smoothstep(0.55, 0.94, nh);
+        // (none on sheltered water, which has no such chop)
+        spec += pow(nhSpark, 210.0) * 18.0 * smoothstep(0.55, 0.94, nh) * (1.0 - seaCalm);
     }
     // (hardly any on the bend over an edge and down a fall, where the
     // midday sun would make a white band across the water)
     float glints = uIsland != 0 ? mix(0.1, 1.0, smoothstep(0.93, 0.995, faceN.y)) : 1.0;
-    float specFloor = uIsland == 0 ? (0.58 + 0.72 * fresnel) : (0.3 + fresnel);
+    // (on sheltered water the glint follows the Fresnel term, as calm water
+    // does: looked at steeply from above it reflects only a few percent of
+    // the sun, and the bright floor turned a sunny channel milky white)
+    float specFloor = uIsland == 0 ? mix(0.58 + 0.72 * fresnel, 0.06 + fresnel, seaCalm)
+                                   : (0.3 + fresnel);
     col += uLightColor * spec * shadow * specFloor * glints;
 
     // Porous lacy shore swash (surging in and draining back in lockstep with
@@ -720,8 +741,11 @@ const char *kWaterFragmentTail = R"GLSL(
     float hit = smoothstep(0.08, 0.85, cH) * shallowMask;
     float backwash = cWake * shallowMask;
     float swash = max(hit, backwash * 0.80);
-    float lipReach = uIsland == 0 ? mix(0.60, 1.85, swash) : 0.65;
-    float webReach = uIsland == 0 ? mix(1.90, 4.60, max(backwash, hit * 0.70)) : 2.20;
+    // (in a sheltered channel or bay only a thin line of froth at the edge:
+    // the lace over all the shallows there turned a calm channel white)
+    float lipReach = uIsland == 0 ? mix(0.25, mix(0.60, 1.85, swash), coastOpen) : 0.65;
+    float webReach =
+        uIsland == 0 ? mix(0.35, mix(1.90, 4.60, max(backwash, hit * 0.70)), coastOpen) : 2.20;
     float shoreLip = (1.0 - smoothstep(0.0, lipReach, smoothShore)) *
                      smoothstep(mix(0.28, 0.08, hit), mix(0.62, 0.40, hit), lace) *
                      (0.66 + 0.34 * hit);
@@ -746,7 +770,10 @@ const char *kWaterFragmentTail = R"GLSL(
     float crest = smoothstep(0.60, 0.96, disp.y) * vWave * 0.55 * gust * breaking *
                   smoothstep(0.32, 0.74, lace);
     float foam = clamp(max(max(edge, surf), crest), 0.0, 0.94);
-    vec3 foamLight = uLightColor * max(uLightDir.y, 0.0) * shadow + uZenith * 1.5 + uHorizon * 0.3;
+    // (kept under the bloom's threshold: white foam is not a light, and in
+    // the midday sun it bled a glow over the sleepers above it)
+    vec3 foamLight =
+        min(uLightColor * max(uLightDir.y, 0.0) * shadow + uZenith * 1.5 + uHorizon * 0.3, vec3(0.85));
     // Thin lacy foam picks up a subtle turquoise tint; thick breaking lips stay crisp white.
     vec3 foamTint = mix(vec3(0.76, 0.92, 0.96), vec3(0.98, 0.99, 1.0), foam);
     col = mix(col, foamLight * foamTint * 0.94, foam * 0.88);
@@ -1827,6 +1854,32 @@ void PostEffects::buildCoastSdf()
             data[idx + 3u] = 1.0f;
         }
     }
+    // Green: how much the shore faces open water, from the farthest offshore
+    // point within about 40 units. A beach facing the sea has open water 40
+    // units out (1); a narrow channel or a closed bay only shore all round
+    // (0), so no rollers break there.
+    const int reach = 8; // texels, 5 units each
+    for (int z = 0; z < size; ++z)
+        for (int x = 0; x < size; ++x)
+        {
+            float farthest = -1e9f;
+            for (int dz = -reach; dz <= reach; ++dz)
+                for (int dx = -reach; dx <= reach; ++dx)
+                {
+                    const int sx = x + dx, sz = z + dz;
+                    if (dx * dx + dz * dz > reach * reach || sx < 0 || sz < 0 || sx >= size ||
+                        sz >= size)
+                        continue;
+                    const size_t at = (static_cast<size_t>(sz) * static_cast<size_t>(size) +
+                                       static_cast<size_t>(sx)) *
+                                      4u;
+                    farthest = fmaxf(farthest, data[at]); // (<windows.h>: no std::max)
+                }
+            const float open = (farthest - 6.0f) / 20.0f;
+            data[(static_cast<size_t>(z) * static_cast<size_t>(size) + static_cast<size_t>(x)) *
+                     4u +
+                 1u] = open < 0.0f ? 0.0f : (open > 1.0f ? 1.0f : open);
+        }
     glGenTextures(1, &m_coastSdf);
     glBindTexture(GL_TEXTURE_2D, m_coastSdf);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, size, size, 0, GL_RGBA, GL_FLOAT, data.data());
