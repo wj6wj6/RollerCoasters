@@ -109,7 +109,6 @@ uniform vec3 uHeadPos;
 uniform vec3 uHeadDir;
 uniform vec3 uHeadColor;
 
-uniform int uUnlit;
 uniform int uHdr;              // 1: linear HDR out for the post effects
 uniform float uClipY;          // reflections: nothing below the water
 uniform sampler2D uTexture;    // unit 0; plain white when nothing is bound
@@ -267,16 +266,9 @@ void main()
     }
 
     vec3 v = normalize(cameraPos - vWorldPos);
-    vec3 color;
-    if (uUnlit != 0) {
-        // No usable normal: light it as if it faced the sky, so it still
-        // follows the time of day and picks up shadows.
-        color = albedo * (skyAmbient + sun * 0.7);
-    } else {
-        vec3 ambient = mix(groundAmbient, skyAmbient, n.y * 0.5 + 0.5);
-        color = albedo * ambient;
-        color += blinnPhong(albedo, n, lightVec, v, wet, mix(1.0, 0.25, submerge)) * sun;
-    }
+    vec3 ambient = mix(groundAmbient, skyAmbient, n.y * 0.5 + 0.5);
+    vec3 color = albedo * ambient;
+    color += blinnPhong(albedo, n, lightVec, v, wet, mix(1.0, 0.25, submerge)) * sun;
     // Light sources look like ornaments by day and like lamps by night (and
     // in tunnels and under cover at any hour): how much the light they cast
     // shows depends on how dark it is where it falls, the sky light there
@@ -296,9 +288,7 @@ void main()
         vec3 l = toLamp / max(d, 0.0001);
         float cone = smoothstep(0.86, 0.965, dot(-l, uHeadDir));
         float falloff = (1.0 - smoothstep(60.0, 110.0, d)) / (1.0 + d * d * 0.006);
-        vec3 lamp = uUnlit != 0
-                        ? albedo * 0.7
-                        : blinnPhong(albedo, n, l, v, wet, mix(1.0, 0.35, submerge));
+        vec3 lamp = blinnPhong(albedo, n, l, v, wet, mix(1.0, 0.35, submerge));
         color += lamp * uHeadColor * (cone * falloff);
     }
 
@@ -590,7 +580,6 @@ bool AdvancedLighting::init()
     m_locHeadPos = glGetUniformLocation(m_program, "uHeadPos");
     m_locHeadDir = glGetUniformLocation(m_program, "uHeadDir");
     m_locHeadColor = glGetUniformLocation(m_program, "uHeadColor");
-    m_locUnlit = glGetUniformLocation(m_program, "uUnlit");
     m_locHdr = glGetUniformLocation(m_program, "uHdr");
     m_locClipY = glGetUniformLocation(m_program, "uClipY");
     m_locTime = glGetUniformLocation(m_program, "uTime");
@@ -948,7 +937,6 @@ void AdvancedLighting::begin(const LightingFrame &frame)
     glUniform1f(m_locWaterLevel, frame.waterLevel);
     const float crystalLight[3] = {0.12f, 0.55f, 0.75f};
     glUniform3fv(m_locBlockLightColor, 1, crystalLight);
-    glUniform1i(m_locUnlit, 0);
 
     const bool headlight = frame.headlight && frame.hasTrain;
     m_headOn = headlight;
@@ -996,12 +984,6 @@ void AdvancedLighting::end()
     glActiveTexture(GL_TEXTURE0);
     glUseProgram(0);
     m_active = false;
-}
-
-void AdvancedLighting::setUnlit(bool unlit)
-{
-    if (m_active)
-        glUniform1i(m_locUnlit, unlit ? 1 : 0);
 }
 
 void AdvancedLighting::setTranslucent(bool translucent)

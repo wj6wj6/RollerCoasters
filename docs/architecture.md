@@ -88,7 +88,6 @@ flowchart LR
     Menu -->|F3| PerfOverlay[PerfOverlay / 效能畫面與時間圖]
     PerfOverlay --> Perf
     ViewControl -->|--benchmark：報告| Perf
-    View -->|drawGround：方塊雲 drawClouds 時 setUnlit，依太陽／月亮與天空光照亮| Lighting
     View -->|worldReady：未建好前畫載入畫面| Loading[載入畫面 / 泥土背景、階段文字、進度條]
     Land -->|背景執行緒：生成網格、切塊 mesh| LandWorker[LandWorld::buildScene]
     LandWorker -->|prepare：每幀約 30 ms 編 display list| Land
@@ -135,7 +134,7 @@ flowchart LR
 | `src/Ui/GuiGl.h/.cpp` | 上傳 atlas（nearest 取樣）並以像素座標畫出 `Gui` 的 quads；GL context 重建時 `forget()`。載入畫面、選單與快捷欄都由它畫。 |
 | `src/TrainView.H/.cpp` | OpenGL 畫面：相機投影、場景繪製、控制點選取與編輯、滑鼠鎖定、觸控板與滾輪訊息；狀態文字交給 `GameMenu` 畫在快捷欄上方。 |
 | `src/TrainViewEffects.cpp` | 把 `SceneSettings` 的光影設定轉成 `LightingFrame`，並呼叫 `renderAdvancedFrame()`。 |
-| `src/AdvancedLighting.h/.cpp` | 跟著鏡頭的兩層 shadow map（鏡頭附近 150 單位的細圖、外圍 600 單位的粗圖，交界處混合）、GLSL 逐像素光照、日夜與頭燈。`setUnlit(true)` 讓不該依法線明暗的東西（方塊雲）一律用天空光加太陽或月亮的光色照亮，跟著時間與下雨變化。 |
+| `src/AdvancedLighting.h/.cpp` | 跟著鏡頭的兩層 shadow map（鏡頭附近 150 單位的細圖、外圍 600 單位的粗圖，交界處混合）、GLSL 逐像素光照、日夜與頭燈。 |
 | `src/PostEffects.h/.cpp` | 浮點 frame buffer 與後製：天空、水面（含 `WorldShape::inland()` 海岸線 SDF 碎浪、泡沫網與高俯視角高光）與 SSR、雨與濕地反射、SSAO、Bloom、god rays、ACES。水下光柱每幀先把 `waterShaftField()` 在八個深度畫成兩張圖（攝影機附近 400x400），光柱每一步只讀圖。 |
 | `src/UnderwaterOptics.h` | 海面 Gerstner 波、水下折射、Jacobian 焦散、光束場與水色常數，由海面、光照、光束與水下霧四個 shader 共用。 |
 | `src/LandWaterMotion.h` | 島上的水怎麼動（水面輕微起伏、落水處攪動、瀑布朝空氣的面輕微擺動），光照 shader 與水面 shader 共用，依 `LandWorld` 寫在頂點上的標記。 |
@@ -151,7 +150,7 @@ flowchart LR
 | `src/TrackHistory.h/.cpp` | 控制點的上一步／下一步：每次修改前存一份整條軌道（點、`trainU`、選取）的快照；由 `TrackHistoryCheck` 測試。 |
 | `src/EditKeys.h/.cpp` | 把按鍵轉成編輯指令（鍵位來自 `KeyBinds`）；Fly 相機下新增、刪除用 Fly 自己的鍵，預設避開飛行鍵。 |
 | `src/KeyBinds.h/.cpp` | 每個鍵盤指令的名稱、分組與兩個按鍵（含 Ctrl／Shift／Alt），比對按鍵、判斷同一相機下的衝突、讀寫 `data/keybinds.txt`，並把飛行鍵交給 `FlyCam::setKeys()`。`TrainWindow` 持有一份，`GameMenu` 的 `Controls` 畫面修改它。見 [ADR 0014](adr/0014-key-binds.md)。 |
-| `src/LandWorld.h/.cpp` | 方塊島嶼：地形與生態、建築、水、沿 `Grand Tour` 挖出淨空、光照烘焙、會動的景物、木棧橋；在背景執行緒建造。方塊雲由 `drawClouds()` 另外畫（沒有自發光），`TrainView::drawGround()` 在它前後開關 `AdvancedLighting::setUnlit()`。 |
+| `src/LandWorld.h/.cpp` | 方塊島嶼：地形與生態、建築、水、沿 `Grand Tour` 挖出淨空、光照烘焙、會動的景物、木棧橋；在背景執行緒建造。雲只有天空 shader（`PostEffects`）畫的雲層，沒有方塊雲。 |
 | `src/WorldSave.h` | 島與海床網格的存檔（`data/saves/*.world`，run-length 編碼），key 是生成程式的建置時間與網格尺寸。 |
 | `src/CellQueue.h` | 光照 flood fill 用的單一 vector 佇列（取代 MSVC Debug 下很慢的 `std::deque`）。 |
 | `src/LandTextures.h/.cpp` | 島嶼方塊與植物的程序貼圖。 |
