@@ -745,7 +745,35 @@ const char *kWaterFragmentTail = R"GLSL(
     float breaking = smoothstep(0.38, 0.68, noise(P.xz * 0.13 + vec2(uTime * 0.06, -uTime * 0.04)));
     float crest = smoothstep(0.60, 0.96, disp.y) * vWave * 0.55 * gust * breaking *
                   smoothstep(0.32, 0.74, lace);
-    float foam = clamp(max(max(edge, surf), crest), 0.0, 0.94);
+    // A thin, broken ring of froth where the sea laps round something
+    // standing up out of it (a trestle's post): water within half a unit
+    // (across the surface) of something that stands out of it right there,
+    // found on screen a little above and to the sides. A shallow shelf that
+    // stays under water does not count. Faint and patchy, moving with the
+    // water, not a solid white collar.
+    float contact = 0.0;
+    if (uIsland == 0 && dist < 140.0) {
+        // half a unit in pixels at this distance
+        float reach = clamp(0.5 * uProj[1][1] * 0.5 * uScreen.y / max(-waterView.z, 1.0), 2.0, 28.0);
+        float nearest = 9.0;
+        for (int k = 0; k < 10; ++k) {
+            float a = 3.14159 * (0.1 + 0.8 * float(k - (k / 5) * 5) / 4.0);
+            float r = reach * (k < 5 ? 1.0 : 0.5);
+            vec2 nuv = clamp(suv + vec2(cos(a), sin(a)) * r / uScreen, vec2(0.002), vec2(0.998));
+            float nd = texture2D(uDepth, nuv).r;
+            if (nd >= gl_FragCoord.z)
+                continue; // behind the water: not standing out of it
+            vec3 q = viewPos(nuv, nd) - waterView;
+            float above = dot(q, upView);
+            vec3 across = q - upView * above;
+            if (above > -0.1 && above < 3.0)
+                nearest = min(nearest, length(across));
+        }
+        float lap = 1.0 - smoothstep(0.08, 0.5 + 0.2 * lace, nearest);
+        float bits = smoothstep(0.3, 0.7, foamLace(P.xz * 2.3 + vec2(uTime * 0.4, -uTime * 0.3), uTime));
+        contact = lap * bits * 0.32 * (1.0 - smoothstep(60.0, 140.0, dist));
+    }
+    float foam = clamp(max(max(max(edge, surf), crest), contact), 0.0, 0.94);
     vec3 foamLight = uLightColor * max(uLightDir.y, 0.0) * shadow + uZenith * 1.5 + uHorizon * 0.3;
     // Thin lacy foam picks up a subtle turquoise tint; thick breaking lips stay crisp white.
     vec3 foamTint = mix(vec3(0.76, 0.92, 0.96), vec3(0.98, 0.99, 1.0), foam);
