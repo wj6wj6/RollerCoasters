@@ -6512,7 +6512,9 @@ void addTrestleVines(Batches &batches, const TrestleFrame &f, float x, float y, 
     {
         const float bottom = fminf(drop, top + piece);
         const float v = (bottom - top) / piece;
-        const float swayTop = 0.25f * top / drop, swayBottom = 0.25f * bottom / drop;
+        // (a long strand swings further at its end than a short one)
+        const float swing = fminf(0.8f, 0.15f + 0.06f * drop);
+        const float swayTop = swing * top / drop, swayBottom = swing * bottom / drop;
         const float sway[4] = {swayBottom, swayBottom, swayTop, swayTop}; // bottom corners first
         for (int side = 0; side < 2; ++side)
         {
@@ -6528,8 +6530,8 @@ void addTrestleVines(Batches &batches, const TrestleFrame &f, float x, float y, 
     }
 }
 
-// How likely a trestle is to have a few small vines, by the land round it
-// (-1: out at sea).
+// How likely a trestle is to have vines, by the land round it (-1: out at
+// sea).
 float vineChanceIn(int biome)
 {
     switch (biome)
@@ -6537,11 +6539,11 @@ float vineChanceIn(int biome)
     case MEADOW:
     case CRAG:
     case -1:
-        return 0.4f;
+        return 0.85f;
     case ALPINE:
-        return 0.15f;
+        return 0.4f;
     default: // the badlands, the volcano
-        return 0.12f;
+        return 0.45f;
     }
 }
 
@@ -6601,14 +6603,15 @@ void addTrestleLantern(Batches &batches, const TrestleFrame &f, float x, float y
 // stands, and no two alike: the posts are of the wood that grows round it
 // (spruce in the snow, mangrove in the swamp, dark timber by the volcano, in
 // the badlands and the bamboo hills, oak elsewhere), each a shade lighter or
-// darker, under a cap of planks; braced crosswise, with single braces, or
-// with knee braces only; the posts going straight into the ground or the
-// sea bed, and snow on the beams in the mountains; lanterns on chains
-// of different lengths here and there (never two trestles running,
-// sometimes one on each side); small vines here and there, hanging from the
-// beams or climbing a post, and many in the swamp and the bamboo hills; and
-// now and then a little vine hanging off the end of a sleeper where the
-// track is up in the air. The dice are thrown from where each trestle or
+// darker, under a cap of planks; cross beams with a single brace between
+// each two, turning each way in turn (knee braces where there is only one
+// post); the posts going straight into the ground or the sea bed, and snow
+// on the beams in the mountains; lanterns on chains of different lengths
+// here and there (never two trestles running, sometimes one on each side);
+// vines grown over most of them as over a jungle tree, hanging from the
+// beams in threads and curtains of all lengths and climbing the posts, a lot
+// in the swamp and the bamboo hills; and vines hanging off the ends of the
+// sleepers here and there where the track is up in the air. The dice are thrown from where each trestle or
 // stretch of track is, so it looks the same every time, and editing the
 // track elsewhere does not change it.
 void LandWorld::buildSupportMesh()
@@ -6617,6 +6620,22 @@ void LandWorld::buildSupportMesh()
     Batches batches(T::TEXTURE_COUNT);
     const float water = OceanWorld::waterLevel();
     const Grid &g = m_scenery->grid;
+    // How far a vine hanging from y at (lx, lz) in frame fr may reach down:
+    // to a little above the ground or the water, and nowhere near a stretch
+    // of track further down (a train goes over it, about six high).
+    auto vineRoom = [&](const TrestleFrame &fr, float lx, float lz, float y) {
+        const float l[3] = {lx, 0.0f, lz};
+        float w[3];
+        fr.place(l, w);
+        float most = y - (fmaxf(postGround(w[0], w[2], y), water) + 0.6f);
+        for (size_t i = 0; i + 2 < m_supportPath.size(); i += 3)
+        {
+            const float px = m_supportPath[i], py = m_supportPath[i + 1], pz = m_supportPath[i + 2];
+            if (py < y - 1.0f && fabsf(px - w[0]) < 3.0f && fabsf(pz - w[2]) < 3.0f)
+                most = fminf(most, y - (py + 6.0f));
+        }
+        return most;
+    };
     bool litBefore = false; // the trestle before has a lantern
     for (size_t n = 0; n < m_trestles.size(); ++n)
     {
@@ -6711,8 +6730,9 @@ void LandWorld::buildSupportMesh()
             if (lit[side])
                 addTrestleLantern(batches, f, side == 0 ? -2.3f : 2.3f, t.top - 0.5f, 0.0f,
                                   0.3f + 0.9f * roll(44 + side));
-        // cross beams down to above the higher ground or the water, and the bracing: crosswise,
-        // single braces turning each way in turn, or knee braces only
+        // cross beams down to above the higher ground or the water, and
+        // between each two a single brace, turning each way in turn (a
+        // zigzag up the trestle)
         f.shade = 0.86f + 0.1f * roll(50);
         std::vector<float> levels = {t.top - 0.5f};
         if (both)
@@ -6734,32 +6754,17 @@ void LandWorld::buildSupportMesh()
                     addTrestleBox(batches, T::SNOW, f, snowLo, snowHi, 0.0f);
                 }
             }
-            const float style = roll(52);
             for (size_t i = 0; i + 1 < levels.size(); ++i)
             {
                 const float up = levels[i] - 0.2f, down = levels[i + 1] - 0.2f;
-                if (style < 0.5f)
-                {
-                    const float zs[2] = {0.36f, -0.36f}; // one on each face, so they cross
-                    for (int k = 0; k < 2; ++k)
-                    {
-                        const float a[3] = {postX(k, up), up, zs[k]};
-                        const float b[3] = {postX(1 - k, down), down, zs[k]};
-                        addTrestleBeam(batches, planks, f, a, b, 0.16f, 0.07f);
-                    }
-                }
-                else if (style < 0.8f)
-                {
-                    const int k = static_cast<int>(i % 2);
-                    const float a[3] = {postX(k, up), up, 0.36f};
-                    const float b[3] = {postX(1 - k, down), down, 0.36f};
-                    addTrestleBeam(batches, planks, f, a, b, 0.16f, 0.07f);
-                }
+                const int k = static_cast<int>(i % 2);
+                const float a[3] = {postX(k, up), up, 0.36f};
+                const float b[3] = {postX(1 - k, down), down, 0.36f};
+                addTrestleBeam(batches, planks, f, a, b, 0.16f, 0.07f);
             }
         }
-        // knee braces from each post up to the cap: on trestles braced that
-        // way, and on every one with a single post
-        if (!both || roll(52) >= 0.8f)
+        // knee braces from the post up to the cap where there is only one
+        if (!both)
             for (int side = 0; side < 2; ++side)
             {
                 if (!t.post[side] || t.top - baseY[side] < 3.0f)
@@ -6770,49 +6775,64 @@ void LandWorld::buildSupportMesh()
                 const float b[3] = {postX(side, h) + in * 1.2f, h - 0.1f, 0.36f};
                 addTrestleBeam(batches, planks, f, a, b, 0.14f, 0.07f);
             }
-        // Vines: a few small ones here and there on any trestle, more in the
-        // meadows, on the crags and out at sea than in the badlands, by the
-        // volcano or in the snow, and a lot where the jungle and the swamp
-        // grow over everything. Some hang from the cap and the beams, some
-        // climb a post from the ground or the water.
+        // Vines, grown over the trestle as over a jungle tree: most have
+        // some, the jungle and the swamp a lot, the badlands, the volcano and
+        // the snow fewer. They hang from the cap and the cross beams, thin
+        // threads and wide curtains, mostly short with a few long ones,
+        // often in bunches; some climb the posts from the ground or the
+        // water. None reaches the ground, the water or a stretch of track
+        // below.
         const float vineChance = overgrown ? 1.0f : vineChanceIn(biome);
         if (roll(60) < vineChance)
         {
-            const int strands =
-                overgrown ? 1 + static_cast<int>(roll(61) * 4.0f) : 1 + (roll(61) < 0.35f ? 1 : 0);
+            const int strands = overgrown ? 4 + static_cast<int>(roll(61) * 6.0f)
+                                          : 2 + static_cast<int>(roll(61) * 3.0f);
             for (int k = 0; k < strands; ++k)
             {
-                const float x = -1.8f + 3.6f * roll(62 + k);
+                const float x = -1.9f + 3.8f * roll(62 + k);
                 const size_t at =
-                    static_cast<size_t>(roll(67 + k) * static_cast<float>(levels.size()));
+                    static_cast<size_t>(roll(72 + k) * static_cast<float>(levels.size()));
                 // (no std::min here: <windows.h> makes min a macro in this file)
                 const float y = levels[at < levels.size() ? at : levels.size() - 1] - 0.45f;
-                const float drop =
-                    overgrown ? 1.0f + 3.5f * roll(72 + k) : 0.6f + 1.2f * roll(72 + k);
-                const float z = roll(77 + k) < 0.5f ? 0.33f : -0.33f;
-                const float width =
-                    overgrown ? 0.8f + 0.6f * roll(82 + k) : 0.5f + 0.5f * roll(82 + k);
-                addTrestleVines(batches, f, x, y, z, drop, width);
-            }
-            // one climbing a post from the ground or the water part of the way up
-            if (roll(87) < (overgrown ? 0.6f : 0.5f))
-            {
-                const int side = roll(88) < 0.5f ? 0 : 1;
-                const float y0 = baseY[side];
-                const float y1 = fminf(t.top - 0.6f, y0 + 1.2f + 2.8f * roll(89));
-                if (t.post[side] && y1 > y0 + 0.5f)
+                const float z = roll(82 + k) < 0.5f ? 0.33f : -0.33f;
+                // a bunch: one, two or three strands side by side, each its
+                // own length and width
+                const int bunch = 1 + static_cast<int>(roll(92 + k) * roll(92 + k) * 3.0f);
+                for (int b = 0; b < bunch; ++b)
                 {
-                    const float z = (roll(90) < 0.5f ? 1.0f : -1.0f) * (post + 0.02f);
+                    const float r = roll(102 + 10 * k + b);
+                    const float drop = overgrown ? 0.8f + 8.0f * r * r : 0.5f + 5.0f * r * r;
+                    const float width = 0.3f + 0.9f * roll(152 + 10 * k + b);
+                    const float sx =
+                        x + (static_cast<float>(b) - 0.5f * static_cast<float>(bunch - 1)) *
+                                (0.25f + 0.25f * roll(202 + k));
+                    const float most = vineRoom(f, sx, z, y);
+                    if (most >= 0.4f)
+                        addTrestleVines(batches, f, sx, y, z, fminf(drop, most), width);
+                }
+            }
+            // climbing the posts from the ground or the water, part of the
+            // way up or nearly to the cap; in the jungle up both
+            for (int side = 0; side < 2; ++side)
+            {
+                if (!t.post[side] || roll(232 + side) >= (overgrown ? 0.85f : 0.45f))
+                    continue;
+                const float y0 = baseY[side];
+                const float tall = t.top - 0.6f - y0;
+                const float y1 = y0 + tall * (0.3f + 0.65f * roll(234 + side));
+                if (y1 > y0 + 0.5f)
+                {
+                    const float z = (roll(236 + side) < 0.5f ? 1.0f : -1.0f) * (post + 0.02f);
                     addTrestleClimber(batches, f, postX(side, y0), y0, postX(side, y1), y1, z,
-                                      post * 1.8f);
+                                      post * (1.4f + 0.8f * roll(238 + side)));
                 }
             }
         }
     }
 
-    // Now and then, where the track is up in the air, a little vine hanging
-    // from the end of a sleeper, more where more grows round about; none
-    // where it would reach the ground or the water.
+    // Where the track is up in the air, vines hanging from the ends of the
+    // sleepers here and there, long and short, more where more grows round
+    // about; none reaching the ground, the water or the track below.
     const size_t points = m_supportPath.size() / 3;
     for (size_t n = 0; n + 1 < points; n += 2)
     {
@@ -6827,12 +6847,11 @@ void LandWorld::buildSupportMesh()
         const int biome =
             Grid::insideColumn(bx, bz) && onIsland(bx, bz) ? g.biome[Grid::column(bx, bz)] : -1;
         const bool overgrown = biome == MANGROVE || biome == BAMBOO_JUNGLE;
-        if (roll(0) >= (overgrown ? 0.22f : 0.07f * vineChanceIn(biome) / 0.4f))
+        if (roll(0) >= (overgrown ? 0.45f : 0.2f * vineChanceIn(biome)))
             continue;
-        const float drop = 0.5f + 1.1f * roll(1);
+        const float r = roll(1);
+        const float drop = overgrown ? 0.6f + 6.0f * r * r : 0.5f + 3.5f * r * r;
         const float under = y - 0.18f; // the sleepers' underside
-        if (under - drop < fmaxf(postGround(x, z, y - 1.0f), water) + 0.6f)
-            continue;
         const float dx = m_supportPath[3 * (n + 1)] - x, dz = m_supportPath[3 * (n + 1) + 2] - z;
         const float along = sqrtf(dx * dx + dz * dz);
         if (along < 1e-4f)
@@ -6842,7 +6861,10 @@ void LandWorld::buildSupportMesh()
         const float c = dz / along, s = dx / along; // across is (c, -s) in the world
         const TrestleFrame f = {x, z, s, -c, 0.95f};
         const float across = roll(2) < 0.5f ? 1.9f : -1.9f;
-        addTrestleVines(batches, f, 0.0f, under, across, drop, 0.5f + 0.4f * roll(3));
+        const float most = vineRoom(f, 0.0f, across, under);
+        if (most >= 0.4f)
+            addTrestleVines(batches, f, 0.0f, under, across, fminf(drop, most),
+                            0.35f + 0.6f * roll(3));
     }
     m_supports->arena.release();
     m_supports->mesh = m_supports->arena.compile(batches, m_textures);

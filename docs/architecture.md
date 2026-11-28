@@ -150,7 +150,7 @@ flowchart LR
 | `src/TrackHistory.h/.cpp` | 控制點的上一步／下一步：每次修改前存一份整條軌道（點、`trainU`、選取）的快照；由 `TrackHistoryCheck` 測試。 |
 | `src/EditKeys.h/.cpp` | 把按鍵轉成編輯指令（鍵位來自 `KeyBinds`）；Fly 相機下新增、刪除用 Fly 自己的鍵，預設避開飛行鍵。 |
 | `src/KeyBinds.h/.cpp` | 每個鍵盤指令的名稱、分組與兩個按鍵（含 Ctrl／Shift／Alt），比對按鍵、判斷同一相機下的衝突、讀寫 `data/keybinds.txt`，並把飛行鍵交給 `FlyCam::setKeys()`。`TrainWindow` 持有一份，`GameMenu` 的 `Controls` 畫面修改它。見 [ADR 0014](adr/0014-key-binds.md)。 |
-| `src/LandWorld.h/.cpp` | 方塊島嶼：地形與生態、建築、水、沿 `Grand Tour` 挖出淨空、光照烘焙、會動的景物、木棧橋；在背景執行緒建造。木棧橋（柱、托梁、橫樑與斜撐、燈籠、藤蔓與積雪，木頭依生態區；柱子直接插進地面或海床；間距、斜撐樣式、燈籠與藤蔓依棧橋所在位置的雜湊隨機變化）在軌道改變時由 `planSupports()` 規劃、`buildSupportMesh()` 一次建成自己的小 `BlockMesh::Arena`，每個 pass 畫同一份。方塊雲由 `drawClouds()` 另外畫（沒有自發光），`TrainView::drawGround()` 在它前後開關 `AdvancedLighting::setUnlit()`。 |
+| `src/LandWorld.h/.cpp` | 方塊島嶼：地形與生態、建築、水、沿 `Grand Tour` 挖出淨空、光照烘焙、會動的景物、木棧橋；在背景執行緒建造。木棧橋（柱、托梁、橫樑與斜撐、燈籠、藤蔓與積雪，木頭依生態區；柱子直接插進地面或海床；斜撐固定為橫樑間左右交替的單根斜撐；間距、燈籠與藤蔓依棧橋所在位置的雜湊隨機變化）在軌道改變時由 `planSupports()` 規劃、`buildSupportMesh()` 一次建成自己的小 `BlockMesh::Arena`，每個 pass 畫同一份。方塊雲由 `drawClouds()` 另外畫（沒有自發光），`TrainView::drawGround()` 在它前後開關 `AdvancedLighting::setUnlit()`。 |
 | `src/WorldSave.h` | 島與海床網格的存檔（`data/saves/*.world`，run-length 編碼），key 是生成程式的建置時間與網格尺寸。 |
 | `src/CellQueue.h` | 光照 flood fill 用的單一 vector 佇列（取代 MSVC Debug 下很慢的 `std::deque`）。 |
 | `src/LandTextures.h/.cpp` | 島嶼方塊與植物的程序貼圖。 |
