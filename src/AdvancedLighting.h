@@ -223,6 +223,9 @@ class AdvancedLighting
     int m_locSkyAmbient;
     int m_locGroundAmbient;
     int m_locFogColor;
+    int m_locSunDir;
+    int m_locSunColor;
+    int m_locDusk;
     int m_locFogDensity;
     int m_locHeadlightOn;
     int m_locHeadPos;

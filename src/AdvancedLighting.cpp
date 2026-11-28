@@ -18,6 +18,7 @@
 #include "AdvancedLighting.h"
 #include "MatrixMath.h"
 #include "LandWaterMotion.h"
+#include "SkyHorizon.h"
 #include "UnderwaterOptics.h"
 
 namespace
@@ -102,6 +103,9 @@ uniform vec3 uLightColor;
 uniform vec3 uSkyAmbient;
 uniform vec3 uGroundAmbient;
 uniform vec3 uFogColor;        // linear
+uniform vec3 uSunDir;          // for the colour the fog takes (SkyHorizon.h)
+uniform vec3 uSunColor;        // zero while the sun is down
+uniform float uDusk;
 uniform float uFogDensity;
 
 uniform int uHeadlightOn;
@@ -303,12 +307,15 @@ void main()
     }
 
     float dist = length(cameraPos - vWorldPos) * uFogDensity;
+    // into the sky at the horizon behind it: golden towards the setting
+    // sun, rose to violet away from it
+    vec3 fogColor = horizonSky(vWorldPos - cameraPos, uFogColor, uSunDir, uSunColor, uDusk);
     if (uHdr != 0) {
         // Tone mapping happens in the final post pass. The alpha of solid
         // surfaces carries how open they are to the rain, for the wet ground
         // pass; see-through ones keep their own, which blends them. Plants
         // that sway (grass, flowers) get no film: their blades are no wall.
-        color = mix(uFogColor, color, exp(-dist * dist));
+        color = mix(fogColor, color, exp(-dist * dist));
         float rainMask = vExtra.y > 0.0 ? 0.002 : max(exposure, 0.002);
         gl_FragColor = vec4(color, uTranslucent != 0 ? base.a : rainMask);
         return;
@@ -316,7 +323,7 @@ void main()
 
     // Soft shoulder so bright highlights do not clip to flat white.
     color = color / (1.0 + color * 0.25) * 1.25;
-    color = mix(uFogColor, color, exp(-dist * dist));
+    color = mix(fogColor, color, exp(-dist * dist));
 
     gl_FragColor = vec4(pow(clamp(color, 0.0, 1.0), vec3(1.0 / 2.2)), base.a);
 }
@@ -536,10 +543,10 @@ bool AdvancedLighting::init()
     }
 
     const char *vertexParts[3] = {"#version 120\n", kLandWaterMotionGlsl, kVertexShader};
-    const char *fragmentParts[4] = {"#version 120\n", kOceanWavesGlsl, kUnderwaterOpticsGlsl,
-                                    kFragmentShader};
+    const char *fragmentParts[5] = {"#version 120\n", kOceanWavesGlsl, kUnderwaterOpticsGlsl,
+                                    kSkyHorizonGlsl, kFragmentShader};
     GLuint vs = compileShader(GL_VERTEX_SHADER, vertexParts, 3);
-    GLuint fs = compileShader(GL_FRAGMENT_SHADER, fragmentParts, 4);
+    GLuint fs = compileShader(GL_FRAGMENT_SHADER, fragmentParts, 5);
     if (!vs || !fs)
     {
         if (vs)
@@ -585,6 +592,9 @@ bool AdvancedLighting::init()
     m_locSkyAmbient = glGetUniformLocation(m_program, "uSkyAmbient");
     m_locGroundAmbient = glGetUniformLocation(m_program, "uGroundAmbient");
     m_locFogColor = glGetUniformLocation(m_program, "uFogColor");
+    m_locSunDir = glGetUniformLocation(m_program, "uSunDir");
+    m_locSunColor = glGetUniformLocation(m_program, "uSunColor");
+    m_locDusk = glGetUniformLocation(m_program, "uDusk");
     m_locFogDensity = glGetUniformLocation(m_program, "uFogDensity");
     m_locHeadlightOn = glGetUniformLocation(m_program, "uHeadlightOn");
     m_locHeadPos = glGetUniformLocation(m_program, "uHeadPos");
@@ -938,6 +948,15 @@ void AdvancedLighting::begin(const LightingFrame &frame)
     glUniform3fv(m_locSkyAmbient, 1, m_skyAmbient);
     glUniform3fv(m_locGroundAmbient, 1, m_groundAmbient);
     glUniform3fv(m_locFogColor, 1, m_fogColor);
+    {
+        float sunColor[3] = {0.0f, 0.0f, 0.0f};
+        if (m_sky.sunDir[1] > 0.0f)
+            for (int i = 0; i < 3; ++i)
+                sunColor[i] = m_sky.lightColor[i];
+        glUniform3fv(m_locSunDir, 1, m_sky.sunDir);
+        glUniform3fv(m_locSunColor, 1, sunColor);
+        glUniform1f(m_locDusk, m_sky.dusk);
+    }
     // Under water the fog is drawn by the post pass instead.
     glUniform1f(m_locFogDensity, (frame.orthographic || frame.cameraUnderwater)
                                      ? 0.0f

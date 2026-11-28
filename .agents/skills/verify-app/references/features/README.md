@@ -9,7 +9,7 @@
 | `TransformGizmo.*`、`EditKeys.*`、`TrackInsert.*`、`TrackHistory.*`、`ControlPoint.*`、`TrainView.cpp` 的編輯 | [editing.md](editing.md) |
 | `Track.*`、`Folders.*`、`GameMenu.cpp` 的 Load Track／Save Track、`CallBacks.cpp` 的 `loadTrack`／`saveTrack` | [track-files.md](track-files.md) |
 | `TrainModel.*`、`TrackRenderer.*`、`TrackSampling.*` | [train-and-rails.md](train-and-rails.md) |
-| `AdvancedLighting.*`、`PostEffects.*`、`TrainViewEffects.cpp`、`UnderwaterOptics.h`、`MatrixMath.h` | [lighting-and-weather.md](lighting-and-weather.md) |
+| `AdvancedLighting.*`、`PostEffects.*`、`TrainViewEffects.cpp`、`UnderwaterOptics.h`、`SkyHorizon.h`、`MatrixMath.h` | [lighting-and-weather.md](lighting-and-weather.md) |
 | `LandWorld.*`、`BlockMesh.*`、`LandTextures.*`、`PixelArt.*`、`WaterFlow.*`、`LandWaterMotion.h`、`Mobs.*`、`WorldShape.*`、`Frustum.*`、`CellQueue.h` | [island.md](island.md) |
 | `WorldSave.h`、`worldReady()`／載入畫面、`Ui/*`（自繪介面元件：載入畫面、Esc 選單、快捷欄） | [startup-and-panel.md](startup-and-panel.md) |
 | `OceanWorld.*` | [underwater.md](underwater.md) |
