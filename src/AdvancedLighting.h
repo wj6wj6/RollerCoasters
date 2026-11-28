@@ -123,6 +123,18 @@ class AdvancedLighting
     {
         return m_shadowMapValid;
     }
+    unsigned int farShadowTexture() const
+    {
+        return m_farTexture;
+    }
+    const float *farMatrix() const
+    {
+        return m_farMatrix;
+    }
+    bool farShadowValid() const
+    {
+        return m_farValid;
+    }
 
     // The train headlight as set up by the last begin(): is it on, where
     // it is and which way it points.

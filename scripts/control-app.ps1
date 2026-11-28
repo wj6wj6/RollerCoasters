@@ -43,6 +43,7 @@ $Scenarios = @(
     @{ Name = 'cameras-chase-crystal-tunnel'; Args = @('--camera', 'chase', '--u', '18'); Expect = 0; Shot = $true }
     @{ Name = 'cameras-chase-mine-tunnel'; Args = @('--camera', 'chase', '--u', '38'); Expect = 0; Shot = $true }
     @{ Name = 'cameras-chase-bridge'; Args = @('--camera', 'chase', '--u', '48'); Expect = 0; Shot = $true }
+    @{ Name = 'cameras-chase-dive'; Args = @('--camera', 'chase', '--u', '3.3'); Expect = 0; Shot = $true }
     @{ Name = 'cameras-top'; Args = @('--camera', 'top'); Expect = 0; Shot = $true }
     @{ Name = 'cameras-fly'; Args = @('--camera', 'fly'); Expect = 0; Shot = $true }
     @{ Name = 'light-off'; Args = @('--light', 'off', '--camera', 'world'); Expect = 0; Shot = $true }

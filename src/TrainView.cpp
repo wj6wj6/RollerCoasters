@@ -1826,9 +1826,10 @@ void TrainView::setProjection()
             // the last rider low in the picture (ChaseRig works out where
             // from the train's length and the riders' height). It stays over
             // the track behind the last cart, so it keeps to the room carved
-            // for the ride; where a tunnel's roof or an overhang leaves less
-            // room it comes lower and nearer, and it moves there smoothly,
-            // dropping at once rather than going through the rock.
+            // for the ride. ChaseRig::Follower looks along the track it is
+            // about to pass over and comes down and nearer before a tunnel's
+            // roof or an overhang, so nothing pushes it down at once; it
+            // moves without jumps.
             if (tw->settings.camera == CameraView::Chase)
             {
                 const ChaseRig::Train train = {TrainModel::length(), TrainModel::riderTop()};
@@ -1841,59 +1842,33 @@ void TrainView::setProjection()
                 makeTrackFrame(lastForward, lastSide, lastUp);
                 const Pnt3f lastHead =
                     m_pTrack->evaluatePosition(uLast, splineType) + lastUp * train.riderTop;
-                const float minBehind = 0.6f * train.riderTop;
-                // the camera's place over the track `behind` back, and the room there
-                auto place = [&](float behind, Pnt3f &base, Pnt3f &baseUp) {
-                    const float u =
-                        TrainModel::parameterBehind(*m_pTrack, uLast, behind, splineType);
-                    Pnt3f f = m_pTrack->evaluateTangent(u, splineType);
-                    Pnt3f s;
-                    makeTrackFrame(f, s, baseUp);
-                    base = m_pTrack->evaluatePosition(u, splineType);
-                };
-                ChaseRig::Placement want = open;
-                for (int pass = 0; pass < 4; ++pass)
-                {
-                    Pnt3f base, baseUp;
-                    place(want.behind, base, baseUp);
-                    const float room = chaseRoom(base, baseUp, open.height);
-                    want = ChaseRig::fit(open, std::min(room, open.height), minBehind, train, fovY);
-                    // and a clear line from there to the last rider, or nearer
-                    place(want.behind, base, baseUp);
-                    const Pnt3f from = base + baseUp * want.height;
-                    bool clear = true;
-                    for (int k = 1; k < 12 && clear; ++k)
-                    {
-                        const float t = static_cast<float>(k) / 12.0f;
-                        clear = !chaseBlocked(from * (1.0f - t) + lastHead * t);
-                    }
-                    if (clear)
-                        break;
-                    want.behind = std::max(minBehind, want.behind * 0.6f);
-                    want.height = std::min(want.height, open.height);
-                }
-                // follow smoothly: on along the track and up gently, down at once
                 const float now = animationTime();
                 const float dt = now - m_chaseTime;
                 m_chaseTime = now;
-                if (!m_chaseValid || dt < 0.0f || dt > 1.0f)
+                // How fast the train goes: the faster, the further ahead the
+                // camera looks for a roof (ChaseRig::Follower). Smoothed over
+                // about a quarter of a second, as frames come unevenly.
+                if (m_chaseFrontKnown && dt > 0.0f && dt < 1.0f)
                 {
-                    m_chaseBehind = want.behind;
-                    m_chaseHeight = want.height;
-                    m_chaseValid = true;
+                    const Pnt3f moved = position + m_chaseFront * -1.0f;
+                    // (a jump, as when the track is edited, counts as fast,
+                    // not as a thousand units a second)
+                    const float measured = std::min(
+                        400.0f,
+                        sqrtf(moved.x * moved.x + moved.y * moved.y + moved.z * moved.z) / dt);
+                    m_chaseSpeed += (measured - m_chaseSpeed) * std::min(1.0f, dt / 0.25f);
                 }
-                else
-                {
-                    m_chaseBehind = ChaseRig::approach(m_chaseBehind, want.behind, dt, 3.0f);
-                    m_chaseHeight = ChaseRig::approach(m_chaseHeight, want.height, dt,
-                                                       want.height < m_chaseHeight ? 12.0f : 2.5f);
-                }
-                Pnt3f base, baseUp;
-                place(m_chaseBehind, base, baseUp);
-                // never higher than the room where the camera is now
-                const float height =
-                    std::min(m_chaseHeight, chaseRoom(base, baseUp, m_chaseHeight));
-                eye = base + baseUp * height;
+                m_chaseFront = position;
+                m_chaseFrontKnown = true;
+                sampleTrack(*m_pTrack, splineType, m_pTrack->trainU,
+                            ChaseRig::Follower::aheadFor(m_chaseSpeed),
+                            train.length + open.behind + 1.0f,
+                            ChaseRig::Follower::spacingFor(m_chaseSpeed), m_chaseTrack);
+                const ChaseRig::Follow follow = m_chase.update(
+                    m_chaseTrack,
+                    [this](const ChaseRig::Point &p) { return chaseBlocked(Pnt3f(p.x, p.y, p.z)); },
+                    train, fovY, dt, {lastHead.x, lastHead.y, lastHead.z}, m_chaseSpeed);
+                eye = Pnt3f(follow.eye.x, follow.eye.y, follow.eye.z);
                 Pnt3f ahead = forward;
                 ahead.normalize();
                 Pnt3f look =
@@ -1941,7 +1916,9 @@ void TrainView::setProjection()
                 gluLookAt(eye.x, eye.y, eye.z, look.x, look.y, look.z, 0.0, 1.0, 0.0);
                 return;
             }
-            m_chaseValid = false;
+            m_chase.reset();
+            m_chaseFrontKnown = false;
+            m_chaseSpeed = 0.0f;
             // The rider may turn their head; the view still moves with the train.
             Pnt3f viewForward, viewUp;
             headLook.apply(forward, side, up, viewForward, viewUp);
@@ -1972,16 +1949,55 @@ bool TrainView::chaseBlocked(const Pnt3f &p) const
 
 //************************************************************************
 //
-// * How high above base, along up, the Chase camera can go before it is
-//   within a block and a half of a block (at most upTo)
+// * Points of the track every `step` units along it, from `ahead` ahead of
+//   the train's front (at u) to `back` behind it, nearest the front first,
+//   for the Chase camera (ChaseRig::TrackSample)
 //========================================================================
-float TrainView::chaseRoom(const Pnt3f &base, const Pnt3f &up, float upTo) const
+void TrainView::sampleTrack(const CTrack &track, TrackSplineType splineType, float u, float ahead,
+                            float back, float step, std::vector<ChaseRig::TrackSample> &out)
 {
-    const float margin = 1.5f;
-    for (float h = 1.0f; h <= upTo + margin; h += 0.5f)
-        if (chaseBlocked(base + up * h))
-            return std::max(1.0f, h - margin);
-    return upTo;
+    out.clear();
+    const float period = static_cast<float>(track.points.size());
+    auto wrap = [period](float v) {
+        v = fmodf(v, period);
+        return v < 0.0f ? v + period : v;
+    };
+    auto sample = [&](float at, float distanceBack) {
+        Pnt3f forward = track.evaluateTangent(at, splineType), side, up;
+        makeTrackFrame(forward, side, up);
+        const Pnt3f p = track.evaluatePosition(at, splineType);
+        out.push_back({distanceBack, {p.x, p.y, p.z}, {up.x, up.y, up.z}});
+    };
+    // the parameter every `step` units from u, one way along the track
+    auto walk = [&](float direction, float reach, std::vector<float> &marks) {
+        // (coarser steps when the samples are further apart: a fast train)
+        const float du = 0.002f * std::max(1.0f, step / 0.25f);
+        float here = u, travelled = 0.0f, next = step;
+        Pnt3f at = track.evaluatePosition(here, splineType);
+        for (int i = 0; i < 200000 && next <= reach; ++i)
+        {
+            const float there = wrap(here + direction * du);
+            const Pnt3f p = track.evaluatePosition(there, splineType);
+            const float dx = p.x - at.x, dy = p.y - at.y, dz = p.z - at.z;
+            const float length = sqrtf(dx * dx + dy * dy + dz * dz);
+            while (length > 1e-6f && travelled + length >= next && next <= reach)
+            {
+                marks.push_back(wrap(here + direction * du * ((next - travelled) / length)));
+                next += step;
+            }
+            travelled += length;
+            here = there;
+            at = p;
+        }
+    };
+    std::vector<float> forward, backward;
+    walk(1.0f, ahead, forward);
+    walk(-1.0f, back, backward);
+    for (size_t i = forward.size(); i-- > 0;)
+        sample(forward[i], -step * static_cast<float>(i + 1));
+    sample(u, 0.0f);
+    for (size_t i = 0; i < backward.size(); ++i)
+        sample(backward[i], step * static_cast<float>(i + 1));
 }
 
 //************************************************************************

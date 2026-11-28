@@ -79,6 +79,7 @@ flowchart LR
     Effects --> Frame[renderAdvancedFrame]
     Frame --> Lighting[AdvancedLighting / 兩層 shadow map、逐像素光照、頭燈]
     Frame --> Post[PostEffects / 天空、水面、雨、SSAO、Bloom、色調映射]
+    Post -->|海岸線 SDF 貼圖| Shape
     Frame -->|drawGround / drawUnderwater / drawObjects / drawSurfaceWater| View
     Window -->|drawNow：beginFrame、Swap、endFrame| Perf[PerfStats / 每幀各階段與各景物的 CPU、GPU 毫秒]
     Frame -->|PerfScope：Shadow maps、Reflection、Scene、Post effects| Perf
@@ -135,8 +136,8 @@ flowchart LR
 | `src/TrainView.H/.cpp` | OpenGL 畫面：相機投影、場景繪製、控制點選取與編輯、滑鼠鎖定、觸控板與滾輪訊息；狀態文字交給 `GameMenu` 畫在快捷欄上方。 |
 | `src/TrainViewEffects.cpp` | 把 `SceneSettings` 的光影設定轉成 `LightingFrame`，並呼叫 `renderAdvancedFrame()`。 |
 | `src/AdvancedLighting.h/.cpp` | 跟著鏡頭的兩層 shadow map（鏡頭附近 150 單位的細圖、外圍 600 單位的粗圖，交界處混合）、GLSL 逐像素光照、日夜與頭燈。`setUnlit(true)` 讓不該依法線明暗的東西（方塊雲）一律用天空光加太陽或月亮的光色照亮，跟著時間與下雨變化。 |
-| `src/PostEffects.h/.cpp` | 浮點 frame buffer 與後製：天空、水面與 SSR、雨與濕地反射、SSAO、Bloom、god rays、ACES。 |
-| `src/UnderwaterOptics.h` | 水下吸收、caustics 與水色常數，三個 shader 共用。 |
+| `src/PostEffects.h/.cpp` | 浮點 frame buffer 與後製：天空、水面（含 `WorldShape::inland()` 海岸線 SDF 碎浪、泡沫網與高俯視角高光）與 SSR、雨與濕地反射、SSAO、Bloom、god rays、ACES。水下光柱每幀先把 `waterShaftField()` 在八個深度畫成兩張圖（攝影機附近 400x400），光柱每一步只讀圖。 |
+| `src/UnderwaterOptics.h` | 海面 Gerstner 波、水下折射、Jacobian 焦散、光束場與水色常數，由海面、光照、光束與水下霧四個 shader 共用。 |
 | `src/LandWaterMotion.h` | 島上的水怎麼動（水面輕微起伏、落水處攪動、瀑布朝空氣的面輕微擺動），光照 shader 與水面 shader 共用，依 `LandWorld` 寫在頂點上的標記。 |
 | `src/MatrixMath.h` | 光影程式用的 column-major 4×4 矩陣輔助函式。 |
 | `src/Track.H/.cpp` | 控制點容器、三種樣條的位置與切線、`trainU`、軌道文字檔讀寫。 |
@@ -144,7 +145,7 @@ flowchart LR
 | `src/TrackRenderer.H/.cpp` | 鐵軌與枕木繪製、累積弧長表、`makeTrackFrame()`。`TrackMesh` 把枕木、鐵墊板與道釘、鐵軌（軌頭、軌腰、軌底的斷面沿曲線掃出）算成世界座標的頂點，只在控制點位置或樣條改變時重算；`TrackRenderer` 放進一個 vertex buffer，每個 pass（shadow map、倒影、主場景）都畫同一份。見 [ADR 0016](adr/0016-track-vertex-buffer.md)。鐵軌的取樣點來自 `TrackSampling`，開關改變時也重算；`drawSamples()` 畫出取樣點（`Track` > `Samples`）。 |
 | `src/TrackSampling.h/.cpp` | 鐵軌取樣點（純計算）：固定每段等分，或自適應細分（段內離弦超過 0.02 單位或轉角超過 2 度就對半切，控制點必為取樣點、Linear 轉角兩側補點）；由 `TrackSubdivisionCheck` 測試。見 [ADR 0020](adr/0020-adaptive-track-subdivision.md)。 |
 | `src/TrainModel.h/.cpp` | 列車模型；`Chase` 相機用的列車長度、乘客高度與沿軌道往回取點。 |
-| `src/ChaseRig.h/.cpp` | `Chase` 相機的取景數學（純計算）：依列車長度、乘客高度與視野算出在車後多遠、多高，空間不夠時降低並拉近，平滑跟隨，以及拖曳時繞列車中段轉動（`orbit()`）；由 `ChaseRigCheck` 測試。`TrainView` 用另一個 `HeadLook`（`chaseLook`）記錄轉動角度，轉到方塊後時把鏡頭拉近到方塊前。`TrainView` 把它放到軌道上，並用 `LandWorld::solidAt()`／`OceanWorld::solidAt()` 避開方塊。 |
+| `src/ChaseRig.h/.cpp` | `Chase` 相機的取景數學（純計算）：依列車長度、乘客高度與視野算出在車後多遠、多高，空間不夠時降低並拉近（`fit()`），以及拖曳時繞列車中段轉動（`orbit()`）。`Follower` 負責每幀跟隨：看相機接下來要經過的軌道（到車頭前方至少 30 單位，車越快看得越遠：`aheadFor()`）每一點上方的空間，越遠的低頂影響越小，所以提早慢慢降低，抵達時已經在頂下；車越快，每單位距離允許的降低越少，不論車速，下降都不超過每秒 6 單位（`kDescentRate`），高速時也不會到隧道口才被壓下；以臨界阻尼彈簧移動，速度不會突變；最近只到乘客身高 1.5 倍。由 `ChaseRigCheck` 測試（含模擬穿過隧道與低懸崖）。`TrainView` 量列車速度（車頭每秒移動距離，平滑約 0.25 秒），每幀沿軌道每 0.25 單位（高速時較疏：`spacingFor()`）取樣（`sampleTrack()`）、以 `LandWorld::solidAt()`／`OceanWorld::solidAt()` 回答哪裡有方塊；`TrainView` 用另一個 `HeadLook`（`chaseLook`）記錄轉動角度，轉到方塊後時把鏡頭拉近到方塊前。 |
 | `src/TransformGizmo.h/.cpp` | 控制點移動把手的挑選、拖曳換算（純數學）與繪製。 |
 | `src/TrackInsert.h/.cpp` | 找出點擊處的軌道參數，在該處插入控制點（軌道仍經過點擊處）、刪除控制點並重新對應 `trainU`；純數學，由 `TrackInsertCheck` 測試。 |
 | `src/TrackHistory.h/.cpp` | 控制點的上一步／下一步：每次修改前存一份整條軌道（點、`trainU`、選取）的快照；由 `TrackHistoryCheck` 測試。 |
@@ -157,7 +158,7 @@ flowchart LR
 | `src/Mobs.h/.cpp` | 島上的羊、豬、牛：照方塊遊戲模型以像素為單位的方塊與其貼圖配置（box UV）、內建皮膚、上傳與繪製；由 `MobsCheck` 測試模型每一面都落在皮膚上。 |
 | `src/OceanWorld.h/.cpp` | 海床、海底景物、海洋生物，以及 `Grand Tour` 的控制點與取樣。 |
 | `src/BlockMesh.h/.cpp` | `LandWorld` 與 `OceanWorld` 的分塊 mesh：頂點壓成 44 bytes（法線與顏色用 byte），每種材質一段，以 `GL_QUADS` 畫，畫完把目前的顏色、法線與材質座標設成最後一個頂點的值（同 display list）。一個世界的所有 mesh 放在同一個 `Arena`（建好後合併成一個 vertex buffer），每個 pass 依材質用 `glMultiDrawArrays` 畫看得到的分塊（NVIDIA 整個世界一起依材質分組，其他顯示卡一個分塊一組，見 `drawWindow()`）。`pack()` 與 `Arena::plan()` 不需 OpenGL，由 `BlockMeshCheck` 測試。見 [ADR 0017](adr/0017-block-meshes-in-vertex-buffers.md)、[ADR 0018](adr/0018-one-buffer-per-world.md)。 |
-| `src/WorldShape.h/.cpp` | 世界尺寸、放大倍率與海岸線（陸地與海底共用）。 |
+| `src/WorldShape.h/.cpp` | 世界尺寸、放大倍率與海岸線（陸地、海底與海面海岸線 SDF 共用）。 |
 | `src/WaterFlow.h/.cpp` | 方塊遊戲式的水流擴散規則。 |
 | `src/Frustum.h/.cpp` | 從目前矩陣取出視錐平面，做分塊剔除。 |
 | `src/PixelArt.h/.cpp` | 程序貼圖的雜湊、繪圖與上傳輔助函式。 |

@@ -35,6 +35,7 @@ class CTrack;
 #include "Utilities/ArcBallCam.H"
 #include "AdvancedLighting.h"
 #include "AppControl.h"
+#include "ChaseRig.h"
 #include "PostEffects.h"
 #include <memory>
 #include <utility>
@@ -305,17 +306,22 @@ class TrainView final : public Viewport
     int headDragX;      // last mouse position of that drag
     int headDragY;
     float m_fieldOfView; // degrees, the World, Train, Chase and Fly cameras
-    // the Chase camera, followed smoothly (setProjection()): how far behind
-    // the last cart along the track and how high above it, and when
-    bool m_chaseValid = false;
-    float m_chaseBehind = 0.0f;
-    float m_chaseHeight = 0.0f;
+    // the Chase camera, followed smoothly (setProjection()), the track it
+    // looks along (further ahead and sparser the faster the train goes), and
+    // when it last moved
+    ChaseRig::Follower m_chase;
+    std::vector<ChaseRig::TrackSample> m_chaseTrack;
     float m_chaseTime = 0.0f;
+    // how fast the train went (units a second, smoothed) and where its front
+    // was, for how far ahead the Chase camera looks
+    float m_chaseSpeed = 0.0f;
+    Pnt3f m_chaseFront;
+    bool m_chaseFrontKnown = false;
     bool chaseBlocked(const Pnt3f &p) const; // a block of the island or the sea floor there?
-    float chaseRoom(const Pnt3f &base, const Pnt3f &up,
-                    float upTo) const; // clear height above base
-    bool mouseCaptured;                // does the mouse steer the observer camera?
-    int selectedCube;                  // simple - just remember which cube is selected
+    static void sampleTrack(const CTrack &track, TrackSplineType splineType, float u, float ahead,
+                            float back, float step, std::vector<ChaseRig::TrackSample> &out);
+    bool mouseCaptured; // does the mouse steer the observer camera?
+    int selectedCube;   // simple - just remember which cube is selected
 
     TrainWindow *tw;               // The parent of this display window
     CTrack *m_pTrack;              // The track of the entire scene

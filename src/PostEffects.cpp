@@ -19,6 +19,7 @@
 #include "PerfStats.h"
 #include "LandWaterMotion.h"
 #include "UnderwaterOptics.h"
+#include "WorldShape.h"
 
 namespace
 {
@@ -163,46 +164,52 @@ void main()
 }
 )GLSL";
 
-// Shared by the water's vertex and fragment shaders: the large waves.
-// Gerstner waves move each point of the surface round a circle instead of
-// just up and down, which sharpens the crests and flattens the troughs.
-// A real sea is many waves of unrelated lengths from a spread of
-// directions, so it never repeats; a few waves of round lengths add up to
-// a grid of crests. So there are eight, their lengths in no simple ratio,
-// their directions spread round the wind's (roughly from the west-south-
-// west) and each with its own phase.
-const char *kWaveGlsl = R"GLSL(
-void gerstner(vec2 dir, float len, float amp, float phase, vec2 p, float t, float shortest,
-              inout vec3 disp, inout vec3 slope)
-{
-    if (len < shortest)
-        return;
-    float k = 6.2831853 / len;
-    float w = sqrt(9.8 * k) * 0.6;
-    float ph = k * dot(dir, p) - w * t + phase;
-    float q = 0.07 / (k * amp);   // steepness: the eight waves share 0.56
-    disp.xz += dir * (q * amp * cos(ph));
-    disp.y += amp * sin(ph);
-    slope.xz += dir * (k * amp * cos(ph));
-    slope.y += q * k * amp * sin(ph);
-}
+// The ocean's eight Gerstner waves live in UnderwaterOptics.h (kOceanWavesGlsl)
+// so the water surface and underwater caustics/light shafts stay in lockstep.
 
-// Displacement and normal of the surface at rest position p, from the
-// waves at least `shortest` long (the grid's vertices are too far apart to
-// follow the shortest ones, which only shade it).
-void oceanWaves(vec2 p, float t, float shortest, out vec3 disp, out vec3 normal)
+// Coastal shoaling wave model shared by kWaterVertex and kWaterFragment so the
+// lifted 3D wave ridge, its tilted sunlit normal, breaking foam lip and shore
+// impact swash stay in exact lockstep all the way into bays and shore blocks.
+const char *kCoastWaveGlsl = R"GLSL(
+uniform sampler2D uCoastSdf; // continuous offshore distance (WorldShape::inland)
+
+void coastWave(vec2 p, float sd, float t, out float h, out float dh, out float crest,
+               out float wake, out float envOut)
 {
-    disp = vec3(0.0);
-    vec3 s = vec3(0.0);
-    gerstner(normalize(vec2(0.944, 0.330)), 46.3, 0.30, 0.0, p, t, shortest, disp, s);
-    gerstner(normalize(vec2(0.731, -0.682)), 31.7, 0.17, 2.1, p, t, shortest, disp, s);
-    gerstner(normalize(vec2(0.281, 0.960)), 23.9, 0.12, 4.4, p, t, shortest, disp, s);
-    gerstner(normalize(vec2(0.990, -0.141)), 17.3, 0.08, 1.3, p, t, shortest, disp, s);
-    gerstner(normalize(vec2(0.616, 0.788)), 12.9, 0.06, 5.6, p, t, shortest, disp, s);
-    gerstner(normalize(vec2(0.857, -0.515)), 9.7, 0.04, 3.2, p, t, shortest, disp, s);
-    gerstner(normalize(vec2(-0.208, 0.978)), 7.1, 0.03, 0.7, p, t, shortest, disp, s);
-    gerstner(normalize(vec2(0.951, 0.309)), 5.3, 0.02, 4.9, p, t, shortest, disp, s);
-    normal = normalize(vec3(-s.x, 1.0 - s.y, -s.z));
+    // Stays active all the way into recessed voxel coves (sd down to -3.5) so
+    // incoming rollers never fade out before hitting the rocks or sand beach.
+    float env = smoothstep(-9.0, -3.5, sd) * (1.0 - smoothstep(14.0, 36.0, sd));
+    if (env <= 0.001) {
+        h = 0.0;
+        dh = 0.0;
+        crest = 0.0;
+        wake = 0.0;
+        envOut = 0.0;
+        return;
+    }
+    // Nonlinear shoaling: waves slow and compress gently as depth drops near shore.
+    float shoal = exp(-max(sd + 5.0, 0.0) * 0.09);
+    float sEff = sd - 3.2 * shoal;
+    float dsEff = 1.0 + 0.288 * shoal;
+    float warp = (noise(p * 0.042 + vec2(t * 0.032, -t * 0.024)) - 0.5) * 4.2 +
+                 (noise(p * 0.115 + vec2(-t * 0.048, t * 0.036)) - 0.5) * 1.3;
+    float waveSet =
+        0.45 + 0.55 * smoothstep(0.18, 0.78, noise(p * 0.022 + vec2(-t * 0.045, t * 0.035)));
+    // Periodic skewed Stokes/shoaling wave rolling shoreward (sd decreasing):
+    // steep front face facing shore (dh > 0), sharp crest, gentle seaward back.
+    float theta = (sEff + warp) * 0.40 + t * 1.18;
+    float rawH = 0.62 * sin(theta) + 0.28 * sin(2.0 * theta - 0.65) +
+                 0.12 * sin(3.0 * theta - 1.30);
+    float rawDh = (0.62 * cos(theta) + 0.56 * cos(2.0 * theta - 0.65) +
+                   0.36 * cos(3.0 * theta - 1.30)) *
+                  0.40 * dsEff;
+    float amp = env * waveSet;
+    h = rawH * amp;
+    dh = rawDh * amp;
+    float wPh = fract((theta - 1.05) / 6.2831853);
+    crest = smoothstep(0.32, 0.92, rawH) * amp;
+    wake = smoothstep(0.0, 0.09, wPh) * pow(1.0 - smoothstep(0.09, 0.74, wPh), 1.65) * amp;
+    envOut = amp;
 }
 )GLSL";
 
@@ -243,6 +250,22 @@ void main()
     vec3 disp;
     vec3 normal;
     oceanWaves(base.xz, uTime, 12.0, disp, normal); // four grid cells or longer
+    vec2 sdfUv = base.xz / 1280.0 + 0.5;
+    float sd = texture2DLod(uCoastSdf, sdfUv, 0.0).r;
+    if (sd > -9.0 && sd < 36.0) {
+        float cH, cDh, cCrest, cWake, cEnv;
+        coastWave(base.xz, sd, uTime, cH, cDh, cCrest, cWake, cEnv);
+        float du = 1.0 / 256.0;
+        vec2 g = vec2(texture2DLod(uCoastSdf, sdfUv + vec2(du, 0.0), 0.0).r -
+                          texture2DLod(uCoastSdf, sdfUv - vec2(du, 0.0), 0.0).r,
+                      texture2DLod(uCoastSdf, sdfUv + vec2(0.0, du), 0.0).r -
+                          texture2DLod(uCoastSdf, sdfUv - vec2(0.0, du), 0.0).r);
+        float gl = length(g);
+        vec2 seaDir = gl > 1e-4 ? g / gl : vec2(1.0, 0.0);
+        // Lift the rolling coastal crest and pitch its lip gently shoreward.
+        disp.y += cH * 0.56;
+        disp.xz -= seaDir * (cCrest * 0.45);
+    }
     vec3 world = base + disp * fade;
     vBase = base.xz;
     vWave = fade;
@@ -321,7 +344,9 @@ vec4 traceReflection(vec3 P, vec3 R, vec3 planeN)
 }
 )GLSL";
 
-const char *kWaterFragment = R"GLSL(
+// Split into parts passed to glShaderSource() so every raw string literal stays
+// well below MSVC's 16,380-byte literal limit (C2026).
+const char *kWaterHelpers = R"GLSL(
 varying vec3 vWorld;
 varying vec2 vBase;
 varying float vWave;
@@ -354,14 +379,69 @@ vec2 noiseSlope(vec2 p)
     return vec2(noise(p + vec2(e, 0.0)) - h, noise(p + vec2(0.0, e)) - h) / e;
 }
 
-// Fine ripples: the slopes of three layers of noise sliding over each other
-// in different directions.
+// Fine ripples: three rotated, domain-warped layers of turbulent chop so the
+// surface shows no axis-aligned noise grid regularity.
 vec2 rippleSlope(vec2 p, float t)
 {
-    vec2 g = noiseSlope(p * 0.55 + vec2(t * 0.35, t * 0.22)) * 0.060;
-    g += noiseSlope(p * 1.30 + vec2(-t * 0.45, t * 0.30)) * 0.035;
-    g += noiseSlope(p * 2.90 + vec2(t * 0.25, -t * 0.55)) * 0.018;
+    vec2 q1 = mat2(0.93, 0.37, -0.37, 0.93) * (p * 0.52) + vec2(t * 0.33, t * 0.21);
+    vec2 g1 = noiseSlope(q1);
+    vec2 q2 = mat2(0.57, -0.82, 0.82, 0.57) * (p * 1.18) + vec2(-t * 0.42, t * 0.29) + g1 * 0.35;
+    vec2 g2 = noiseSlope(q2);
+    vec2 q3 = mat2(-0.41, 0.91, -0.91, -0.41) * (p * 2.55) + vec2(t * 0.27, -t * 0.51) - g2 * 0.28;
+    vec2 g3 = noiseSlope(q3);
+    vec2 s1 = mat2(0.93, -0.37, 0.37, 0.93) * g1 * 0.062;
+    vec2 s2 = mat2(0.57, 0.82, -0.82, 0.57) * g2 * 0.038;
+    vec2 s3 = mat2(-0.41, -0.91, 0.91, -0.41) * g3 * 0.020;
+    return s1 + s2 + s3;
+}
+
+// High-frequency sharp-crested capillary & short-gravity wave cascade for the
+// open ocean. Height falls off quickly with frequency, but wave slope stays
+// strong well into the capillary band (Phillips/JONSWAP), shattering specular
+// reflections into crisp multi-scale facets with distance LOD to prevent far shimmer.
+vec2 oceanDetailSlope(vec2 p, float t, float dist)
+{
+    vec2 q = p;
+    vec2 g = vec2(0.0);
+    float freq = 0.72;
+    float amp = 0.165;
+    float angle = 0.35;
+    for (int i = 0; i < 12; ++i) {
+        float lod = 1.0 - smoothstep(35.0, 180.0, dist * freq * 0.14);
+        if (lod <= 0.001)
+            break;
+        vec2 dir = vec2(cos(angle), sin(angle));
+        float speed = sqrt(9.8 * freq) * 0.58 + 0.30 * freq;
+        float x = dot(dir, q) * freq - t * speed + float(i) * 1.73;
+        float e = exp(sin(x) - 1.0);
+        float slope1d = e * cos(x);
+        // Domain drag: each wave pushes higher-frequency wavelets for realistic chop.
+        q -= dir * (slope1d * (0.55 / freq));
+        g += dir * (slope1d * amp * lod);
+        freq *= 1.38;
+        amp *= 0.89;
+        angle += 2.3999632;
+    }
     return g;
+}
+
+// Lacy cellular sea foam with porous open holes and stretched bubble strands
+// so coves and trailing surf wakes never turn into solid flat grey-white slabs.
+float foamLace(vec2 p, float t)
+{
+    vec2 warp = vec2(noise(p * 0.28 + vec2(t * 0.12, -t * 0.09)),
+                     noise(p * 0.28 + vec2(-t * 0.10, t * 0.13) + vec2(7.1, 3.4))) -
+                0.5;
+    vec2 q = p + warp * 1.8;
+    vec2 a1 = mat2(0.86, 0.51, -0.51, 0.86) * (q * 0.72) + vec2(t * 0.16, -t * 0.11);
+    float w1 = 1.0 - abs(noise(a1) * 2.0 - 1.0);
+    w1 *= w1;
+    vec2 a2 = mat2(0.42, -0.91, 0.91, 0.42) * (q * 1.75) + vec2(-t * 0.22, t * 0.18) +
+              vec2(4.3, -2.7);
+    float w2 = 1.0 - abs(noise(a2) * 2.0 - 1.0);
+    w2 *= w2;
+    float holes = noise(q * 3.1 + vec2(-t * 0.25, t * 0.21));
+    return (w1 * 0.58 + w2 * 0.42) * (0.55 + 0.65 * holes);
 }
 
 // Rings spreading from where rain drops land: one drop per cell at a time.
@@ -381,7 +461,9 @@ vec2 rainSlope(vec2 p, float t)
     }
     return g * 0.22;
 }
+)GLSL";
 
+const char *kWaterFragment = R"GLSL(
 void main()
 {
     vec3 P = vWorld;
@@ -389,9 +471,26 @@ void main()
     float dist = length(toCam);
     vec3 V = toCam / dist;
 
-    // Normal: the big waves, then the ripples (and rain rings) on top. The
-    // water on land has only the ripples, a little stronger; on a fall or
-    // the side of a step they run down it.
+    vec2 suv = gl_FragCoord.xy / uScreen;
+    vec3 waterView = viewPos(suv, gl_FragCoord.z);
+    vec3 upView = uView[1].xyz;
+    vec2 sdfUv = vBase / 1280.0 + 0.5;
+    float coastSdf = uIsland == 0 ? texture2D(uCoastSdf, sdfUv).r : 100.0;
+    float cH = 0.0;
+    float cDh = 0.0;
+    float cCrest = 0.0;
+    float cWake = 0.0;
+    float cEnv = 0.0;
+    float shallowMask = 0.0;
+    if (uIsland == 0 && coastSdf > -9.0 && coastSdf < 36.0) {
+        coastWave(vBase, coastSdf, uTime, cH, cDh, cCrest, cWake, cEnv);
+        float cVert = max(0.0, dot(waterView - viewPos(suv, texture2D(uDepth, suv).r), upView));
+        shallowMask = uUnder != 0 ? 1.0 : (1.0 - smoothstep(14.0, 24.0, cVert));
+    }
+
+    // Normal: the big waves, coastal shoaling rollers, then high-frequency
+    // sharp-crested capillary chop (and rain rings) on top. The water on land
+    // keeps smoother ripples; on a fall or the side of a step they run down it.
     vec3 disp = vec3(0.0);
     vec3 N = vec3(0.0, 1.0, 0.0);
     // The water on land's normal is smooth over the bend where it pours
@@ -414,7 +513,20 @@ void main()
         N = normalize(faceN + mix(flatRipple, fallRipple, fall));
     } else {
         oceanWaves(vBase, uTime, 0.0, disp, N);
-        vec2 g = rippleSlope(vBase, uTime);
+        vec2 g = oceanDetailSlope(vBase, uTime, dist);
+        if (cEnv > 0.001 && shallowMask > 0.001) {
+            float du = 1.0 / 256.0;
+            vec2 cg = vec2(texture2D(uCoastSdf, sdfUv + vec2(du, 0.0)).r -
+                               texture2D(uCoastSdf, sdfUv - vec2(du, 0.0)).r,
+                           texture2D(uCoastSdf, sdfUv + vec2(0.0, du)).r -
+                               texture2D(uCoastSdf, sdfUv - vec2(0.0, du)).r);
+            float gl = length(cg);
+            vec2 seaDir = gl > 1e-4 ? cg / gl : vec2(1.0, 0.0);
+            // Steep shoreward-facing front face and gentle seaward back give
+            // each rolling breaker 3D curvature, refraction bending and highlights.
+            g += seaDir * (cDh * 0.78 * shallowMask);
+            disp.y += cH * 0.56 * shallowMask;
+        }
         if (uRain > 0.0)
             g += rainSlope(vBase, uTime) * uRain;
         N = normalize(vec3(N.x - g.x, N.y, N.z - g.y));
@@ -422,30 +534,58 @@ void main()
     // Calm the waves far away so they do not shimmer.
     N = normalize(mix(N, vec3(0.0, 1.0, 0.0), clamp(dist / 500.0, 0.0, 0.85)));
 
-    vec2 suv = gl_FragCoord.xy / uScreen;
     if (uUnder != 0) {
         // Seen from below, light from above comes through Snell's window,
-        // a cone round straight up; outside it the surface mirrors the water
-        // below. The window is drawn wider and softer than the real 48
-        // degrees, with a little of the sky still showing in the mirror,
-        // and the waves bend the view only a little: a narrow window with
-        // the rest of the surface a solid blue looked like a lid.
-        float cosView = abs(dot(V, N));
-        float window = smoothstep(0.22, 0.55, cosView);
-        vec3 above = texture2D(uRefraction, suv + N.xz * 0.025).rgb;
-        // The sun through the waves: each facet that happens to bend the
-        // line of sight towards the sun flashes.
-        vec3 out1 = refract(-V, -N, 1.33);
-        float sunHit = max(dot(out1, normalize(uLightDir)), 0.0);
-        vec3 glitter = uLightColor * (pow(sunHit, 180.0) * 14.0 + pow(sunHit, 14.0) * 0.5);
-        vec3 mirror = uDeepColor * 1.6 + above * 0.2;
+        // a wide undulating cone around straight up; outside it the underside
+        // of the waves acts as a rippling silvery-blue liquid mirror.
+        vec3 nUnder = -N;
+        vec3 L = normalize(uLightDir);
+        float cosView = max(dot(V, nUnder), 0.0);
+        float directSun = max(dot(-V, L), 0.0);
+        // Let the sun shine smoothly through the window even at lower angles.
+        float window = max(smoothstep(0.24, 0.56, cosView), pow(directSun, 14.0) * 0.85);
+        vec2 ruv = clamp(suv + N.xz * 0.026, vec2(0.002), vec2(0.998));
+        if (texture2D(uDepth, ruv).r < gl_FragCoord.z)
+            ruv = suv;
+        vec3 above = texture2D(uRefraction, ruv).rgb;
+        if (directSun > 0.88) {
+            // Soften the crisp square sky sun through the moving water surface
+            // into a luminous liquid glow rather than a jagged warped polygon.
+            vec2 o1 = vec2(0.006, 0.003) + N.xz * 0.006;
+            vec2 o2 = vec2(-0.004, 0.007) - N.xz * 0.005;
+            vec2 u1 = clamp(ruv + o1, vec2(0.002), vec2(0.998));
+            vec2 u2 = clamp(ruv - o1, vec2(0.002), vec2(0.998));
+            vec2 u3 = clamp(ruv + o2, vec2(0.002), vec2(0.998));
+            vec2 u4 = clamp(ruv - o2, vec2(0.002), vec2(0.998));
+            vec3 soft = above * 0.28 +
+                        (texture2D(uDepth, u1).r < gl_FragCoord.z ? above : texture2D(uRefraction, u1).rgb) * 0.18 +
+                        (texture2D(uDepth, u2).r < gl_FragCoord.z ? above : texture2D(uRefraction, u2).rgb) * 0.18 +
+                        (texture2D(uDepth, u3).r < gl_FragCoord.z ? above : texture2D(uRefraction, u3).rgb) * 0.18 +
+                        (texture2D(uDepth, u4).r < gl_FragCoord.z ? above : texture2D(uRefraction, u4).rgb) * 0.18;
+            above = mix(above, soft, smoothstep(0.88, 0.96, directSun));
+        }
+        // Wave-facet sun glitter aligned with the visible sky sun (no second
+        // displaced sun or abrupt critical-angle cut across the sun).
+        vec3 sunRay = normalize(-V + vec3(N.x, 0.0, N.z) * 0.42);
+        float sunHit = max(dot(sunRay, L), 0.0);
+        vec3 glitter =
+            uLightColor * (pow(sunHit, 160.0) * 6.5 + pow(sunHit, 26.0) * 0.85 + pow(directSun, 10.0) * 0.25);
+        // Total internal reflection outside the window: undulating wave facets
+        // catch silvery turquoise light on crests and darken in troughs.
+        vec3 R = reflect(-V, nUnder);
+        vec3 reflWater = mix(uDeepColor * 0.75,
+                             uDeepColor * 2.4 + vec3(0.015, 0.075, 0.115),
+                             smoothstep(-0.45, 0.15, R.y));
+        float waveTilt = max(dot(N, normalize(vec3(L.x, 0.45, L.z))), 0.0);
+        float facet = smoothstep(0.45, 0.92, waveTilt);
+        vec3 silver = (uDeepColor * 2.2 + uLightColor * vec3(0.05, 0.16, 0.22)) * facet;
+        vec3 mirror = reflWater + silver + above * (0.14 + 0.14 * facet);
         vec3 col = mix(mirror, above + glitter, window);
-        float rim = smoothstep(0.16, 0.26, cosView) - smoothstep(0.26, 0.4, cosView);
-        col += (uDeepColor * 2.0 + uLightColor * 0.06) * rim;
+        float rim = smoothstep(0.18, 0.30, cosView) - smoothstep(0.30, 0.46, cosView);
+        col += (uDeepColor * 2.5 + uLightColor * vec3(0.06, 0.16, 0.20)) * rim * (0.65 + 0.7 * facet);
         gl_FragColor = vec4(col, 1.0);
         return;
     }
-    vec3 waterView = viewPos(suv, gl_FragCoord.z);
     // (on the water on land only the ripples bend the view, not the slope
     // of the face, or the bend over an edge would show what is far away)
     vec2 distort = (uIsland != 0 ? N.xz - faceN.xz : N.xz) * 0.03;
@@ -461,6 +601,36 @@ void main()
     float thickness = length(viewPos(ruv, sceneDepth) - waterView);
     vec3 refr = texture2D(uRefraction, ruv).rgb;
 
+    // Smooth true vertical depth (guarded against foreground geometry) across
+    // a two-ring kernel (~3.5 world units) to soften 5-unit voxel staircase
+    // steps along shallow shelves without lateral offset bias.
+    float vertDepth = max(0.0, dot(waterView - viewPos(ruv, sceneDepth), upView));
+    float smoothVert = vertDepth;
+    if (uIsland == 0) {
+        vec2 stepUv = clamp(vec2(3200.0 / max(dist, 24.0)), vec2(2.5), vec2(16.0)) / uScreen;
+        float tSum = vertDepth * 0.24;
+        float wSum = 0.24;
+        for (int k = 0; k < 8; ++k) {
+            vec2 dir = k < 4
+                           ? vec2(k == 0 || k == 2 ? 0.5 : -0.5, k < 2 ? 0.5 : -0.5)
+                           : (k == 4 ? vec2(1.0, 0.0)
+                                     : (k == 5 ? vec2(-1.0, 0.0)
+                                               : (k == 6 ? vec2(0.0, 1.0) : vec2(0.0, -1.0))));
+            float w = k < 4 ? 0.11 : 0.08;
+            vec2 nuv = clamp(ruv + dir * stepUv, vec2(0.002), vec2(0.998));
+            float nd = texture2D(uDepth, nuv).r;
+            if (nd >= gl_FragCoord.z) {
+                tSum += max(0.0, dot(waterView - viewPos(nuv, nd), upView)) * w;
+                wSum += w;
+            }
+        }
+        smoothVert = tSum / wSum;
+        shallowMask = 1.0 - smoothstep(14.0, 24.0, smoothVert);
+    }
+    float coastNoise = (noise(P.xz * 0.14 + vec2(3.1, -1.7)) - 0.5) * 1.4 +
+                       (noise(P.xz * 0.36 + vec2(-2.3, 4.9)) - 0.5) * 0.5;
+    float smoothShore = max(0.0, smoothVert + coastNoise * 0.55);
+
     float shadow = 1.0;
     if (uShadowsOn != 0) {
         vec4 sc = uLightMatrix * vec4(P, 1.0);
@@ -474,26 +644,39 @@ void main()
         }
     }
 
-    // Light is absorbed with depth, red first: shallow water is clear and
-    // turquoise, deep water blue.
+    // Light is absorbed with depth, red first: shallow water over sand stays
+    // clear turquoise while open ocean deepens into rich sapphire blue.
     float sunUp = clamp(uLightDir.y * 2.0, 0.0, 1.0);
-    vec3 scatter = vec3(0.004, 0.050, 0.11) * (uLightColor * sunUp * mix(0.6, 1.0, shadow) + uZenith * 2.0);
+    vec3 scatterColour = uIsland != 0 ? vec3(0.004, 0.050, 0.11) : vec3(0.0025, 0.032, 0.072);
+    vec3 scatter = scatterColour * (uLightColor * sunUp * mix(0.6, 1.0, shadow) + uZenith * 2.0);
     // The water on land is only a few blocks deep: it takes its colour as
     // if it were deeper, so a shallow pond still looks like water.
     // A fall has the rock right behind it, so it takes the colour of a
     // pool about a block deep as well, and looks like the water it pours
     // from.
-    float looksDeep = thickness;
-    if (uIsland != 0)
-        looksDeep = thickness * 3.0 + mix(0.8, 3.0, fall);
-    vec3 absorb = exp(-looksDeep * vec3(0.12, 0.030, 0.020));
+    float smoothPath = smoothVert / max(V.y, 0.28);
+    float looksDeep = uIsland != 0 ? thickness * 3.0 + mix(0.8, 3.0, fall)
+                                   : mix(thickness, max(0.0, smoothPath + coastNoise * 0.55), 0.72);
+    vec3 extinction = uIsland != 0 ? vec3(0.12, 0.030, 0.020) : vec3(0.15, 0.038, 0.026);
+    vec3 absorb = exp(-looksDeep * extinction);
     vec3 body = refr * absorb + scatter * (1.0 - absorb);
+    if (uIsland == 0) {
+        // Turquoise subsurface glow through thin sunlit wave crests, plus subtle
+        // trough darkening ahead of each coastal breaker for crisp 3D relief.
+        float back = pow(max(dot(-V, normalize(uLightDir)), 0.0), 3.0);
+        float crestLift = max(disp.y, 0.0) + max(cH, 0.0) * 1.15 * shallowMask;
+        float sss = crestLift * (0.34 + 0.66 * back) * sunUp * mix(0.4, 1.0, shadow);
+        body += vec3(0.016, 0.115, 0.135) * uLightColor * sss * (0.35 + 0.65 * (1.0 - absorb.g));
+        body *= 1.0 - 0.16 * max(-cH, 0.0) * shallowMask;
+    }
+)GLSL";
 
+const char *kWaterFragmentTail = R"GLSL(
     // Reflection: what is on screen where the mirrored ray lands (SSR);
     // where that finds nothing, the mirrored view drawn beforehand (it is
     // mirrored in the sea's surface, so the water on land, higher up, takes
     // the sky's colour instead).
-    vec3 refl = texture2D(uReflection, suv + distort).rgb;
+    vec3 refl = texture2D(uReflection, suv + distort * (uIsland != 0 ? 1.0 : 1.85)).rgb;
     if (uIsland != 0)
         refl = mix(uHorizon, uZenith, clamp(reflect(-V, N).y * 1.5, 0.0, 1.0));
     if (uSsrOn != 0) {
@@ -508,33 +691,65 @@ void main()
     fresnel *= 1.0 - 2.4 * fall * (1.0 - fall); // the bend over an edge mirrors less of the sky
     vec3 col = mix(body, refl, fresnel);
 
-    // Sun glints.
-    vec3 H = normalize(normalize(uLightDir) + V);
+    // Sun glints: crisp primary specular plus high-angle micro-facet diamond
+    // sparkles so steep top-down views catch dancing sunlit flecks across the sea.
+    vec3 Ldir = normalize(uLightDir);
+    vec3 H = normalize(Ldir + V);
     float nh = max(dot(N, H), 0.0);
-    float spec = pow(nh, 600.0) * 40.0 + pow(nh, 80.0) * 0.6;
+    float spec = pow(nh, 520.0) * 44.0 + pow(nh, 72.0) * 0.75;
+    if (uIsland == 0) {
+        vec2 sp1 = mat2(0.84, 0.54, -0.54, 0.84) * (P.xz * 2.4) + vec2(uTime * 1.35, -uTime * 0.95);
+        vec2 sp2 = mat2(-0.46, 0.89, -0.89, -0.46) * (P.xz * 4.1) + vec2(-uTime * 1.65, uTime * 1.15);
+        vec2 micro = (noiseSlope(sp1) * 0.14 + noiseSlope(sp2) * 0.10) *
+                     (1.0 - smoothstep(140.0, 420.0, dist));
+        vec3 nSpark = normalize(vec3(N.x - micro.x, N.y, N.z - micro.y));
+        float nhSpark = max(dot(nSpark, H), 0.0);
+        spec += pow(nhSpark, 210.0) * 18.0 * smoothstep(0.55, 0.94, nh);
+    }
     // (hardly any on the bend over an edge and down a fall, where the
     // midday sun would make a white band across the water)
     float glints = uIsland != 0 ? mix(0.1, 1.0, smoothstep(0.93, 0.995, faceN.y)) : 1.0;
-    col += uLightColor * spec * shadow * (0.3 + fresnel) * glints;
+    float specFloor = uIsland == 0 ? (0.58 + 0.72 * fresnel) : (0.3 + fresnel);
+    col += uLightColor * spec * shadow * specFloor * glints;
 
-    // Foam where the water is shallow and on the steepest crests, broken up
-    // by moving noise. Out at sea a crest only breaks where a gust is
-    // blowing (a slowly drifting field of patches) and where its own
-    // random threshold is passed, so whitecaps come and go here and there
-    // instead of on every crest; more of them in the rain.
-    // (a little on the water on land, none on its falls, which stay clear)
+    // Porous lacy shore swash (surging in and draining back in lockstep with
+    // each incoming coastal roller instead of vanishing at the boundary),
+    // breaking coastal rollers, and gusty wind whitecaps out at sea.
+    float lace = foamLace(P.xz, uTime);
     float edgeFoam = uIsland == 0 ? 1.0 : 0.4 * (1.0 - fall);
-    float edge = (1.0 - smoothstep(0.0, 1.2, thickness)) * edgeFoam;
-    float pattern = noise(P.xz * 0.9 + vec2(uTime * 0.3, uTime * 0.2)) *
-                    noise(P.xz * 2.3 - vec2(uTime * 0.25));
+    float hit = smoothstep(0.08, 0.85, cH) * shallowMask;
+    float backwash = cWake * shallowMask;
+    float swash = max(hit, backwash * 0.80);
+    float lipReach = uIsland == 0 ? mix(0.60, 1.85, swash) : 0.65;
+    float webReach = uIsland == 0 ? mix(1.90, 4.60, max(backwash, hit * 0.70)) : 2.20;
+    float shoreLip = (1.0 - smoothstep(0.0, lipReach, smoothShore)) *
+                     smoothstep(mix(0.28, 0.08, hit), mix(0.62, 0.40, hit), lace) *
+                     (0.66 + 0.34 * hit);
+    float shoreWeb = (1.0 - smoothstep(0.0, webReach, smoothShore)) *
+                     smoothstep(0.36, 0.78, lace) * (0.52 + 0.46 * swash);
+    float edge = max(shoreLip, shoreWeb) * edgeFoam;
+
+    // Breaking coastal rollers: build smoothly from offshore swells into foamy
+    // breakers and carry all the way into the shore impact swash without fading out.
+    float surf = 0.0;
+    if (uIsland == 0 && cEnv > 0.001 && shallowMask > 0.001) {
+        float breakAmp = (1.0 - smoothstep(10.0, 28.0, coastSdf)) * shallowMask;
+        float surfCrest = cCrest * smoothstep(0.18, 0.56, lace) * 0.95;
+        float surfWake = cWake * smoothstep(0.36, 0.78, lace) * 0.58;
+        surf = max(surfCrest, surfWake) * breakAmp;
+    }
+
     float gust = noise(P.xz * 0.011 + vec2(uTime * 0.021, uTime * 0.013)) * 0.65 +
                  noise(P.xz * 0.037 - vec2(uTime * 0.017, -uTime * 0.029)) * 0.35;
     gust = mix(smoothstep(0.44, 0.72, gust), 1.0, uRain * 0.6);
     float breaking = smoothstep(0.38, 0.68, noise(P.xz * 0.13 + vec2(uTime * 0.06, -uTime * 0.04)));
-    float crest = smoothstep(0.42, 0.66, disp.y) * vWave * 0.5 * gust * breaking;
-    float foam = max(edge, crest) * smoothstep(0.15, 0.45, pattern + edge * 0.35);
+    float crest = smoothstep(0.60, 0.96, disp.y) * vWave * 0.55 * gust * breaking *
+                  smoothstep(0.32, 0.74, lace);
+    float foam = clamp(max(max(edge, surf), crest), 0.0, 0.94);
     vec3 foamLight = uLightColor * max(uLightDir.y, 0.0) * shadow + uZenith * 1.5 + uHorizon * 0.3;
-    col = mix(col, foamLight * 0.9, foam * 0.85);
+    // Thin lacy foam picks up a subtle turquoise tint; thick breaking lips stay crisp white.
+    vec3 foamTint = mix(vec3(0.76, 0.92, 0.96), vec3(0.98, 0.99, 1.0), foam);
+    col = mix(col, foamLight * foamTint * 0.94, foam * 0.88);
 
     // Fade in over the first few centimetres so the shore line is soft.
     col = mix(refr, col, smoothstep(0.0, 0.25, thickness));
@@ -642,16 +857,42 @@ void main()
 }
 )GLSL";
 
-// Under water, part 1 (half size): light shafts. Each view ray is marched,
-// asking the shadow map whether the sun reaches each step and modulating it by
-// the caustic pattern at the surface above, so the shafts stream down in
-// moving bands.
+// Under water, part 1 (half size): volumetric light shafts. Each view ray is
+// marched with denser steps near the camera, checking both shadow cascades and
+// modulating sunlight by broad drifting wave swells so rays stream down as
+// smooth curtains rather than noisy high-frequency slices.
+// Under water, part 0: the shaft map. waterShaftField() (the beams the
+// waves focus, see UnderwaterOptics.h) at eight depths, over a square round
+// the camera, drawn once a frame into two textures (four depths each). The
+// light shafts below read it instead of working out the waves at every step
+// of every pixel, which cost about 4 ms a frame at 2560x1559.
+const char *kShaftMapFragment = R"GLSL(
+varying vec2 vUv;
+uniform vec2 uMapCenter;
+uniform float uMapSize;
+uniform float uTime;
+uniform vec4 uDepths;
+void main()
+{
+    vec2 s = uMapCenter + (vUv - 0.5) * uMapSize;
+    gl_FragColor = vec4(waterShaftField(s, uDepths.x, uTime), waterShaftField(s, uDepths.y, uTime),
+                        waterShaftField(s, uDepths.z, uTime), waterShaftField(s, uDepths.w, uTime));
+}
+)GLSL";
+
 const char *kShaftsFragment = R"GLSL(
 varying vec2 vUv;
 uniform sampler2D uDepth;
+uniform sampler2D uShaftNear; // the shaft map at depths 2, 6, 11, 17
+uniform sampler2D uShaftFar;  // ... and 24, 32, 42, 55
+uniform vec2 uMapCenter;
+uniform float uMapSize;
 uniform sampler2DShadow uShadowMap;
 uniform mat4 uLightMatrix;
 uniform int uShadowsOn;
+uniform sampler2DShadow uFarShadowMap;
+uniform mat4 uFarMatrix;
+uniform int uFarOn;
 uniform mat4 uInvViewProj;
 uniform vec3 uCamPos;
 uniform vec3 uLightDir;
@@ -668,9 +909,42 @@ float sunAt(vec3 p)
         return 1.0;
     vec4 sc = uLightMatrix * vec4(p, 1.0);
     vec3 c = sc.xyz / sc.w;
-    if (c.z >= 1.0)
-        return 1.0;
-    return shadow2D(uShadowMap, vec3(c.xy, c.z - 0.002)).r;
+    float edge = max(abs(c.x - 0.5), abs(c.y - 0.5));
+    float fine = c.z >= 1.0 ? 1.0 : shadow2D(uShadowMap, vec3(c.xy, c.z - 0.002)).r;
+    float toCoarse = smoothstep(0.42, 0.5, edge);
+    if (toCoarse <= 0.0)
+        return fine;
+    float coarse = 1.0;
+    if (uFarOn != 0) {
+        vec4 fc = uFarMatrix * vec4(p, 1.0);
+        vec3 f = fc.xyz / fc.w;
+        float farEdge = max(abs(f.x - 0.5), abs(f.y - 0.5));
+        coarse = f.z >= 1.0 ? 1.0 : shadow2D(uFarShadowMap, vec3(f.xy, f.z - 0.003)).r;
+        coarse = mix(coarse, 1.0, smoothstep(0.44, 0.5, farEdge));
+    }
+    return mix(fine, coarse, toCoarse);
+}
+
+// waterShaftField(s, depth) from the shaft map: the two depths either
+// side, mixed.
+float shaftFromMap(vec2 s, float depth)
+{
+    vec2 uv = (s - uMapCenter) / uMapSize + 0.5;
+    vec4 a = texture2D(uShaftNear, uv);
+    vec4 b = texture2D(uShaftFar, uv);
+    if (depth < 6.0)
+        return mix(a.x, a.y, clamp((depth - 2.0) / 4.0, 0.0, 1.0));
+    if (depth < 11.0)
+        return mix(a.y, a.z, (depth - 6.0) / 5.0);
+    if (depth < 17.0)
+        return mix(a.z, a.w, (depth - 11.0) / 6.0);
+    if (depth < 24.0)
+        return mix(a.w, b.x, (depth - 17.0) / 7.0);
+    if (depth < 32.0)
+        return mix(b.x, b.y, (depth - 24.0) / 8.0);
+    if (depth < 42.0)
+        return mix(b.y, b.z, (depth - 32.0) / 10.0);
+    return mix(b.z, b.w, clamp((depth - 42.0) / 13.0, 0.0, 1.0)) * exp(-max(depth - 55.0, 0.0) * 0.017);
 }
 
 void main()
@@ -685,35 +959,43 @@ void main()
         wdist = min(dist, (uWaterLevel - uCamPos.y) / V.y);
 
     vec3 L = normalize(uLightDir);
-    const int steps = 36;
-    float dt = min(wdist, 170.0) / float(steps);
+    vec3 lr = refractedLightDir(L);
+    const int steps = 40;
+    float maxDist = min(wdist, 145.0);
     // Interleaved gradient noise: a fixed, even dither that hides banding.
     float jitter = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
     vec3 shafts = vec3(0.0);
     vec3 lamp = vec3(0.0);
     for (int i = 0; i < steps; ++i) {
-        float t = (float(i) + jitter) * dt;
+        float u = (float(i) + jitter) / float(steps);
+        float t = maxDist * mix(u, u * u, 0.55);
+        float dt = maxDist * mix(1.0, 2.0 * u, 0.55) / float(steps);
         vec3 p = uCamPos + V * t;
         float depth = uWaterLevel - p.y;
         if (depth < 0.0)
             break;
-        // Fine caustic streaks inside broad beams: the pattern is looked up
-        // where the sun ray through p crossed the surface.
-        float c = caustics(p, L, uWaterLevel, uTime);
-        vec2 s = p.xz + L.xz / max(L.y, 0.2) * depth;
-        float beam = 0.25 + 1.5 * causticLayer(s * 0.034, uTime * 0.5);
-        shafts += sunAt(p) * c * c * beam * sunThroughWater(depth, L) * exp(-kFogExtinction * t) * dt;
+        vec2 s = p.xz + lr.xz / lr.y * depth;
+        float beam = shaftFromMap(s, depth);
+        float surfaceFade = smoothstep(0.0, 1.0, depth);
+        float farFade = exp(-t * 0.011) * (1.0 - smoothstep(95.0, 145.0, t));
+        shafts += sunAt(p) * beam * surfaceFade * farFade * sunThroughWater(depth, L) *
+                  exp(-kFogExtinction * t) * dt;
         if (uHeadOn != 0) {
             // The headlight cone lighting up the water it passes through.
             vec3 toP = p - uHeadPos;
             float hd = length(toP);
             float cone = smoothstep(0.90, 0.985, dot(toP / max(hd, 0.001), uHeadDir));
-            lamp += cone * (1.0 - smoothstep(50.0, 95.0, hd)) / (1.0 + hd * hd * 0.004) * exp(-kFogExtinction * t) * dt;
+            lamp += cone * (1.0 - smoothstep(50.0, 95.0, hd)) / (1.0 + hd * hd * 0.004) *
+                    exp(-kFogExtinction * t) * dt;
         }
     }
-    // Scattering is strongest looking towards the sun.
-    float phase = 0.3 + 0.7 * pow(max(dot(V, L), 0.0), 3.0);
-    shafts *= uLightColor * phase * 0.0042;
+    // Forward-peaked Henyey-Greenstein scattering, strongest towards the sun and surface.
+    float cosTheta = dot(V, lr);
+    float g = 0.58;
+    float hg = (1.0 - g * g) / (4.0 * pow(max(1.0 + g * g - 2.0 * g * cosTheta, 0.05), 1.5));
+    float upBias = 0.68 + 0.48 * smoothstep(-0.25, 0.55, V.y);
+    float phase = (0.16 + 0.84 * hg) * upBias;
+    shafts *= uLightColor * phase * 0.021;
     shafts += lamp * vec3(0.55, 0.52, 0.42) * 0.011;
     gl_FragColor = vec4(shafts, 1.0);
 }
@@ -944,6 +1226,45 @@ void main()
 }
 )GLSL";
 
+// Depth-aware separable blur for underwater light shafts: smooths ray-march
+// dither without haloing across foreground arches, corals or the train.
+const char *kShaftBlurFragment = R"GLSL(
+varying vec2 vUv;
+uniform sampler2D uSrc;
+uniform sampler2D uDepth;
+uniform mat4 uInvProj;
+uniform vec2 uStep;
+
+float linearDepth(vec2 uv)
+{
+    float d = texture2D(uDepth, uv).r;
+    if (d >= 1.0)
+        return 2000.0;
+    vec4 p = uInvProj * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+    return -p.z / p.w;
+}
+
+void main()
+{
+    float z0 = linearDepth(vUv);
+    float sigmaZ = max(z0 * 0.08, 2.0);
+    vec3 sum = texture2D(uSrc, vUv).rgb * 0.227027;
+    float wSum = 0.227027;
+    for (int i = 1; i <= 4; ++i) {
+        float fi = float(i);
+        float gw = i == 1 ? 0.1945946 : (i == 2 ? 0.1216216 : (i == 3 ? 0.054054 : 0.016216));
+        vec2 off = uStep * fi;
+        vec2 uvP = vUv + off;
+        vec2 uvN = vUv - off;
+        float wP = gw * exp(-abs(linearDepth(uvP) - z0) / sigmaZ);
+        float wN = gw * exp(-abs(linearDepth(uvN) - z0) / sigmaZ);
+        sum += texture2D(uSrc, uvP).rgb * wP + texture2D(uSrc, uvN).rgb * wN;
+        wSum += wP + wN;
+    }
+    gl_FragColor = vec4(sum / max(wSum, 0.0001), 1.0);
+}
+)GLSL";
+
 // Marches from each pixel towards the sun and collects the open sky it
 // passes: anything in between (trees, the train) leaves a dark streak.
 const char *kRaysFragment = R"GLSL(
@@ -1029,11 +1350,11 @@ GLuint compile(GLenum type, const char *const *parts, int count, const char *nam
 GLuint makeProgramParts(const char *const *vertex, int vertexCount, const char *const *fragment,
                         int fragmentCount, const char *name)
 {
-    const char *parts[8] = {"#version 120\n"};
-    for (int i = 0; i < vertexCount && i < 7; ++i)
+    const char *parts[12] = {"#version 120\n"};
+    for (int i = 0; i < vertexCount && i < 11; ++i)
         parts[i + 1] = vertex[i];
     GLuint vs = compile(GL_VERTEX_SHADER, parts, vertexCount + 1, name);
-    for (int i = 0; i < fragmentCount && i < 7; ++i)
+    for (int i = 0; i < fragmentCount && i < 11; ++i)
         parts[i + 1] = fragment[i];
     GLuint fs = compile(GL_FRAGMENT_SHADER, parts, fragmentCount + 1, name);
     if (!vs || !fs)
@@ -1132,10 +1453,14 @@ void PostEffects::invalidate()
     m_halfA = Target();
     m_halfB = Target();
     m_rays = Target();
+    m_shaftNear = Target();
+    m_shaftFar = Target();
+    m_shaftMapProgram = 0;
     m_skyProgram = m_waterProgram = m_ssaoProgram = m_aoApplyProgram = 0;
-    m_brightProgram = m_blurProgram = m_raysProgram = m_compositeProgram = 0;
+    m_brightProgram = m_blurProgram = m_shaftBlurProgram = m_raysProgram = m_compositeProgram = 0;
     m_underwaterProgram = m_shaftsProgram = m_particleProgram = m_wetProgram = 0;
     m_waterList = 0;
+    m_coastSdf = 0;
     for (int i = 0; i < 3; ++i)
         m_camera[i] = m_deepColor[i] = m_shallowColor[i] = 0.0f;
     identity(m_view);
@@ -1157,28 +1482,42 @@ bool PostEffects::init()
 
     m_skyProgram = makeProgram(kSkyFragment, "sky", kNoise);
     {
-        const char *vertex[3] = {kWaveGlsl, kLandWaterMotionGlsl, kWaterVertex};
-        const char *fragment[4] = {kNoise, kWaveGlsl, kSsrGlsl, kWaterFragment};
-        m_waterProgram = makeProgramParts(vertex, 3, fragment, 4, "water");
+        const char *vertex[5] = {kNoise, kOceanWavesGlsl, kLandWaterMotionGlsl, kCoastWaveGlsl,
+                                 kWaterVertex};
+        const char *fragment[7] = {
+            kNoise,        kOceanWavesGlsl, kSsrGlsl,          kCoastWaveGlsl,
+            kWaterHelpers, kWaterFragment,  kWaterFragmentTail};
+        m_waterProgram = makeProgramParts(vertex, 5, fragment, 7, "water");
     }
     m_wetProgram = makeProgram(kWetFragment, "wet ground", kNoise, kSsrGlsl);
     m_ssaoProgram = makeProgram(kSsaoFragment, "ssao", kNoise);
     m_aoApplyProgram = makeProgram(kAoApplyFragment, "ao apply");
     m_brightProgram = makeProgram(kBrightFragment, "bright");
     m_blurProgram = makeProgram(kBlurFragment, "blur");
+    m_shaftBlurProgram = makeProgram(kShaftBlurFragment, "shaft blur");
     m_raysProgram = makeProgram(kRaysFragment, "god rays");
     m_compositeProgram = makeProgram(kCompositeFragment, "composite");
-    m_shaftsProgram = makeProgram(kShaftsFragment, "light shafts", kNoise, kUnderwaterOpticsGlsl);
-    m_underwaterProgram = makeProgram(kUnderwaterFragment, "underwater", kUnderwaterOpticsGlsl);
+    {
+        const char *vertex[1] = {kQuadVertex};
+        const char *fragment[4] = {kNoise, kOceanWavesGlsl, kUnderwaterOpticsGlsl, kShaftsFragment};
+        m_shaftsProgram = makeProgramParts(vertex, 1, fragment, 4, "light shafts");
+        const char *mapFragment[4] = {kNoise, kOceanWavesGlsl, kUnderwaterOpticsGlsl,
+                                      kShaftMapFragment};
+        m_shaftMapProgram = makeProgramParts(vertex, 1, mapFragment, 4, "shaft map");
+    }
+    m_underwaterProgram =
+        makeProgram(kUnderwaterFragment, "underwater", kOceanWavesGlsl, kUnderwaterOpticsGlsl);
     {
         const char *vertex[1] = {kParticleVertex};
         const char *fragment[1] = {kParticleFragment};
         m_particleProgram = makeProgramParts(vertex, 1, fragment, 1, "particles");
     }
+    buildCoastSdf();
 
     m_ok = m_skyProgram && m_waterProgram && m_ssaoProgram && m_aoApplyProgram && m_brightProgram &&
-           m_blurProgram && m_raysProgram && m_compositeProgram && m_underwaterProgram &&
-           m_shaftsProgram && m_particleProgram && m_wetProgram;
+           m_blurProgram && m_shaftBlurProgram && m_raysProgram && m_compositeProgram &&
+           m_underwaterProgram && m_shaftsProgram && m_shaftMapProgram && m_particleProgram &&
+           m_wetProgram && m_coastSdf;
     return m_ok;
 }
 
@@ -1257,6 +1596,8 @@ void PostEffects::releaseTargets()
     releaseTarget(m_halfA);
     releaseTarget(m_halfB);
     releaseTarget(m_rays);
+    releaseTarget(m_shaftNear);
+    releaseTarget(m_shaftFar);
 }
 
 void PostEffects::bindTarget(const Target &t)
@@ -1468,6 +1809,34 @@ void PostEffects::buildWaterMesh()
     glEndList();
 }
 
+void PostEffects::buildCoastSdf()
+{
+    const int size = 256;
+    const float span = 1280.0f;
+    std::vector<float> data(static_cast<size_t>(size) * static_cast<size_t>(size) * 4u, 0.0f);
+    for (int z = 0; z < size; ++z)
+    {
+        const float wz = ((static_cast<float>(z) + 0.5f) / static_cast<float>(size) - 0.5f) * span;
+        for (int x = 0; x < size; ++x)
+        {
+            const float wx =
+                ((static_cast<float>(x) + 0.5f) / static_cast<float>(size) - 0.5f) * span;
+            const size_t idx =
+                (static_cast<size_t>(z) * static_cast<size_t>(size) + static_cast<size_t>(x)) * 4u;
+            data[idx] = -WorldShape::inland(wx, wz);
+            data[idx + 3u] = 1.0f;
+        }
+    }
+    glGenTextures(1, &m_coastSdf);
+    glBindTexture(GL_TEXTURE_2D, m_coastSdf);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, size, size, 0, GL_RGBA, GL_FLOAT, data.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
 void PostEffects::copyScene()
 {
     // The water needs to see what is under it: copy colour and depth first,
@@ -1493,10 +1862,12 @@ void PostEffects::useWaterProgram(const AdvancedLighting &lighting, float time, 
     bindTexture(1, m_copy.color);
     bindTexture(2, m_copy.depth);
     bindTexture(3, lighting.shadowTexture());
+    bindTexture(4, m_coastSdf);
     glUniform1i(loc(p, "uReflection"), 0);
     glUniform1i(loc(p, "uRefraction"), 1);
     glUniform1i(loc(p, "uDepth"), 2);
     glUniform1i(loc(p, "uShadowMap"), 3);
+    glUniform1i(loc(p, "uCoastSdf"), 4);
     glUniformMatrix4fv(loc(p, "uLightMatrix"), 1, GL_FALSE, lighting.lightMatrix());
     glUniform1i(loc(p, "uShadowsOn"), lighting.shadowMapValid() ? 1 : 0);
     glUniform1f(loc(p, "uShadowTexel"), 1.0f / 2048.0f);
@@ -1566,7 +1937,7 @@ void PostEffects::drawWater(const AdvancedLighting &lighting, float time, bool o
     glCallList(m_waterList);
     glPopAttrib();
 
-    unbindTextures(4);
+    unbindTextures(5);
     glUseProgram(0);
 }
 
@@ -1592,7 +1963,7 @@ void PostEffects::drawSurfaceWater(const AdvancedLighting &lighting, float time,
     glBindTexture(GL_TEXTURE_2D, 0);
     glPopAttrib();
 
-    unbindTextures(4);
+    unbindTextures(5);
     glUseProgram(0);
 }
 
@@ -1602,8 +1973,8 @@ void PostEffects::setUnderwaterCamera(const float cameraPos[3], const SkyState &
     // blue below by day, a little darker the deeper the camera is, nearly
     // black at night.
     const float depth = fmaxf(waterLevel - cameraPos[1], 0.0f);
-    const float shallow[3] = {0.020f, 0.170f, 0.330f};
-    const float deep[3] = {0.003f, 0.040f, 0.150f};
+    const float shallow[3] = {0.016f, 0.145f, 0.295f};
+    const float deep[3] = {0.003f, 0.036f, 0.135f};
     const float absorb[3] = {0.020f, 0.0070f, 0.0045f};
     const float light = (0.06f + 0.94f * sky.day) * (1.0f - 0.35f * sky.overcast);
     for (int i = 0; i < 3; ++i)
@@ -1730,17 +2101,62 @@ void PostEffects::applyUnderwater(const AdvancedLighting &lighting, float time)
         identity(invViewProj);
     const SkyState &sky = lighting.sky();
 
-    // Light shafts at half size (the expensive part), blurred a little to
-    // hide the dither.
-    bindTarget(m_rays);
-    GLuint p = m_shaftsProgram;
+    // The shaft map: a square round the camera, shifted towards where the
+    // sun rays it sees came through the surface, moved in whole texels so
+    // the beams do not crawl as the camera moves.
+    const int mapTexels = 512;
+    const float mapSize = 400.0f;
+    float mapCenter[2];
+    {
+        // as refractedLightDir() in UnderwaterOptics.h
+        const float *l = sky.lightDir;
+        const float inv = 1.0f / fmaxf(sqrtf(l[0] * l[0] + l[1] * l[1] + l[2] * l[2]), 1e-6f);
+        const float hx = l[0] * inv * 0.75f;
+        const float hz = l[2] * inv * 0.75f;
+        const float vy = sqrtf(fmaxf(1.0f - hx * hx - hz * hz, 0.16f));
+        const float depth = fmaxf(waterLevel - m_camera[1], 0.0f) + 15.0f;
+        const float texel = mapSize / static_cast<float>(mapTexels);
+        mapCenter[0] = floorf((m_camera[0] + hx / vy * depth) / texel) * texel;
+        mapCenter[1] = floorf((m_camera[2] + hz / vy * depth) / texel) * texel;
+    }
+    if (m_shaftNear.fbo == 0)
+    {
+        createTarget(m_shaftNear, mapTexels, mapTexels, false, false);
+        createTarget(m_shaftFar, mapTexels, mapTexels, false, false);
+    }
+    GLuint p = m_shaftMapProgram;
     glUseProgram(p);
+    glUniform2fv(loc(p, "uMapCenter"), 1, mapCenter);
+    glUniform1f(loc(p, "uMapSize"), mapSize);
+    glUniform1f(loc(p, "uTime"), time);
+    bindTarget(m_shaftNear);
+    glUniform4f(loc(p, "uDepths"), 2.0f, 6.0f, 11.0f, 17.0f);
+    fullscreenQuad();
+    bindTarget(m_shaftFar);
+    glUniform4f(loc(p, "uDepths"), 24.0f, 32.0f, 42.0f, 55.0f);
+    fullscreenQuad();
+
+    // Light shafts at half size (the expensive part), smoothed with a
+    // depth-aware blur to hide dither without haloing foreground geometry.
+    bindTarget(m_rays);
+    p = m_shaftsProgram;
+    glUseProgram(p);
+    bindTexture(3, m_shaftNear.color);
+    bindTexture(4, m_shaftFar.color);
+    glUniform1i(loc(p, "uShaftNear"), 3);
+    glUniform1i(loc(p, "uShaftFar"), 4);
+    glUniform2fv(loc(p, "uMapCenter"), 1, mapCenter);
+    glUniform1f(loc(p, "uMapSize"), mapSize);
     bindTexture(0, m_copy.depth);
     bindTexture(1, lighting.shadowTexture());
+    bindTexture(2, lighting.farShadowTexture());
     glUniform1i(loc(p, "uDepth"), 0);
     glUniform1i(loc(p, "uShadowMap"), 1);
     glUniformMatrix4fv(loc(p, "uLightMatrix"), 1, GL_FALSE, lighting.lightMatrix());
     glUniform1i(loc(p, "uShadowsOn"), lighting.shadowMapValid() ? 1 : 0);
+    glUniform1i(loc(p, "uFarShadowMap"), 2);
+    glUniformMatrix4fv(loc(p, "uFarMatrix"), 1, GL_FALSE, lighting.farMatrix());
+    glUniform1i(loc(p, "uFarOn"), (lighting.shadowMapValid() && lighting.farShadowValid()) ? 1 : 0);
     glUniformMatrix4fv(loc(p, "uInvViewProj"), 1, GL_FALSE, invViewProj);
     glUniform3fv(loc(p, "uCamPos"), 1, m_camera);
     glUniform3fv(loc(p, "uLightDir"), 1, sky.lightDir);
@@ -1751,8 +2167,8 @@ void PostEffects::applyUnderwater(const AdvancedLighting &lighting, float time)
     glUniform3fv(loc(p, "uHeadPos"), 1, lighting.headlightPosition());
     glUniform3fv(loc(p, "uHeadDir"), 1, lighting.headlightDirection());
     fullscreenQuad();
-    unbindTextures(2);
-    blur(m_rays, m_halfB, 1.0f);
+    unbindTextures(5);
+    bilateralBlur(m_rays, m_halfB, m_copy.depth, 0.95f);
 
     // Fog the scene and add the shafts.
     bindTarget(m_scene);
@@ -1790,6 +2206,27 @@ void PostEffects::blur(Target &src, Target &tmp, float radius)
     bindTexture(0, tmp.color);
     glUniform2f(loc(m_blurProgram, "uStep"), 0.0f, radius / static_cast<float>(src.height));
     fullscreenQuad();
+}
+
+void PostEffects::bilateralBlur(Target &src, Target &tmp, unsigned int depthTex, float radius)
+{
+    const GLuint p = m_shaftBlurProgram;
+    glUseProgram(p);
+    glUniform1i(loc(p, "uSrc"), 0);
+    glUniform1i(loc(p, "uDepth"), 1);
+    glUniformMatrix4fv(loc(p, "uInvProj"), 1, GL_FALSE, m_invProj);
+    bindTexture(1, depthTex);
+
+    bindTarget(tmp);
+    bindTexture(0, src.color);
+    glUniform2f(loc(p, "uStep"), radius / static_cast<float>(src.width), 0.0f);
+    fullscreenQuad();
+
+    bindTarget(src);
+    bindTexture(0, tmp.color);
+    glUniform2f(loc(p, "uStep"), 0.0f, radius / static_cast<float>(src.height));
+    fullscreenQuad();
+    unbindTextures(2);
 }
 
 void PostEffects::finish(const SkyState &sky, bool bloom, bool underwater)

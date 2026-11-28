@@ -187,12 +187,16 @@ float valueNoise(vec2 p)
 }
 
 // wet: a film of water makes the surface smoother, so the highlight gets
-// both tighter and much brighter.
-vec3 blinnPhong(vec3 albedo, vec3 n, vec3 l, vec3 v, float wet)
+// both tighter and much brighter. specScale tones down plastic specular on
+// matte submerged surfaces.
+vec3 blinnPhong(vec3 albedo, vec3 n, vec3 l, vec3 v, float wet, float specScale)
 {
     float ndl = max(dot(n, l), 0.0);
     vec3 h = normalize(l + v);
-    float spec = ndl > 0.0 ? pow(max(dot(n, h), 0.0), mix(48.0, 260.0, wet)) * mix(0.3, 1.8, wet) : 0.0;
+    float spec = ndl > 0.0
+                     ? pow(max(dot(n, h), 0.0), mix(48.0, 260.0, wet)) * mix(0.3, 1.8, wet) *
+                           specScale
+                     : 0.0;
     return albedo * ndl + vec3(spec);
 }
 
@@ -239,17 +243,27 @@ void main()
         shadow = shadowAt(vWorldPos, n);
 
     vec3 l = normalize(uLightDir);
+    vec3 lightVec = l;
     vec3 sun = uLightColor * shadow;
     vec3 skyAmbient = uSkyAmbient * vExtra.w;
     vec3 groundAmbient = uGroundAmbient * vExtra.w;
+    float submerge = 0.0;
     if (vWorldPos.y < uWaterLevel) {
-        // Under water the sunlight dims and turns blue with depth and is
-        // focused into caustics; the ambient light is scattered blue too.
+        // Under water sunlight bends steeper (Snell), loses red first and
+        // focuses into moving coloured caustics. Transition softly near the
+        // surface, tone caustics down on vertical walls so they do not stretch
+        // like a planar texture, and gate by sky light so deep caves stay dark.
         float depth = uWaterLevel - vWorldPos.y;
-        sun *= sunThroughWater(depth, l) * caustics(vWorldPos, l, uWaterLevel, uTime);
-        vec3 tint = exp(-kWaterAbsorb * depth * 0.8) * vec3(0.8, 1.3, 1.6);
-        skyAmbient *= tint;
-        groundAmbient = skyAmbient * 0.75; // light bounced off the pale sand
+        submerge = smoothstep(0.0, 0.9, depth);
+        lightVec = normalize(mix(l, refractedLightDir(l), submerge));
+        float skyOpen = smoothstep(0.05, 0.35, vExtra.w);
+        float upWeight = mix(0.32, 1.0, smoothstep(0.0, 0.7, n.y));
+        vec3 caustic = mix(vec3(1.0), causticsRgb(vWorldPos, l, uWaterLevel, uTime),
+                           upWeight * skyOpen * submerge);
+        sun *= mix(vec3(1.0), sunThroughWater(depth, l), submerge) * caustic;
+        vec3 tint = exp(-kWaterAbsorb * depth * 0.75) * vec3(0.75, 1.25, 1.55);
+        skyAmbient *= mix(vec3(1.0), tint, submerge);
+        groundAmbient = mix(groundAmbient, skyAmbient * vec3(0.38, 0.48, 0.54), submerge);
     }
 
     vec3 v = normalize(cameraPos - vWorldPos);
@@ -261,7 +275,7 @@ void main()
     } else {
         vec3 ambient = mix(groundAmbient, skyAmbient, n.y * 0.5 + 0.5);
         color = albedo * ambient;
-        color += blinnPhong(albedo, n, l, v, wet) * sun;
+        color += blinnPhong(albedo, n, lightVec, v, wet, mix(1.0, 0.25, submerge)) * sun;
         // A wet surface mirrors a little of the sky, most seen at a glance:
         // the sheen of a post or a rock the waves have just washed, or a
         // wall in the rain, even with the sun behind it.
@@ -289,7 +303,9 @@ void main()
         vec3 l = toLamp / max(d, 0.0001);
         float cone = smoothstep(0.86, 0.965, dot(-l, uHeadDir));
         float falloff = (1.0 - smoothstep(60.0, 110.0, d)) / (1.0 + d * d * 0.006);
-        vec3 lamp = uUnlit != 0 ? albedo * 0.7 : blinnPhong(albedo, n, l, v, wet);
+        vec3 lamp = uUnlit != 0
+                        ? albedo * 0.7
+                        : blinnPhong(albedo, n, l, v, wet, mix(1.0, 0.35, submerge));
         color += lamp * uHeadColor * (cone * falloff);
     }
 
@@ -527,9 +543,10 @@ bool AdvancedLighting::init()
     }
 
     const char *vertexParts[3] = {"#version 120\n", kLandWaterMotionGlsl, kVertexShader};
-    const char *fragmentParts[3] = {"#version 120\n", kUnderwaterOpticsGlsl, kFragmentShader};
+    const char *fragmentParts[4] = {"#version 120\n", kOceanWavesGlsl, kUnderwaterOpticsGlsl,
+                                    kFragmentShader};
     GLuint vs = compileShader(GL_VERTEX_SHADER, vertexParts, 3);
-    GLuint fs = compileShader(GL_FRAGMENT_SHADER, fragmentParts, 3);
+    GLuint fs = compileShader(GL_FRAGMENT_SHADER, fragmentParts, 4);
     if (!vs || !fs)
     {
         if (vs)

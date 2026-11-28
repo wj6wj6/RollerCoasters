@@ -5566,7 +5566,14 @@ bool LandWorld::solidAt(bool flat, float x, float y, float z) const
     const Scene *s = flat ? m_flat.get() : m_scenery.get();
     if (!s || !s->gridReady)
         return false;
-    const int b = s->grid.get(blockOf(x), blockOf(y), blockOf(z));
+    // Only the grid's own blocks: get() takes everything under its lowest
+    // layer for stone (so the faces there are not drawn), but under the
+    // island's grid out at sea is open water, whose sea bed is the sea's
+    // (OceanWorld::solidAt()).
+    const int bx = blockOf(x), j = blockOf(y), bz = blockOf(z);
+    if (!Grid::inside(bx, j, bz))
+        return false;
+    const int b = s->grid.get(bx, j, bz);
     return b != AIR && b != WATER;
 }
 
