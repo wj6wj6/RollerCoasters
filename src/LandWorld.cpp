@@ -6307,6 +6307,8 @@ struct TrestleFrame
 {
     float cx, cz, c, s;
     float shade; // how light the part being added is: each post and pier its own
+    // and its colour on top of that (wet wood with algae on it is greener)
+    float tint[3] = {1.0f, 1.0f, 1.0f};
     void place(const float l[3], float out[3]) const
     {
         out[0] = cx + l[0] * c + l[2] * s;
@@ -6338,7 +6340,9 @@ void addTrestleQuad(Batches &batches, int texture, const TrestleFrame &f, const 
         v.normal[2] = n[2];
         v.uv[0] = uv[k][0];
         v.uv[1] = uv[k][1];
-        v.color[0] = v.color[1] = v.color[2] = f.shade;
+        v.color[0] = f.shade * f.tint[0];
+        v.color[1] = f.shade * f.tint[1];
+        v.color[2] = f.shade * f.tint[2];
         v.extra[0] = glow;
         v.extra[1] = sway ? sway[k] : 0.0f;
         v.extra[2] = 0.0f;
@@ -6807,10 +6811,45 @@ void LandWorld::buildSupportMesh()
         {
             if (!t.post[side])
                 continue;
-            f.shade = 0.84f + 0.14f * roll(30 + side);
+            const float dry = 0.84f + 0.14f * roll(30 + side);
             const float a[3] = {postX(side, footY[side]), footY[side], 0.0f};
             const float b[3] = {side == 0 ? -1.3f : 1.3f, t.top - 0.45f, 0.0f};
-            addTrestleBeam(batches, wood, f, a, b, post, post);
+            if (t.ground[side] >= water)
+            {
+                f.shade = dry;
+                addTrestleBeam(batches, wood, f, a, b, post, post);
+                continue;
+            }
+            // Standing in the water, the post is soaked: dark and green with
+            // algae under the surface and a little above it where the waves
+            // wash over it, drying in a band above that and dry further up.
+            const float wet = water + 0.5f + 0.4f * roll(34 + side);
+            const float damp = wet + 0.45f + 0.25f * roll(36 + side);
+            const float m[3] = {postX(side, wet), wet, 0.0f};
+            const float d[3] = {postX(side, damp), damp, 0.0f};
+            f.shade = dry * 0.45f;
+            f.tint[0] = 0.84f;
+            f.tint[1] = 0.98f;
+            f.tint[2] = 0.82f;
+            addTrestleBeam(batches, wood, f, a, m, post, post);
+            // drying a little more in each of three steps up the band
+            for (int step = 0; step < 3; ++step)
+            {
+                const float k0 = static_cast<float>(step) / 3.0f;
+                const float k1 = static_cast<float>(step + 1) / 3.0f;
+                const float h0 = wet + (damp - wet) * k0, h1 = wet + (damp - wet) * k1;
+                const float lo[3] = {postX(side, h0), h0, 0.0f};
+                const float hi[3] = {postX(side, h1), h1, 0.0f};
+                const float drying = (static_cast<float>(step) + 0.5f) / 3.0f;
+                f.shade = dry * (0.52f + 0.48f * drying);
+                f.tint[0] = 0.86f + 0.14f * drying;
+                f.tint[1] = 0.98f + 0.02f * drying;
+                f.tint[2] = 0.84f + 0.16f * drying;
+                addTrestleBeam(batches, wood, f, lo, hi, post, post);
+            }
+            f.shade = dry;
+            f.tint[0] = f.tint[1] = f.tint[2] = 1.0f;
+            addTrestleBeam(batches, wood, f, d, b, post, post);
         }
         // lanterns here and there: never on two trestles running, on one
         // side or now and then both, where a post is tall enough for one to
