@@ -140,15 +140,30 @@ struct Follow
 //    gently rather than with a jolt: up again slowly once out from under
 //    the roof, nearer or further back smoothly, never faster than 8 units a
 //    second.
-// `track` must reach from kAhead ahead of the train's front to the last
-// cart plus the open placement's distance behind it.
+// The faster the train, the further ahead it looks and the more gradually
+// it lets a roof bring it down, so that however fast the roof comes it
+// never has to come down faster than kDescentRate (and aims to take no
+// more than kAimRate): at full speed it would otherwise reach a tunnel
+// before it was down and be pushed down at the last moment.
+// `track` must reach from aheadFor(speed) ahead of the train's front to the
+// last cart plus the open placement's distance behind it, every
+// spacingFor(speed) or closer.
 class Follower
 {
   public:
-    // how far ahead of the train's front the samples should reach
+    // how far ahead of the train's front the samples should reach at least
     static constexpr float kAhead = 30.0f;
     // how much a low roof counts less for each unit further along the track
+    // (at most: less when the train is fast)
     static constexpr float kDescentSlope = 0.35f;
+    // the fastest the limit over the camera comes down, and the camera
+    // aims to (units a second), however fast the train
+    static constexpr float kDescentRate = 6.0f;
+    static constexpr float kAimRate = 3.5f;
+    // how far ahead to look, and how far apart the samples may be, for a
+    // train going `speed` units a second
+    static float aheadFor(float speed);
+    static float spacingFor(float speed);
     // never nearer the last cart than this many riders' heights
     static constexpr float kNearestRiders = 1.5f;
 
@@ -160,9 +175,10 @@ class Follower
     }
     // dt: seconds since the last update (a negative or a long one jumps
     // straight to the place). lastHead: the last rider's head; a block
-    // between it and the camera brings the camera nearer.
+    // between it and the camera brings the camera nearer. speed: how fast
+    // the train goes along the track, units a second.
     Follow update(const std::vector<TrackSample> &track, const Solid &solid, const Train &train,
-                  float fovY, float dt, const Point &lastHead);
+                  float fovY, float dt, const Point &lastHead, float speed);
 
   private:
     bool m_valid = false;

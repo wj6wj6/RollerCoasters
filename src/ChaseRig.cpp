@@ -255,9 +255,28 @@ void sampleAt(const std::vector<TrackSample> &track, float back, Point &base, Po
     up = length > 1e-6f ? scale(up, 1.0f / length) : Point{0.0f, 1.0f, 0.0f};
 }
 
-Follow Follower::update(const std::vector<TrackSample> &track, const Solid &solid,
-                        const Train &train, float fovY, float dt, const Point &lastHead)
+float Follower::aheadFor(float speed)
 {
+    // long enough to come all the way down at kAimRate before the roof
+    return std::min(800.0f, std::max(kAhead, kSettle + std::max(speed, 0.0f) * 2.5f));
+}
+
+float Follower::spacingFor(float speed)
+{
+    return std::max(0.25f, std::max(speed, 0.0f) / 240.0f);
+}
+
+Follow Follower::update(const std::vector<TrackSample> &track, const Solid &solid,
+                        const Train &train, float fovY, float dt, const Point &lastHead,
+                        float speed)
+{
+    // A roof x units ahead is x / speed seconds away: each unit ahead lets
+    // the camera be no more than rate / speed higher, so it never has to
+    // come down faster than that rate (and settles in time, earlier).
+    const float pace = std::max(speed, 1.0f);
+    const float descentSlope = std::min(kDescentSlope, kDescentRate / pace);
+    const float aimSlope = std::min(kAimSlope, kAimRate / pace);
+    const float settle = kSettle + 0.6f * std::max(speed, 0.0f);
     const Placement open = plan(train, fovY);
     const float nearest = std::min(open.behind, kNearestRiders * train.riderTop);
     std::vector<float> rooms(track.size());
@@ -282,8 +301,8 @@ Follow Follower::update(const std::vector<TrackSample> &track, const Solid &soli
         }
         return std::max(kLowest, limit);
     };
-    auto limit = [&](float behind) { return ceiling(behind, kDescentSlope, 0.0f, 0.0f); };
-    auto aimFor = [&](float behind) { return ceiling(behind, kAimSlope, kSettle, kAimBelow); };
+    auto limit = [&](float behind) { return ceiling(behind, descentSlope, 0.0f, 0.0f); };
+    auto aimFor = [&](float behind) { return ceiling(behind, aimSlope, settle, kAimBelow); };
 
     const float from = m_valid ? m_behind : open.behind;
     Placement want = fit(open, aimFor(from), nearest, train, fovY);

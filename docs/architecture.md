@@ -141,7 +141,7 @@ flowchart LR
 | `src/ControlPoint.H/.cpp` | 控制點位置、方向向量與標記繪製。 |
 | `src/TrackRenderer.H/.cpp` | 鐵軌與枕木繪製、累積弧長表、`makeTrackFrame()`。`TrackMesh` 把枕木與鐵軌算成世界座標的頂點，只在控制點位置或樣條改變時重算；`TrackRenderer` 放進一個 vertex buffer，每個 pass（shadow map、倒影、主場景）都畫同一份。見 [ADR 0016](adr/0016-track-vertex-buffer.md)。 |
 | `src/TrainModel.h/.cpp` | 列車模型；`Chase` 相機用的列車長度、乘客高度與沿軌道往回取點。 |
-| `src/ChaseRig.h/.cpp` | `Chase` 相機的取景數學（純計算）：依列車長度、乘客高度與視野算出在車後多遠、多高，空間不夠時降低並拉近（`fit()`），以及拖曳時繞列車中段轉動（`orbit()`）。`Follower` 負責每幀跟隨：看相機接下來要經過的軌道（到車頭前方 30 單位）每一點上方的空間，越遠的低頂影響越小，所以提早慢慢降低，抵達時已經在頂下；以臨界阻尼彈簧移動，速度不會突變；最近只到乘客身高 1.5 倍。由 `ChaseRigCheck` 測試（含模擬穿過隧道與低懸崖）。`TrainView` 每幀沿軌道每 0.25 單位取樣（`sampleTrack()`）、以 `LandWorld::solidAt()`／`OceanWorld::solidAt()` 回答哪裡有方塊；`TrainView` 用另一個 `HeadLook`（`chaseLook`）記錄轉動角度，轉到方塊後時把鏡頭拉近到方塊前。 |
+| `src/ChaseRig.h/.cpp` | `Chase` 相機的取景數學（純計算）：依列車長度、乘客高度與視野算出在車後多遠、多高，空間不夠時降低並拉近（`fit()`），以及拖曳時繞列車中段轉動（`orbit()`）。`Follower` 負責每幀跟隨：看相機接下來要經過的軌道（到車頭前方至少 30 單位，車越快看得越遠：`aheadFor()`）每一點上方的空間，越遠的低頂影響越小，所以提早慢慢降低，抵達時已經在頂下；車越快，每單位距離允許的降低越少，不論車速，下降都不超過每秒 6 單位（`kDescentRate`），高速時也不會到隧道口才被壓下；以臨界阻尼彈簧移動，速度不會突變；最近只到乘客身高 1.5 倍。由 `ChaseRigCheck` 測試（含模擬穿過隧道與低懸崖）。`TrainView` 量列車速度（車頭每秒移動距離，平滑約 0.25 秒），每幀沿軌道每 0.25 單位（高速時較疏：`spacingFor()`）取樣（`sampleTrack()`）、以 `LandWorld::solidAt()`／`OceanWorld::solidAt()` 回答哪裡有方塊；`TrainView` 用另一個 `HeadLook`（`chaseLook`）記錄轉動角度，轉到方塊後時把鏡頭拉近到方塊前。 |
 | `src/TransformGizmo.h/.cpp` | 控制點移動把手的挑選、拖曳換算（純數學）與繪製。 |
 | `src/TrackInsert.h/.cpp` | 找出點擊處的軌道參數，在該處插入控制點（軌道仍經過點擊處）、刪除控制點並重新對應 `trainU`；純數學，由 `TrackInsertCheck` 測試。 |
 | `src/TrackHistory.h/.cpp` | 控制點的上一步／下一步：每次修改前存一份整條軌道（點、`trainU`、選取）的快照；由 `TrackHistoryCheck` 測試。 |

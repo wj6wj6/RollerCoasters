@@ -6,9 +6,9 @@
 // the head still below the middle where the roof leaves room for that; following moves towards
 // the target without passing it; turning round the train keeps the camera as far from the middle
 // of the train, turns the view the way it is dragged and never tips it over; riding through a
-// tunnel and under a low overhang, the follower moves the camera without jumps, comes down before
-// a roof instead of under it, stays out of the rock and no nearer than the riders' height and a
-// half, and goes back up once out.
+// tunnel and under a low overhang, slowly or at full speed, the follower moves the camera without
+// jumps, comes down before a roof instead of under it, stays out of the rock and no nearer than
+// the riders' height and a half, and goes back up once out.
 #include "ChaseRig.h"
 
 #include <algorithm>
@@ -138,8 +138,9 @@ int main()
     expect(bounded, "the view never tilts past the limit, so the picture never turns over");
 
     // Riding a straight track along +x through a tunnel (roof 8 above the rails from x = 200 to
-    // 260) and under a short ledge (6 above, x = 400 to 405), 20 units a second at 60 frames a
-    // second.
+    // 260) and under a short ledge (6 above, x = 400 to 405) at 60 frames a second, as slow as
+    // 20 units a second and as fast as the train goes (speed 10: 300 units a second).
+    for (const float speed : {20.0f, 60.0f, 150.0f, 300.0f})
     {
         const ChaseRig::Train ride = {23.0f, 5.35f};
         const float fov = 70.0f;
@@ -154,23 +155,26 @@ int main()
         const ChaseRig::Solid solid = [&](const ChaseRig::Point &p) {
             return p.y >= roofAt(p.x) && p.y < 30.0f;
         };
-        const float spacing = 0.25f;
+        const float spacing = ChaseRig::Follower::spacingFor(speed);
+        const float ahead = ChaseRig::Follower::aheadFor(speed);
         ChaseRig::Follower follower;
         std::vector<ChaseRig::TrackSample> samples;
-        const float speed = 20.0f, dt = 1.0f / 60.0f;
+        const float dt = 1.0f / 60.0f;
         float lastHeight = -1.0f, lastBehind = -1.0f;
         float worstRise = 0.0f, worstFall = 0.0f, worstAlong = 0.0f, nearest = 1e9f;
         float lastStep = 0.0f, lastAlongStep = 0.0f, worstJolt = 0.0f;
         float clearance = 1e9f, heightAtTunnel = -1.0f, heightAtLedge = -1.0f, lastLow = 0.0f;
         bool inRock = false;
-        for (float trainFront = 0.0f; trainFront < 600.0f; trainFront += speed * dt)
+        // long enough to be back up after the ledge
+        const float end = 600.0f + 5.0f * speed;
+        for (float trainFront = 0.0f; trainFront < end; trainFront += speed * dt)
         {
             samples.clear();
-            for (float back = -ChaseRig::Follower::kAhead;
-                 back <= ride.length + roomyPlace.behind + 1.0f; back += spacing)
+            for (float back = -ahead; back <= ride.length + roomyPlace.behind + 1.0f;
+                 back += spacing)
                 samples.push_back({back, {trainFront - back, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}});
             const ChaseRig::Point head = {trainFront - ride.length, ride.riderTop, 0.0f};
-            const ChaseRig::Follow f = follower.update(samples, solid, ride, fov, dt, head);
+            const ChaseRig::Follow f = follower.update(samples, solid, ride, fov, dt, head, speed);
             if (lastHeight >= 0.0f)
             {
                 worstRise = std::max(worstRise, f.height - lastHeight);
@@ -193,13 +197,14 @@ int main()
                 heightAtTunnel = f.height;
             if (heightAtLedge < 0.0f && camera >= 400.0f)
                 heightAtLedge = f.height;
-            if (camera > 405.0f && camera < 600.0f - ride.length)
+            if (camera > 405.0f)
                 lastLow = f.height;
         }
-        std::printf("ride: worst rise %.3f, fall %.3f, along %.3f a frame, jolt %.4f; nearest "
-                    "%.2f; clearance %.2f; at the tunnel %.2f, at the ledge %.2f, after %.2f\n",
-                    worstRise, worstFall, worstAlong, worstJolt, nearest, clearance, heightAtTunnel,
-                    heightAtLedge, lastLow);
+        std::printf(
+            "ride at %.0f: worst rise %.3f, fall %.3f, along %.3f a frame, jolt %.4f; nearest "
+            "%.2f; clearance %.2f; at the tunnel %.2f, at the ledge %.2f, after %.2f\n",
+            speed, worstRise, worstFall, worstAlong, worstJolt, nearest, clearance, heightAtTunnel,
+            heightAtLedge, lastLow);
         // 8 units a second is 0.133 a frame
         expect(worstRise < 0.14f && worstFall < 0.14f && worstAlong < 0.14f,
                "riding in and out of a tunnel and under a ledge, the camera never jumps");

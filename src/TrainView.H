@@ -307,11 +307,16 @@ class TrainView final : public Viewport
     int headDragY;
     float m_fieldOfView; // degrees, the World, Train, Chase and Fly cameras
     // the Chase camera, followed smoothly (setProjection()), the track it
-    // looks along (every kChaseSampleSpacing units), and when it last moved
+    // looks along (further ahead and sparser the faster the train goes), and
+    // when it last moved
     ChaseRig::Follower m_chase;
     std::vector<ChaseRig::TrackSample> m_chaseTrack;
     float m_chaseTime = 0.0f;
-    static constexpr float kChaseSampleSpacing = 0.25f;
+    // how fast the train went (units a second, smoothed) and where its front
+    // was, for how far ahead the Chase camera looks
+    float m_chaseSpeed = 0.0f;
+    Pnt3f m_chaseFront;
+    bool m_chaseFrontKnown = false;
     bool chaseBlocked(const Pnt3f &p) const; // a block of the island or the sea floor there?
     static void sampleTrack(const CTrack &track, TrackSplineType splineType, float u, float ahead,
                             float back, float step, std::vector<ChaseRig::TrackSample> &out);

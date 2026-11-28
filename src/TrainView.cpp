@@ -1838,15 +1838,32 @@ void TrainView::setProjection()
                 makeTrackFrame(lastForward, lastSide, lastUp);
                 const Pnt3f lastHead =
                     m_pTrack->evaluatePosition(uLast, splineType) + lastUp * train.riderTop;
-                sampleTrack(*m_pTrack, splineType, m_pTrack->trainU, ChaseRig::Follower::kAhead,
-                            train.length + open.behind + 1.0f, kChaseSampleSpacing, m_chaseTrack);
                 const float now = animationTime();
                 const float dt = now - m_chaseTime;
                 m_chaseTime = now;
+                // How fast the train goes: the faster, the further ahead the
+                // camera looks for a roof (ChaseRig::Follower). Smoothed over
+                // about a quarter of a second, as frames come unevenly.
+                if (m_chaseFrontKnown && dt > 0.0f && dt < 1.0f)
+                {
+                    const Pnt3f moved = position + m_chaseFront * -1.0f;
+                    // (a jump, as when the track is edited, counts as fast,
+                    // not as a thousand units a second)
+                    const float measured = std::min(
+                        400.0f,
+                        sqrtf(moved.x * moved.x + moved.y * moved.y + moved.z * moved.z) / dt);
+                    m_chaseSpeed += (measured - m_chaseSpeed) * std::min(1.0f, dt / 0.25f);
+                }
+                m_chaseFront = position;
+                m_chaseFrontKnown = true;
+                sampleTrack(*m_pTrack, splineType, m_pTrack->trainU,
+                            ChaseRig::Follower::aheadFor(m_chaseSpeed),
+                            train.length + open.behind + 1.0f,
+                            ChaseRig::Follower::spacingFor(m_chaseSpeed), m_chaseTrack);
                 const ChaseRig::Follow follow = m_chase.update(
                     m_chaseTrack,
                     [this](const ChaseRig::Point &p) { return chaseBlocked(Pnt3f(p.x, p.y, p.z)); },
-                    train, fovY, dt, {lastHead.x, lastHead.y, lastHead.z});
+                    train, fovY, dt, {lastHead.x, lastHead.y, lastHead.z}, m_chaseSpeed);
                 eye = Pnt3f(follow.eye.x, follow.eye.y, follow.eye.z);
                 Pnt3f ahead = forward;
                 ahead.normalize();
@@ -1896,6 +1913,8 @@ void TrainView::setProjection()
                 return;
             }
             m_chase.reset();
+            m_chaseFrontKnown = false;
+            m_chaseSpeed = 0.0f;
             // The rider may turn their head; the view still moves with the train.
             Pnt3f viewForward, viewUp;
             headLook.apply(forward, side, up, viewForward, viewUp);
@@ -1947,7 +1966,8 @@ void TrainView::sampleTrack(const CTrack &track, TrackSplineType splineType, flo
     };
     // the parameter every `step` units from u, one way along the track
     auto walk = [&](float direction, float reach, std::vector<float> &marks) {
-        const float du = 0.002f;
+        // (coarser steps when the samples are further apart: a fast train)
+        const float du = 0.002f * std::max(1.0f, step / 0.25f);
         float here = u, travelled = 0.0f, next = step;
         Pnt3f at = track.evaluatePosition(here, splineType);
         for (int i = 0; i < 200000 && next <= reach; ++i)
