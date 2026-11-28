@@ -644,10 +644,14 @@ void main()
         }
     }
 
-    // Light is absorbed with depth, red first: shallow water over sand stays
-    // clear turquoise while open ocean deepens into rich sapphire blue.
+    // Sea water both absorbs light, red first, and scatters it off what
+    // floats in it: the further the view goes into it, the more of what is
+    // seen is that scattered light, a deep blue-green, and the less the sea
+    // bed. So the shallows over sand are clear turquoise and the open sea a
+    // deep blue in which the bottom is lost after a few blocks, as in a real
+    // sea. The water on land keeps the clearer water of a pond.
     float sunUp = clamp(uLightDir.y * 2.0, 0.0, 1.0);
-    vec3 scatterColour = uIsland != 0 ? vec3(0.004, 0.050, 0.11) : vec3(0.0025, 0.032, 0.072);
+    vec3 scatterColour = uIsland != 0 ? vec3(0.004, 0.050, 0.11) : vec3(0.0018, 0.022, 0.046);
     vec3 scatter = scatterColour * (uLightColor * sunUp * mix(0.6, 1.0, shadow) + uZenith * 2.0);
     // The water on land is only a few blocks deep: it takes its colour as
     // if it were deeper, so a shallow pond still looks like water.
@@ -657,14 +661,16 @@ void main()
     float smoothPath = smoothVert / max(V.y, 0.28);
     float looksDeep = uIsland != 0 ? thickness * 3.0 + mix(0.8, 3.0, fall)
                                    : mix(thickness, max(0.0, smoothPath + coastNoise * 0.55), 0.72);
-    vec3 extinction = uIsland != 0 ? vec3(0.12, 0.030, 0.020) : vec3(0.15, 0.038, 0.026);
+    vec3 extinction = uIsland != 0 ? vec3(0.12, 0.030, 0.020) : vec3(0.22, 0.060, 0.045);
     vec3 absorb = exp(-looksDeep * extinction);
     vec3 body = refr * absorb + scatter * (1.0 - absorb);
     if (uIsland == 0) {
         // Turquoise subsurface glow through thin sunlit wave crests, plus subtle
         // trough darkening ahead of each coastal breaker for crisp 3D relief.
         float back = pow(max(dot(-V, normalize(uLightDir)), 0.0), 3.0);
-        float crestLift = max(disp.y, 0.0) + max(cH, 0.0) * 1.15 * shallowMask;
+        // (only on the coastal rollers: out at sea it lit every swell
+        // turquoise, and the open sea is a deep blue)
+        float crestLift = max(cH, 0.0) * 1.15 * shallowMask;
         float sss = crestLift * (0.34 + 0.66 * back) * sunUp * mix(0.4, 1.0, shadow);
         body += vec3(0.016, 0.115, 0.135) * uLightColor * sss * (0.35 + 0.65 * (1.0 - absorb.g));
         body *= 1.0 - 0.16 * max(-cH, 0.0) * shallowMask;
@@ -676,7 +682,9 @@ const char *kWaterFragmentTail = R"GLSL(
     // where that finds nothing, the mirrored view drawn beforehand (it is
     // mirrored in the sea's surface, so the water on land, higher up, takes
     // the sky's colour instead).
-    vec3 refl = texture2D(uReflection, suv + distort * (uIsland != 0 ? 1.0 : 1.85)).rgb;
+    // (the sea's waves break the mirrored view up more than they bend the
+    // view through it, so its reflection is not a sheet of glass)
+    vec3 refl = texture2D(uReflection, suv + distort * (uIsland != 0 ? 1.0 : 2.2)).rgb;
     if (uIsland != 0)
         refl = mix(uHorizon, uZenith, clamp(reflect(-V, N).y * 1.5, 0.0, 1.0));
     if (uSsrOn != 0) {
@@ -691,26 +699,15 @@ const char *kWaterFragmentTail = R"GLSL(
     fresnel *= 1.0 - 2.4 * fall * (1.0 - fall); // the bend over an edge mirrors less of the sky
     vec3 col = mix(body, refl, fresnel);
 
-    // Sun glints: crisp primary specular plus high-angle micro-facet diamond
-    // sparkles so steep top-down views catch dancing sunlit flecks across the sea.
-    vec3 Ldir = normalize(uLightDir);
-    vec3 H = normalize(Ldir + V);
+    // Sun glints: one sharp path of light where the waves face the sun,
+    // not a sparkle scattered all over the sea.
+    vec3 H = normalize(normalize(uLightDir) + V);
     float nh = max(dot(N, H), 0.0);
-    float spec = pow(nh, 520.0) * 44.0 + pow(nh, 72.0) * 0.75;
-    if (uIsland == 0) {
-        vec2 sp1 = mat2(0.84, 0.54, -0.54, 0.84) * (P.xz * 2.4) + vec2(uTime * 1.35, -uTime * 0.95);
-        vec2 sp2 = mat2(-0.46, 0.89, -0.89, -0.46) * (P.xz * 4.1) + vec2(-uTime * 1.65, uTime * 1.15);
-        vec2 micro = (noiseSlope(sp1) * 0.14 + noiseSlope(sp2) * 0.10) *
-                     (1.0 - smoothstep(140.0, 420.0, dist));
-        vec3 nSpark = normalize(vec3(N.x - micro.x, N.y, N.z - micro.y));
-        float nhSpark = max(dot(nSpark, H), 0.0);
-        spec += pow(nhSpark, 210.0) * 18.0 * smoothstep(0.55, 0.94, nh);
-    }
+    float spec = pow(nh, 600.0) * 40.0 + pow(nh, 80.0) * 0.6;
     // (hardly any on the bend over an edge and down a fall, where the
     // midday sun would make a white band across the water)
     float glints = uIsland != 0 ? mix(0.1, 1.0, smoothstep(0.93, 0.995, faceN.y)) : 1.0;
-    float specFloor = uIsland == 0 ? (0.58 + 0.72 * fresnel) : (0.3 + fresnel);
-    col += uLightColor * spec * shadow * specFloor * glints;
+    col += uLightColor * spec * shadow * (0.3 + fresnel) * glints;
 
     // Porous lacy shore swash (surging in and draining back in lockstep with
     // each incoming coastal roller instead of vanishing at the boundary),
